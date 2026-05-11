@@ -52,7 +52,7 @@ com.meeting.api.infrastructure
 4. speaker_profiles、speaker_enrollments、speaker_embeddings。
 5. meeting_minutes、meeting_action_items、meeting_decisions、meeting_risks。
 6. documents、document_chunks、knowledge_chunks、knowledge_chunk_acl。
-7. rag_query_logs、export_jobs、llm_call_logs。
+7. rag_query_logs、export_jobs、llm_call_logs、prompt_templates。
 8. artifact_manifests、audit_events、domain_events_outbox。
 9. deletion_jobs、deletion_certificates、legal_holds。
 
@@ -87,6 +87,8 @@ com.meeting.api.infrastructure
 5. 消息必须包含 `taskId`、`tenantId`、`traceId`。
 6. 同一聚合按 `(aggregate_type, aggregate_id, sequence_no)` 单调递增发布；跨聚合可以并发。
 7. `export-queue` 的消费入口在 adapter，导出渲染和 TOS 写入能力由 infrastructure 的 `ExportGateway` 提供。
+
+outbox 写入端必须在同一业务事务内为同一聚合分配单调 `sequence_no`。一期采用 `SELECT ... FOR UPDATE` 锁住当前 `(tenant_id, aggregate_type, aggregate_id)` 最新 outbox 行后取最大 `sequence_no + 1`；无历史行时从 1 开始。跨聚合不共享锁，可以并发写入。
 
 outbox publisher 策略：
 
@@ -127,6 +129,8 @@ Prompt template 加载：
 2. 如果 `prompt_templates` 表存在同名启用版本，数据库版本优先；每次调用记录实际 `promptTemplateVersion`。
 3. template 文件必须包含 `inputSchema`、`outputSchema`、`maxInputTokens`、`modelParams` 和 `dataBoundaryPolicyVersion`。
 4. schema 校验失败不得调用 provider。
+
+`llm_call_logs.textRedactionBeforeThirdPartyLlm` 是契约固定审计字段，一期恒为 `false`。infrastructure 不得把它实现成可打开的脱敏开关；若未来支持发送前脱敏，必须先升级 contracts 和审计语义。
 
 不得发送原始音频、标准化音频、声纹参考音频、声纹 embedding 和高敏会议文本。
 
@@ -177,6 +181,8 @@ KMS provider：
 相同 idempotency key 且 payload 一致时返回已处理结果；payload 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT`。
 
 `callback_events` 默认保留 `30d`。表结构必须包含 `request_body_hash`、`response_body`、`http_status`、`processed_at`，支持相同 key 直接重放缓存 body。
+
+`PATCH .../steps/{stepName}` 中 `status=RUNNING && progress>0` 的 heartbeat 不写 `callback_events`，不占用幂等 key 唯一约束；只更新 task / step 最新进度和 lease 时间。其它 callback 仍必须持久化幂等事件。
 
 ## 10. 验收标准
 

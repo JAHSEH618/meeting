@@ -34,7 +34,7 @@ com.meeting.api.domain
 | `Tenant` | 租户隔离边界，业务对象必须归属单一 tenant |
 | `User` | 登录账号、角色和状态，不直接等同现实人员 |
 | `Person` | 现实参会人，可与 user 绑定 |
-| `Meeting` | 会议安全等级、状态、参会人、版本号 |
+| `Meeting` | 会议安全等级、状态、参会人、版本号；状态机统一为 `CREATED`、`PROCESSING`、`SUCCEEDED`、`FAILED`、`DELETED` |
 | `MeetingFile` | 音频和文档文件元信息、TOS URI、hash |
 | `ProcessingTask` | task 状态机、attempt、lease、step |
 | `TranscriptSegment` | 时间戳、speaker、original/edited/current text |
@@ -89,10 +89,24 @@ Repository 只能按聚合根保存聚合；跨聚合一致性由 app 层事务�
 1. Worker 领取任务时设置 `leaseOwner` 和 `leaseExpiresAt`。
 2. heartbeat 更新 `heartbeatAt` 和 lease。
 3. lease 过期进入 `ORPHANED`。
-4. 重试耗尽进入 `FAILED` 或 DLQ。
-5. 旧 attempt callback 不得推进新 attempt 状态。
+4. 用户取消先进入 `CANCEL_PENDING`，worker 或 Java 确认停止后进入 `CANCELLED`。
+5. optional step 失败但核心产物可用时可进入 `PARTIAL_SUCCEEDED`，并要求对应 step 写入 `SKIPPED` 或 `FAILED` 原因。
+6. 重试耗尽进入 `FAILED` 或 DLQ。
+7. 旧 attempt callback 不得推进新 attempt 状态。
 
-### 4.4 声纹
+task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。`PARTIAL_SUCCEEDED` 只允许由 app 层处理 `/complete` callback 中的 `skippedSteps` 或 Java 内部 optional step 策略产生。
+
+### 4.4 Meeting 状态
+
+`Meeting` 状态机遵循 F3：
+
+1. `CREATED -> PROCESSING`：音频上传完成并创建处理任务。
+2. `PROCESSING -> SUCCEEDED`：必做 step 完成并同步 task 终态。
+3. `PROCESSING -> FAILED`：必做 step 失败且重试耗尽。
+4. `FAILED -> PROCESSING`：用户重建 / 重试任务。
+5. `任意非 DELETED -> DELETED`：用户删除、retention 或 deletion job，执行前必须检查 legal hold。
+
+### 4.5 声纹
 
 1. 声纹 profile 必须有授权记录。
 2. 不做全公司无差别搜索。
@@ -101,13 +115,13 @@ Repository 只能按聚合根保存聚合；跨聚合一致性由 app 层事务�
 5. 历史转录中的 person id 软屏蔽。
 6. 相关 RAG chunk 标记 STALE，并触发去标识重建。
 
-### 4.5 安全等级
+### 4.6 安全等级
 
 1. `PUBLIC` / `INTERNAL` 一期允许自动 LLM。
 2. `CONFIDENTIAL` / `SECRET` 一期自动 LLM fail closed。
 3. 音频和声纹相关数据永远不得发送第三方 LLM。
 
-### 4.6 Legal Hold 保全范围
+### 4.7 Legal Hold 保全范围
 
 1. Legal hold 的范围以 `(entityType, entityId)` 列表表达。
 2. 一个 legal hold 可以同时锁定 meeting、meeting file、document、export、artifact、audit event 等多类对象。
@@ -175,12 +189,13 @@ Repository 只能按聚合根保存聚合；跨聚合一致性由 app 层事务�
 6. `DocumentRepository`。
 7. `ExportJobRepository`。
 8. `AuditRepository`。
-9. `StorageGateway`。
-10. `MessagePublisher`。
-11. `LlmGateway`。
-12. `EmbeddingGateway`。
-13. `ExportGateway`。
-14. `KmsGateway`。
+9. `CallbackEventRepository`：callback 幂等记录、重放结果和冲突检测端口；heartbeat 例外由 app 层绕过该端口。
+10. `StorageGateway`。
+11. `MessagePublisher`。
+12. `LlmGateway`。
+13. `EmbeddingGateway`。
+14. `ExportGateway`。
+15. `KmsGateway`。
 
 ## 7. 验收标准
 

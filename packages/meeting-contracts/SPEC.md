@@ -24,21 +24,7 @@ schemas/
   common/
     enums.yaml
     error-codes.yaml
-fixtures/
-  public-api/
-    meetings/
-    processing-tasks/
-    rag/
-  internal-callback/
-    step-update.request.json
-    transcript-callback.request.json
-    speaker-candidates.request.json
-    embeddings-callback.request.json
-    complete-task.request.json
-    fail-task.request.json
-  rabbitmq/
-    processing-task-message.valid.json
-    processing-task-message.invalid.json
+scripts/
 ```
 
 文件职责：
@@ -50,7 +36,8 @@ fixtures/
 | `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 worker 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
 | `schemas/common/enums.yaml` | 跨工程枚举 | Java / TypeScript / Python codegen |
 | `schemas/common/error-codes.yaml` | 稳定错误码、retryable、i18n key、运维标签 | 前端 error mapper、Java exception mapper、worker fail callback |
-| `fixtures/**` | 正反例样本和回放输入 | 契约测试、文档示例、回归测试 |
+
+`fixtures/**` 可以作为后续契约回放样本目录引入，但一期仓库当前没有该目录时不得把 fixture replay 作为必过验收项。新增该目录后，每个 valid / invalid 样本必须纳入 CI 校验。
 
 ## 3. JSON 约定
 
@@ -176,11 +163,24 @@ Idempotency-Key
 X-Signature
 ```
 
-schema 必须包含 `tenantId`、`taskId`、`artifactManifestId` 或足以生成 manifest 的字段。
+schema 必须包含 `tenantId`、`taskId`，并包含 `artifactManifestId` 或足以生成 manifest 的字段。`meetingId` 按 task 类型条件校验：`MEETING_FULL_PIPELINE` 必须非空且匹配；`TEXT_EMBEDDING` / `RAG_REINDEX` 中 `meetingId` 与 `documentId` 至少一个非空；`SPEAKER_ENROLLMENT` 允许 `meetingId=null`。Internal callback OpenAPI schema 不得把所有 callback 的 `meetingId` 统一设为 required。
+
+`PATCH /internal/processing-tasks/{taskId}/steps/{stepName}` 的幂等例外：
+
+1. `status=RUNNING` 且 `progress > 0` 时视为 heartbeat / progress update，不写入 `callback_events` 幂等表。
+2. heartbeat 仍必须携带 `Idempotency-Key`，但 Java 只校验 attempt + lease，按 latest-wins 更新 `heartbeat_at`、`progress`、`lease_expires_at`。
+3. 首次 `RUNNING (progress=0)`、`SUCCEEDED`、`FAILED` 仍按普通 callback 写入幂等表并校验 body hash。
+
+HMAC 签名路径：
+
+1. `internal-callback-api.yaml` 的 `servers.url=/internal` 是签名路径的一部分。
+2. codegen client 拼接请求 URL 时必须使用 `{server.url}/{path}`，例如 `/internal/processing-tasks/{taskId}/steps/{stepName}`。
+3. `signing_string` 中的 `URL_PATH_WITH_QUERY` 必须使用含 `/internal` 前缀的原始 path 和 query；不能只使用 OpenAPI `paths` 里的相对路径。
+4. Java 服务端验签必须使用收到请求的原始 URI path，避免 Spring servlet path 归一化后丢掉 `/internal` 前缀。
 
 声纹 embedding 契约：
 
-1. `speaker-candidates` callback 可以携带 speaker embedding 明文向量。
+1. `speaker-candidates` callback 必须始终携带 speaker embedding 明文向量，`PlainSpeakerEmbedding.values` 必须存在且非空。
 2. 明文向量只允许通过 internal TLS + HMAC callback 传输，不允许写入 TOS 明文 artifact。
 3. `meeting-api` 接收后负责 KMS 信封加密并落库。
 
@@ -212,6 +212,8 @@ schema 必须包含 `tenantId`、`taskId`、`artifactManifestId` 或足以生成
 
 Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜测。
 
+`expectedInputVersion.chunkStrategyVersion` 的默认值由 Java `meeting-api` 的 `app.chunk.strategy-version` 配置项提供。首次创建 `MEETING_FULL_PIPELINE` 任务时由 Java task 模块写入消息；重建 / 重索引任务使用当前 `knowledge_chunks.chunk_strategy_version` 或更高层配置指定的版本。
+
 ## 10. 版本策略
 
 1. 契约版本采用语义化版本。
@@ -219,7 +221,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 3. 删除字段、改字段含义、改枚举名属于 breaking change。
 4. breaking change 需要同时修改 `meeting-web`、`meeting-api` 和 `ai-worker`。
 5. callback payload 变更必须保持旧 worker 重试期间可被 Java 识别。
-6. 契约测试工具一期采用 OpenAPI / JSON Schema lint + fixture replay 的自研轻量组合；暂不引入 Pact，除非后续需要 provider verification workflow。
+6. 契约测试工具一期采用 OpenAPI / JSON Schema lint 为必选项；`fixtures/**` 引入后再启用 fixture replay。暂不引入 Pact，除非后续需要 provider verification workflow。
 
 ## 11. 验收标准
 
@@ -228,7 +230,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 3. 枚举与 Java、TypeScript、Python 使用的枚举一致。
 4. 错误码与前端提示、后端异常、worker 错误上报一致。
 5. Public API、callback API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
-6. `fixtures/**` 中每个 valid 样本必须通过对应 schema 校验；invalid 样本必须失败且错误路径稳定。
+6. 如果引入 `fixtures/**`，每个 valid 样本必须通过对应 schema 校验；invalid 样本必须失败且错误路径稳定。
 
 ## 12. Code Generation
 
@@ -236,7 +238,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 
 ```bash
 openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts
-openapi-typescript openapi/internal-callback-api.yaml -o ../../apps/ai-worker/generated/internal_callback_types.gen.ts
+datamodel-codegen --input openapi/internal-callback-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py
 openapi-generator generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api
 datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py
 ```
@@ -257,4 +259,5 @@ CI 要求：
 3. Public API 写操作必须声明 `X-Request-Id`、`X-Trace-Id`。
 4. 非登录写操作必须声明 `Idempotency-Key`。
 5. callback API 必须声明 `X-Worker-Id`、`X-Attempt-No`、`X-Lease-Owner`、`X-Timestamp`、`X-Nonce`、`X-Signature`。
-6. 4xx / 5xx response 必须引用统一错误响应 schema。
+6. callback API 必须声明 `servers.url=/internal`，并通过 lint 防止 internal callback codegen 丢失 server prefix。
+7. 4xx / 5xx response 必须引用统一错误响应 schema。

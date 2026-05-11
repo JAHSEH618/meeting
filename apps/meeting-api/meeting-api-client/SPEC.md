@@ -25,8 +25,12 @@ com.meeting.api.client
     SecurityLevel
     ProcessingStep
     MeetingStatus
-    TaskStatus
+    ProcessingTaskStatus
     StaleStatus
+  internal/
+    callback/
+      SpeakerEmbeddingCallbackCommand
+      EmbeddingBatchCallbackCommand
   auth/
   user/
   meeting/
@@ -47,7 +51,7 @@ com.meeting.api.client
 2. 枚举名必须与 `packages/meeting-contracts` 一致。
 3. 错误码必须稳定，不能在业务逻辑里临时拼字符串。
 4. DTO 不携带 JPA、MyBatis、Spring Web 等基础设施注解，除非是通用校验注解且不会污染契约。
-5. 不暴露声纹 embedding、声纹模型原始输出和内部密钥字段。
+5. Public DTO 不暴露声纹 embedding、声纹模型原始输出和内部密钥字段；internal callback command 只能在 `client/internal` 包中承载明文 embedding。
 
 ## 3. 必备契约对象
 
@@ -86,6 +90,13 @@ com.meeting.api.client
 
 必须表达 step 级状态、progress、attempt、lease 摘要、`errorCode` 和 `retryable`。
 
+`ProcessingTaskStepDTO` 必须表达 step 推进来源差异：
+
+1. worker 推进的 step 可包含 `attemptNo`、`leaseOwner`、`workerId`。
+2. Java 内部推进的 `SUMMARY` / `EXTRACTION` 允许 `attemptNo`、`leaseOwner`、`workerId` 为空，或通过 `source=JAVA_TASK_SERVICE` 明确来源。
+3. worker callback 来源可使用 `source=AI_WORKER_CALLBACK`。
+4. 前端不得因为 Java 推进 step 缺少 lease 信息而判定数据异常。
+
 ### 3.4 转录与 speaker
 
 1. `TranscriptSegmentDTO`。
@@ -93,7 +104,6 @@ com.meeting.api.client
 3. `SpeakerCandidateDTO`。
 4. `ConfirmMeetingSpeakerCommand`。
 5. `RejectMeetingSpeakerCommand`。
-6. `SpeakerEmbeddingCallbackCommand`：仅 internal callback 使用，承载待 Java KMS 加密的明文 embedding，不对 Public API 暴露。
 
 转录 DTO 必须区分 `originalText`、`editedText`、`currentText`，但前端默认展示 `currentText`。
 
@@ -107,11 +117,18 @@ com.meeting.api.client
 6. `RagQueryCommand`。
 7. `RagAnswerDTO`。
 8. `CitationDTO`。
-9. `EmbeddingBatchCallbackCommand`：文本 chunk embedding 回写命令，支持直接向量或 TOS artifact URI。
 
 所有 AI 结果必须包含 `staleStatus` 和可选 `artifactManifestId`。
 
-### 3.6 导出与合规
+### 3.6 Internal Callback Command
+
+Internal callback 专用命令必须隔离到 `com.meeting.api.client.internal.callback`，不得出现在 Public API DTO 包中：
+
+1. `SpeakerEmbeddingCallbackCommand`：承载 `speaker-candidates` callback 中待 Java KMS 加密的明文 embedding，仅 internal callback 使用。
+2. `EmbeddingBatchCallbackCommand`：文本 chunk embedding 回写命令，支持直接向量或 TOS artifact URI。
+3. 这些命令可被 adapter 和 app 层复用，但不得经 public facade 暴露给前端。
+
+### 3.7 导出与合规
 
 1. `CreateExportCommand`。
 2. `ExportJobDTO`。
@@ -146,7 +163,7 @@ ComplianceFacade
 2. 所有 Public API 入参和出参都有 client 对象承载。
 3. 不出现数据库实体、Repository、Gateway 实现类。
 4. 不出现业务实现逻辑。
-5. 声纹 embedding 不在任何 DTO 中暴露。
+5. 声纹 embedding 不在任何 Public DTO 中暴露；仅 internal callback command 可承载明文并只供 adapter / app 内部使用。
 6. 错误码覆盖一期错误码字典。
 
 ## 6. 契约生成与一致性
@@ -156,5 +173,5 @@ ComplianceFacade
 1. OpenAPI 生成 Java DTO / interface 到临时目录。
 2. 与 `meeting-api-client` 手写 DTO 做字段和枚举一致性测试。
 3. CI 校验 `ErrorCode` 枚举覆盖 `schemas/common/error-codes.yaml`。
-4. CI 校验 `ProcessingStep`、`TaskStatus`、`StaleStatus` 与 `schemas/common/enums.yaml` 一致。
+4. CI 校验 `ProcessingStep`、`ProcessingTaskStatus`、`MeetingStatus`、`StaleStatus` 与 `schemas/common/enums.yaml` 一致。
 5. Public DTO 不得包含 internal callback 专用字段；internal callback command 可以在 `client/internal` 包下隔离。

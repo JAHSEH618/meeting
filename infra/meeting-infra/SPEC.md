@@ -50,10 +50,9 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 | `rabbitmq` | `rabbitmq:3.13-management` | `5672:5672`、`15672:15672` | `rabbitmq-diagnostics ping` | `rabbitmq-data`；创建一期队列和 DLQ |
 | `minio` | `minio/minio` | `9000:9000`、`9001:9001` | `/minio/health/live` | `minio-data`；本地替代 TOS |
 | `vault-dev` | `hashicorp/vault` | `8200:8200` | `/v1/sys/health` | 仅 local / dev 替代 KMS |
-| `meeting-api` | build `apps/meeting-api` | `8080:8080` | `/actuator/health` | env 注入 DB / MQ / TOS / DashScope / KMS |
+| `meeting-api` | build `apps/meeting-api`，镜像内安装 LibreOffice headless 和字体包 | `8080:8080` | `/actuator/health` | env 注入 DB / MQ / TOS / DashScope / KMS；本地 PDF 转换 smoke |
 | `meeting-web` | build `apps/meeting-web` nginx | `5173:80` | HTTP 200 | API base URL |
 | `ai-worker` | build `apps/ai-worker` | `8090:8090` | `/internal/health` | 模型权重只读挂载；GPU runtime 可选 |
-| `libreoffice` | 内部 headless 镜像或随 `meeting-api` | internal | smoke convert | 字体包挂载 |
 | `prometheus` | `prom/prometheus` | `9090:9090` | `/-/healthy` | scrape configs |
 | `grafana` | `grafana/grafana` | `3000:3000` | `/api/health` | dashboard provisioning |
 | `loki` / `tempo` | 官方镜像或内部镜像 | internal | HTTP health | 日志 / trace 本地调试 |
@@ -87,10 +86,10 @@ Compose 不写真实密钥，只提交 `.env.example`。
 | `llm-queue` | API / GPU | 纪要、抽取、RAG 问答 |
 | `export-queue` | CPU / IO | Markdown / DOCX / PDF 导出 |
 
-预留：
+一期不创建的预留队列：
 
-1. `gpu-align-queue`，按需 Forced Alignment。
-2. `rerank-queue`，后续独立 Rerank 扩容。
+1. `gpu-align-queue`：Forced Alignment 一期按需在 worker 进程内执行或后续再拆队列。
+2. `rerank-queue`：Rerank 一期启用但在 `ai-worker` 进程内 lazy-load 执行，不在 Compose / RabbitMQ definitions 中创建独立队列。
 
 队列要求：
 
@@ -115,6 +114,9 @@ Compose 不写真实密钥，只提交 `.env.example`。
 7. JWT / session secret。
 8. CORS allowed origins。
 9. 模型权重路径和 checksum。
+10. `app.chunk.strategy-version`，例如 `chunk-2026.05.1`。
+11. callback HMAC timestamp skew，例如 `meeting.callback.timestamp-skew-seconds=300`。
+12. callback 幂等事件保留期，例如 `meeting.callback-events.retention-days=30`。
 
 密钥不得写入仓库。Compose 可使用 `.env.example` 占位，真实值通过本机 `.env`、K8s Secret 或密钥管理系统注入。
 

@@ -99,9 +99,11 @@ ArchUnit 落地测试类固定为 `meeting-api-start/src/test/java/com/meeting/a
 6. `ai-worker` 消费任务并回写 step、artifact、transcript、speaker candidates 和终态。
 7. `adapter` 接收 callback，`app` 校验幂等、attempt、lease、tenant 和 meeting 关系。
 8. `meeting` 落库结构化转录。
-9. `llm-gateway` 生成纪要、待办、决策、风险。
-10. `rag` 将转录、纪要和结构化事项入库为 chunk。
-11. outbox publisher 投递成功后发布 `TASK_STARTED` / `TASK_STEP_UPDATED` SSE 事件；推送失败不得回滚业务事务，但必须进入 outbox 重试和告警。
+9. Java `task` 模块通过 `TaskStepProgressService` 将 `SUMMARY` step 标记为 `RUNNING`，`llm-gateway` 生成纪要后标记 `SUCCEEDED` / `FAILED`，并发布 `TASK_STEP_UPDATED` SSE。
+10. Java `task` 模块同样推进 `EXTRACTION` step，生成待办、决策、风险后标记 `SUCCEEDED` / `FAILED`，并发布 `TASK_STEP_UPDATED` SSE。
+11. `ai-worker` 不参与 `SUMMARY` / `EXTRACTION` 的 step 推进。
+12. `rag` 将转录、纪要和结构化事项入库为 chunk。
+13. outbox publisher 投递成功后发布 `TASK_STARTED` / `TASK_STEP_UPDATED` SSE 事件；推送失败不得回滚业务事务，但必须进入 outbox 重试和告警。
 
 ### 4.2 文档知识库
 
@@ -168,10 +170,14 @@ POST  /internal/processing-tasks/{taskId}/fail
 5. `Idempotency-Key` 内容一致性。
 6. `X-Attempt-No` 与当前 task attempt 一致。
 7. `X-Lease-Owner` 与当前 lease owner 一致。
-8. `tenantId`、`taskId`、`meetingId` 关系一致。
+8. `tenantId`、`taskId` 和业务对象关系按 task 类型校验：`MEETING_FULL_PIPELINE` 要求 `meetingId` 非空且匹配；`TEXT_EMBEDDING` / `RAG_REINDEX` 要求 `meetingId` 与 `documentId` 至少一个非空且归属当前 tenant；`SPEAKER_ENROLLMENT` 允许 `meetingId=null`，但必须校验 speaker profile / enrollment 归属。
 9. `expectedInputVersion` 不落后于当前可接受版本。
 
 旧 attempt 或旧 lease 的迟到 callback 不得覆盖新 attempt 结果。
+
+`PATCH /internal/processing-tasks/{taskId}/steps/{stepName}` 中 `status=RUNNING && progress>0` 是 heartbeat / progress update，不写 `callback_events`，不做 body hash 幂等冲突判定；只校验 attempt、lease 和 tenant 后按 latest-wins 更新进度。首次 `RUNNING(progress=0)`、`SUCCEEDED`、`FAILED` 仍走普通幂等表。
+
+HMAC `signing_string` 的 `URL_PATH_WITH_QUERY` 必须使用原始 URI，包含 `/internal` server prefix。adapter 传给 app 层的验签上下文不得使用丢失 servlet path 后的相对路径。
 
 ## 7. 数据与事务
 
@@ -248,6 +254,8 @@ meeting-api-infrastructure/src/main/java/com/meeting/api/infrastructure/persiste
 
 `task`、`speaker`、`rag`、`document`、`export`、`compliance`、`audit` 等域使用同样命名，避免跨域类散落到 `common`。
 
+`api/bff` 不作为独立业务域写入 domain；它是 adapter 层的视图聚合边界，代码放在 `meeting-api-adapter/src/main/java/com/meeting/api/adapter/bff/` 或各业务 adapter 的 `*BffController` 中，实际查询仍调用 app query service。
+
 ## 8. 安全等级与 LLM
 
 | security_level | 一期策略 |
@@ -303,3 +311,7 @@ Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓
 8. RAG 检索只返回有权限且 ACTIVE 的 chunk，并带 citation。
 9. 导出任务异步执行，绑定输入版本，文件写入 TOS。
 10. legal hold 阻止生命周期删除，deletion job 完成后生成 certificate。
+11. heartbeat callback 重放或连续上报不因 body hash 不同返回 409。
+12. `SUMMARY` / `EXTRACTION` step 由 Java 推进，前端可通过 SSE 看到 `TASK_STEP_UPDATED`。
+13. `/complete` callback 中的 `skippedSteps` 会写入 `processing_task_steps.status=SKIPPED`。
+14. `meetings.status` 按 `CREATED -> PROCESSING -> SUCCEEDED / FAILED -> DELETED` 状态机推进，legal hold 命中时删除返回 423。

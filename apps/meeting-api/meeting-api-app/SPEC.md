@@ -54,6 +54,8 @@ policy/
 4. 同 key 但 body hash 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT` 或 `IDEMPOTENCY_CONFLICT`。
 5. callback event 默认保留 `30d`，保留期内必须可重放。
 
+`PATCH /internal/processing-tasks/{taskId}/steps/{stepName}` 中 `status=RUNNING && progress>0` 的 heartbeat 不写 `callback_events`，也不做 request body hash 冲突判定。app 层仅校验 tenant、attempt、lease owner 后按 latest-wins 更新 `heartbeatAt`、`progress`、`leaseExpiresAt`；首次 `RUNNING(progress=0)`、`SUCCEEDED`、`FAILED` 仍走普通 callback 幂等记录。
+
 ## 4. 关键用例
 
 ### 4.1 会议创建
@@ -77,12 +79,13 @@ policy/
 
 1. 校验 HMAC、timestamp、nonce。
 2. 校验 idempotency key。
-3. 校验 tenant、task、meeting 关系。
+3. 校验 tenant、task 和业务对象关系：`MEETING_FULL_PIPELINE` 要求 `meetingId` 非空且匹配；`TEXT_EMBEDDING` / `RAG_REINDEX` 要求 `meetingId` 与 `documentId` 至少一个非空且归属当前 tenant；`SPEAKER_ENROLLMENT` 允许 `meetingId=null`，但必须校验 speaker profile / enrollment 归属。
 4. 校验 attempt 和 lease owner。
 5. 校验 expected input version。
 6. 根据 endpoint 推进 task step、保存 artifact、保存 transcript、保存 speaker candidates 或进入终态。
 7. 对重复 callback 返回已处理结果。
 8. 对幂等键相同但 payload 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT`。
+9. heartbeat 类 step update 不进入 callback 幂等表，重复上报不得返回 409。
 
 ### 4.4 转录编辑
 
@@ -99,10 +102,11 @@ policy/
 2. `PUBLIC` / `INTERNAL` 允许走 DashScope。
 3. `CONFIDENTIAL` / `SECRET` 返回 `SECURITY_LEVEL_BLOCKED`。
 4. 组装结构化转录和必要上下文。
-5. 调用 `llm-gateway` 端口。
-6. 校验 JSON schema 和 evidence。
-7. 生成纪要版本、AI 建议待办、决策和风险。
-8. 已确认业务字段不得被重生成覆盖。
+5. 调用 `TaskStepProgressService` 将 `SUMMARY` step 标记为 `RUNNING` 并发布 `TASK_STEP_UPDATED` SSE。
+6. 调用 `llm-gateway` 端口生成纪要；成功后将 `SUMMARY` 标记为 `SUCCEEDED`，失败标记为 `FAILED`。
+7. 调用 `TaskStepProgressService` 将 `EXTRACTION` step 标记为 `RUNNING` 并发布 `TASK_STEP_UPDATED` SSE。
+8. 校验 JSON schema 和 evidence，生成 AI 建议待办、决策和风险；成功后将 `EXTRACTION` 标记为 `SUCCEEDED`，失败标记为 `FAILED`。
+9. 已确认业务字段不得被重生成覆盖。
 
 ### 4.6 声纹 embedding 落库
 
@@ -141,6 +145,14 @@ policy/
 3. 删除完成后生成 deletion certificate。
 4. 删除、保全和解除都写 audit event。
 
+### 4.10 Deletion Job 执行
+
+1. 领取 deletion job 后先锁定 job 行并设置执行上下文。
+2. 重新检查 legal hold；命中时停止物理删除并返回 `LEGAL_HOLD_BLOCKED`。
+3. 按范围撤销签名 URL、删除或生命周期标记 TOS 对象、清理业务表可删除数据。
+4. 生成 deletion certificate，包含被删除对象 hash、范围、执行人、时间和失败项摘要。
+5. 写 audit event，并将 `meetings.status` 推进到 `DELETED`。
+
 ## 5. 状态机
 
 app 层负责调用 domain 状态机，禁止 adapter 或 infrastructure 直接改状态。
@@ -152,6 +164,7 @@ app 层负责调用 domain 状态机，禁止 adapter 或 infrastructure 直接�
 3. 纪要、事项和 chunk 的 `stale_status`。
 4. `export_jobs.status`。
 5. `deletion_jobs.status`。
+6. `meetings.status`：遵循 `CREATED -> PROCESSING -> SUCCEEDED / FAILED -> DELETED`；`FAILED -> PROCESSING` 仅由重试 / 重建触发；任意进入 `DELETED` 前必须检查 legal hold。
 
 ## 6. 验收标准
 
@@ -163,3 +176,5 @@ app 层负责调用 domain 状态机，禁止 adapter 或 infrastructure 直接�
 6. outbox 与业务数据同事务提交。
 7. CONFIDENTIAL / SECRET 自动 LLM 被阻断。
 8. RAG 查询经过权限过滤和二次校验。
+9. `SUMMARY` / `EXTRACTION` step 状态和 SSE 事件由 Java app 层可观测地产生。
+10. deletion job 完成物理删除、certificate 生成和 audit 记录，legal hold 命中时阻断。

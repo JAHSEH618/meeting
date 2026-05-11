@@ -132,7 +132,16 @@ async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
     return merged
 ```
 
-失败策略：每个 step 开始、进度和失败都 callback；CPU 预处理失败直接终止；ASR 失败导致 transcript 不可用；Diarization / Alignment 失败可以按配置降级为 `PARTIAL_SUCCEEDED`；callback 失败按 `WRITEBACK_FAILED` 重试，耗尽后让 Java lease 过期重入队。
+`SUMMARY` 和 `EXTRACTION` 不属于 `ai-worker` Pipeline DAG；这两个 step 由 Java `meeting-api-app` 在调用 `llm-gateway` 时通过 `TaskStepProgressService` 推进，worker 不发送对应 step callback。
+
+失败策略：每个 worker step 开始、进度和失败都 callback；CPU 预处理失败直接终止；ASR 失败导致 transcript 不可用；Diarization 失败必须 `FAILED`，不得降级；一期只有 `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可按配置或业务条件降级为 `PARTIAL_SUCCEEDED`；callback 失败按 `WRITEBACK_FAILED` 重试，耗尽后让 Java lease 过期重入队。
+
+`PARTIAL_SUCCEEDED` 上报路径：
+
+1. 可降级 step 失败且已有可用产物时，worker 继续完成可用产物回写。
+2. 终态调用 `POST /internal/processing-tasks/{taskId}/complete`，`status=PARTIAL_SUCCEEDED`，并在 `skippedSteps` 中声明失败 / 跳过的 optional step 和原因。
+3. 不可降级 step 失败时调用 `/fail`，不得通过 `/complete + skippedSteps` 伪装成功。
+4. `DIARIZATION`、`SPEAKER_EMBEDDING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION` 失败均不由 worker 降级；其中 `SUMMARY` / `EXTRACTION` 的失败由 Java 上报。
 
 ### 6.1 音频预处理
 
@@ -168,7 +177,7 @@ async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
 3. 只在 `knownParticipants` 或 Java 授权范围内做候选匹配，不做全公司无差别搜索。
 4. embedding 不返回前端，不发送给 DashScope。
 5. embedding 明文不得写入普通日志。
-6. speaker embedding 明文通过 internal TLS + HMAC callback 回写 Java，由 Java 一侧 KMS 信封加密落库；`ai-worker` 不持有 KMS 凭证。
+6. speaker-candidates callback 必须始终携带明文 `embedding.values`，不得改为仅传 `artifactUri`；明文通过 internal TLS + HMAC callback 回写 Java，由 Java 一侧 KMS 信封加密落库；`ai-worker` 不持有 KMS 凭证。
 7. `ai-worker` 不得把 speaker embedding 明文写入 TOS；callback 成功或重试耗尽后必须清除进程内明文引用。
 8. 生成候选时返回 speaker label、candidate person/profile、score、threshold、model version 和 artifact manifest。
 9. 提取失败返回 `SPEAKER_EMBEDDING_FAILED`，匹配失败返回 `SPEAKER_MATCH_FAILED`。
@@ -208,11 +217,13 @@ X-Signature
 约束：
 
 1. HMAC-SHA256 签名。
-2. `Idempotency-Key` 对同一 task、step、attempt、payload version 稳定。
+2. `Idempotency-Key` 对同一 task、step、attempt、payload version 稳定；`PATCH .../steps/{stepName}` 中 `status=RUNNING && progress>0` 的 heartbeat 固定使用同一 payload version，允许重复发送同 key，Java 不写幂等表。
 3. callback 失败要重试，重试耗尽返回 `WRITEBACK_FAILED`。
 4. 每个 step 开始、进度、完成和失败都要回写。
 5. 大 JSON 和中间产物写 TOS，callback 只传 URI、sha256、size、summary 和 metadata。
 6. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
+
+普通 step 开始、完成、失败 callback 必须更换能表达语义变化的 payload version，并接受 Java 的 body hash 幂等校验；heartbeat 是最新进度写入，不得因为连续上报而预期 Java 返回 409。
 
 每个 step 的触发点：
 
@@ -288,3 +299,4 @@ RTX 3090 / 4090 24GB 或同等显存 GPU
 7. Worker 异常退出后，Java lease 过期可重新入队，旧 attempt 结果不能覆盖新 attempt。
 8. 所有模型产物绑定 artifact manifest。
 9. 模型状态、workflow 状态和 health 能通过内部接口查看。
+10. `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可降级时通过 `/complete status=PARTIAL_SUCCEEDED + skippedSteps` 上报；`DIARIZATION` 失败必须 `/fail`。
