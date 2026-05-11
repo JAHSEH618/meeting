@@ -188,3 +188,4 @@ flowchart LR
 8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列。
 9. 一期预留但默认不启用：LocalLLM 用于后续 CONFIDENTIAL / SECRET 自动 LLM，Qdrant / Milvus 用于后续外置向量库，gpu-align-queue 用于按需 Forced Alignment，rerank-queue 用于后续独立 Rerank 扩容。
 10. 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，通过 LibreOffice headless 或等价组件生成 Markdown / DOCX / PDF；不进入 Python `WorkerRunner`。独立 export worker 仅作为后续资源隔离扩展。
+11. 数据流向约束：所有 PostgreSQL 业务写操作都源自 `meeting-api`；`ai-worker` 不持有业务库凭证，不直接写 `knowledge_chunks`、`transcript_segments` 或任何声纹表，只能通过 internal callback API 回写结构化结果或 artifact URI。

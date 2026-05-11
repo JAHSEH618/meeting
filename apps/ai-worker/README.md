@@ -9,8 +9,8 @@ Python 3.11+ AI 计算层。
 ```text
 FastAPI
 Clean Architecture
-Celery 或 Dramatiq WorkerRuntime
-Prefect 或 Temporal WorkflowEngine
+Dramatiq WorkerRuntime
+Prefect WorkflowEngine
 LangGraph Agent
 model_runtime 作为内部 package
 ```

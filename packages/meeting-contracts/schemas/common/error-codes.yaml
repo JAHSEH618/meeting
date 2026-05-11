@@ -1,143 +1,231 @@
 version: 0.1.0
 
 errorCodes:
+  - code: AUTH_REQUIRED
+    step: AUTH
+    retryable: false
+    userMessage: 请先登录
+    i18nKey: errors.AUTH_REQUIRED
+    opsTags: [auth]
+  - code: PERMISSION_DENIED
+    step: AUTH
+    retryable: false
+    userMessage: 没有执行该操作的权限
+    i18nKey: errors.PERMISSION_DENIED
+    opsTags: [auth, permission]
+  - code: TENANT_CONTEXT_MISSING
+    step: AUTH
+    retryable: false
+    userMessage: 租户上下文缺失
+    i18nKey: errors.TENANT_CONTEXT_MISSING
+    opsTags: [tenant, rls]
+  - code: VALIDATION_FAILED
+    step: VALIDATION
+    retryable: false
+    userMessage: 请求参数不符合要求
+    i18nKey: errors.VALIDATION_FAILED
+    opsTags: [validation]
+  - code: VERSION_CONFLICT
+    step: VALIDATION
+    retryable: false
+    userMessage: 内容已被更新，请刷新后重试
+    i18nKey: errors.VERSION_CONFLICT
+    opsTags: [version, conflict]
+  - code: IDEMPOTENCY_CONFLICT
+    step: VALIDATION
+    retryable: false
+    userMessage: 幂等键已被不同请求使用
+    i18nKey: errors.IDEMPOTENCY_CONFLICT
+    opsTags: [idempotency, conflict]
+  - code: TASK_ATTEMPT_CONFLICT
+    step: TASK
+    retryable: false
+    userMessage: 任务尝试次数已变化
+    i18nKey: errors.TASK_ATTEMPT_CONFLICT
+    opsTags: [task, attempt, conflict]
+  - code: TASK_LEASE_CONFLICT
+    step: TASK
+    retryable: false
+    userMessage: 任务租约已变化
+    i18nKey: errors.TASK_LEASE_CONFLICT
+    opsTags: [task, lease, conflict]
+  - code: LEGAL_HOLD_BLOCKED
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 对象处于法定保全状态，不能删除
+    i18nKey: errors.LEGAL_HOLD_BLOCKED
+    opsTags: [compliance, legal_hold]
+  - code: DEPENDENCY_UNAVAILABLE
+    step: INFRA
+    retryable: true
+    userMessage: 依赖服务暂不可用
+    i18nKey: errors.DEPENDENCY_UNAVAILABLE
+    opsTags: [dependency]
   - code: AUDIO_UNSUPPORTED_FORMAT
     step: AUDIO_PREPROCESS
     retryable: false
     userMessage: 音频格式不支持
+    i18nKey: errors.AUDIO_UNSUPPORTED_FORMAT
     opsTags: [audio, validation]
   - code: AUDIO_TOO_LONG
     step: AUDIO_PREPROCESS
     retryable: false
     userMessage: 音频超过 4 小时上限
+    i18nKey: errors.AUDIO_TOO_LONG
     opsTags: [audio, validation]
   - code: AUDIO_CORRUPTED
     step: AUDIO_PREPROCESS
     retryable: false
     userMessage: 音频文件损坏或无法读取
+    i18nKey: errors.AUDIO_CORRUPTED
     opsTags: [audio, ffmpeg]
   - code: AUDIO_QUALITY_LOW
     step: AUDIO_PREPROCESS
     retryable: false
     userMessage: 音频质量过低
+    i18nKey: errors.AUDIO_QUALITY_LOW
     opsTags: [audio, quality]
   - code: CHANNEL_MAP_FAILED
     step: AUDIO_PREPROCESS
     retryable: true
     userMessage: 声道识别失败
+    i18nKey: errors.CHANNEL_MAP_FAILED
     opsTags: [audio, channel_map]
   - code: ASR_RUNTIME_ERROR
     step: ASR
     retryable: true
     userMessage: ASR 推理异常
+    i18nKey: errors.ASR_RUNTIME_ERROR
     opsTags: [asr, runtime]
   - code: ASR_MODEL_TIMEOUT
     step: ASR
     retryable: true
     userMessage: ASR 模型推理超时
+    i18nKey: errors.ASR_MODEL_TIMEOUT
     opsTags: [asr, timeout]
   - code: ASR_GPU_OOM
     step: ASR
     retryable: true
     userMessage: ASR GPU 显存不足
+    i18nKey: errors.ASR_GPU_OOM
     opsTags: [asr, gpu, oom]
   - code: DIARIZATION_FAILED
     step: DIARIZATION
     retryable: true
     userMessage: 说话人分离失败
+    i18nKey: errors.DIARIZATION_FAILED
     opsTags: [diarization]
   - code: ALIGNMENT_FAILED
     step: ALIGNMENT
     retryable: true
     userMessage: 时间戳对齐失败
+    i18nKey: errors.ALIGNMENT_FAILED
     opsTags: [alignment]
   - code: SPEAKER_EMBEDDING_FAILED
     step: SPEAKER_EMBEDDING
     retryable: true
     userMessage: 声纹特征提取失败
+    i18nKey: errors.SPEAKER_EMBEDDING_FAILED
     opsTags: [speaker, embedding]
   - code: SPEAKER_MATCH_FAILED
     step: SPEAKER_MATCHING
     retryable: true
     userMessage: 声纹匹配失败
+    i18nKey: errors.SPEAKER_MATCH_FAILED
     opsTags: [speaker, matching]
   - code: TRANSCRIPT_MERGE_FAILED
     step: TRANSCRIPT_MERGE
     retryable: true
     userMessage: 转录合并失败
+    i18nKey: errors.TRANSCRIPT_MERGE_FAILED
     opsTags: [transcript]
   - code: CALLBACK_AUTH_FAILED
     step: CALLBACK
     retryable: false
     userMessage: Worker 回调鉴权失败
+    i18nKey: errors.CALLBACK_AUTH_FAILED
     opsTags: [callback, auth]
   - code: CALLBACK_IDEMPOTENCY_CONFLICT
     step: CALLBACK
     retryable: false
     userMessage: Worker 回调幂等键冲突
+    i18nKey: errors.CALLBACK_IDEMPOTENCY_CONFLICT
     opsTags: [callback, idempotency]
   - code: LLM_SCHEMA_INVALID
     step: LLM
     retryable: true
     userMessage: LLM 输出格式不符合要求
+    i18nKey: errors.LLM_SCHEMA_INVALID
     opsTags: [llm, schema]
   - code: LLM_EVIDENCE_INVALID
     step: LLM
     retryable: true
     userMessage: LLM 输出依据校验失败
+    i18nKey: errors.LLM_EVIDENCE_INVALID
     opsTags: [llm, evidence]
   - code: LLM_RATE_LIMIT
     step: LLM
     retryable: true
     userMessage: LLM 服务限流
+    i18nKey: errors.LLM_RATE_LIMIT
     opsTags: [llm, rate_limit]
   - code: SECURITY_LEVEL_BLOCKED
     step: LLM
     retryable: false
     userMessage: 一期不支持该安全等级的自动 LLM 处理
+    i18nKey: errors.SECURITY_LEVEL_BLOCKED
     opsTags: [llm, security]
   - code: LLM_DATA_BOUNDARY_BLOCKED
     step: LLM
     retryable: false
     userMessage: 数据边界策略阻断
+    i18nKey: errors.LLM_DATA_BOUNDARY_BLOCKED
     opsTags: [llm, data_boundary]
   - code: RAG_INDEX_FAILED
     step: RAG_INDEXING
     retryable: true
     userMessage: RAG 入库失败
+    i18nKey: errors.RAG_INDEX_FAILED
     opsTags: [rag, indexing]
   - code: VECTOR_SEARCH_FAILED
     step: RAG
     retryable: true
     userMessage: 向量检索失败
+    i18nKey: errors.VECTOR_SEARCH_FAILED
     opsTags: [rag, vector]
   - code: EXPORT_FAILED
     step: EXPORT
     retryable: true
     userMessage: 导出失败
+    i18nKey: errors.EXPORT_FAILED
     opsTags: [export]
   - code: WORKER_LEASE_EXPIRED
     step: TASK
     retryable: true
     userMessage: Worker 租约已过期
+    i18nKey: errors.WORKER_LEASE_EXPIRED
     opsTags: [task, lease]
   - code: WRITEBACK_FAILED
     step: CALLBACK
     retryable: true
     userMessage: Worker 回写失败
+    i18nKey: errors.WRITEBACK_FAILED
     opsTags: [callback, writeback]
   - code: OUTBOX_PUBLISH_FAILED
     step: OUTBOX
     retryable: true
     userMessage: 事件发布失败
+    i18nKey: errors.OUTBOX_PUBLISH_FAILED
     opsTags: [outbox, mq]
   - code: STALE_REBUILD_VERSION_MISMATCH
     step: REBUILD
     retryable: false
     userMessage: 重建完成时上游版本已变化
+    i18nKey: errors.STALE_REBUILD_VERSION_MISMATCH
     opsTags: [rebuild, version]
   - code: KMS_KEY_UNAVAILABLE
     step: SPEAKER_EMBEDDING
     retryable: true
     userMessage: 声纹加密密钥不可用
+    i18nKey: errors.KMS_KEY_UNAVAILABLE
     opsTags: [kms, speaker]

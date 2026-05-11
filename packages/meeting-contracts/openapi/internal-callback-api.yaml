@@ -4,6 +4,17 @@ info:
   version: 0.1.0
 servers:
   - url: /internal
+x-callback-conventions:
+  signingString: |
+    X-Timestamp + "\n" +
+    X-Nonce + "\n" +
+    HTTP_METHOD + "\n" +
+    URL_PATH_WITH_QUERY + "\n" +
+    SHA256(request_body).hex
+  signatureHeader: hmac-sha256=<hex>
+  timestampSkewSeconds: 300
+  idempotencyKeyFormat: '{taskId}:{stepName}:{attemptNo}:{payloadVersion}'
+  idempotencyRetentionDays: 30
 paths:
   /processing-tasks/{taskId}/steps/{stepName}:
     patch:
@@ -29,6 +40,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/artifacts:
     post:
       operationId: createProcessingArtifact
@@ -51,6 +66,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/transcript:
     post:
       operationId: submitTranscript
@@ -73,6 +92,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/speaker-candidates:
     post:
       operationId: submitSpeakerCandidates
@@ -95,6 +118,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/embeddings:
     post:
       operationId: submitTextEmbeddings
@@ -117,6 +144,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/complete:
     post:
       operationId: completeProcessingTask
@@ -139,6 +170,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/fail:
     post:
       operationId: failProcessingTask
@@ -161,6 +196,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
 components:
   parameters:
     TaskId:
@@ -223,6 +262,18 @@ components:
   responses:
     Ok:
       description: Standard callback response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    CallbackAuthFailed:
+      description: Callback HMAC, timestamp, nonce, or internal auth failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    CallbackConflict:
+      description: Idempotency, attempt, lease, or input version conflict
       content:
         application/json:
           schema:

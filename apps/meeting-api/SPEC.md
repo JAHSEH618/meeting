@@ -34,6 +34,38 @@ start -> adapter / app / infrastructure
 domain 不依赖 adapter、app、infrastructure
 ```
 
+### 2.1 技术选型基线
+
+一期选型固定如下，除非单独更新本 SPEC 和父 POM：
+
+| 类别 | 选型 | 约束 |
+|---|---|---|
+| 构建 | Maven 多模块 | 父 POM 统一版本，模块不得各自引入冲突版本 |
+| Java | 17 LTS | `maven-compiler-plugin` 使用 `release=17` |
+| Spring Boot | 3.3.x | 与当前父 POM 对齐，不混用 Boot 2.x 依赖 |
+| ORM / SQL | MyBatis-Plus 3.5.x + 原生 SQL | RLS、`FOR UPDATE SKIP LOCKED`、pgvector 查询优先写显式 SQL；不引入 JPA |
+| Migration | Flyway 10.x | 路径 `src/main/resources/db/migration/V{yyyyMMddHHmm}__desc.sql` |
+| 连接池 | HikariCP | `maximumPoolSize=20` 起步，连接归还前 reset tenant context |
+| JSON | Jackson 2.17.x | camelCase、ISO-8601 UTC、未知字段按契约策略处理 |
+| 校验 | Jakarta Bean Validation 3.x | Controller 基础校验，业务语义校验放 app / domain |
+| 日志 | Logback + Logstash JSON encoder | MDC 必须包含 `traceId`、`requestId`、`tenantId`、`userId` |
+| 测试 | JUnit 5 + Mockito + ArchUnit + Testcontainers + WireMock | Testcontainers 覆盖 PostgreSQL / RabbitMQ / MinIO 替身 |
+| 度量 | Micrometer + Prometheus | actuator 暴露 `health`、`metrics`、`prometheus`、`info` |
+| API 文档 | springdoc-openapi 2.x | 生成结果必须与 `packages/meeting-contracts/openapi` 语义一致 |
+
+### 2.2 模块依赖与 CI 守卫
+
+每个子模块的 POM 只允许声明本模块需要的依赖：
+
+1. `meeting-api-domain`：只依赖 `meeting-api-client` 和纯 Java 工具，不依赖 Spring Web、JDBC、AMQP、TOS SDK、DashScope SDK。
+2. `meeting-api-client`：只放 DTO / Command / Query / Result / Facade / enum / error code，不依赖数据库、Web、MQ、外部 SDK。
+3. `meeting-api-app`：可依赖 `client`、`domain`、Spring transaction / validation，不依赖具体 mapper、HTTP SDK、AMQP client。
+4. `meeting-api-infrastructure`：实现 Repository / Gateway，可依赖 MyBatis-Plus、JDBC、TOS、RabbitMQ、DashScope、KMS、LibreOffice adapter。
+5. `meeting-api-adapter`：依赖 Web / validation / security adapter，只做协议适配，不依赖 mapper。
+6. `meeting-api-start`：聚合启动依赖，不写业务逻辑。
+
+CI 必须增加 ArchUnit 规则：domain 禁止 import `org.springframework.web..`、`org.springframework.jdbc..`、`com.baomidou..`、`com.rabbitmq..`；adapter 禁止访问 mapper package；app 禁止访问 infrastructure implementation package。
+
 ## 3. 业务域
 
 业务域不是独立服务，而是各 COLA 模块内的 package 边界。
@@ -152,6 +184,49 @@ POST  /internal/processing-tasks/{taskId}/fail
 4. 后台任务、callback、导出任务都必须携带并设置 tenant context。
 5. 领域事件写入 `domain_events_outbox` 必须与业务数据同事务提交。
 6. 同一聚合的 outbox 事件按 `sequence_no` 单调递增，publisher 必须保证单聚合内有序发布。
+
+事务边界：
+
+1. `@Transactional` 默认使用 `REQUIRED`；非默认 propagation 必须在方法注释或类注释中说明原因。
+2. 涉及 outbox 写入的用例必须 `REQUIRED`，业务数据和 outbox 同事务提交。
+3. callback 处理最外层使用 `REQUIRES_NEW`，避免上层协议异常回滚已确认的幂等响应。
+4. 长耗时外部调用、文件上传、LLM 调用、LibreOffice 转换不得包在数据库事务内；只在调用前后各自开启短事务。
+5. 默认使用 optimistic locking / version 列处理用户编辑冲突；声纹 enrollment 和同一 speaker profile 的 centroid 更新使用 `SELECT ... FOR UPDATE`。
+6. outbox publisher 使用 `SELECT ... FOR UPDATE SKIP LOCKED` 扫描未发布事件，单批默认 100 条。
+
+异常映射由 `ControllerAdvice` 查表完成，不在 Controller 中拼响应：
+
+| 领域异常 | ErrorCode | HTTP |
+|---|---|---:|
+| `AuthenticationRequiredException` | `AUTH_REQUIRED` | 401 |
+| `PermissionDeniedException` | `PERMISSION_DENIED` | 403 |
+| `TenantContextMissingException` | `TENANT_CONTEXT_MISSING` | 403 |
+| `ValidationException` | `VALIDATION_FAILED` | 422 |
+| `VersionConflictException` | `VERSION_CONFLICT` | 409 |
+| `IdempotencyConflictException` | `IDEMPOTENCY_CONFLICT` | 409 |
+| `CallbackAuthException` | `CALLBACK_AUTH_FAILED` | 401 |
+| `TaskAttemptConflictException` | `TASK_ATTEMPT_CONFLICT` | 409 |
+| `TaskLeaseConflictException` | `TASK_LEASE_CONFLICT` | 409 |
+| `SecurityLevelBlockedException` | `SECURITY_LEVEL_BLOCKED` | 422 |
+| `LegalHoldBlockedException` | `LEGAL_HOLD_BLOCKED` | 423 |
+| `ExternalDependencyUnavailableException` | `DEPENDENCY_UNAVAILABLE` | 503 |
+
+## 7.1 业务域代码定位约定
+
+以 `meeting` 域为模板，所有业务域按同一结构放置：
+
+```text
+meeting-api-adapter/src/main/java/com/meeting/api/adapter/meeting/MeetingController.java
+meeting-api-adapter/src/main/java/com/meeting/api/adapter/meeting/MeetingBffController.java
+meeting-api-app/src/main/java/com/meeting/api/app/meeting/command/CreateMeetingCmdExe.java
+meeting-api-app/src/main/java/com/meeting/api/app/meeting/query/GetMeetingDetailQryExe.java
+meeting-api-domain/src/main/java/com/meeting/api/domain/meeting/Meeting.java
+meeting-api-domain/src/main/java/com/meeting/api/domain/meeting/MeetingRepository.java
+meeting-api-infrastructure/src/main/java/com/meeting/api/infrastructure/persistence/meeting/MeetingMapper.java
+meeting-api-infrastructure/src/main/java/com/meeting/api/infrastructure/persistence/meeting/MeetingRepositoryImpl.java
+```
+
+`task`、`speaker`、`rag`、`document`、`export`、`compliance`、`audit` 等域使用同样命名，避免跨域类散落到 `common`。
 
 ## 8. 安全等级与 LLM
 

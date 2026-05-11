@@ -50,6 +50,22 @@ com.meeting.api.domain
 | `LegalHold` | 保全范围、原因、审批人、有效期 |
 | `DeletionJob` | 删除范围、legal hold 检查、证书生成 |
 
+聚合边界：
+
+| 聚合根 | 聚合内对象 | 聚合外引用 |
+|---|---|---|
+| `Meeting` | `MeetingParticipant`、`MeetingFile`、会议基础版本字段 | `TranscriptSegment`、`MeetingMinutes`、`ActionItem`、`Decision`、`Risk` 只通过 `meetingId` 引用 |
+| `ProcessingTask` | `ProcessingTaskStep`、attempt、lease、step progress | artifact、transcript、speaker candidates 通过 `artifactManifestId` / `meetingId` 引用 |
+| `TranscriptSegment` | 单 segment 的原文、编辑文、speaker label、时间戳 | 不内嵌 Meeting；通过 `meetingId` 和 `transcriptVersion` 关联 |
+| `SpeakerProfile` | enrollment、consent、centroid metadata、revocation state | `Person` 通过 `personId` 引用，不跨聚合直接修改 |
+| `MeetingMinutes` | sections、evidence snapshot、minutesVersion | action item / decision / risk 是独立聚合或独立表记录 |
+| `KnowledgeChunk` | chunk content/hash、embedding metadata、status/staleStatus | meeting/document/source 通过 id 和 version 引用 |
+| `ExportJob` | 输入版本、格式、状态、下载链接状态 | meeting / artifact 通过 id 引用 |
+| `LegalHold` | 保全范围、审批与释放信息 | 被保全对象不内嵌，只记录 `(scopeType, scopeId)` |
+| `DeletionJob` | 删除范围、执行状态、失败项摘要 | certificate 独立记录，通过 job id 关联 |
+
+Repository 只能按聚合根保存聚合；跨聚合一致性由 app 层事务编排和领域事件表达，禁止在单个聚合方法里直接修改另一个聚合。
+
 ## 4. 领域规则
 
 ### 4.1 AI 产物不等于业务事实
@@ -120,6 +136,33 @@ com.meeting.api.domain
 
 事件由 app 层写入 outbox，domain 只负责表达事件。
 
+所有领域事件必须有统一 envelope：
+
+```json
+{
+  "eventId": "evt_001",
+  "eventType": "TranscriptEditedEvent",
+  "aggregateType": "Meeting",
+  "aggregateId": "m_001",
+  "tenantId": "t_001",
+  "sequenceNo": 42,
+  "occurredAt": "2026-05-11T06:30:00Z",
+  "payloadVersion": "v1",
+  "payload": {}
+}
+```
+
+核心 payload 字段：
+
+| 事件 | payload 必填字段 |
+|---|---|
+| `ProcessingTaskStepChangedEvent` | `taskId`、`stepName`、`fromStatus`、`toStatus`、`attemptNo`、`progress` |
+| `TranscriptEditedEvent` | `meetingId`、`segmentId`、`oldTranscriptVersion`、`newTranscriptVersion`、`editorUserId` |
+| `SpeakerConfirmedEvent` | `meetingId`、`speakerLabel`、`personId`、`transcriptVersion`、`source` |
+| `ContentMarkedStaleEvent` | `sourceType`、`sourceId`、`oldStaleStatus`、`newStaleStatus`、`reason` |
+| `RagReindexRequestedEvent` | `sourceType`、`sourceId`、`expectedVersion`、`chunkStrategyVersion` |
+| `DeletionJobCompletedEvent` | `jobId`、`certificateId`、`deletedObjectCount`、`skippedLegalHoldCount` |
+
 ## 6. Repository / Gateway 端口
 
 领域层定义端口，不实现端口：
@@ -147,3 +190,4 @@ com.meeting.api.domain
 4. STALE 状态与业务 status 分离。
 5. Task attempt、lease、heartbeat 不变量在领域层可测试。
 6. 声纹撤销级联规则在领域层有明确方法或领域服务。
+7. ArchUnit 禁止 domain import `org.springframework.web..`、`org.springframework.jdbc..`、`com.baomidou..`、`com.rabbitmq..`、TOS / DashScope SDK。

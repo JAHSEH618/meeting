@@ -8,26 +8,27 @@
 
 ## 2. 技术栈
 
-一期采用：
+一期固定采用：
 
 ```text
-Python 3.11+
-FastAPI
+Python 3.11
+uv 严格 lock
+FastAPI 0.115+ / Uvicorn，不使用 gunicorn
 Clean Architecture
-Celery 或 Dramatiq WorkerRuntime
-Prefect 或 Temporal WorkflowEngine
+Dramatiq 1.17+ WorkerRuntime，broker 使用 RabbitMQ
+Prefect 3.x WorkflowEngine
 LangGraph Agent
 ffmpeg / ffprobe
-本地 ASR 模型
-Diarization 模型
-Speaker Embedding 模型
-Text Embedding / Rerank 模型
+torch 2.5+ / transformers 4.45+ / pyannote.audio 3.3+ / 3D-Speaker
+soundfile / librosa / ffmpeg-python
 RabbitMQ client
-TOS client
+volcengine-tos-python-sdk
 Java callback client
+pytest / pytest-asyncio / respx / pytest-benchmark
+prometheus-client / structlog
 ```
 
-MVP 可以在 `Celery / Dramatiq` 中二选一，在 `Prefect / Temporal` 中二选一，但 Pipeline 业务逻辑必须通过 `WorkerRuntime`、`WorkflowEngine`、`ModelRuntime`、`ArtifactStore`、`CallbackClient` 等端口隔离具体 SDK。
+Pipeline 业务逻辑必须通过 `WorkerRuntime`、`WorkflowEngine`、`ModelRuntime`、`ArtifactStore`、`CallbackClient` 等端口隔离具体 SDK。Celery、Temporal、Ray、独立 model server 都是后续替换选项，不进入一期默认实现。
 
 ## 3. 包结构
 
@@ -110,6 +111,27 @@ RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后�
 
 `workflowId` 由 WorkflowEngine 内部生成。同一个 `taskId` 的不同 `attemptNo` 可以对应不同 `workflowId`；`taskId` 是跨 attempt 稳定的业务任务 id，Java 和前端只依赖 `taskId` 查询业务状态。
 
+Prefect Flow 形态：
+
+```python
+@flow(name="meeting-full-pipeline", retries=0)
+async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
+    audio = await preprocess.submit(task)                  # CPU / IO
+    vad = await vad_segment.submit(audio, task)             # CPU
+    asr = await asr_recognize.submit(vad, task)             # GPU-ASR
+    diar = await diarize.submit(audio, task)                # GPU-DIAR
+    speaker_vectors = await speaker_embed.submit(audio, diar, task)  # GPU-SPEAKER
+    candidates = await speaker_match.submit(speaker_vectors, task)   # GPU-SPEAKER
+    merged = await transcript_merge.submit(asr, diar, candidates, task)
+    await callback_transcript.submit(task, merged)
+    if task.options.enable_rag_indexing:
+        await embedding_submit.submit(merged, task)
+    await callback_complete.submit(task, merged)
+    return merged
+```
+
+失败策略：每个 step 开始、进度和失败都 callback；CPU 预处理失败直接终止；ASR 失败导致 transcript 不可用；Diarization / Alignment 失败可以按配置降级为 `PARTIAL_SUCCEEDED`；callback 失败按 `WRITEBACK_FAILED` 重试，耗尽后让 Java lease 过期重入队。
+
 ### 6.1 音频预处理
 
 1. 使用 `ffprobe` 读取音频格式、时长、采样率、声道数和码率。
@@ -188,6 +210,18 @@ X-Signature
 5. 大 JSON 和中间产物写 TOS，callback 只传 URI、sha256、size、summary 和 metadata。
 6. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
 
+callback body schema 以 `packages/meeting-contracts/openapi/internal-callback-api.yaml` 为准。每个 step 的触发点：
+
+| step | callback endpoint | body schema |
+|---|---|---|
+| 所有 step | `PATCH /internal/processing-tasks/{taskId}/steps/{stepName}` | `StepUpdateRequest` |
+| ASR / Diarization / quality | `POST /internal/processing-tasks/{taskId}/artifacts` | `ArtifactCallbackRequest` |
+| TRANSCRIPT_MERGE | `POST /internal/processing-tasks/{taskId}/transcript` | `TranscriptCallbackRequest` |
+| SPEAKER_MATCHING | `POST /internal/processing-tasks/{taskId}/speaker-candidates` | `SpeakerCandidatesCallbackRequest` |
+| RAG_INDEXING / TEXT_EMBEDDING | `POST /internal/processing-tasks/{taskId}/embeddings` | `EmbeddingsCallbackRequest` |
+| 任务完成 | `POST /internal/processing-tasks/{taskId}/complete` | `CompleteTaskRequest` |
+| 任务失败 | `POST /internal/processing-tasks/{taskId}/fail` | `FailTaskRequest` |
+
 ## 8. 模型供应链
 
 1. 生产启动不得临时联网下载模型权重。
@@ -195,6 +229,21 @@ X-Signature
 3. 记录模型 license、商用条款、来源 URL、checksum、审批人和发布时间。
 4. `GET /internal/models` 必须能展示已加载模型、版本、checksum、device、状态和最近错误。
 5. 每个 artifact manifest 记录实际模型版本和 checksum。
+
+模型加载策略：
+
+1. 进程启动时 eager-load ASR、Diarization、Speaker Embedding 到 GPU，并用 1 秒静音音频预热。
+2. bge-m3 / reranker 按需 lazy-load，保留进程内 LRU model cache。
+3. 每个 worker 进程绑定单 GPU，通过 `CUDA_VISIBLE_DEVICES` 切分。
+4. OOM 后 worker 进程主动退出，由 supervisor / systemd / k8s 重启；不得在未知显存状态下继续消费任务。
+5. `GET /internal/health` 只有在必需模型预热完成后才返回 ready。
+
+GPU 并发模型：
+
+1. ASR、Diarization、Speaker Embedding 各自一个 Dramatiq actor，单 GPU `concurrency=1`。
+2. 同一 GPU 上禁止 ASR 与 Diarization 并行抢显存；通过队列和 actor 拓扑串行化 GPU step。
+3. 多 GPU 部署时每块 GPU 起一组 actor，通过 routing key 或 worker name 分发。
+4. CPU step 可以并发，默认并发数为 `min(4, cpu_count / 2)`。
 
 ## 9. 性能目标
 
@@ -208,9 +257,21 @@ RTX 3090 / 4090 24GB 或同等显存 GPU
 
 1. ASR RTF <= 0.3。
 2. Diarization RTF <= 0.4。
-3. 60 分钟会议端到端 <= 60 分钟，或记录 RTF 原因和瓶颈 step。
+3. 60 分钟会议端到端目标 <= 30 分钟；超过 45 分钟告警；超过 60 分钟必须记录 RTF 原因和瓶颈 step。
 4. ASR 和 Diarization 单 GPU 默认并发为 1。
 5. OOM 需要稳定错误码、自动释放资源并允许重试。
+
+60 分钟音频预算：
+
+| step | 预算 |
+|---|---:|
+| `AUDIO_PREPROCESS` | <= 60s |
+| `ASR` | RTF <= 0.3，<= 18min |
+| `DIARIZATION` | RTF <= 0.4，<= 24min，可与 ASR 在多 GPU 并发 |
+| `SPEAKER_EMBEDDING` + `SPEAKER_MATCHING` | <= 60s |
+| `TRANSCRIPT_MERGE` | <= 30s |
+| `RAG_INDEXING` | <= 120s |
+| `SUMMARY` / LLM 相关 | <= 60s，由 Java llm-gateway 审计调用 |
 
 ## 10. 验收标准
 

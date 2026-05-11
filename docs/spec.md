@@ -48,7 +48,7 @@
 2. 支持上传会议音频。
 3. 单场会议音频最长 4 小时。
 4. 上传走异步任务，不承诺实时完成。
-5. 支持大文件上传断点续传。
+5. 支持大文件上传断点续传：默认分片 `8 MiB`，单文件最大 part 数 `10000`，upload session 有效期 `24h`；客户端对单个 part 最多重试 `3` 次；服务端按 `(upload_id, part_number, sha256)` 去重，complete 时必须校验全文件 `sha256`。
 6. 原始音频存储到火山引擎 TOS。
 7. Java 创建处理任务并发送 RabbitMQ 消息。
 8. Python ai-worker 消费任务，读取 TOS 音频，执行本地 AI Pipeline。
@@ -57,8 +57,8 @@
 #### Python AI Pipeline
 
 1. 音频标准化：先识别并保存 `channel_map`，保留多声道信息；只有明确为多人单通道或确认可混音时，才转为 16kHz mono WAV。
-2. 音频质量检测。
-3. VAD 先识别有效语音区间；ASR 按 30-120 秒批处理，overlap 0.3-0.8 秒，保留切片策略版本。
+2. 音频质量检测：采样率 `< 16 kHz` 直接 reject；信噪比 `< 5 dB` 标记 `AUDIO_QUALITY_LOW`，默认仍允许 ASR 继续并在 UI 暴露质量警告；阈值配置在 `app.audio.quality.*`。
+3. VAD 先识别有效语音区间；ASR 默认 chunk `60s`，允许范围 `30-120s`，overlap 默认 `0.5s`；短于 `30s` 的相邻 VAD 区间可合并；切片策略版本写入 `pipeline_version` 和 `artifact_manifests`。
 4. 本地 ASR。
 5. 说话人分离，输出 `SPEAKER_00` 等匿名 label。
 6. 声纹注册音频 embedding 提取。
@@ -78,7 +78,7 @@
 6. 不做全公司无差别声纹搜索。
 7. 声纹 embedding 不返回前端。
 8. 声纹数据不发送给 DashScope。
-9. 声纹 embedding 必须由 Java 侧应用层信封加密存储：每条 embedding 使用 data key 加密，data key 由 KMS master key 包裹；数据库不存明文 float 数组，不建立明文 pgvector 索引。
+9. 声纹 embedding 必须由 Java 侧应用层信封加密存储：算法 `AES-256-GCM`，nonce `12 bytes`，tag `16 bytes`，data key `256 bit` 由 KMS `GenerateDataKey` 生成并由 master key 包裹；数据库只保存 `embedding_ciphertext`、`embedding_nonce`、`embedding_tag`、`embedding_dek_wrapped`、`kms_key_id`、`kms_key_version`、`embedding_checksum`，不存明文 float 数组，不建立明文 pgvector 索引。
 10. 撤销声纹授权必须级联：新匹配排除该 profile，历史转录中的 person_id 软屏蔽，相关 RAG chunk 标记 STALE 并重建去标识版，声纹 centroid 异步重建。
 
 #### 转录与编辑
@@ -169,6 +169,12 @@
 8. 业务状态变更和事件发布必须使用 outbox，`domain_events_outbox` 与业务事务同事务提交。
 9. Worker 必须支持 lease、heartbeat、ORPHANED 重新入队和 DLQ。
 10. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
+
+#### 落地真值文件
+
+1. DDL 真值文件是 `docs/ddls/001_initial_schema.sql`；本文件只描述模型边界和必须存在的表，不在 Markdown 中复制完整 DDL。
+2. 跨应用契约真值文件是 `packages/meeting-contracts/openapi/public-api.yaml`、`packages/meeting-contracts/openapi/internal-callback-api.yaml` 和 `packages/meeting-contracts/schemas/**`。
+3. 修改字段、枚举、错误码、状态机或 API 时，必须同步更新真值文件和本 spec 的约束说明；CI 应以真值文件 lint / schema 校验结果为准。
 
 ### 2.2 一期不做
 
@@ -329,15 +335,17 @@ Python 不直接写 Java 业务库。所有业务结果通过 Java internal call
 
 ### 3.3 一期默认模型选型
 
-| 能力 | 一期默认选型 | 说明 |
-|---|---|---|
-| ASR | Qwen3-ASR | 本地 Python 侧运行，记录模型版本和权重 checksum |
-| Forced Alignment | Qwen3-ForcedAligner 或等价模型 | 按需启用，不默认全量执行 |
-| Diarization | pyannote community-1 或等价模型 | 采购前确认 license 和离线缓存方案 |
-| Speaker Embedding | 3D-Speaker CAM++ / ERes2NetV2 或 WeSpeaker | embedding 必须信封加密存储 |
-| Text Embedding | bge-m3 或同级多语言模型 | 一期由 Python ai-worker 生成 |
-| Rerank | bge-reranker-v2-m3 或同级模型 | 一期接口预留，可与 embedding 共进程或后续拆队列 |
-| LLM | DashScope OpenAI-compatible API | 一期第三方 LLM，PUBLIC / INTERNAL 文本出网前不做脱敏 |
+| 能力 | 一期默认选型 | 来源 | 权重 / 资源基线 | License 准入 | 内部制品 path | 备选 |
+|---|---|---|---|---|---|---|
+| ASR | Qwen3-ASR-1.7B | HuggingFace / ModelScope Alibaba | 约 `2B` 参数，FP16 推理显存按 `4-8GB` 预留，冷启动目标 `< 30s` | Apache 2.0 / 模型卡条款需商用准入 | `nexus://models/qwen3-asr-1.7b/v2026.05.1/` | Qwen3-ASR-0.6B、faster-whisper large-v3 |
+| Forced Alignment | Qwen3-ForcedAligner-0.6B 或等价模型 | HuggingFace / ModelScope | 约 `0.9B` 参数，按需加载，默认不常驻 GPU | Apache 2.0 / 模型卡条款需确认 | `nexus://models/qwen3-forced-aligner-0.6b/v2026.05.1/` | MFA / whisper timestamp 对齐 |
+| Diarization | pyannote/speaker-diarization-3.1 | HuggingFace pyannote | 权重约 `50MB`，显存约 `2GB`，冷启动目标 `< 5s` | MIT / pyannote 模型条款需确认 | `nexus://models/pyannote/v3.1/` | 3D-Speaker SD |
+| Speaker Embedding | 3D-Speaker CAM++ | ModelScope | 权重约 `30MB`，显存约 `1GB`，冷启动目标 `< 3s` | Apache 2.0 或模型卡准入 | `nexus://models/cam_plus/v1/` | ERes2NetV2、WeSpeaker |
+| Text Embedding | BAAI/bge-m3 | HuggingFace BAAI | 权重约 `2.3GB`，显存约 `3GB`，冷启动目标 `< 10s` | MIT | `nexus://models/bge-m3/v1/` | bge-large-zh |
+| Rerank | BAAI/bge-reranker-v2-m3 | HuggingFace BAAI | 权重约 `2.3GB`，显存约 `3GB`，冷启动目标 `< 10s` | Apache 2.0 | `nexus://models/bge-reranker-v2-m3/v1/` | bge-reranker-large |
+| LLM | DashScope OpenAI-compatible API | 阿里云 DashScope | 第三方 API，不落本地权重 | DPA、数据保留、跨境、训练使用条款必须准入 | `provider://dashscope/qwen-plus` | 后续 local-vLLM |
+
+每个本地模型进入生产前必须登记 `sha256`、来源 URL、license、审批人、发布时间和镜像 / 权重制品版本；`model_registry` 一期建表但可先由 git 管理准入清单。
 
 ### 3.4 Python FastAPI 内部管理接口
 
@@ -546,6 +554,44 @@ POST /api/admin/break-glass/requests/{requestId}/reject
 GET  /api/admin/break-glass/audit
 ```
 
+### 5.12 Endpoint 落地矩阵
+
+完整 request / response schema 以 `packages/meeting-contracts/openapi/public-api.yaml` 为准。本节固定每类 endpoint 的鉴权、权限、幂等和错误面，避免实现时只按路径猜行为。
+
+| Endpoint 组 | Auth | Permission scope | Idempotent | Rate limit | 2xx | 4xx | 5xx |
+|---|---|---|---|---|---|---|---|
+| `POST /api/auth/login` | 无 | `auth:login` | No | `auth QPS` | 200 | 400, 401, 423 | 500, 503 |
+| `POST /api/auth/logout` | Bearer | `auth:logout` | Yes | `write QPS` | 200 | 401, 403 | 500 |
+| `GET /api/auth/me` | Bearer | `auth:read-self` | Safe | `read QPS` | 200 | 401 | 500 |
+| `/api/users*` | Bearer | `user:read` / `user:manage` | 写操作需 `Idempotency-Key` | `admin write QPS` | 200, 201 | 400, 401, 403, 404, 409, 422 | 500 |
+| `POST /api/meetings` | Bearer | `meeting:create` | No | `write QPS` | 201 | 400, 401, 403, 422 | 500, 503 |
+| `GET /api/meetings*` | Bearer | `meeting:read` | Safe | `read QPS` | 200 | 400, 401, 403, 404 | 500 |
+| `PATCH /api/meetings/{meetingId}` | Bearer | `meeting:update` | Yes, key + version | `write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
+| `DELETE /api/meetings/{meetingId}` | Bearer | `meeting:delete` | Yes, key | `admin write QPS` | 202 | 400, 401, 403, 404, 409, 423 | 500 |
+| `POST /api/meetings/{meetingId}/files/audio/uploads*` | Bearer | `meeting:upload-audio` | Yes, key + file hash | `upload QPS` | 200, 201 | 400, 401, 403, 404, 409, 413, 415, 422 | 500, 503 |
+| `POST /api/meetings/{meetingId}/processing-tasks` | Bearer | `task:create` | Yes, key + input version | `write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
+| `GET /api/processing-tasks/{taskId}` | Bearer | `task:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
+| `GET /api/processing-tasks/{taskId}/events` | Bearer | `task:read` | SSE | `sse concurrency` | 200 | 401, 403, 404, 410, 429 | 500, 503 |
+| `POST /api/processing-tasks/{taskId}/retry` | Bearer | `task:retry` | Yes, key + attempt | `write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
+| `POST /api/processing-tasks/{taskId}/cancel` | Bearer | `task:cancel` | Yes, key | `write QPS` | 202 | 400, 401, 403, 404, 409 | 500 |
+| `GET /api/meetings/{meetingId}/transcript` | Bearer | `transcript:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
+| `PATCH /api/meetings/{meetingId}/transcript/segments/{segmentId}` | Bearer | `transcript:edit` | Yes, key + version | `write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
+| `POST /api/meetings/{meetingId}/transcript/regenerate` | Bearer | `transcript:regenerate` | Yes, key + version | `write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
+| `/api/speaker-profiles*` | Bearer | `speaker:manage` | 写操作需 key | `admin write QPS` | 200, 201, 202 | 400, 401, 403, 404, 409, 422, 423 | 500, 503 |
+| `/api/meetings/{meetingId}/speakers/{speakerLabel}/confirm|reject` | Bearer | `speaker:confirm` | Yes, key + transcript version | `write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
+| `/api/meetings/{meetingId}/minutes*` | Bearer | `minutes:read` / `minutes:regenerate` | 写操作需 key + version | `read/write QPS` | 200, 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
+| `/api/meetings/{meetingId}/action-items*` | Bearer | `action-item:read` / `action-item:edit` | 写操作需 key + version | `read/write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
+| `/api/meetings/{meetingId}/decisions|risks` | Bearer | `minutes:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
+| `/api/documents*` | Bearer | `document:read` / `document:manage` | 写操作需 key + file hash | `upload/admin QPS` | 200, 201, 202 | 400, 401, 403, 404, 409, 413, 415, 422, 423 | 500, 503 |
+| `POST /api/rag/query` | Bearer | `rag:query` | No | `rag QPS` | 200 | 400, 401, 403, 404, 422, 429 | 500, 503 |
+| `/api/rag/reindex/*` | Bearer | `rag:reindex` | Yes, key + source version | `admin write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
+| `/api/meetings/{meetingId}/exports*` / `/api/exports*` | Bearer | `export:read` / `export:create` / `export:manage` | 写操作需 key + input versions | `export QPS` | 200, 202 | 400, 401, 403, 404, 409, 422, 423 | 500, 503 |
+| `/api/legal-holds*` | Bearer | `compliance:legal-hold` | 写操作需 key | `admin write QPS` | 200, 201, 202 | 400, 401, 403, 404, 409, 422 | 500 |
+| `/api/admin/deletion-jobs*` | Bearer | `compliance:delete` | 写操作需 key | `admin write QPS` | 200, 202 | 400, 401, 403, 404, 409, 422, 423 | 500, 503 |
+| `/api/admin/break-glass*` | Bearer | `security:break-glass` | 写操作需 key | `admin write QPS` | 200, 201, 202 | 400, 401, 403, 404, 409, 422 | 500 |
+
+写操作默认要求 `X-Request-Id`、`X-Trace-Id`；除登录外，所有非安全读操作都应支持 `Idempotency-Key`。409 仅用于版本、状态、attempt、lease 或幂等冲突；422 用于语义校验失败。
+
 ## 6. Java 与 Python 集成协议
 
 ### 6.1 RabbitMQ 任务消息
@@ -633,6 +679,19 @@ X-Signature
 4. nonce 短期去重。
 5. callback event 入库，支持幂等重放。
 6. Java 必须校验 `X-Attempt-No` 与当前 task attempt 一致，校验 `X-Lease-Owner` 与当前 lease_owner 一致；旧 attempt 或旧 lease 的迟到 callback 必须拒绝或进入幂等冲突处理。
+
+HMAC 签名字符串固定为：
+
+```text
+signing_string = X-Timestamp + "\n" +
+                 X-Nonce + "\n" +
+                 HTTP_METHOD + "\n" +
+                 URL_PATH_WITH_QUERY + "\n" +
+                 SHA256(request_body).hex
+X-Signature    = "hmac-sha256=" + hex(HMAC-SHA256(secret, signing_string))
+```
+
+`URL_PATH_WITH_QUERY` 必须是 `/internal/...` 开头的原始路径和 query，不包含 scheme、host、fragment。`request_body` 使用实际发送的 UTF-8 bytes；空 body 的 hash 使用 SHA-256 空串值。`Idempotency-Key` 格式为 `{taskId}:{stepName}:{attemptNo}:{payloadVersion}`，其中 `payloadVersion` 在同一 attempt 内每次 payload 语义结构变化时递增；普通进度 heartbeat 可沿用同一版本，完成 / 失败必须使用新版本。
 
 ### 6.3 结构化转录回写
 
@@ -843,13 +902,16 @@ worker_id
 attempt_no
 lease_owner
 idempotency_key
-request_hash
-response_hash
-response_status
+request_body_hash
+response_body_hash
+http_status
 error_code
 request_json
 response_json
+response_body
 trace_id
+processed_at
+expires_at
 created_at
 ```
 
@@ -867,7 +929,8 @@ payload_json
 dedupe_key
 status
 retry_count
-last_error
+last_error_code
+last_error_message
 published_at
 created_at
 updated_at
@@ -905,6 +968,22 @@ stateDiagram-v2
     PARTIAL_SUCCEEDED --> QUEUED: retry failed optional step
     FAILED --> QUEUED: manual retry
 ```
+
+关键转换的触发方和副作用：
+
+| 转换 | 触发方 | 副作用 |
+|---|---|---|
+| `PENDING -> QUEUED` | outbox publisher | 投递 RabbitMQ；写 `published_at`；失败累计到 outbox 重试 / DLQ |
+| `QUEUED -> RUNNING` | worker claim lease | 设置 `attempt_no`、`lease_owner`、`lease_expires_at`、`started_at`；发送 `TASK_STARTED` SSE |
+| `RUNNING -> RUNNING` | worker heartbeat callback | 刷新 `heartbeat_at`、`lease_expires_at`、step progress；发送 `TASK_HEARTBEAT` 或 `TASK_STEP_UPDATED` |
+| `RUNNING -> ORPHANED` | Java 定时扫描，默认每 `30s` | 不发布业务完成事件；清空过期 lease；等待重入队或失败 |
+| `ORPHANED -> QUEUED` | Java task scheduler | `attempt_count < max_attempts` 时重新投递；`attempt_no` 自增 |
+| `ORPHANED -> FAILED` | Java task scheduler | 重试耗尽；写 `WORKER_LEASE_EXPIRED`；发送 `TASK_FAILED` |
+| `RUNNING -> SUCCEEDED` | ai-worker `/complete` callback | 写 `TASK_COMPLETED` outbox；触发下游 `SUMMARY` / `RAG_INDEXING` 链；发送 `TASK_COMPLETED` SSE |
+| `RUNNING -> PARTIAL_SUCCEEDED` | ai-worker `/complete` callback | 标记可用产物和失败 optional step；后续可单独重试 optional step |
+| `RUNNING -> FAILED` | ai-worker `/fail` callback | 保存稳定错误码、artifact manifest、retryable；按错误码决定是否重试 |
+| `RUNNING -> CANCEL_PENDING` | 用户取消 | 写取消请求审计；callback 到 worker 或等待 lease 过期 |
+| `CANCEL_PENDING -> CANCELLED` | worker 确认或 Java lease 扫描 | 终止未完成 step；不覆盖已落库可用 artifact |
 
 ### 7.4 STALE 状态机
 
@@ -1026,6 +1105,37 @@ token_usage
 5. JSON 解析失败、Schema 失败、evidence 失败都要进入可重试或人工确认状态。
 6. 所有输出必须绑定 `artifact_manifest_id`，可追溯输入文件、转录版本、模型版本、Prompt 版本、数据边界策略版本和代码版本。
 
+### 8.4 Prompt、参数与失败策略
+
+一期 prompt template 必须版本化存放在 `meeting-api-infrastructure` 的 classpath 资源或 `prompt_templates` 表，生产发布时写入 `artifact_manifests.prompt_template_version`。
+
+| capability | Prompt template | 输入字段 | max input tokens | 输出 schema |
+|---|---|---|---|---|
+| 会议纪要 | `meeting_minutes_zh` | meeting metadata、participants、transcript segments、speaker map、security level | 30000 | minutes sections、evidence、artifact metadata |
+| 待办抽取 | `action_items_zh` | transcript segments、participants、已有 confirmed action items | 24000 | action items、assignee、due date、evidence |
+| 决策抽取 | `decisions_zh` | transcript segments、meeting context、existing decisions | 24000 | decisions、status、evidence |
+| 风险抽取 | `risks_zh` | transcript segments、documents summary、existing risks | 24000 | risks、severity、owner、evidence |
+| RAG 答案 | `rag_answer_zh` | user query、allowed citations、retrieved chunks、conversation summary | 16000 | answer、citations、confidence、refusal reason |
+
+DashScope 默认调用参数：
+
+```yaml
+temperature: 0.2
+top_p: 0.8
+max_tokens: 4096
+response_format: json_object
+stream: false
+timeout_ms: 120000
+```
+
+失败策略：
+
+1. `LLM_RATE_LIMIT` 默认重试 `3` 次，指数退避 `500ms / 2s / 8s`。
+2. `LLM_PROVIDER_TIMEOUT` 默认重试 `1` 次；重试后仍失败进入可重试任务失败。
+3. `LLM_SCHEMA_INVALID` 不自动重试同一输出，进入人工确认或重新生成入口。
+4. `LLM_EVIDENCE_INVALID` 可使用同一输入重试 `1` 次；仍失败则关键结论进入待确认。
+5. 单次输入文本超过 `30000` 字符时启动 map-reduce：map chunk `8000` 字符、overlap `500` 字符，reduce 使用专用 `*_reduce_zh` prompt。
+
 ## 9. RAG 规格
 
 ### 9.1 Chunk 来源
@@ -1067,12 +1177,12 @@ deleted_at
 
 | 来源 | 切块策略 |
 |---|---|
-| PRIMARY_TRANSCRIPT | 按时间窗和 speaker 连续性切块，保留 segment_id 列表、start/end timestamp、transcript_version |
+| PRIMARY_TRANSCRIPT | 默认 `300 tokens` / overlap `50 tokens`，同时按时间窗和 speaker 连续性切块，保留 segment_id 列表、start/end timestamp、transcript_version |
 | AI_SUMMARY | 按章节或小节入库，不把完整纪要粗暴等长切块 |
 | DECISION | 按单条决策入库，必须保存 evidence_text_snapshot |
 | ACTION_ITEM | 按单条待办入库，必须保存 owner、due_date、evidence_text_snapshot |
 | RISK | 按单条风险入库，必须保存 severity、evidence_text_snapshot |
-| DOCUMENT | 按标题层级、段落和页码切块；TXT / Markdown 按标题和段落，DOCX / PDF 保留页码或段落标识 |
+| DOCUMENT | 默认 `400 tokens` / overlap `60 tokens`；按标题层级、段落和页码切块；TXT / Markdown 按标题和段落，DOCX / PDF 保留页码或段落标识 |
 
 ### 9.4 状态
 
@@ -1087,17 +1197,19 @@ RAG 查询只允许召回 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
 
 一期检索由 PostgreSQL 完成：
 
-1. 向量召回使用 pgvector。
-2. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` 相似度。
-3. app 层合并 vector 与 keyword 候选，按 chunk 去重后做权限二次校验。
-4. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
+1. 向量召回使用 pgvector HNSW：`m=16`、`ef_construction=64`；查询会话设置 `hnsw.ef_search=80`。
+2. 默认召回 `top_k=20`，rerank 后返回 `top_n=8`；cosine similarity 阈值默认 `0.45`。
+3. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` GIN 索引。
+4. app 层用 RRF 融合 vector 与 keyword 候选，默认 `k=60`，按 chunk 去重后做权限二次校验。
+5. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
 
 ### 9.6 RAG 缓存与重建
 
 1. RAG 答案缓存必须绑定 `permission_version`、`chunk_index_version`、`chunk_strategy_version`、`embedding_model_version` 和 `security_level`。
-2. 权限、会议成员、security_level、声纹授权或 chunk 状态变化后，相关缓存必须失效。
-3. chunk 策略变更必须支持 shadow index 和分批 backfill；切换前查询仍使用旧 ACTIVE 索引。
-4. backfill 失败不能污染当前 ACTIVE 索引。
+2. RAG answer 缓存 TTL 默认 `30min`；缓存 key 为 `sha256(query + scope + permission_version + chunk_index_version + chunk_strategy_version + embedding_model_version + security_level)`。
+3. 权限、会议成员、security_level、声纹授权或 chunk 状态变化后，相关缓存必须失效。
+4. chunk 策略变更必须支持 shadow index 和分批 backfill；切换前查询仍使用旧 ACTIVE 索引。
+5. backfill 失败不能污染当前 ACTIVE 索引。
 
 ### 9.7 Citation
 
@@ -1212,7 +1324,7 @@ Embedding / Rerank 模型
 GPU: RTX 3090 / 4090 24GB 或同等显存 GPU
 ASR RTF: <= 0.3
 Diarization RTF: <= 0.4
-60 分钟会议端到端: <= 60 分钟，或记录 RTF 原因和瓶颈 step
+60 分钟会议端到端: 目标 <= 30 分钟；> 45 分钟告警；> 60 分钟必须记录 RTF 原因和瓶颈 step
 ```
 
 模型供应链要求：
@@ -1229,6 +1341,18 @@ Diarization RTF: <= 0.4
 火山 TOS
 阿里 DashScope
 ```
+
+### 11.4 资源底线
+
+| 组件 | CPU | RAM | 磁盘 | 副本 | 备注 |
+|---|---:|---:|---:|---:|---|
+| `meeting-api` | 4 core | 8 GB | 50 GB | prod >= 2 | JVM `Xmx=6g`，G1GC，Hikari maximumPoolSize 默认 20 |
+| `meeting-web` nginx | 1 core | 1 GB | 10 GB | prod >= 2 | gzip + brotli，静态资源 immutable cache |
+| `ai-worker` | 8 core + 1 GPU 24GB | 32 GB | 200 GB | 1 起步 | 模型权重本地缓存；同 GPU ASR / diarization / speaker actor 默认串行 |
+| LibreOffice headless | 2 core | 4 GB | 20 GB | 跟随 export consumer | 字体包 >= 300MB；PDF 转换失败必须保留日志摘要 |
+| PostgreSQL + pgvector | 8 core | 16 GB | 500 GB + WAL | 主备 | RLS 强制开启；HNSW 索引需预留内存 |
+| RabbitMQ | 2 core | 4 GB | 50 GB | prod 3 节点 | quorum queue；每队列配置 DLQ |
+| Prometheus / Grafana / logs | 2 core | 4 GB | 200 GB | 1 起步 | 指标保留按环境配置 |
 
 ## 12. 验收标准
 
@@ -1312,6 +1436,12 @@ Diarization RTF: <= 0.4
 
 | error_code | 归属步骤 | 含义 | 默认可重试 |
 |---|---|---|---|
+| AUTH_REQUIRED | AUTH | 未登录或登录态失效 | 否 |
+| PERMISSION_DENIED | AUTH | 权限不足 | 否 |
+| TENANT_CONTEXT_MISSING | AUTH | 租户上下文缺失 | 否 |
+| VALIDATION_FAILED | VALIDATION | 请求参数不符合要求 | 否 |
+| VERSION_CONFLICT | VALIDATION | expected version 与当前版本冲突 | 否 |
+| IDEMPOTENCY_CONFLICT | VALIDATION | 幂等键被不同请求复用 | 否 |
 | AUDIO_UNSUPPORTED_FORMAT | AUDIO_PREPROCESS | 音频格式不支持 | 否 |
 | AUDIO_TOO_LONG | AUDIO_PREPROCESS | 超过 4 小时 | 否 |
 | AUDIO_CORRUPTED | AUDIO_PREPROCESS | 文件损坏或无法读取 | 否 |
@@ -1327,6 +1457,8 @@ Diarization RTF: <= 0.4
 | TRANSCRIPT_MERGE_FAILED | TRANSCRIPT_MERGE | ASR / Diarization 合并失败 | 是 |
 | CALLBACK_AUTH_FAILED | CALLBACK | callback 鉴权失败 | 否 |
 | CALLBACK_IDEMPOTENCY_CONFLICT | CALLBACK | 幂等键冲突且内容不一致 | 否 |
+| TASK_ATTEMPT_CONFLICT | TASK | callback attempt 与当前 attempt 不一致 | 否 |
+| TASK_LEASE_CONFLICT | TASK | callback lease owner 与当前租约不一致 | 否 |
 | LLM_SCHEMA_INVALID | LLM | LLM 输出不满足 Schema | 是 |
 | LLM_EVIDENCE_INVALID | LLM | evidence 校验失败 | 是 |
 | LLM_RATE_LIMIT | LLM | Provider 限流 | 是 |
@@ -1340,6 +1472,8 @@ Diarization RTF: <= 0.4
 | OUTBOX_PUBLISH_FAILED | OUTBOX | outbox 事件发布失败 | 是 |
 | STALE_REBUILD_VERSION_MISMATCH | REBUILD | 重建完成时上游版本已变化 | 否 |
 | KMS_KEY_UNAVAILABLE | SPEAKER_EMBEDDING | 声纹 embedding 加解密密钥不可用 | 是 |
+| LEGAL_HOLD_BLOCKED | COMPLIANCE | 法定保全阻止删除或生命周期清理 | 否 |
+| DEPENDENCY_UNAVAILABLE | INFRA | 依赖服务不可用 | 是 |
 
 ## 13. 默认配置
 
@@ -1347,6 +1481,15 @@ Diarization RTF: <= 0.4
 app:
   max-audio-duration-hours: 4
   max-audio-file-size-gb: 3
+  audio:
+    quality:
+      min-sample-rate-hz: 16000
+      min-snr-db: 5
+  upload:
+    part-size-mib: 8
+    session-ttl-hours: 24
+    max-part-retries: 3
+    max-part-count: 10000
   enabled-security-levels:
     - PUBLIC
     - INTERNAL
@@ -1356,6 +1499,30 @@ app:
 
 storage:
   provider: volcengine-tos
+
+auth:
+  session:
+    ttl-minutes: 60
+  refresh-token:
+    ttl-days: 30
+  password:
+    algorithm: argon2id
+  lockout:
+    attempts: 5
+
+cors:
+  allowed-origins:
+    - http://localhost:5173
+  allowed-methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+
+kms:
+  algorithm: AES-256-GCM
+  key-rotation-days: 90
 
 queue:
   provider: rabbitmq
@@ -1379,6 +1546,17 @@ llm:
   record-actual-model-version: true
   text-redaction-before-third-party-llm: false
   secret-fail-closed: true
+  dashscope:
+    max-retries: 3
+    backoff-ms:
+      - 500
+      - 2000
+      - 8000
+    timeout-ms: 120000
+    temperature: 0.2
+    top-p: 0.8
+    max-tokens: 4096
+    response-format: json_object
 
 task:
   lease:
@@ -1388,9 +1566,11 @@ task:
     maxAttempts: 3
   dlqRetentionDays: 14
   outbox:
-    publisherIntervalMs: 1000
+    batchSize: 100
+    publisherIntervalMs: 500
   stale:
     debounceSeconds: 180
+  orphan-scan-interval-seconds: 30
 
 export:
   formats:
@@ -1401,6 +1581,16 @@ export:
 
 rag:
   vector-store: pgvector
+  vector:
+    hnsw:
+      m: 16
+      ef-construction: 64
+      ef-search: 80
+  top-k: 20
+  rerank-top-n: 8
+  similarity-threshold: 0.45
+  rrf-k: 60
+  answer-cache-ttl-minutes: 30
   require-citation-per-answer: true
   cache-bind:
     - permission_version
@@ -1423,6 +1613,10 @@ rate-limit:
   concurrent-uploads-per-tenant: 3
   daily-audio-uploads-per-tenant: 50
   llm-summary-concurrency: 2
+
+retention:
+  audit-days: 365
+  callback-events-days: 30
 ```
 
 ## 14. 后续可扩展项

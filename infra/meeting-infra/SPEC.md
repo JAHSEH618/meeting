@@ -40,6 +40,26 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 | Prometheus / Grafana | 指标采集和 dashboard |
 | 日志系统 | Java、Python、RabbitMQ、PostgreSQL 日志集中查询 |
 
+## 3.1 Docker Compose 服务清单
+
+本地 compose 至少包含：
+
+| service | image / build | ports | healthcheck | volumes / env |
+|---|---|---|---|---|
+| `postgres` | `pgvector/pgvector:pg15` 或内部等价镜像 | `5432:5432` | `pg_isready` | `postgres-data`；初始化 `docs/ddls/001_initial_schema.sql` |
+| `rabbitmq` | `rabbitmq:3.13-management` | `5672:5672`、`15672:15672` | `rabbitmq-diagnostics ping` | `rabbitmq-data`；创建一期队列和 DLQ |
+| `minio` | `minio/minio` | `9000:9000`、`9001:9001` | `/minio/health/live` | `minio-data`；本地替代 TOS |
+| `vault-dev` | `hashicorp/vault` | `8200:8200` | `/v1/sys/health` | 仅 local / dev 替代 KMS |
+| `meeting-api` | build `apps/meeting-api` | `8080:8080` | `/actuator/health` | env 注入 DB / MQ / TOS / DashScope / KMS |
+| `meeting-web` | build `apps/meeting-web` nginx | `5173:80` | HTTP 200 | API base URL |
+| `ai-worker` | build `apps/ai-worker` | `8090:8090` | `/internal/health` | 模型权重只读挂载；GPU runtime 可选 |
+| `libreoffice` | 内部 headless 镜像或随 `meeting-api` | internal | smoke convert | 字体包挂载 |
+| `prometheus` | `prom/prometheus` | `9090:9090` | `/-/healthy` | scrape configs |
+| `grafana` | `grafana/grafana` | `3000:3000` | `/api/health` | dashboard provisioning |
+| `loki` / `tempo` | 官方镜像或内部镜像 | internal | HTTP health | 日志 / trace 本地调试 |
+
+Compose 不写真实密钥，只提交 `.env.example`。
+
 ## 4. 服务部署
 
 | 服务 | 部署位置 | 资源重点 |
@@ -139,6 +159,37 @@ trace 要求：
 1. 前端请求生成或传递 `X-Trace-Id`。
 2. Java、RabbitMQ message、Python callback 使用同一 trace。
 3. artifact manifest 记录 trace 或可关联 task。
+
+Dashboard 文件清单：
+
+| 文件 | 内容 |
+|---|---|
+| `observability/dashboards/meeting-api-overview.json` | QPS、p50/p95/p99、5xx 率、Controller 错误码 TopN、Hikari 连接池 |
+| `observability/dashboards/task-pipeline.json` | step RTF、失败率、ORPHANED 数、DLQ 深度、callback 冲突 |
+| `observability/dashboards/rag-quality.json` | 检索数量、rerank 命中、citation 缺失率、LLM token 和延迟 |
+| `observability/dashboards/compliance.json` | legal hold 数、deletion job 状态、break-glass 次数、审计事件 |
+| `observability/dashboards/ai-worker-gpu.json` | GPU 利用率、显存、模型加载状态、OOM、actor backlog |
+
+## 8.1 K8s 目录与备份恢复
+
+K8s 清单结构：
+
+```text
+k8s/base/
+  meeting-api/{deployment,service,configmap,hpa,pdb,servicemonitor}.yaml
+  meeting-web/{deployment,service,configmap}.yaml
+  ai-worker/{statefulset,service,configmap,nodeselector-gpu}.yaml
+  postgres/{statefulset,service,backup-cronjob}.yaml
+  rabbitmq/{statefulset,service,policy}.yaml
+k8s/overlays/{dev,staging,prod}/kustomization.yaml
+```
+
+备份 / 恢复：
+
+1. PostgreSQL 使用 `pg_basebackup + WAL` 归档到对象存储；RPO `5min`，RTO `30min`；每季度恢复演练一次。
+2. TOS / MinIO 对象记录 `sha256`，删除证书保留对象 hash、bucket、key、删除时间和操作者。
+3. RabbitMQ 使用 quorum queue 三节点；跨地域灾备不依赖队列持久化，依赖 PostgreSQL outbox 重放。
+4. Grafana dashboard、Prometheus rules、RabbitMQ definitions 和 K8s manifests 必须纳入 git。
 
 ## 9. 安全基线
 

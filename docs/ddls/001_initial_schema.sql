@@ -306,13 +306,16 @@ CREATE TABLE IF NOT EXISTS callback_events (
   attempt_no integer NOT NULL,
   lease_owner text,
   idempotency_key text NOT NULL,
-  request_hash text NOT NULL,
-  response_hash text,
-  response_status integer,
+  request_body_hash text NOT NULL,
+  response_body_hash text,
+  http_status integer,
   error_code text,
   request_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   response_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  response_body bytea,
   trace_id text,
+  processed_at timestamptz,
+  expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT callback_events_idempotency_uk UNIQUE (tenant_id, idempotency_key)
 );
@@ -834,7 +837,8 @@ CREATE TABLE IF NOT EXISTS domain_events_outbox (
   dedupe_key text NOT NULL,
   status text NOT NULL DEFAULT 'PENDING',
   retry_count integer NOT NULL DEFAULT 0,
-  last_error text,
+  last_error_code text,
+  last_error_message text,
   published_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -854,6 +858,7 @@ CREATE INDEX IF NOT EXISTS processing_tasks_meeting_idx ON processing_tasks (ten
 CREATE INDEX IF NOT EXISTS processing_tasks_status_idx ON processing_tasks (tenant_id, status, current_step);
 CREATE INDEX IF NOT EXISTS processing_task_steps_task_idx ON processing_task_steps (tenant_id, task_id, step_name);
 CREATE INDEX IF NOT EXISTS callback_events_task_idx ON callback_events (tenant_id, task_id, created_at);
+CREATE INDEX IF NOT EXISTS callback_events_expires_idx ON callback_events (expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS transcript_segments_meeting_idx ON transcript_segments (tenant_id, meeting_id, segment_index);
 CREATE INDEX IF NOT EXISTS transcript_segments_time_idx ON transcript_segments (meeting_id, start_ms);
 CREATE INDEX IF NOT EXISTS transcript_segments_person_idx ON transcript_segments (meeting_id, person_id);
@@ -873,6 +878,7 @@ CREATE INDEX IF NOT EXISTS knowledge_chunks_hash_idx ON knowledge_chunks (conten
 CREATE INDEX IF NOT EXISTS knowledge_chunks_content_gin_idx ON knowledge_chunks USING gin (to_tsvector('simple', content));
 CREATE INDEX IF NOT EXISTS knowledge_chunks_embedding_hnsw_idx
   ON knowledge_chunks USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64)
   WHERE status = 'ACTIVE' AND stale_status = 'ACTIVE' AND embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS rag_query_logs_created_idx ON rag_query_logs (tenant_id, created_at);
 CREATE INDEX IF NOT EXISTS llm_call_logs_meeting_idx ON llm_call_logs (tenant_id, meeting_id, created_at);

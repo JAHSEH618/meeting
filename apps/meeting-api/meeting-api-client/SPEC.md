@@ -148,3 +148,13 @@ ComplianceFacade
 4. 不出现业务实现逻辑。
 5. 声纹 embedding 不在任何 DTO 中暴露。
 6. 错误码覆盖一期错误码字典。
+
+## 6. 契约生成与一致性
+
+`meeting-api-client` 的 DTO 可以先手写，但必须与 `packages/meeting-contracts` 保持一致。进入正式联调前需要建立生成或校验链路：
+
+1. OpenAPI 生成 Java DTO / interface 到临时目录。
+2. 与 `meeting-api-client` 手写 DTO 做字段和枚举一致性测试。
+3. CI 校验 `ErrorCode` 枚举覆盖 `schemas/common/error-codes.yaml`。
+4. CI 校验 `ProcessingStep`、`TaskStatus`、`StaleStatus` 与 `schemas/common/enums.yaml` 一致。
+5. Public DTO 不得包含 internal callback 专用字段；internal callback command 可以在 `client/internal` 包下隔离。

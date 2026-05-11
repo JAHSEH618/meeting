@@ -1,0 +1,63 @@
+extends:
+  - spectral:oas
+
+rules:
+  operation-operationId:
+    severity: error
+
+  meeting-operation-id-lower-camel:
+    description: operationId must use lowerCamelCase.
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].operationId
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][A-Za-z0-9]*$"
+
+  meeting-public-write-request-id:
+    description: Public API mutating operations except login must declare X-Request-Id.
+    severity: warn
+    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/XRequestId"
+
+  meeting-public-write-trace-id:
+    description: Public API mutating operations except login must declare X-Trace-Id.
+    severity: warn
+    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/XTraceId"
+
+  meeting-callback-signature:
+    description: Callback operations must declare X-Signature.
+    severity: error
+    given: $.paths[?(@property =~ /^\/processing-tasks\/\{taskId\}\/(steps|artifacts|transcript|speaker-candidates|embeddings|complete|fail)/)][post,patch]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/Signature"

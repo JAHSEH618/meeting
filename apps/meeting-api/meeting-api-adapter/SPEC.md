@@ -66,6 +66,15 @@ GET /api/processing-tasks/{taskId}/events
 5. SSE 断线后允许前端使用 `Last-Event-Id` 请求头续接；服务端无法续接时发送当前 task 快照并继续推新事件。
 6. 不推送跨租户数据。
 
+一期实现策略：
+
+1. 使用 Spring MVC `SseEmitter` + Servlet async，不引入 WebFlux。
+2. 默认最大 SSE 并发 `500`，超过返回 429；配置键 `sse.max-connections`。
+3. 每个连接心跳间隔 `15s`，空闲超时 `120s`。
+4. 事件缓存窗口默认 `30min`，缓存 key 为 `taskId`，用于 `Last-Event-Id` 续接。
+5. event id 编码 `{taskId}:{sequenceNo}`，`sequenceNo` 同 task 内单调递增。
+6. 后端线程池必须独立于 Tomcat request worker，避免长连接耗尽普通请求处理线程。
+
 ## 5. Internal Callback API
 
 Endpoint：

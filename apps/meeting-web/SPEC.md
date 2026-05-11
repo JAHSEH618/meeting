@@ -109,7 +109,77 @@ Accept: application/json
 3. 页面提示优先使用稳定错误码映射，服务端 message 可作为兜底。
 4. `SECURITY_LEVEL_BLOCKED` 必须展示固定业务提示。
 
-## 6. 功能分包建议
+### 5.1 页面最小 API 清单
+
+| 页面 | 初始加载 API | 写操作 API | 必须处理的空态 / 错误态 |
+|---|---|---|---|
+| 登录页 | 无 | `POST /api/auth/login` | 账号锁定、密码错误、服务不可用 |
+| 会议列表 | `GET /api/meetings` | 无 | 无会议、无权限、筛选无结果 |
+| 会议创建 | `GET /api/auth/me` | `POST /api/meetings` | 无创建权限、安全等级不可用、422 校验失败 |
+| 音频上传 | `GET /api/meetings/{meetingId}`、`GET /api/meetings/{meetingId}/files/audio/uploads/{uploadId}` | upload session、part、complete、abort | 文件过大、格式不支持、part 重试耗尽 |
+| 任务进度 | `GET /api/processing-tasks/{taskId}`、SSE `/events` | retry、cancel | SSE 断线、任务失败、旧事件窗口过期 |
+| 转录编辑 | `GET /api/meetings/{meetingId}/transcript` | `PATCH /segments/{segmentId}`、`POST /regenerate` | 无转录、版本冲突、STALE |
+| speaker 确认 | transcript、speaker candidates | confirm、reject | 无候选、候选过期、权限不足 |
+| 纪要 / 事项 | minutes、action-items、decisions、risks | regenerate、accept、reject、patch | 无纪要、LLM 阻断、STALE |
+| 文档知识库 | `GET /api/documents` | upload、delete、reindex | 解析失败、扫描 PDF 不支持、legal hold 阻断 |
+| RAG 问答 | scope 所需 meetings/documents | `POST /api/rag/query` | 无可检索内容、无 citation、429 限流 |
+| 导出任务 | `GET /api/meetings/{meetingId}/exports` | create、cancel、revoke-link | 内容 STALE、转换失败、短链已撤销 |
+| 合规管理 | legal holds、deletion jobs、break-glass | create/release/delete/approve/reject | legal hold 阻断、审批过期、权限不足 |
+
+权限隐藏规则：页面可以按 `GET /api/auth/me` 返回的 permissions 隐藏入口，但不得把隐藏当作安全边界；所有写操作失败必须展示服务端稳定错误码映射。
+
+### 5.2 API client 架构
+
+```text
+apiClient
+  -> auth interceptor: access token 注入、401 refresh、refresh 失败退出登录
+  -> trace interceptor: 生成 X-Request-Id / X-Trace-Id
+  -> idempotency interceptor: 为写操作生成或复用 Idempotency-Key
+  -> error mapper: ErrorInfo.code -> i18n message / retry action
+  -> retry policy: 只对网络错误、429、503 和显式 retryable 错误重试
+
+sseClient
+  -> Last-Event-Id 续接
+  -> 无法续接时拉取 task snapshot
+  -> 三次重连失败后降级轮询
+
+uploadClient
+  -> create session
+  -> part queue 并发数默认 3
+  -> 单 part 重试 <= 3
+  -> complete 前校验 fileSha256
+```
+
+## 6. 状态管理
+
+一期使用 TanStack Query / React Query 管理服务端状态，使用 Zustand 管理少量跨页面 UI 状态（侧边栏、上传队列草稿、RAG 当前会话草稿）。不使用 Redux 作为默认方案，除非后续出现复杂离线编辑或跨 tab 协同需求。
+
+缓存失效规则：
+
+1. 创建 / 修改会议后 invalidate `meetings`、`meeting:{id}`。
+2. 上传完成或创建任务后 invalidate `meeting:{id}`、`tasks:{meetingId}`。
+3. SSE 收到 `TASK_STEP_UPDATED` 只更新 task query cache；收到 `TRANSCRIPT_READY` invalidate transcript、minutes、rag scope。
+4. 转录编辑成功后 invalidate transcript、minutes、action-items、decisions、risks、rag answers、exports。
+5. speaker confirm / reject 成功后 invalidate transcript、speakers、rag answers。
+6. legal hold、deletion job、break-glass 变更后 invalidate 对应 admin list 和 audit。
+
+## 7. 表单、a11y、i18n 与性能
+
+表单：使用 `react-hook-form + zod`；zod schema 名称与 OpenAPI request schema 对齐；错误消息通过稳定错误码和字段路径映射，不在组件里硬编码大段校验文案。
+
+a11y：一期目标 WCAG 2.1 AA。所有可点击控件必须键盘可达；任务进度、上传进度和导出状态用 `aria-live="polite"`；错误提示用 `aria-live="assertive"`；citation 定位后焦点移动到对应 segment。
+
+i18n：一期 UI 文案只交付 `zh-CN`，但错误码、枚举展示名和日期格式通过集中 dictionary 管理，避免直接散落在组件中。
+
+性能预算：
+
+1. 首屏 JavaScript gzip 目标 `< 200KB`，超出必须解释并拆包。
+2. 首次可交互 TTI 目标 `< 3s`（局域网 / 普通办公电脑）。
+3. 按 feature route code split；RAG、转录编辑、导出管理和合规管理独立 chunk。
+4. 转录 segment 列表必须虚拟滚动，不能一次渲染数千 DOM 节点。
+5. 大文件上传不得把整文件读入内存，仅分片 hash / 上传。
+
+## 8. 功能分包建议
 
 ```text
 src/
@@ -141,7 +211,14 @@ src/
 3. 上传、SSE、RAG 对话等长流程封装为 feature service，不直接散落在页面组件中。
 4. 页面入口优先放在 `features/<domain>/pages/` 或由 `app/router.tsx` 集中映射，不再单独要求顶层 `pages/` 目录。
 
-## 7. 验收标准
+## 9. 测试与验收标准
+
+测试层级：
+
+1. Unit：Vitest，覆盖 error mapper、idempotency key、SSE event reducer、STALE 状态展示规则。
+2. Component：React Testing Library，覆盖登录、上传状态、任务进度、转录编辑、RAG citation、导出状态。
+3. API mock：Mock Service Worker，mock 统一响应信封、错误码、SSE 事件流。
+4. E2E：Playwright，覆盖登录 -> 创建会议 -> 上传 -> 任务进度 -> 转录 -> 纪要 -> RAG -> 导出的主链路，以及 `SECURITY_LEVEL_BLOCKED` 分支。
 
 1. 用户可以登录、创建会议、上传 4 小时以内音频并看到任务进入队列。
 2. 任务进度页面能展示 step 级状态，SSE 断线可恢复或回退轮询。

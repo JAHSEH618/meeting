@@ -6,6 +6,20 @@ servers:
   - url: /api
 security:
   - bearerAuth: []
+x-api-conventions:
+  successEnvelope: '#/components/schemas/ApiResponse'
+  writeHeaders:
+    - X-Request-Id
+    - X-Trace-Id
+    - Idempotency-Key
+  idempotency:
+    requiredFor: all non-login mutating operations
+    conflictStatus: 409
+  common4xx: [400, 401, 403, 404, 409, 422, 423, 429]
+  common5xx: [500, 503]
+  sse:
+    eventIdFormat: '{taskId}:{sequenceNo}'
+    retentionWindowMinutes: 30
 paths:
   /auth/login:
     post:
@@ -561,6 +575,21 @@ components:
       in: path
       required: true
       schema: {type: string}
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+    XTraceId:
+      name: X-Trace-Id
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
     SegmentId:
       name: segmentId
       in: path
@@ -609,6 +638,12 @@ components:
   responses:
     Ok:
       description: Standard API response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Error:
+      description: Standard error response
       content:
         application/json:
           schema:
@@ -667,7 +702,7 @@ components:
         sequenceNo: {type: integer}
         eventType:
           type: string
-          enum: [TASK_SNAPSHOT, TASK_STEP_UPDATED, TASK_STATUS_CHANGED, TASK_FAILED, TASK_COMPLETED]
+          enum: [TASK_SNAPSHOT, TASK_STARTED, TASK_STEP_UPDATED, TASK_HEARTBEAT, TRANSCRIPT_READY, TASK_FAILED, TASK_COMPLETED, TASK_CANCELLED]
         taskId: {type: string}
         meetingId: {type: string}
         stepName:
@@ -682,5 +717,14 @@ components:
         errorCode:
           type: [string, 'null']
         emittedAt:
+          type: string
+          format: date-time
+        attemptNo: {type: integer}
+        transcriptVersion: {type: integer}
+        artifactManifestId: {type: [string, 'null']}
+        completedSteps:
+          type: array
+          items: {type: string}
+        leaseExpiresAt:
           type: string
           format: date-time

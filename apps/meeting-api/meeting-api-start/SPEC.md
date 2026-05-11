@@ -37,6 +37,20 @@ management:
           - prometheus
 ```
 
+生产 profile 必须显式配置或从环境变量注入：
+
+| 配置键 | 默认 | 说明 |
+|---|---|---|
+| `server.tomcat.threads.max` | 200 | 普通 HTTP 请求线程，不承载 SSE 长连接执行 |
+| `spring.datasource.hikari.maximum-pool-size` | 20 | 与 PostgreSQL 资源规格联动 |
+| `spring.flyway.enabled` | true | prod 禁止跳过 migration |
+| `meeting.rls.required` | true | prod 禁止关闭 |
+| `meeting.sse.max-connections` | 500 | 单实例 SSE 上限 |
+| `meeting.outbox.batch-size` | 100 | outbox 单批发布数量 |
+| `meeting.outbox.poll-interval-ms` | 500 | outbox 轮询间隔 |
+| `meeting.callback.timestamp-skew-seconds` | 300 | HMAC timestamp 容忍窗口 |
+| `meeting.callback-events.retention-days` | 30 | callback 幂等重放保留 |
+
 敏感值通过环境变量注入：
 
 1. 数据库密码。

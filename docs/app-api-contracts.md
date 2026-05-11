@@ -77,6 +77,20 @@ Content-Type: application/json
 Accept: application/json
 ```
 
+HMAC 签名规范：
+
+```text
+signing_string = X-Timestamp + "\n" +
+                 X-Nonce + "\n" +
+                 HTTP_METHOD + "\n" +
+                 URL_PATH_WITH_QUERY + "\n" +
+                 SHA256(request_body).hex
+signature      = HMAC-SHA256(secret, signing_string)
+X-Signature    = "hmac-sha256=" + hex(signature)
+```
+
+`URL_PATH_WITH_QUERY` 包含 `/internal` 前缀和 query string，不包含 scheme、host、fragment。`request_body` 取实际发送的 UTF-8 bytes，空 body 使用 SHA-256 空串值。服务端必须校验 `X-Timestamp` 与当前时间偏差不超过 `5min`，并用 `(tenantId, X-Nonce)` 做短期去重。
+
 ### 2.3 响应信封
 
 业务 API 成功响应：
@@ -545,6 +559,21 @@ GET /api/processing-tasks/{taskId}/events
 3. 客户端重连时携带 `Last-Event-Id: task_001:00000042`。
 4. 服务端从该 event 之后续发；如果事件已过保留窗口，则先发送当前 task 快照，再继续推送新事件。
 
+事件清单：
+
+| eventType | 必填字段 | 触发时机 |
+|---|---|---|
+| `TASK_SNAPSHOT` | `eventId`、`sequenceNo`、`taskId`、`status`、`steps`、`emittedAt` | SSE 建连、无法续接历史窗口、客户端显式刷新 |
+| `TASK_STARTED` | `eventId`、`sequenceNo`、`taskId`、`status=RUNNING`、`attemptNo`、`emittedAt` | worker 成功 claim lease |
+| `TASK_STEP_UPDATED` | `eventId`、`sequenceNo`、`taskId`、`stepName`、`status`、`progress`、`emittedAt` | step 开始、进度、完成或错误码变化 |
+| `TASK_HEARTBEAT` | `eventId`、`sequenceNo`、`taskId`、`stepName`、`status=RUNNING`、`leaseExpiresAt`、`emittedAt` | worker heartbeat 被接受 |
+| `TRANSCRIPT_READY` | `eventId`、`sequenceNo`、`taskId`、`meetingId`、`transcriptVersion`、`artifactManifestId`、`emittedAt` | 结构化转录落库成功 |
+| `TASK_COMPLETED` | `eventId`、`sequenceNo`、`taskId`、`status`、`completedSteps`、`artifactManifestId`、`emittedAt` | task `SUCCEEDED` 或 `PARTIAL_SUCCEEDED` |
+| `TASK_FAILED` | `eventId`、`sequenceNo`、`taskId`、`status=FAILED`、`errorCode`、`retryable`、`emittedAt` | task 失败或重试耗尽 |
+| `TASK_CANCELLED` | `eventId`、`sequenceNo`、`taskId`、`status=CANCELLED`、`emittedAt` | 取消完成 |
+
+`eventId` 编码为 `{taskId}:{sequenceNo}`，`sequenceNo` 使用 8 位左补零十进制字符串；同一 `taskId` 内不得复用。SSE 数据保留窗口默认 `30min`，超出窗口后必须先发送 `TASK_SNAPSHOT`。
+
 ### 4.8 获取转录
 
 ```http
@@ -852,6 +881,89 @@ GET /api/exports/{exportId}
   "traceId": "trace_001"
 }
 ```
+
+### 4.13 高频写操作补充样例
+
+转录依赖重生成：
+
+```json
+{
+  "endpoint": "POST /api/meetings/{meetingId}/transcript/regenerate",
+  "request": {
+    "expectedTranscriptVersion": 2,
+    "regenerateScope": ["SUMMARY", "ACTION_ITEMS", "RAG_INDEXING"],
+    "reason": "人工校对后重建下游产物"
+  },
+  "responseData": {
+    "taskId": "task_regen_001",
+    "status": "QUEUED"
+  }
+}
+```
+
+声纹注册与 speaker reject：
+
+```json
+{
+  "createEnrollment": {
+    "endpoint": "POST /api/speaker-profiles/{profileId}/enrollments",
+    "request": {
+      "referenceAudioFileId": "file_voice_001",
+      "consentRecordId": "consent_001",
+      "expiresAt": "2027-05-11T00:00:00Z"
+    },
+    "responseData": {
+      "taskId": "task_enroll_001",
+      "status": "QUEUED"
+    }
+  },
+  "rejectSpeaker": {
+    "endpoint": "POST /api/meetings/{meetingId}/speakers/{speakerLabel}/reject",
+    "request": {
+      "candidateProfileId": "profile_002",
+      "expectedTranscriptVersion": 2,
+      "reason": "人工确认不是该人员"
+    },
+    "responseData": {
+      "speakerLabel": "SPEAKER_01",
+      "status": "REJECTED",
+      "ragChunksStaleStatus": "STALE"
+    }
+  }
+}
+```
+
+待办接受 / 拒绝：
+
+```json
+{
+  "accept": {
+    "endpoint": "POST /api/meetings/{meetingId}/action-items/{itemId}/accept",
+    "request": {
+      "expectedVersion": 1,
+      "assigneePersonId": "person_002",
+      "dueDate": "2026-05-15"
+    },
+    "responseData": {
+      "itemId": "item_001",
+      "status": "ACCEPTED"
+    }
+  },
+  "reject": {
+    "endpoint": "POST /api/meetings/{meetingId}/action-items/{itemId}/reject",
+    "request": {
+      "expectedVersion": 1,
+      "reason": "不是实际待办"
+    },
+    "responseData": {
+      "itemId": "item_001",
+      "status": "REJECTED"
+    }
+  }
+}
+```
+
+文档上传 / 删除、legal hold、deletion job 和 break-glass 的详细字段以 OpenAPI 为准；最小请求均必须包含 `Idempotency-Key`、`X-Request-Id`、`X-Trace-Id`，并返回可追踪的业务 id 或 task id。
 
 ## 5. `meeting-api -> ai-worker` RabbitMQ 消息
 
@@ -1296,6 +1408,87 @@ POST /internal/processing-tasks/{taskId}/fail
 }
 ```
 
+### 6.8 Callback 失败响应样例
+
+HMAC 校验失败：
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "CALLBACK_AUTH_FAILED",
+    "message": "Invalid callback signature",
+    "retryable": false,
+    "details": {
+      "taskId": "task_001"
+    }
+  },
+  "requestId": "req_cb_bad_sig",
+  "traceId": "trace_001"
+}
+```
+
+attempt 冲突：
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "TASK_ATTEMPT_CONFLICT",
+    "message": "Callback attempt does not match current task attempt",
+    "retryable": false,
+    "details": {
+      "callbackAttemptNo": 1,
+      "currentAttemptNo": 2
+    }
+  },
+  "requestId": "req_cb_attempt_conflict",
+  "traceId": "trace_001"
+}
+```
+
+lease 冲突：
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "TASK_LEASE_CONFLICT",
+    "message": "Callback lease owner is no longer active",
+    "retryable": false,
+    "details": {
+      "callbackLeaseOwner": "lease_old",
+      "currentLeaseOwner": "lease_new"
+    }
+  },
+  "requestId": "req_cb_lease_conflict",
+  "traceId": "trace_001"
+}
+```
+
+版本冲突：
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "VERSION_CONFLICT",
+    "message": "Callback input version is stale",
+    "retryable": false,
+    "details": {
+      "expectedTranscriptVersion": 2,
+      "currentTranscriptVersion": 3
+    }
+  },
+  "requestId": "req_cb_version_conflict",
+  "traceId": "trace_001"
+}
+```
+
 ## 7. `ai-worker` 内部管理 API
 
 `ai-worker` 的 FastAPI 只用于内部管理、健康检查、模型状态和 workflow 调试，不作为客户主产品入口。
@@ -1541,6 +1734,21 @@ LLM 结构化输出必须通过 JSON Schema 校验。纪要结果示例：
 3. callback 必须校验 `X-Lease-Owner` 与当前 lease owner 一致；旧 lease 的迟到 callback 必须拒绝或进入幂等冲突处理。
 4. 修改转录、speaker、纪要、RAG chunk 时必须携带 `expectedTranscriptVersion` 或对应 `expected*Version`。
 5. 重建任务完成时，如果当前版本与 `expected*Version` 不一致，结果不得覆盖当前 ACTIVE 版本，只能标记为过期产物并记录审计。
+
+callback `Idempotency-Key` 精确定义：
+
+```text
+{taskId}:{stepName}:{attemptNo}:{payloadVersion}
+```
+
+字段含义：
+
+1. `taskId` 是 Java 创建的稳定业务任务 id。
+2. `stepName` 是 `ProcessingStep` 枚举值。
+3. `attemptNo` 是当前 worker attempt，必须与 `X-Attempt-No` 一致。
+4. `payloadVersion` 从 `v1` 开始；同一 attempt 内 payload 语义结构变化时递增。普通 heartbeat / progress 可复用版本，`complete`、`fail`、`transcript`、`speaker-candidates` 和 `embeddings` 必须使用新的版本。
+
+服务端持久化 `idempotency_key`、`request_body_hash`、`http_status`、`response_body`、`processed_at`，保留默认 `30d`。相同 key 且 body hash 一致时直接返回缓存响应；相同 key 但 body hash 不一致时返回 `CALLBACK_IDEMPOTENCY_CONFLICT`。
 
 幂等冲突响应：
 

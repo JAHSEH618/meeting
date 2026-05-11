@@ -46,6 +46,14 @@ policy/
 6. app 层通过 domain 端口调用 Repository / Gateway。
 7. app 层负责幂等键检查和重放结果返回。
 
+幂等重放存储：
+
+1. Public API 写操作使用业务 idempotency 表或业务表唯一键记录 `idempotencyKey`、`requestBodyHash`、`responseBody`、`httpStatus`、`processedAt`。
+2. Internal callback 使用 `callback_events`，唯一键 `(tenant_id, idempotency_key)`。
+3. 同 key 且 body hash 一致时直接返回缓存响应，不重新执行业务写入。
+4. 同 key 但 body hash 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT` 或 `IDEMPOTENCY_CONFLICT`。
+5. callback event 默认保留 `30d`，保留期内必须可重放。
+
 ## 4. 关键用例
 
 ### 4.1 会议创建

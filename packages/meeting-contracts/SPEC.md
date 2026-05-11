@@ -82,7 +82,7 @@ schemas/
 6. `ExportFormat`: `MARKDOWN`、`DOCX`、`PDF`。
 7. `TimestampPrecision`: `WORD`、`SEGMENT`、`APPROXIMATE`。
 8. `CitationType`: `MEETING_SEGMENT`、`DOCUMENT_CHUNK`。
-9. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STEP_UPDATED`、`TASK_STATUS_CHANGED`、`TASK_FAILED`、`TASK_COMPLETED`。
+9. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STARTED`、`TASK_STEP_UPDATED`、`TASK_HEARTBEAT`、`TRANSCRIPT_READY`、`TASK_FAILED`、`TASK_COMPLETED`、`TASK_CANCELLED`。
 
 ## 6. 错误码
 
@@ -93,6 +93,7 @@ schemas/
 3. 默认可重试。
 4. 面向用户的默认提示。
 5. 面向运维的排查标签。
+6. i18n key，格式为 `errors.<code>`，一期至少提供 `zh-CN` 默认文案。
 
 错误码不得随意改名。需要废弃时新增 replacement，并保留兼容期。
 
@@ -200,3 +201,32 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 3. 枚举与 Java、TypeScript、Python 使用的枚举一致。
 4. 错误码与前端提示、后端异常、worker 错误上报一致。
 5. Public API、callback API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
+
+## 12. Code Generation
+
+生成命令：
+
+```bash
+openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts
+openapi-typescript openapi/internal-callback-api.yaml -o ../../apps/ai-worker/generated/internal_callback_types.gen.ts
+openapi-generator generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api
+datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py
+```
+
+CI 要求：
+
+1. 运行 codegen 后 `git diff` 必须为空，或明确提交生成物。
+2. Java / TypeScript / Python 枚举必须与 `schemas/common/enums.yaml` 一致。
+3. OpenAPI response 必须统一使用 `ApiResponse` envelope。
+4. 所有写操作必须声明 `X-Request-Id`、`X-Trace-Id` 和 `Idempotency-Key`，登录除外。
+
+## 13. Spectral Lint
+
+仓库根或本包内必须提供 `.spectral.yaml`，至少包含：
+
+1. path 必须以 `/` 开头并挂载到 `/api` 或 `/internal` server。
+2. operationId 必须唯一且使用 lowerCamelCase。
+3. Public API 写操作必须声明 `X-Request-Id`、`X-Trace-Id`。
+4. 非登录写操作必须声明 `Idempotency-Key`。
+5. callback API 必须声明 `X-Worker-Id`、`X-Attempt-No`、`X-Lease-Owner`、`X-Timestamp`、`X-Nonce`、`X-Signature`。
+6. 4xx / 5xx response 必须引用统一错误响应 schema。

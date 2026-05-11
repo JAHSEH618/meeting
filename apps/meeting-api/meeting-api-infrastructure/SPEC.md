@@ -41,6 +41,8 @@ com.meeting.api.infrastructure
 5. current tenant 缺失时 fail closed。
 6. 普通业务查询禁止使用绕过 RLS 的账号。
 7. pgvector 只保存文本 chunk embedding，不保存声纹 embedding 明文向量。
+8. JSON / JSONB 字段在 Java 中使用强类型 record + Jackson 序列化，MyBatis 通过统一 `TypeHandler` 处理；除开放 metadata 字段外，禁止在业务代码中到处传递裸 `Map<String, Object>`。
+9. pgvector HNSW 索引参数默认 `m=16`、`ef_construction=64`；查询设置 `ef_search=80`。
 
 必须实现的核心表访问：
 
@@ -86,6 +88,15 @@ com.meeting.api.infrastructure
 6. 同一聚合按 `(aggregate_type, aggregate_id, sequence_no)` 单调递增发布；跨聚合可以并发。
 7. `export-queue` 的消费入口在 adapter，导出渲染和 TOS 写入能力由 infrastructure 的 `ExportGateway` 提供。
 
+outbox publisher 策略：
+
+1. 后台 `ScheduledExecutorService` 或 Spring scheduler 固定 `500ms` 轮询。
+2. 单批最多 `100` 条。
+3. 使用 `SELECT ... FOR UPDATE SKIP LOCKED` 支持多实例并发。
+4. 投递成功后在同一短事务内标记 `published_at=now()`。
+5. 失败记录 `last_error_code`、`last_error_message`、`retry_count`。
+6. `retry_count >= 5` 后进入 `outbox_dlq` 或在 `domain_events_outbox` 标记 DLQ 状态，等待人工处理。
+
 一期队列：
 
 1. `audio-cpu-queue`。
@@ -109,6 +120,13 @@ com.meeting.api.infrastructure
 7. evidence 校验失败返回 `LLM_EVIDENCE_INVALID`。
 8. schema 失败返回 `LLM_SCHEMA_INVALID`。
 9. provider 限流返回 `LLM_RATE_LIMIT`。
+
+Prompt template 加载：
+
+1. 默认从 classpath `prompts/{templateId}/{version}.json` 加载。
+2. 如果 `prompt_templates` 表存在同名启用版本，数据库版本优先；每次调用记录实际 `promptTemplateVersion`。
+3. template 文件必须包含 `inputSchema`、`outputSchema`、`maxInputTokens`、`modelParams` 和 `dataBoundaryPolicyVersion`。
+4. schema 校验失败不得调用 provider。
 
 不得发送原始音频、标准化音频、声纹参考音频、声纹 embedding 和高敏会议文本。
 
@@ -138,6 +156,13 @@ com.meeting.api.infrastructure
 6. KMS 不可用返回 `KMS_KEY_UNAVAILABLE`。
 7. 加解密操作写 audit event。
 
+KMS provider：
+
+1. local / test 使用 `software-kms`：本地文件保存 master key，仅用于开发测试。
+2. staging / prod 使用火山 KMS 或 HashiCorp Vault，通过 `KmsGateway` 端口隔离。
+3. 密钥轮换默认 `90d`；新写入使用最新 key version，历史数据读时按记录的 `kms_key_version` 解密。
+4. `ai-worker` 不持有 KMS 凭证。
+
 ## 9. 幂等与 callback event
 
 需要持久化：
@@ -150,6 +175,8 @@ com.meeting.api.infrastructure
 6. 状态和错误码。
 
 相同 idempotency key 且 payload 一致时返回已处理结果；payload 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT`。
+
+`callback_events` 默认保留 `30d`。表结构必须包含 `request_body_hash`、`response_body`、`http_status`、`processed_at`，支持相同 key 直接重放缓存 body。
 
 ## 10. 验收标准
 
