@@ -50,7 +50,7 @@ management:
 | `meeting.outbox.poll-interval-ms` | 500 | outbox 轮询间隔 |
 | `meeting.callback.timestamp-skew-seconds` | 300 | HMAC timestamp 容忍窗口 |
 | `meeting.callback-events.retention-days` | 30 | callback 幂等重放保留 |
-| `app.chunk.strategy-version` | 无默认值 | 首次 `MEETING_FULL_PIPELINE` 任务写入 `expectedInputVersion.chunkStrategyVersion` 的来源 |
+| `meeting.chunk.strategy-version` | 无默认值 | 首次 `MEETING_FULL_PIPELINE` 任务写入 `expectedInputVersion.chunkStrategyVersion` 的来源 |
 
 敏感值通过环境变量注入：
 
@@ -103,7 +103,7 @@ profile 规则：
 4. callback HMAC secret 缺失。
 5. 数据库 migration 版本不匹配。
 6. 必要队列缺失且配置要求启动时校验。
-7. `app.chunk.strategy-version` 缺失或为空。
+7. `meeting.chunk.strategy-version` 缺失或为空。
 
 ## 7. 验收标准
 

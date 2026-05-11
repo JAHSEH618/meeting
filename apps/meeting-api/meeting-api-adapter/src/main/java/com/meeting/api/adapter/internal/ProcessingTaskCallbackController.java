@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Internal callback API — receives ai-worker step status, artifacts, transcript,
- * speaker candidates, embeddings, and terminal task state.
+ * speaker candidates, embeddings, and worker phase completion.
  *
  * ⚠ SECURITY TODO (spec.md §6 — callback 校验清单):
  * This controller is currently a stub that returns accepted:true for every request.
@@ -84,12 +84,12 @@ public class ProcessingTaskCallbackController {
     }
 
     @PostMapping("/complete")
-    public ApiResponse<Map<String, Object>> complete(
+    public ApiResponse<Map<String, Object>> completeWorkerPhase(
         @PathVariable String taskId,
         @RequestBody Map<String, Object> payload
     ) {
-        // TODO: implement HMAC + attempt + lease + completedSteps validation per spec §6
-        return accepted(taskId, "COMPLETE");
+        // TODO: validate phase=WORKER_DAG; this callback completes worker phase, not task terminal state.
+        return accepted(taskId, "WORKER_PHASE_COMPLETE");
     }
 
     @PostMapping("/fail")

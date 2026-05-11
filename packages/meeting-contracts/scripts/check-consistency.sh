@@ -81,19 +81,127 @@ with open('$OPENAPI_DIR/internal-callback-api.yaml') as f:
 with open('$OPENAPI_DIR/public-api.yaml') as f:
     pub = yaml.safe_load(f)
 
-# Compare processingStep enum vs callback ProcessingStep schema
+# Load RabbitMQ task message schema
+with open('$SCHEMAS_DIR/rabbitmq/processing-task-message.schema.json') as f:
+    task_msg = yaml.safe_load(f)
+
+# Compare processingStep enum vs callback StepName parameter
 enum_steps = set(enums.get('processingStep', []))
-cb_steps = set()
-for path_item in cb['paths'].values():
-    for method, op in path_item.items():
-        for param in op.get('parameters', []):
-            ref = param.get('\$ref', '')
-            if ref == '#/components/parameters/StepName':
-                schema = param.get('schema', {})
-                cb_steps.update(schema.get('enum', []))
+cb_steps = set(
+    cb.get('components', {})
+      .get('parameters', {})
+      .get('StepName', {})
+      .get('schema', {})
+      .get('enum', [])
+)
 
 if cb_steps and cb_steps != enum_steps:
     print(f'  processingStep mismatch: enums={sorted(enum_steps)} cb={sorted(cb_steps)}')
+    errors += 1
+
+# Compare ProcessingTaskStatus enum vs public-api schema
+enum_task_status = set(enums.get('processingTaskStatus', []))
+pub_task_status = set(
+    pub.get('components', {})
+      .get('schemas', {})
+      .get('ProcessingTaskStatus', {})
+      .get('enum', [])
+)
+
+if pub_task_status and pub_task_status != enum_task_status:
+    print(f'  processingTaskStatus mismatch: enums={sorted(enum_task_status)} pub={sorted(pub_task_status)}')
+    errors += 1
+
+# Compare ProcessingTaskPhase enum vs public-api schema
+enum_task_phase = set(enums.get('processingTaskPhase', []))
+pub_task_phase = set(
+    pub.get('components', {})
+      .get('schemas', {})
+      .get('ProcessingTaskPhase', {})
+      .get('enum', [])
+)
+
+if pub_task_phase and pub_task_phase != enum_task_phase:
+    print(f'  processingTaskPhase mismatch: enums={sorted(enum_task_phase)} pub={sorted(pub_task_phase)}')
+    errors += 1
+
+processing_task = pub.get('components', {}).get('schemas', {}).get('ProcessingTask', {})
+if 'phase' not in processing_task.get('required', []):
+    print('  ProcessingTask.phase must be required')
+    errors += 1
+phase_schema = processing_task.get('properties', {}).get('phase', {})
+if phase_schema.get('\$ref') != '#/components/schemas/ProcessingTaskPhase':
+    print('  ProcessingTask.phase must directly reference ProcessingTaskPhase')
+    errors += 1
+
+# Compare RagAnswerCoverage enum vs public-api schema
+enum_rag_coverage = set(enums.get('ragAnswerCoverage', []))
+pub_rag_coverage = set(
+    pub.get('components', {})
+      .get('schemas', {})
+      .get('RagAnswerCoverage', {})
+      .get('enum', [])
+)
+
+if pub_rag_coverage and pub_rag_coverage != enum_rag_coverage:
+    print(f'  ragAnswerCoverage mismatch: enums={sorted(enum_rag_coverage)} pub={sorted(pub_rag_coverage)}')
+    errors += 1
+
+rag_answer = pub.get('components', {}).get('schemas', {}).get('RagAnswerDTO', {})
+if 'coverage' not in rag_answer.get('required', []):
+    print('  RagAnswerDTO.coverage must be required')
+    errors += 1
+
+# Compare ProcessingStepUpdateSource enum vs public-api schema
+enum_step_sources = set(enums.get('processingStepUpdateSource', []))
+pub_step_sources = set(
+    pub.get('components', {})
+      .get('schemas', {})
+      .get('ProcessingStepUpdateSource', {})
+      .get('enum', [])
+)
+
+if pub_step_sources and pub_step_sources != enum_step_sources:
+    print(f'  processingStepUpdateSource mismatch: enums={sorted(enum_step_sources)} pub={sorted(pub_step_sources)}')
+    errors += 1
+
+# Worker task messages must not assign Java-owned LLM steps to ai-worker.
+pipeline_steps = set(
+    task_msg.get('properties', {})
+      .get('pipelineSteps', {})
+      .get('items', {})
+      .get('enum', [])
+)
+forbidden_worker_steps = {'SUMMARY', 'EXTRACTION'}
+if pipeline_steps & forbidden_worker_steps:
+    print(f'  pipelineSteps must not include Java-owned steps: {sorted(pipeline_steps & forbidden_worker_steps)}')
+    errors += 1
+
+expected_pipeline_steps = enum_steps - forbidden_worker_steps
+if pipeline_steps and pipeline_steps != expected_pipeline_steps:
+    print(
+        '  pipelineSteps drift vs processingStep: '
+        f'missing={sorted(expected_pipeline_steps - pipeline_steps)} '
+        f'extra={sorted(pipeline_steps - expected_pipeline_steps)}'
+    )
+    errors += 1
+
+task_step = pub.get('components', {}).get('schemas', {}).get('ProcessingTaskStep', {})
+if 'source' not in task_step.get('required', []):
+    print('  ProcessingTaskStep.source must be required')
+    errors += 1
+source_schema = task_step.get('properties', {}).get('source', {})
+if source_schema.get('\$ref') != '#/components/schemas/ProcessingStepUpdateSource':
+    print('  ProcessingTaskStep.source must directly reference ProcessingStepUpdateSource')
+    errors += 1
+
+complete_req = cb.get('components', {}).get('schemas', {}).get('CompleteWorkerPhaseRequest', {})
+if 'phase' not in complete_req.get('required', []):
+    print('  CompleteWorkerPhaseRequest.phase must be required')
+    errors += 1
+phase_values = set(complete_req.get('properties', {}).get('phase', {}).get('enum', []))
+if phase_values != {'WORKER_DAG'}:
+    print(f'  CompleteWorkerPhaseRequest.phase must only allow WORKER_DAG, got {sorted(phase_values)}')
     errors += 1
 
 # Compare SourceType enum vs callback EmbeddingsCallbackRequest
@@ -134,7 +242,7 @@ if errors:
 else:
     print('  All enum values consistent across yaml files')
 " && pass "enums consistent" || warn "enum mismatch detected"
-else:
+else
   warn "pyyaml not installed — skipping enum consistency"
 fi
 
@@ -142,13 +250,17 @@ fi
 echo "--- Error Codes ---"
 ERROR_CODES_FILE="$SCHEMAS_DIR/common/error-codes.yaml"
 if [ -f "$ERROR_CODES_FILE" ]; then
-  count=$(python3 -c "
+  if python3 -c "import yaml" 2>/dev/null; then
+    count=$(python3 -c "
 import yaml
 with open('$ERROR_CODES_FILE') as f:
     codes = yaml.safe_load(f)
 print(len(codes) if isinstance(codes, list) else len(codes.get('errorCodes', [])))
-" 2>/dev/null || echo "0")
-  pass "error-codes.yaml: $count entries"
+" 2>/dev/null)
+    pass "error-codes.yaml: $count entries"
+  else
+    warn "pyyaml not installed — skipping error code count"
+  fi
 else
   warn "error-codes.yaml not found"
 fi

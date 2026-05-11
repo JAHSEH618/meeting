@@ -45,6 +45,14 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
+  CREATE TYPE task_phase AS ENUM (
+    'WORKER_DAG_RUNNING', 'WORKER_DAG_DONE',
+    'JAVA_LLM_RUNNING', 'TERMINAL'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
   CREATE TYPE processing_step AS ENUM (
     'AUDIO_UPLOAD', 'AUDIO_PREPROCESS', 'ASR', 'ALIGNMENT',
     'DIARIZATION', 'SPEAKER_EMBEDDING', 'SPEAKER_MATCHING',
@@ -223,6 +231,7 @@ CREATE TABLE IF NOT EXISTS processing_tasks (
   meeting_id text REFERENCES meetings(id),
   task_type text NOT NULL,
   status task_status NOT NULL DEFAULT 'PENDING',
+  phase task_phase NOT NULL DEFAULT 'WORKER_DAG_RUNNING',
   progress smallint NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
   current_step processing_step,
   attempt_count integer NOT NULL DEFAULT 0,
@@ -832,7 +841,7 @@ CREATE INDEX IF NOT EXISTS meetings_created_by_idx ON meetings (created_by, crea
 CREATE INDEX IF NOT EXISTS meeting_files_meeting_idx ON meeting_files (tenant_id, meeting_id, file_type);
 CREATE INDEX IF NOT EXISTS meeting_participants_meeting_idx ON meeting_participants (tenant_id, meeting_id);
 CREATE INDEX IF NOT EXISTS processing_tasks_meeting_idx ON processing_tasks (tenant_id, meeting_id, created_at);
-CREATE INDEX IF NOT EXISTS processing_tasks_status_idx ON processing_tasks (tenant_id, status, current_step);
+CREATE INDEX IF NOT EXISTS processing_tasks_status_idx ON processing_tasks (tenant_id, status, phase, current_step);
 CREATE INDEX IF NOT EXISTS processing_task_steps_task_idx ON processing_task_steps (tenant_id, task_id, step_name);
 CREATE INDEX IF NOT EXISTS callback_events_task_idx ON callback_events (tenant_id, task_id, created_at);
 CREATE INDEX IF NOT EXISTS callback_events_expires_idx ON callback_events (expires_at) WHERE expires_at IS NOT NULL;

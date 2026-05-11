@@ -100,8 +100,8 @@ callback 按 idempotency 策略分为两类：
 
 **修正**：
 
-- `chunkStrategyVersion` 的默认值由 Java `app.chunk.strategy-version` 配置项提供。
-- 配置示例：`app.chunk.strategy-version: "chunk-2026.05.1"`
+- `chunkStrategyVersion` 的默认值由 Java `meeting.chunk.strategy-version` 配置项提供。
+- 配置示例：`meeting.chunk.strategy-version: "chunk-2026.05.1"`
 - 首次创建 `MEETING_FULL_PIPELINE` 任务时，Java task 模块从配置读取并填入消息。
 - 重建/重索引任务使用当前 `knowledge_chunks` 表中的 `chunk_strategy_version` 或更高级别的配置。
 - chunk 策略变更时，配置值变更即触发 shadow index + backfill 流程。
@@ -217,6 +217,6 @@ stateDiagram-v2
 | 转换 | 触发方 | 副作用 |
 |---|---|---|
 | `CREATED → PROCESSING` | task 模块 outbox 发布后 meeting 状态同步 | 前端显示进度条 |
-| `PROCESSING → SUCCEEDED` | worker `/complete` callback + task 终态同步 | 转录/纪要可查看；RAG 可检索 |
+| `PROCESSING → SUCCEEDED` | worker `/complete phase=WORKER_DAG` 后，Java 完成 `SUMMARY` / `EXTRACTION` 并同步 task 终态 | 转录/纪要可查看；RAG 可检索 |
 | `PROCESSING → FAILED` | worker `/fail` callback 或租约过期 | 前端显示错误码和重试入口 |
 | `任意 → DELETED` | 用户删除 / deletion_job | 先检查 legal_hold；存在时 423 阻断 |

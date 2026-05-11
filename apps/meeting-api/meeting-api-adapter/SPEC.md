@@ -94,10 +94,11 @@ Adapter 层职责：
 1. 读取 callback headers。
 2. 验证必填 header 存在；`Idempotency-Key` 对所有 callback 仍是必填 header，包括 heartbeat。
 3. 将 header 和 body 转换为 app command。
-4. 将原始 request URI path + query 传给 app 层，必须保留 `/internal` server prefix，不能传 Spring 去掉 servlet path 后的相对路径。
-5. 调用 app 层进行 HMAC、nonce、幂等、attempt、lease 和业务关系校验。
-6. 对 `PATCH .../steps/{stepName}` 中 `status=RUNNING && progress>0` 的 heartbeat，adapter 不做幂等 short-circuit；只负责透传到 app，由 app 跳过 `callback_events` 并 latest-wins 更新进度。
-7. 返回统一响应。
+4. `PATCH .../steps/{stepName}` controller 在调用 app 前必须解析 body 的 `status` 和 `progress` 字段；命中 `(status=RUNNING && progress>0)` 时分发为 `StepProgressHeartbeatCommand`，其余 step update 分发为 `StepCallbackCommand`。两类 command 在 app 层走不同幂等路径。
+5. 将原始 request URI path + query 传给 app 层，必须保留 `/internal` server prefix，不能传 Spring 去掉 servlet path 后的相对路径。
+6. 调用 app 层进行 HMAC、nonce、幂等、attempt、lease 和业务关系校验。
+7. 对 heartbeat command，adapter 不做幂等 short-circuit；只负责透传到 app，由 app 跳过 `callback_events` 并 latest-wins 更新进度。
+8. 返回统一响应。
 
 不得在 Controller 中直接落库 callback 结果。
 

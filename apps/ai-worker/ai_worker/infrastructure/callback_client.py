@@ -98,7 +98,7 @@ class CallbackClient(Protocol):
         """POST /internal/processing-tasks/{taskId}/embeddings"""
         ...
 
-    async def complete_task(
+    async def submit_worker_phase_complete(
         self,
         task_id: str,
         meeting_id: str,
@@ -106,6 +106,7 @@ class CallbackClient(Protocol):
         status: str,
         completed_steps: list[str],
         skipped_steps: list[dict[str, str]] | None = None,
+        phase: str = "WORKER_DAG",
     ) -> CallbackResponse:
         """POST /internal/processing-tasks/{taskId}/complete"""
         ...

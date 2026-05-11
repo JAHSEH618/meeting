@@ -90,6 +90,8 @@ com.meeting.api.infrastructure
 
 outbox 写入端必须在同一业务事务内为同一聚合分配单调 `sequence_no`。一期采用 `SELECT ... FOR UPDATE` 锁住当前 `(tenant_id, aggregate_type, aggregate_id)` 最新 outbox 行后取最大 `sequence_no + 1`；无历史行时从 1 开始。跨聚合不共享锁，可以并发写入。
 
+同一聚合的事件写入预期在每会议任务级别串行，SSE / task 事件密度有限，因此一期接受该锁作为单聚合序列化点。若后续某类聚合事件密度上升并形成热点，应迁移为 per-aggregate sequence 表，通过 `UPDATE ... RETURNING` 分配序号，避免扫描和锁最新 outbox 行。
+
 outbox publisher 策略：
 
 1. 后台 `ScheduledExecutorService` 或 Spring scheduler 固定 `500ms` 轮询。
@@ -130,7 +132,7 @@ Prompt template 加载：
 3. template 文件必须包含 `inputSchema`、`outputSchema`、`maxInputTokens`、`modelParams` 和 `dataBoundaryPolicyVersion`。
 4. schema 校验失败不得调用 provider。
 
-`llm_call_logs.textRedactionBeforeThirdPartyLlm` 是契约固定审计字段，一期恒为 `false`。infrastructure 不得把它实现成可打开的脱敏开关；若未来支持发送前脱敏，必须先升级 contracts 和审计语义。
+`llm_call_logs.textRedactionBeforeThirdPartyLlm` 是契约固定审计字段，语义为发送至第三方 LLM 前是否做过文本脱敏；一期恒为 `false`。infrastructure 不得把它实现成可打开的脱敏开关；二期开启脱敏 pipeline 时由 `llm-gateway` 写入 `true`，并必须先升级 contracts 和审计语义。
 
 不得发送原始音频、标准化音频、声纹参考音频、声纹 embedding 和高敏会议文本。
 
@@ -183,6 +185,8 @@ KMS provider：
 `callback_events` 默认保留 `30d`。表结构必须包含 `request_body_hash`、`response_body`、`http_status`、`processed_at`，支持相同 key 直接重放缓存 body。
 
 `PATCH .../steps/{stepName}` 中 `status=RUNNING && progress>0` 的 heartbeat 不写 `callback_events`，不占用幂等 key 唯一约束；只更新 task / step 最新进度和 lease 时间。其它 callback 仍必须持久化幂等事件。
+
+`processing_tasks.phase` 使用 `task_phase` enum，取值为 `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`。Repository 更新 status 时必须同时维护 phase：worker `/complete phase=WORKER_DAG` 后置为 `WORKER_DAG_DONE`，Java LLM listener 开始时置为 `JAVA_LLM_RUNNING`，任何 task 终态置为 `TERMINAL`。
 
 ## 10. 验收标准
 

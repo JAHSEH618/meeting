@@ -66,6 +66,12 @@ errorCodes:
     userMessage: Worker 租约已过期
     i18nKey: errors.WORKER_LEASE_EXPIRED
     opsTags: [task, lease]
+  - code: INVALID_TASK_MESSAGE
+    step: TASK
+    retryable: false
+    userMessage: 任务消息不符合处理要求
+    i18nKey: errors.INVALID_TASK_MESSAGE
+    opsTags: [task, schema, worker]
 
   # ── Storage / TOS ─────────────────────────────────────────────
   - code: TOS_OBJECT_NOT_FOUND

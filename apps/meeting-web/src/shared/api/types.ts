@@ -56,10 +56,30 @@ export interface CreateMeetingRequest {
 
 // ── Task ─────────────────────────────────────────────────────────
 
+export type ProcessingTaskStatus =
+  | "PENDING"
+  | "QUEUED"
+  | "RUNNING"
+  | "ORPHANED"
+  | "PARTIAL_SUCCEEDED"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCEL_PENDING"
+  | "CANCELLED";
+
+export type ProcessingTaskPhase =
+  | "WORKER_DAG_RUNNING"
+  | "WORKER_DAG_DONE"
+  | "JAVA_LLM_RUNNING"
+  | "TERMINAL";
+
+export type ProcessingStepUpdateSource = "JAVA_TASK_SERVICE" | "AI_WORKER_CALLBACK";
+
 export interface ProcessingTask {
   taskId: string;
   meetingId: string;
-  status: string;
+  status: ProcessingTaskStatus;
+  phase: ProcessingTaskPhase;
   attemptNo: number;
   currentStep: string | null;
   lastErrorCode: string | null;
@@ -74,6 +94,11 @@ export interface TaskStep {
   startedAt: string | null;
   finishedAt: string | null;
   heartbeatAt: string | null;
+  attemptNo?: number | null;
+  leaseOwner?: string | null;
+  workerId?: string | null;
+  retryable?: boolean | null;
+  source: ProcessingStepUpdateSource;
 }
 
 export type TaskEventType =
@@ -94,6 +119,7 @@ export interface TaskEvent {
   meetingId?: string;
   stepName?: string;
   status: string;
+  phase?: ProcessingTaskPhase | null;
   progress?: number;
   retryable?: boolean;
   errorCode?: string | null;
@@ -163,6 +189,8 @@ export interface Evidence {
 
 // ── RAG ──────────────────────────────────────────────────────────
 
+export type RagAnswerCoverage = "TRANSCRIPT_ONLY" | "FULL";
+
 export interface RagQueryRequest {
   query: string;
   scope?: {
@@ -176,7 +204,7 @@ export interface RagQueryRequest {
 export interface RagQueryResponse {
   answer: string;
   citations: Citation[];
-  coverage: "TRANSCRIPT_ONLY" | "FULL";
+  coverage: RagAnswerCoverage;
   artifactManifestId: string;
 }
 

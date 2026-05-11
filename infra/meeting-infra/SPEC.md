@@ -59,6 +59,8 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 
 Compose 不写真实密钥，只提交 `.env.example`。
 
+`meeting-api` 镜像内嵌 LibreOffice headless 和字体包时必须使用多阶段构建并裁剪不需要的 LibreOffice 模块；如果压缩后镜像体积超过 1.5GB，下一轮部署设计应重新评估独立 export 服务或 sidecar，避免 K8s pull 和滚动更新时间不可控。
+
 ## 4. 服务部署
 
 | 服务 | 部署位置 | 资源重点 |
@@ -114,7 +116,7 @@ Compose 不写真实密钥，只提交 `.env.example`。
 7. JWT / session secret。
 8. CORS allowed origins。
 9. 模型权重路径和 checksum。
-10. `app.chunk.strategy-version`，例如 `chunk-2026.05.1`。
+10. `meeting.chunk.strategy-version`，例如 `chunk-2026.05.1`。
 11. callback HMAC timestamp skew，例如 `meeting.callback.timestamp-skew-seconds=300`。
 12. callback 幂等事件保留期，例如 `meeting.callback-events.retention-days=30`。
 

@@ -36,6 +36,7 @@ scripts/
 | `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 worker 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
 | `schemas/common/enums.yaml` | 跨工程枚举 | Java / TypeScript / Python codegen |
 | `schemas/common/error-codes.yaml` | 稳定错误码、retryable、i18n key、运维标签 | 前端 error mapper、Java exception mapper、worker fail callback |
+| `scripts/` | 契约生成、lint、枚举一致性和 CI 辅助脚本 | CI、pre-commit、各端 codegen |
 
 `fixtures/**` 可以作为后续契约回放样本目录引入，但一期仓库当前没有该目录时不得把 fixture replay 作为必过验收项。新增该目录后，每个 valid / invalid 样本必须纳入 CI 校验。
 
@@ -48,7 +49,8 @@ scripts/
 5. 枚举值使用大写下划线。
 6. 置信度范围为 `0.0` 到 `1.0`。
 7. 大文本、大数组和模型原始输出优先写 TOS，契约中返回 `artifactUri`、`sha256` 和 summary。
-8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，一期值恒为 `false`；契约消费方不得把它当作可自行切换的脱敏开关。
+8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，语义为发送至第三方 LLM 前是否做过文本脱敏；一期值恒为 `false`，契约消费方不得把它当作可自行切换的脱敏开关。
+9. RAG answer 必须携带 `coverage` 字段，取值来自 `RagAnswerCoverage`，并作为前端和服务端缓存 key 的一部分。
 
 ## 4. 通用响应
 
@@ -87,15 +89,20 @@ scripts/
 
 `schemas/common/enums.yaml` 必须覆盖：
 
-1. `SecurityLevel`: `PUBLIC`、`INTERNAL`、`CONFIDENTIAL`、`SECRET`。
-2. `ProcessingTaskStatus`: `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。
-3. `ProcessingStep`: `AUDIO_UPLOAD`、`AUDIO_PREPROCESS`、`ASR`、`ALIGNMENT`、`DIARIZATION`、`SPEAKER_EMBEDDING`、`SPEAKER_MATCHING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION`、`RAG_INDEXING`、`EXPORT`。
-4. `StaleStatus`: `ACTIVE`、`STALE`、`REBUILD_QUEUED`、`REBUILDING`、`VALIDATING`、`FAILED`、`DELETED`。
-5. `KnowledgeChunkStatus`: `ACTIVE`、`DELETED`。
-6. `ExportFormat`: `MARKDOWN`、`DOCX`、`PDF`。
-7. `TimestampPrecision`: `WORD`、`SEGMENT`、`APPROXIMATE`。
-8. `CitationType`: `MEETING_SEGMENT`、`DOCUMENT_CHUNK`。
-9. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STARTED`、`TASK_STEP_UPDATED`、`TASK_HEARTBEAT`、`TRANSCRIPT_READY`、`TASK_FAILED`、`TASK_COMPLETED`、`TASK_CANCELLED`。
+1. `MeetingStatus`: `CREATED`、`PROCESSING`、`SUCCEEDED`、`FAILED`、`DELETED`。
+2. `SecurityLevel`: `PUBLIC`、`INTERNAL`、`CONFIDENTIAL`、`SECRET`。
+3. `ProcessingTaskStatus`: `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。
+4. `ProcessingTaskPhase`: `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`。
+5. `StepStatus`: `PENDING`、`QUEUED`、`RUNNING`、`SUCCEEDED`、`FAILED`、`SKIPPED`、`CANCELLED`。
+6. `ProcessingStep`: `AUDIO_UPLOAD`、`AUDIO_PREPROCESS`、`ASR`、`ALIGNMENT`、`DIARIZATION`、`SPEAKER_EMBEDDING`、`SPEAKER_MATCHING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION`、`RAG_INDEXING`、`EXPORT`。
+7. `StaleStatus`: `ACTIVE`、`STALE`、`REBUILD_QUEUED`、`REBUILDING`、`VALIDATING`、`FAILED`、`DELETED`。
+8. `KnowledgeChunkStatus`: `ACTIVE`、`DELETED`。
+9. `ExportFormat`: `MARKDOWN`、`DOCX`、`PDF`。
+10. `TimestampPrecision`: `WORD`、`SEGMENT`、`APPROXIMATE`。
+11. `CitationType`: `MEETING_SEGMENT`、`DOCUMENT_CHUNK`。
+12. `RagAnswerCoverage`: `TRANSCRIPT_ONLY`、`FULL`。
+13. `ProcessingStepUpdateSource`: `JAVA_TASK_SERVICE`、`AI_WORKER_CALLBACK`。
+14. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STARTED`、`TASK_STEP_UPDATED`、`TASK_HEARTBEAT`、`TRANSCRIPT_READY`、`TASK_FAILED`、`TASK_COMPLETED`、`TASK_CANCELLED`。
 
 ## 6. 错误码
 
@@ -134,6 +141,7 @@ scripts/
 4. 分页接口统一 cursor 模型。
 5. 上传接口明确 multipart upload session、part、complete、abort 数据结构。
 6. RAG citation schema 必须可区分会议和文档引用。
+7. RAG answer DTO 必须包含必填 `coverage: RagAnswerCoverage`，RAG answer cache key 必须纳入该字段。
 
 ## 8. Internal Callback OpenAPI
 
@@ -148,6 +156,8 @@ POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
 ```
+
+`POST /internal/processing-tasks/{taskId}/complete` 使用 `CompleteWorkerPhaseRequest`，只表示 `phase=WORKER_DAG` 的 worker DAG 阶段完成，不表示整个 processing task 进入 `SUCCEEDED`。Java app 层在收到该 callback 后将 `ProcessingTask.phase` 从 `WORKER_DAG_RUNNING` 推进到 `WORKER_DAG_DONE`，再异步推进 `SUMMARY` / `EXTRACTION`；只有 Java 内部 step 全部满足终态规则后，task 才能进入 `SUCCEEDED` 或 `PARTIAL_SUCCEEDED`，此时 `phase=TERMINAL`。
 
 所有 callback endpoint 必须声明请求头：
 
@@ -209,10 +219,13 @@ HMAC 签名路径：
 13. `minSpeakers`、`maxSpeakers`。
 14. `options`。
 15. `traceId`。
+16. `pipelineSteps`。
 
 Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜测。
 
-`expectedInputVersion.chunkStrategyVersion` 的默认值由 Java `meeting-api` 的 `app.chunk.strategy-version` 配置项提供。首次创建 `MEETING_FULL_PIPELINE` 任务时由 Java task 模块写入消息；重建 / 重索引任务使用当前 `knowledge_chunks.chunk_strategy_version` 或更高层配置指定的版本。
+`pipelineSteps` 表达本条消息要求消费方推进的 step 集合，不得包含 Java `TaskStepProgressService` 所有的 `SUMMARY` / `EXTRACTION`。schema 必须通过 enum 或 lint 禁止这两个值进入任务消息；worker 如果收到未知 step 或被禁止的 `SUMMARY` / `EXTRACTION`，必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
+
+`expectedInputVersion.chunkStrategyVersion` 的默认值由 Java `meeting-api` 的 `meeting.chunk.strategy-version` 配置项提供。首次创建 `MEETING_FULL_PIPELINE` 任务时由 Java task 模块写入消息；重建 / 重索引任务使用当前 `knowledge_chunks.chunk_strategy_version` 或更高层配置指定的版本。
 
 ## 10. 版本策略
 
@@ -231,6 +244,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 4. 错误码与前端提示、后端异常、worker 错误上报一致。
 5. Public API、callback API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
 6. 如果引入 `fixtures/**`，每个 valid 样本必须通过对应 schema 校验；invalid 样本必须失败且错误路径稳定。
+7. `RagAnswerDTO` / RAG answer response 的 `coverage` 为必填字段，且与 `RagAnswerCoverage` 枚举一致。
 
 ## 12. Code Generation
 
@@ -249,6 +263,8 @@ CI 要求：
 2. Java / TypeScript / Python 枚举必须与 `schemas/common/enums.yaml` 一致。
 3. OpenAPI response 必须统一使用 `ApiResponse` envelope。
 4. 所有写操作必须声明 `X-Request-Id`、`X-Trace-Id` 和 `Idempotency-Key`，登录除外。
+5. `RagAnswerCoverage`、`ProcessingStepUpdateSource`、`ProcessingTaskStatus`、`ProcessingTaskPhase` 必须与 OpenAPI 和各端枚举生成物一致。
+6. `processing-task-message.schema.json` 的 `pipelineSteps` 不得允许 `SUMMARY` / `EXTRACTION`。
 
 ## 13. Spectral Lint
 
@@ -259,5 +275,5 @@ CI 要求：
 3. Public API 写操作必须声明 `X-Request-Id`、`X-Trace-Id`。
 4. 非登录写操作必须声明 `Idempotency-Key`。
 5. callback API 必须声明 `X-Worker-Id`、`X-Attempt-No`、`X-Lease-Owner`、`X-Timestamp`、`X-Nonce`、`X-Signature`。
-6. callback API 必须声明 `servers.url=/internal`，并通过 lint 防止 internal callback codegen 丢失 server prefix。
+6. callback API 必须声明 `servers.url=/internal`，并通过 lint 防止 internal callback codegen 丢失 server prefix；该规则以 `info.title` 中的 internal callback 语义识别文件，不依赖某个具体 path 是否存在。
 7. 4xx / 5xx response 必须引用统一错误响应 schema。

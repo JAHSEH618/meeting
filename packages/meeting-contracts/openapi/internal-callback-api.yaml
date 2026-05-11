@@ -150,7 +150,8 @@ paths:
           $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/complete:
     post:
-      operationId: completeProcessingTask
+      operationId: completeWorkerPhase
+      summary: Mark the worker DAG phase complete without moving the task to terminal SUCCEEDED.
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'
@@ -166,7 +167,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CompleteTaskRequest'
+              $ref: '#/components/schemas/CompleteWorkerPhaseRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -448,14 +449,17 @@ components:
                     pattern: '^tos://.+'
                   sha256: {type: [string, 'null']}
         artifactManifestId: {type: [string, 'null']}
-    CompleteTaskRequest:
+    CompleteWorkerPhaseRequest:
       type: object
-      required: [tenantId, taskId, attemptNo, status, completedSteps, finishedAt]
+      required: [tenantId, taskId, attemptNo, phase, status, completedSteps, finishedAt]
       properties:
         tenantId: {type: string}
         meetingId: {type: [string, 'null']}
         taskId: {type: string}
         attemptNo: {type: integer}
+        phase:
+          type: string
+          enum: [WORKER_DAG]
         status:
           type: string
           enum: [SUCCEEDED, PARTIAL_SUCCEEDED]

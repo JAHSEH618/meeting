@@ -57,6 +57,8 @@
 
 会议详情可作为 `/meetings/:meetingId` 的聚合入口，但不替代上述独立页面能力。
 
+一期不提供“全量 rebuild 成功会议”的前端入口；`SUCCEEDED -> PROCESSING` 仅供后端 internal-only 运维流程触发。前端只暴露已有的局部 regenerate / reindex 能力，并以后端返回状态控制按钮可见性。
+
 ## 4. 交互状态
 
 ### 4.1 任务进度
@@ -66,13 +68,14 @@
 必须展示字段：
 
 1. `taskStatus`: `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。
-2. step 名称：`AUDIO_UPLOAD`、`AUDIO_PREPROCESS`、`ASR`、`ALIGNMENT`、`DIARIZATION`、`SPEAKER_EMBEDDING`、`SPEAKER_MATCHING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION`、`RAG_INDEXING`、`EXPORT`。
-3. 当前 step 状态、进度、开始时间、更新时间。
-4. `errorCode`、`retryable`、`attemptNo`、`maxAttempts`。
-5. `eventId` 和 `sequenceNo`，用于断线恢复。
-6. 可操作按钮：取消、重试。按钮是否可用以后端状态为准。
+2. `phase`: `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`，用于区分 worker 阶段、等待 Java LLM 阶段和终态。
+3. step 名称：`AUDIO_UPLOAD`、`AUDIO_PREPROCESS`、`ASR`、`ALIGNMENT`、`DIARIZATION`、`SPEAKER_EMBEDDING`、`SPEAKER_MATCHING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION`、`RAG_INDEXING`、`EXPORT`。
+4. 当前 step 状态、进度、开始时间、更新时间。
+5. `source`、`errorCode`、`retryable`、`attemptNo`、`maxAttempts`。
+6. `eventId` 和 `sequenceNo`，用于断线恢复。
+7. 可操作按钮：取消、重试。按钮是否可用以后端状态为准。
 
-`SUMMARY` 和 `EXTRACTION` step 由 Java `meeting-api-app` 内部 `TaskStepProgressService` 推进，不来自 `ai-worker` callback。前端展示这些 step 时必须允许 `attemptNo`、`leaseOwner`、`workerId` 为空，`retryable` 默认以后端返回为准；若后端未返回 worker retry 语义，展示为不可由 worker 重试。两类 step 的状态变化仍通过 `TASK_STEP_UPDATED` SSE 可见。
+`SUMMARY` 和 `EXTRACTION` step 由 Java `meeting-api-app` 内部 `TaskStepProgressService` 推进，不来自 `ai-worker` callback。前端展示这些 step 时必须允许 `attemptNo`、`leaseOwner`、`workerId` 为空，但 `source` 必须为 `JAVA_TASK_SERVICE`；worker callback step 的 `source` 必须为 `AI_WORKER_CALLBACK`。`retryable` 默认以后端返回为准；Java 推进 step 失败时，前端不展示 worker 重试入口，但 `SUMMARY` / `EXTRACTION` 可以通过后端提供的 regenerate action 单独触发再生成。两类 step 的状态变化仍通过 `TASK_STEP_UPDATED` SSE 可见。
 
 SSE 断线后，前端携带 `Last-Event-Id` 尝试续接；服务端无法续接时以前端收到的 task 快照为准。重连失败时回退轮询 `GET /api/processing-tasks/{taskId}`。
 
@@ -98,6 +101,8 @@ RAG 答案必须展示 `coverage` 标签：
 1. `TRANSCRIPT_ONLY`：仅转录 chunk 可检索，纪要、待办、决策、风险尚未纳入答案范围。
 2. `FULL`：转录、纪要和结构化事项均已进入可检索范围。
 3. `coverage` 从 `TRANSCRIPT_ONLY` 变为 `FULL` 时，旧 RAG answer cache 必须失效。
+
+前端以 RAG answer DTO 中的 `coverage` 作为唯一事实来源，不依赖单独 SSE 事件推断覆盖范围变化；coverage 变化由后端在生成 answer 时给出，前端在接收新 answer 后按 cache key 失效旧答案。
 
 ### 4.3 Citation
 

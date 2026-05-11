@@ -1,6 +1,6 @@
 package com.meeting.api.client.enums;
 
-public enum TaskStatus {
+public enum ProcessingTaskStatus {
     PENDING,
     QUEUED,
     RUNNING,

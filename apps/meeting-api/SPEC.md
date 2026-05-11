@@ -96,14 +96,17 @@ ArchUnit 落地测试类固定为 `meeting-api-start/src/test/java/com/meeting/a
 3. 上传完成后，`meeting` 保存音频文件元信息。
 4. `task` 创建 `MEETING_FULL_PIPELINE` processing task。
 5. `task` 发布 outbox 事件，outbox publisher 投递 RabbitMQ。
-6. `ai-worker` 消费任务并回写 step、artifact、transcript、speaker candidates 和终态。
+6. `ai-worker` 消费任务并回写 step、artifact、transcript、speaker candidates 和 `phase=WORKER_DAG` 完成状态；它不负责整个 task 终态。
 7. `adapter` 接收 callback，`app` 校验幂等、attempt、lease、tenant 和 meeting 关系。
 8. `meeting` 落库结构化转录。
-9. Java `task` 模块通过 `TaskStepProgressService` 将 `SUMMARY` step 标记为 `RUNNING`，`llm-gateway` 生成纪要后标记 `SUCCEEDED` / `FAILED`，并发布 `TASK_STEP_UPDATED` SSE。
-10. Java `task` 模块同样推进 `EXTRACTION` step，生成待办、决策、风险后标记 `SUCCEEDED` / `FAILED`，并发布 `TASK_STEP_UPDATED` SSE。
-11. `ai-worker` 不参与 `SUMMARY` / `EXTRACTION` 的 step 推进。
-12. `rag` 将转录、纪要和结构化事项入库为 chunk。
-13. outbox publisher 投递成功后发布 `TASK_STARTED` / `TASK_STEP_UPDATED` SSE 事件；推送失败不得回滚业务事务，但必须进入 outbox 重试和告警。
+9. `app` 在确认 worker phase 完成的同一事务内推进 `processing_tasks.phase=WORKER_DAG_DONE`，写出 `WORKER_PHASE_COMPLETED` outbox；callback 响应不等待 LLM。
+10. app 层 listener 异步消费 `WORKER_PHASE_COMPLETED`，通过 `TaskStepProgressService` 将 `processing_tasks.phase=JAVA_LLM_RUNNING`，并将 `SUMMARY` step 标记为 `RUNNING`；`llm-gateway` 生成纪要后标记 `SUCCEEDED` / `FAILED`，并发布 `TASK_STEP_UPDATED` SSE。
+11. Java `task` 模块同样推进 `EXTRACTION` step，生成待办、决策、风险后标记 `SUCCEEDED` / `FAILED`，最终将 `processing_tasks.phase=TERMINAL` 并发布 task 终态事件。
+12. `ai-worker` 不参与 `SUMMARY` / `EXTRACTION` 的 step 推进。
+13. `rag` 将转录、纪要和结构化事项入库为 chunk。
+14. outbox publisher 投递成功后发布 `TASK_STARTED` / `TASK_STEP_UPDATED` SSE 事件；推送失败不得回滚业务事务，但必须进入 outbox 重试和告警。
+
+`TaskStepProgressService` 是 `meeting-api-app` 的 app 层 task service，不是 domain port。实现放在 `meeting-api-app/src/main/java/com/meeting/api/app/task/`，通过 `ProcessingTaskRepository` 推进 step 状态，并与 outbox 写入处于同一应用事务边界内。
 
 ### 4.2 文档知识库
 
@@ -302,7 +305,7 @@ Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓
 ## 10. 验收标准
 
 1. 完成登录、租户隔离、会议创建、音频上传和任务创建。
-2. RabbitMQ 消息包含 task、tenant、meeting、audio URI、security level、attempt、版本和 trace。
+2. RabbitMQ 消息包含 task、tenant、meeting、audio URI、security level、attempt、`pipelineSteps`、版本和 trace，且不得把 `SUMMARY` / `EXTRACTION` 分配给 `ai-worker`。
 3. callback 支持幂等重放，旧 attempt 不能覆盖新结果。
 4. 转录落库区分 `original_text`、`edited_text`、`current_text`。
 5. 编辑转录后纪要、事项和 RAG chunk 标记 STALE。
@@ -313,5 +316,5 @@ Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓
 10. legal hold 阻止生命周期删除，deletion job 完成后生成 certificate。
 11. heartbeat callback 重放或连续上报不因 body hash 不同返回 409。
 12. `SUMMARY` / `EXTRACTION` step 由 Java 推进，前端可通过 SSE 看到 `TASK_STEP_UPDATED`。
-13. `/complete` callback 中的 `skippedSteps` 会写入 `processing_task_steps.status=SKIPPED`。
-14. `meetings.status` 按 `CREATED -> PROCESSING -> SUCCEEDED / FAILED -> DELETED` 状态机推进，legal hold 命中时删除返回 423。
+13. `/complete phase=WORKER_DAG` callback 中的 `skippedSteps` 会写入 worker-owned `processing_task_steps.status=SKIPPED`，但不会直接把 task 推进到终态。
+14. `meetings.status` 按 `CREATED -> PROCESSING -> SUCCEEDED / FAILED -> DELETED` 状态机推进；全量 rebuild 允许 `SUCCEEDED -> PROCESSING` 但一期仅 internal-only 运维触发，不提供 public API 或前端入口；局部 regenerate / reindex 不改变 meeting status，legal hold 命中时删除返回 423。

@@ -106,6 +106,7 @@ RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后�
 9. `minSpeakers`、`maxSpeakers`。
 10. `options`。
 11. `traceId`。
+12. `pipelineSteps`。
 
 缺失关键字段时，worker 应 fail fast，并通过 callback 写入稳定 `error_code`。
 
@@ -128,18 +129,22 @@ async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
     await callback_transcript.submit(task, merged)
     if task.options.enable_rag_indexing:
         await embedding_submit.submit(merged, task)
-    await callback_complete.submit(task, merged)
+    await callback_worker_phase_complete.submit(task, merged, phase="WORKER_DAG")
     return merged
 ```
 
 `SUMMARY` 和 `EXTRACTION` 不属于 `ai-worker` Pipeline DAG；这两个 step 由 Java `meeting-api-app` 在调用 `llm-gateway` 时通过 `TaskStepProgressService` 推进，worker 不发送对应 step callback。
+
+任务消息的 `pipelineSteps` 不得包含 `SUMMARY` / `EXTRACTION`。worker 启动 workflow 前必须按 `processing-task-message.schema.json` 做 fail-fast 校验；如果收到未知 step 或被禁止的 Java-owned step，必须终止消费并通过 `/fail` 上报 `INVALID_TASK_MESSAGE`，不得尝试发送对应 step callback。
+
+worker 根据 `taskType` 选择 workflow 入口，并使用 `pipelineSteps` 校验该 workflow 内部 DAG。`pipelineSteps` 与 workflow registry 中声明的 step 集合必须一一对应；缺失、额外或顺序 / 依赖不满足时，worker 必须 `/fail INVALID_TASK_MESSAGE` 拒绝消费。具体映射定义在 `apps/ai-worker/ai_worker/application/workflows/registry.py` 或等效注册表，并由契约测试覆盖。
 
 失败策略：每个 worker step 开始、进度和失败都 callback；CPU 预处理失败直接终止；ASR 失败导致 transcript 不可用；Diarization 失败必须 `FAILED`，不得降级；一期只有 `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可按配置或业务条件降级为 `PARTIAL_SUCCEEDED`；callback 失败按 `WRITEBACK_FAILED` 重试，耗尽后让 Java lease 过期重入队。
 
 `PARTIAL_SUCCEEDED` 上报路径：
 
 1. 可降级 step 失败且已有可用产物时，worker 继续完成可用产物回写。
-2. 终态调用 `POST /internal/processing-tasks/{taskId}/complete`，`status=PARTIAL_SUCCEEDED`，并在 `skippedSteps` 中声明失败 / 跳过的 optional step 和原因。
+2. worker 阶段完成时调用 `POST /internal/processing-tasks/{taskId}/complete`，body 必须包含 `phase=WORKER_DAG`。`status=PARTIAL_SUCCEEDED` 表示 worker phase partial，并在 `skippedSteps` 中声明失败 / 跳过的 optional step 和原因；这不是整个 task 的终态。
 3. 不可降级 step 失败时调用 `/fail`，不得通过 `/complete + skippedSteps` 伪装成功。
 4. `DIARIZATION`、`SPEAKER_EMBEDDING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION` 失败均不由 worker 降级；其中 `SUMMARY` / `EXTRACTION` 的失败由 Java 上报。
 
@@ -223,7 +228,9 @@ X-Signature
 5. 大 JSON 和中间产物写 TOS，callback 只传 URI、sha256、size、summary 和 metadata。
 6. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
 
-普通 step 开始、完成、失败 callback 必须更换能表达语义变化的 payload version，并接受 Java 的 body hash 幂等校验；heartbeat 是最新进度写入，不得因为连续上报而预期 Java 返回 409。
+heartbeat callback 版本规则：`status=RUNNING && progress>0` 的连续进度上报固定使用同一 payload version，表达 latest-wins 进度刷新，不得因为连续上报而预期 Java 返回 409。
+
+普通 step callback 版本规则：step 开始、完成、失败以及 artifact / transcript / embeddings 等语义变化必须更换 payload version，并接受 Java 的 body hash 幂等校验。
 
 每个 step 的触发点：
 
@@ -234,7 +241,7 @@ X-Signature
 | TRANSCRIPT_MERGE | `POST /internal/processing-tasks/{taskId}/transcript` | `TranscriptCallbackRequest` |
 | SPEAKER_MATCHING | `POST /internal/processing-tasks/{taskId}/speaker-candidates` | `SpeakerCandidatesCallbackRequest` |
 | RAG_INDEXING / TEXT_EMBEDDING | `POST /internal/processing-tasks/{taskId}/embeddings` | `EmbeddingsCallbackRequest` |
-| 任务完成 | `POST /internal/processing-tasks/{taskId}/complete` | `CompleteTaskRequest` |
+| worker DAG 阶段完成 | `POST /internal/processing-tasks/{taskId}/complete`，`phase=WORKER_DAG` | `CompleteWorkerPhaseRequest` |
 | 任务失败 | `POST /internal/processing-tasks/{taskId}/fail` | `FailTaskRequest` |
 
 ## 8. 模型供应链
@@ -299,4 +306,5 @@ RTX 3090 / 4090 24GB 或同等显存 GPU
 7. Worker 异常退出后，Java lease 过期可重新入队，旧 attempt 结果不能覆盖新 attempt。
 8. 所有模型产物绑定 artifact manifest。
 9. 模型状态、workflow 状态和 health 能通过内部接口查看。
-10. `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可降级时通过 `/complete status=PARTIAL_SUCCEEDED + skippedSteps` 上报；`DIARIZATION` 失败必须 `/fail`。
+10. `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可降级时通过 `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED + skippedSteps` 上报 worker phase partial；`DIARIZATION` 失败必须 `/fail`。
+11. task message `pipelineSteps` 不得包含 `SUMMARY` / `EXTRACTION`；收到非法 step 时必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。

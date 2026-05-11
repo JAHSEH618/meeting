@@ -16,7 +16,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 |---|---|---|---|
 | `meeting-web` | `meeting-api` | HTTPS JSON / SSE | 登录、会议、上传、任务进度、转录、纪要、RAG、导出、管理 |
 | `meeting-api` | RabbitMQ | JSON message | 投递音频处理、重建、导出等异步任务 |
-| `ai-worker` | `meeting-api` | Internal HTTPS JSON callback | 回写任务步骤、产物、转录、声纹候选、任务终态 |
+| `ai-worker` | `meeting-api` | Internal HTTPS JSON callback | 回写任务步骤、产物、转录、声纹候选和 worker phase 完成状态 |
 | `ai-worker` | TOS | TOS URI / SDK | 读取音频，写入中间 JSON、模型产物、导出中间件 |
 | `meeting-api` | TOS | TOS URI / SDK | 上传签名、文件元信息、导出文件、下载签名 |
 | `meeting-api` | DashScope | OpenAI-compatible API | 纪要、待办、决策、风险、RAG 答案生成 |
@@ -43,7 +43,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 5. 枚举值统一使用大写下划线，例如 `INTERNAL`、`RUNNING`、`STALE`。
 6. 金额、分数、置信度等数值不得用字符串表达；置信度范围为 `0.0` 到 `1.0`。
 7. 大文本、大数组、大模型输出优先写 TOS，API 中返回 `artifactUri`、`sha256` 和 summary。
-8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，一期值恒为 `false`；契约消费方不得把它当作可自行切换的脱敏开关。
+8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，语义为发送至第三方 LLM 前是否做过文本脱敏；一期值恒为 `false`，契约消费方不得把它当作可自行切换的脱敏开关。
 
 ### 2.2 公共请求头
 
@@ -569,12 +569,12 @@ GET /api/processing-tasks/{taskId}/events
 
 | eventType | 必填字段 | 触发时机 |
 |---|---|---|
-| `TASK_SNAPSHOT` | `eventId`、`sequenceNo`、`taskId`、`status`、`steps`、`emittedAt` | SSE 建连、无法续接历史窗口、客户端显式刷新 |
+| `TASK_SNAPSHOT` | `eventId`、`sequenceNo`、`taskId`、`status`、`phase`、`steps`、`emittedAt` | SSE 建连、无法续接历史窗口、客户端显式刷新 |
 | `TASK_STARTED` | `eventId`、`sequenceNo`、`taskId`、`status=RUNNING`、`attemptNo`、`emittedAt` | worker 成功 claim lease |
 | `TASK_STEP_UPDATED` | `eventId`、`sequenceNo`、`taskId`、`stepName`、`status`、`progress`、`emittedAt` | step 开始、进度、完成或错误码变化 |
 | `TASK_HEARTBEAT` | `eventId`、`sequenceNo`、`taskId`、`stepName`、`status=RUNNING`、`leaseExpiresAt`、`emittedAt` | worker heartbeat 被接受 |
 | `TRANSCRIPT_READY` | `eventId`、`sequenceNo`、`taskId`、`meetingId`、`transcriptVersion`、`artifactManifestId`、`emittedAt` | 结构化转录落库成功 |
-| `TASK_COMPLETED` | `eventId`、`sequenceNo`、`taskId`、`status`、`completedSteps`、`artifactManifestId`、`emittedAt` | task `SUCCEEDED` 或 `PARTIAL_SUCCEEDED` |
+| `TASK_COMPLETED` | `eventId`、`sequenceNo`、`taskId`、`status`、`phase=TERMINAL`、`completedSteps`、`artifactManifestId`、`emittedAt` | Java 完成 worker phase 后的 `SUMMARY` / `EXTRACTION` 与所有必做 step，并将 task 推进到 `SUCCEEDED` 或 `PARTIAL_SUCCEEDED` |
 | `TASK_FAILED` | `eventId`、`sequenceNo`、`taskId`、`status=FAILED`、`errorCode`、`retryable`、`emittedAt` | task 失败或重试耗尽 |
 | `TASK_CANCELLED` | `eventId`、`sequenceNo`、`taskId`、`status=CANCELLED`、`emittedAt` | 取消完成 |
 
@@ -1319,11 +1319,13 @@ POST /internal/processing-tasks/{taskId}/embeddings
 }
 ```
 
-### 6.6 标记完成
+### 6.6 标记 worker 阶段完成
 
 ```http
 POST /internal/processing-tasks/{taskId}/complete
 ```
+
+请求体 schema 为 `CompleteWorkerPhaseRequest`。该 callback 只表示 `phase=WORKER_DAG` 的 worker DAG 阶段完成，不表示整个 task 已进入 `SUCCEEDED`。
 
 请求：
 
@@ -1333,6 +1335,7 @@ POST /internal/processing-tasks/{taskId}/complete
   "meetingId": "m_001",
   "taskId": "task_001",
   "attemptNo": 1,
+  "phase": "WORKER_DAG",
   "status": "SUCCEEDED",
   "completedSteps": [
     "AUDIO_PREPROCESS",

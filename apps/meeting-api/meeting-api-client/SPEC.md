@@ -26,6 +26,9 @@ com.meeting.api.client
     ProcessingStep
     MeetingStatus
     ProcessingTaskStatus
+    ProcessingTaskPhase
+    ProcessingStepUpdateSource
+    RagAnswerCoverage
     StaleStatus
   internal/
     callback/
@@ -88,14 +91,17 @@ com.meeting.api.client
 5. `CancelTaskCommand`。
 6. `TaskEventDTO`：SSE 事件 DTO，包含 `eventId`、`sequenceNo`、`eventType`、`taskId`、`stepName`、`status`、`progress`、`errorCode`、`emittedAt`。
 
-必须表达 step 级状态、progress、attempt、lease 摘要、`errorCode` 和 `retryable`。
+`ProcessingTaskDTO` 必须表达 `status` 与 `phase` 两个维度：`status` 表达任务调度 / 终态，`phase` 表达管线阶段，取值为 `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`。
+
+必须表达 step 级状态、progress、attempt、lease 摘要、`errorCode`、`retryable` 和非空 `source`。
 
 `ProcessingTaskStepDTO` 必须表达 step 推进来源差异：
 
 1. worker 推进的 step 可包含 `attemptNo`、`leaseOwner`、`workerId`。
-2. Java 内部推进的 `SUMMARY` / `EXTRACTION` 允许 `attemptNo`、`leaseOwner`、`workerId` 为空，或通过 `source=JAVA_TASK_SERVICE` 明确来源。
-3. worker callback 来源可使用 `source=AI_WORKER_CALLBACK`。
-4. 前端不得因为 Java 推进 step 缺少 lease 信息而判定数据异常。
+2. Java 内部推进的 `SUMMARY` / `EXTRACTION` 允许 `attemptNo`、`leaseOwner`、`workerId` 为空，且通过 `source=JAVA_TASK_SERVICE` 明确来源。
+3. worker callback 来源使用 `source=AI_WORKER_CALLBACK`。
+4. `source` 字段必填，类型必须使用 `ProcessingStepUpdateSource` 枚举，枚举事实来源为 `schemas/common/enums.yaml`。
+5. 前端不得因为 Java 推进 step 缺少 lease 信息而判定数据异常。
 
 ### 3.4 转录与 speaker
 
@@ -117,6 +123,8 @@ com.meeting.api.client
 6. `RagQueryCommand`。
 7. `RagAnswerDTO`。
 8. `CitationDTO`。
+
+`RagAnswerDTO` 必须包含必填 `coverage: RagAnswerCoverage`，取值为 `TRANSCRIPT_ONLY` 或 `FULL`；前端 RAG answer cache key 必须包含该字段。
 
 所有 AI 结果必须包含 `staleStatus` 和可选 `artifactManifestId`。
 
@@ -173,5 +181,7 @@ ComplianceFacade
 1. OpenAPI 生成 Java DTO / interface 到临时目录。
 2. 与 `meeting-api-client` 手写 DTO 做字段和枚举一致性测试。
 3. CI 校验 `ErrorCode` 枚举覆盖 `schemas/common/error-codes.yaml`。
-4. CI 校验 `ProcessingStep`、`ProcessingTaskStatus`、`MeetingStatus`、`StaleStatus` 与 `schemas/common/enums.yaml` 一致。
+4. CI 校验 `ProcessingStep`、`ProcessingTaskStatus`、`ProcessingTaskPhase`、`ProcessingStepUpdateSource`、`MeetingStatus`、`RagAnswerCoverage`、`StaleStatus` 与 `schemas/common/enums.yaml` 一致。
 5. Public DTO 不得包含 internal callback 专用字段；internal callback command 可以在 `client/internal` 包下隔离。
+6. CI 在 Java / TypeScript 标识符语境中执行 `\bTaskStatus\b` 检查，不得再命中旧枚举名；`ProcessingTaskStatus` 是唯一合法类型名。
+7. Java 推进 step 时不得留空 `source`；当 `attemptNo=null && leaseOwner=null && workerId=null` 时，DTO assembler 必须输出 `source=JAVA_TASK_SERVICE`。

@@ -36,7 +36,7 @@ com.meeting.api.domain
 | `Person` | 现实参会人，可与 user 绑定 |
 | `Meeting` | 会议安全等级、状态、参会人、版本号；状态机统一为 `CREATED`、`PROCESSING`、`SUCCEEDED`、`FAILED`、`DELETED` |
 | `MeetingFile` | 音频和文档文件元信息、TOS URI、hash |
-| `ProcessingTask` | task 状态机、attempt、lease、step |
+| `ProcessingTask` | task 状态机、phase、attempt、lease、step |
 | `TranscriptSegment` | 时间戳、speaker、original/edited/current text |
 | `MeetingSpeaker` | 匿名 label 与 person 的人工确认状态 |
 | `SpeakerProfile` | 声纹档案、授权、撤销状态 |
@@ -94,7 +94,36 @@ Repository 只能按聚合根保存聚合；跨聚合一致性由 app 层事务�
 6. 重试耗尽进入 `FAILED` 或 DLQ。
 7. 旧 attempt callback 不得推进新 attempt 状态。
 
-task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。`PARTIAL_SUCCEEDED` 只允许由 app 层处理 `/complete` callback 中的 `skippedSteps` 或 Java 内部 optional step 策略产生。
+task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PARTIAL_SUCCEEDED`、`SUCCEEDED`、`FAILED`、`CANCEL_PENDING`、`CANCELLED`。`ProcessingTask.phase` 独立表达管线阶段，覆盖 `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`。Worker `/complete` callback 必须携带 `phase=WORKER_DAG`，只表示 worker DAG 阶段完成，不允许直接把 task 推进到 `SUCCEEDED`；`PARTIAL_SUCCEEDED` 只允许由 Java app 层在 worker phase partial 或 Java 内部 optional step 策略确认核心产物可用后产生。
+
+phase 迁移规则：
+
+| From | To | 触发 |
+|---|---|---|
+| `WORKER_DAG_RUNNING` | `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG` callback 幂等落库成功 |
+| `WORKER_DAG_DONE` | `JAVA_LLM_RUNNING` | app 层 listener 开始推进 `SUMMARY` |
+| `JAVA_LLM_RUNNING` | `TERMINAL` | `SUMMARY` / `EXTRACTION` 与所有必做 step 达到终态 |
+| 任意非 `TERMINAL` | `TERMINAL` | task `FAILED`、`CANCELLED` 或 deletion / cleanup 强制终止 |
+
+外部观察者不得仅用 `processing_tasks.status=RUNNING` 推断进度阶段；Public API 的 `ProcessingTaskDTO.phase` 是前端进度条、运维 dashboard 和告警阶段判断的事实来源。
+
+允许迁移边：
+
+| From | To | 触发 |
+|---|---|---|
+| `PENDING` | `QUEUED` | task 创建后投递 outbox / MQ |
+| `QUEUED` | `RUNNING` | worker 领取或 Java 内部执行器开始处理 |
+| `RUNNING` | `RUNNING` | heartbeat / progress update，只刷新 lease 和 step progress |
+| `RUNNING` | `ORPHANED` | lease 过期且未进入终态 |
+| `ORPHANED` | `QUEUED` | Java lease scanner 重新入队 |
+| `RUNNING` | `RUNNING` | `/complete phase=WORKER_DAG status=SUCCEEDED`；记录 worker phase 完成，`phase=WORKER_DAG_DONE`，但 task 不进入终态 |
+| `RUNNING` | `RUNNING` | `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` 且携带 `skippedSteps`；写入 optional worker step 的 `SKIPPED` / `FAILED` 原因，`phase=WORKER_DAG_DONE` |
+| `RUNNING` | `SUCCEEDED` | Java 内部 `SUMMARY` / `EXTRACTION` 以及所有必做 step 全部成功 |
+| `RUNNING` | `PARTIAL_SUCCEEDED` | worker phase partial 或 Java optional step 失败，但核心产物可用且所有必做 step 已完成 |
+| `RUNNING` | `FAILED` | 不可降级 step 失败且重试耗尽 |
+| `PENDING` / `QUEUED` / `RUNNING` / `ORPHANED` | `CANCEL_PENDING` | 用户取消请求已接受 |
+| `CANCEL_PENDING` | `CANCELLED` | worker 确认停止，或 Java 确认无有效 lease 且不会再产生新写入 |
+| `FAILED` / `PARTIAL_SUCCEEDED` | `QUEUED` | 用户重试失败 step 或重建 task |
 
 ### 4.4 Meeting 状态
 
@@ -104,7 +133,8 @@ task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PART
 2. `PROCESSING -> SUCCEEDED`：必做 step 完成并同步 task 终态。
 3. `PROCESSING -> FAILED`：必做 step 失败且重试耗尽。
 4. `FAILED -> PROCESSING`：用户重建 / 重试任务。
-5. `任意非 DELETED -> DELETED`：用户删除、retention 或 deletion job，执行前必须检查 legal hold。
+5. `SUCCEEDED -> PROCESSING`：仅 internal-only 全量 rebuild 允许，一期不开放 public API 或前端入口；局部 RAG reindex 或 `SUMMARY` / `EXTRACTION` regenerate 不改变 meeting status，只改变相关 task / freshness 状态。
+6. `任意非 DELETED -> DELETED`：用户删除、retention 或 deletion job，执行前必须检查 legal hold。
 
 ### 4.5 声纹
 
@@ -136,17 +166,18 @@ task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PART
 2. `AudioUploadedEvent`。
 3. `ProcessingTaskCreatedEvent`。
 4. `ProcessingTaskStepChangedEvent`。
-5. `TranscriptCompletedEvent`。
-6. `TranscriptEditedEvent`。
-7. `SpeakerCandidateGeneratedEvent`。
-8. `SpeakerConfirmedEvent`。
-9. `MinutesGeneratedEvent`。
-10. `ContentMarkedStaleEvent`。
-11. `RagReindexRequestedEvent`。
-12. `ExportRequestedEvent`。
-13. `LegalHoldCreatedEvent`。
-14. `DeletionJobCompletedEvent`。
-15. `BreakGlassApprovedEvent`。
+5. `WorkerPhaseCompletedEvent`。
+6. `TranscriptCompletedEvent`。
+7. `TranscriptEditedEvent`。
+8. `SpeakerCandidateGeneratedEvent`。
+9. `SpeakerConfirmedEvent`。
+10. `MinutesGeneratedEvent`。
+11. `ContentMarkedStaleEvent`。
+12. `RagReindexRequestedEvent`。
+13. `ExportRequestedEvent`。
+14. `LegalHoldCreatedEvent`。
+15. `DeletionJobCompletedEvent`。
+16. `BreakGlassApprovedEvent`。
 
 事件由 app 层写入 outbox，domain 只负责表达事件。
 
@@ -171,6 +202,7 @@ task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PART
 | 事件 | payload 必填字段 |
 |---|---|
 | `ProcessingTaskStepChangedEvent` | `taskId`、`stepName`、`fromStatus`、`toStatus`、`attemptNo`、`progress` |
+| `WorkerPhaseCompletedEvent` | `taskId`、`attemptNo`、`workerStatus`、`completedSteps`、`skippedSteps`、`artifactManifestId` |
 | `TranscriptEditedEvent` | `meetingId`、`segmentId`、`oldTranscriptVersion`、`newTranscriptVersion`、`editorUserId` |
 | `SpeakerConfirmedEvent` | `meetingId`、`speakerLabel`、`personId`、`transcriptVersion`、`source` |
 | `ContentMarkedStaleEvent` | `sourceType`、`sourceId`、`oldStaleStatus`、`newStaleStatus`、`reason` |
@@ -189,7 +221,7 @@ task 状态机必须覆盖 `PENDING`、`QUEUED`、`RUNNING`、`ORPHANED`、`PART
 6. `DocumentRepository`。
 7. `ExportJobRepository`。
 8. `AuditRepository`。
-9. `CallbackEventRepository`：callback 幂等记录、重放结果和冲突检测端口；heartbeat 例外由 app 层绕过该端口。
+9. `CallbackEventRepository`：callback event 聚合的幂等记录、重放结果和冲突检测端口；heartbeat 不是 callback event 聚合的一部分，因此不经此 repository，而是通过 `ProcessingTaskRepository` 的进度更新方法刷新 task / step 最新状态。
 10. `StorageGateway`。
 11. `MessagePublisher`。
 12. `LlmGateway`。

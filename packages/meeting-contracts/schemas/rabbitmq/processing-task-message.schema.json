@@ -10,6 +10,7 @@
     "meetingId",
     "securityLevel",
     "attemptNo",
+    "pipelineSteps",
     "expectedInputVersion",
     "options",
     "traceId"
@@ -37,6 +38,26 @@
       "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]
     },
     "attemptNo": {"type": "integer", "minimum": 1},
+    "pipelineSteps": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "AUDIO_UPLOAD",
+          "AUDIO_PREPROCESS",
+          "ASR",
+          "ALIGNMENT",
+          "DIARIZATION",
+          "SPEAKER_EMBEDDING",
+          "SPEAKER_MATCHING",
+          "TRANSCRIPT_MERGE",
+          "RAG_INDEXING",
+          "EXPORT"
+        ]
+      }
+    },
     "expectedInputVersion": {
       "type": "object",
       "required": ["chunkStrategyVersion"],

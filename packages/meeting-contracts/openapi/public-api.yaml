@@ -1447,12 +1447,14 @@ components:
 
     ProcessingTask:
       type: object
-      required: [taskId, meetingId, status, attemptNo, steps]
+      required: [taskId, meetingId, status, phase, attemptNo, steps]
       properties:
         taskId: {type: string}
         meetingId: {type: [string, 'null']}
         status:
-          $ref: '#/components/schemas/TaskStatus'
+          $ref: '#/components/schemas/ProcessingTaskStatus'
+        phase:
+          $ref: '#/components/schemas/ProcessingTaskPhase'
         attemptNo: {type: integer}
         currentStep: {type: [string, 'null']}
         lastErrorCode: {type: [string, 'null']}
@@ -1465,7 +1467,7 @@ components:
 
     ProcessingTaskStep:
       type: object
-      required: [stepName, status, progress]
+      required: [stepName, status, progress, source]
       properties:
         stepName:
           $ref: '#/components/schemas/ProcessingStep'
@@ -1478,6 +1480,12 @@ components:
         startedAt: {type: [string, 'null'], format: date-time}
         finishedAt: {type: [string, 'null'], format: date-time}
         heartbeatAt: {type: [string, 'null'], format: date-time}
+        attemptNo: {type: [integer, 'null']}
+        leaseOwner: {type: [string, 'null']}
+        workerId: {type: [string, 'null']}
+        retryable: {type: [boolean, 'null']}
+        source:
+          $ref: '#/components/schemas/ProcessingStepUpdateSource'
 
     TaskEvent:
       type: object
@@ -1492,6 +1500,10 @@ components:
         meetingId: {type: [string, 'null']}
         stepName: {type: [string, 'null']}
         status: {type: string}
+        phase:
+          anyOf:
+            - $ref: '#/components/schemas/ProcessingTaskPhase'
+            - type: 'null'
         progress: {type: [integer, 'null']}
         retryable: {type: [boolean, 'null']}
         errorCode: {type: [string, 'null']}
@@ -1600,26 +1612,28 @@ components:
       properties:
         success: {type: boolean}
         data:
-          type: object
-          required: [answer, citations, coverage, artifactManifestId]
-          properties:
-            answer: {type: string}
-            citations:
-              type: array
-              items:
-                anyOf:
-                  - $ref: '#/components/schemas/MeetingSegmentCitation'
-                  - $ref: '#/components/schemas/DocumentChunkCitation'
-            coverage:
-              type: string
-              enum: [TRANSCRIPT_ONLY, FULL]
-            artifactManifestId: {type: string}
+          $ref: '#/components/schemas/RagAnswerDTO'
         error:
           anyOf:
             - $ref: '#/components/schemas/ErrorInfo'
             - type: 'null'
         requestId: {type: string}
         traceId: {type: string}
+
+    RagAnswerDTO:
+      type: object
+      required: [answer, citations, coverage, artifactManifestId]
+      properties:
+        answer: {type: string}
+        citations:
+          type: array
+          items:
+            anyOf:
+              - $ref: '#/components/schemas/MeetingSegmentCitation'
+              - $ref: '#/components/schemas/DocumentChunkCitation'
+        coverage:
+          $ref: '#/components/schemas/RagAnswerCoverage'
+        artifactManifestId: {type: string}
 
     MeetingSegmentCitation:
       type: object
@@ -1682,9 +1696,13 @@ components:
       type: string
       enum: [CREATED, PROCESSING, SUCCEEDED, FAILED, DELETED]
 
-    TaskStatus:
+    ProcessingTaskStatus:
       type: string
       enum: [PENDING, QUEUED, RUNNING, ORPHANED, PARTIAL_SUCCEEDED, SUCCEEDED, FAILED, CANCEL_PENDING, CANCELLED]
+
+    ProcessingTaskPhase:
+      type: string
+      enum: [WORKER_DAG_RUNNING, WORKER_DAG_DONE, JAVA_LLM_RUNNING, TERMINAL]
 
     StepStatus:
       type: string
@@ -1693,3 +1711,11 @@ components:
     ProcessingStep:
       type: string
       enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]
+
+    ProcessingStepUpdateSource:
+      type: string
+      enum: [JAVA_TASK_SERVICE, AI_WORKER_CALLBACK]
+
+    RagAnswerCoverage:
+      type: string
+      enum: [TRANSCRIPT_ONLY, FULL]

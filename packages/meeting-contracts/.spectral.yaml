@@ -25,12 +25,15 @@ rules:
           if:
             type: object
             required:
-              - paths
+              - info
             properties:
-              paths:
+              info:
                 type: object
                 required:
-                  - /processing-tasks/{taskId}/steps/{stepName}
+                  - title
+                properties:
+                  title:
+                    pattern: "(Internal|internal).*Callback|Callback.*(Internal|internal)"
           then:
             type: object
             properties:

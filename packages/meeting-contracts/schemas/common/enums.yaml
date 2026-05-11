@@ -16,7 +16,7 @@ securityLevel:
   - CONFIDENTIAL
   - SECRET
 
-taskStatus:
+processingTaskStatus:
   - PENDING
   - QUEUED
   - RUNNING
@@ -26,6 +26,12 @@ taskStatus:
   - FAILED
   - CANCEL_PENDING
   - CANCELLED
+
+processingTaskPhase:
+  - WORKER_DAG_RUNNING
+  - WORKER_DAG_DONE
+  - JAVA_LLM_RUNNING
+  - TERMINAL
 
 stepStatus:
   - PENDING
@@ -76,6 +82,14 @@ timestampPrecision:
 citationType:
   - MEETING_SEGMENT
   - DOCUMENT_CHUNK
+
+ragAnswerCoverage:
+  - TRANSCRIPT_ONLY
+  - FULL
+
+processingStepUpdateSource:
+  - JAVA_TASK_SERVICE
+  - AI_WORKER_CALLBACK
 
 taskEventType:
   - TASK_SNAPSHOT
