@@ -1,0 +1,24 @@
+version: 0.1.0
+securityLevel:
+  - PUBLIC
+  - INTERNAL
+  - CONFIDENTIAL
+  - SECRET
+taskStatus:
+  - PENDING
+  - QUEUED
+  - RUNNING
+  - ORPHANED
+  - PARTIAL_SUCCEEDED
+  - SUCCEEDED
+  - FAILED
+  - CANCEL_PENDING
+  - CANCELLED
+staleStatus:
+  - ACTIVE
+  - STALE
+  - REBUILD_QUEUED
+  - REBUILDING
+  - VALIDATING
+  - FAILED
+

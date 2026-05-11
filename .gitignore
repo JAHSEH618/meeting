@@ -1,0 +1,27 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Java
+target/
+build/
+.gradle/
+
+# Node
+node_modules/
+dist/
+.next/
+coverage/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Infra and local env
+.env
+.env.*
+*.tfstate
+*.tfstate.*
+

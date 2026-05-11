@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meeting.local/schemas/processing-task-message.schema.json",
+  "title": "ProcessingTaskMessage",
+  "type": "object",
+  "required": ["taskId", "taskType", "tenantId", "traceId"],
+  "properties": {
+    "taskId": {"type": "string"},
+    "taskType": {"type": "string"},
+    "tenantId": {"type": "string"},
+    "traceId": {"type": "string"}
+  },
+  "additionalProperties": true
+}
+
