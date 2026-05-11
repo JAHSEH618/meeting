@@ -6,7 +6,7 @@ Alternative: Celery, Temporal Worker.
 
 from typing import Protocol, runtime_checkable
 
-from ai_worker.domain.task import TaskMessage, StepResult, StepStatus
+from ai_worker.domain.task import TaskMessage, StepResult
 
 
 @runtime_checkable

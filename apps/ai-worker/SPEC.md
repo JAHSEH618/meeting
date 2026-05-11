@@ -135,7 +135,7 @@ async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
 
 `SUMMARY` 和 `EXTRACTION` 不属于 `ai-worker` Pipeline DAG；这两个 step 由 Java `meeting-api-app` 在调用 `llm-gateway` 时通过 `TaskStepProgressService` 推进，worker 不发送对应 step callback。
 
-任务消息的 `pipelineSteps` 不得包含 `SUMMARY` / `EXTRACTION`。worker 启动 workflow 前必须按 `processing-task-message.schema.json` 做 fail-fast 校验；如果收到未知 step 或被禁止的 Java-owned step，必须终止消费并通过 `/fail` 上报 `INVALID_TASK_MESSAGE`，不得尝试发送对应 step callback。
+任务消息的 `pipelineSteps` 不得包含 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`：`AUDIO_UPLOAD` 由 Java 在 task 创建前完成并标记成功，`SUMMARY` / `EXTRACTION` 由 Java `meeting-api-app` 推进。worker 启动 workflow 前必须按 `processing-task-message.schema.json` 做 fail-fast 校验；如果收到未知 step 或被禁止的 Java-owned step，必须终止消费并通过 `/fail` 上报 `INVALID_TASK_MESSAGE`，不得尝试发送对应 step callback。
 
 worker 根据 `taskType` 选择 workflow 入口，并使用 `pipelineSteps` 校验该 workflow 内部 DAG。`pipelineSteps` 与 workflow registry 中声明的 step 集合必须一一对应；缺失、额外或顺序 / 依赖不满足时，worker 必须 `/fail INVALID_TASK_MESSAGE` 拒绝消费。具体映射定义在 `apps/ai-worker/ai_worker/application/workflows/registry.py` 或等效注册表，并由契约测试覆盖。
 
@@ -307,4 +307,4 @@ RTX 3090 / 4090 24GB 或同等显存 GPU
 8. 所有模型产物绑定 artifact manifest。
 9. 模型状态、workflow 状态和 health 能通过内部接口查看。
 10. `ALIGNMENT`、`RAG_INDEXING`、`SPEAKER_MATCHING` 可降级时通过 `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED + skippedSteps` 上报 worker phase partial；`DIARIZATION` 失败必须 `/fail`。
-11. task message `pipelineSteps` 不得包含 `SUMMARY` / `EXTRACTION`；收到非法 step 时必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
+11. task message `pipelineSteps` 不得包含 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`；收到非法 step 时必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。

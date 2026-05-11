@@ -102,28 +102,31 @@ phase 迁移规则：
 |---|---|---|
 | `WORKER_DAG_RUNNING` | `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG` callback 幂等落库成功 |
 | `WORKER_DAG_DONE` | `JAVA_LLM_RUNNING` | app 层 listener 开始推进 `SUMMARY` |
+| `WORKER_DAG_DONE` | `TERMINAL` | task type 无 Java LLM 阶段（`TEXT_EMBEDDING` / `RAG_REINDEX` / `SPEAKER_ENROLLMENT` / `EXPORT`），listener 收到 `WORKER_PHASE_COMPLETED` 后按必做 step 结果直接置 task 终态 |
 | `JAVA_LLM_RUNNING` | `TERMINAL` | `SUMMARY` / `EXTRACTION` 与所有必做 step 达到终态 |
 | 任意非 `TERMINAL` | `TERMINAL` | task `FAILED`、`CANCELLED` 或 deletion / cleanup 强制终止 |
 
 外部观察者不得仅用 `processing_tasks.status=RUNNING` 推断进度阶段；Public API 的 `ProcessingTaskDTO.phase` 是前端进度条、运维 dashboard 和告警阶段判断的事实来源。
 
-允许迁移边：
+允许迁移边显式包含 status 与 phase 两个维度；主轴是 phase，worker phase 完成时 status 保持 `RUNNING`，仅 phase 从 `WORKER_DAG_RUNNING` 推进到 `WORKER_DAG_DONE`。
 
-| From | To | 触发 |
+| From (status, phase) | To (status, phase) | 触发 |
 |---|---|---|
-| `PENDING` | `QUEUED` | task 创建后投递 outbox / MQ |
-| `QUEUED` | `RUNNING` | worker 领取或 Java 内部执行器开始处理 |
-| `RUNNING` | `RUNNING` | heartbeat / progress update，只刷新 lease 和 step progress |
-| `RUNNING` | `ORPHANED` | lease 过期且未进入终态 |
-| `ORPHANED` | `QUEUED` | Java lease scanner 重新入队 |
-| `RUNNING` | `RUNNING` | `/complete phase=WORKER_DAG status=SUCCEEDED`；记录 worker phase 完成，`phase=WORKER_DAG_DONE`，但 task 不进入终态 |
-| `RUNNING` | `RUNNING` | `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` 且携带 `skippedSteps`；写入 optional worker step 的 `SKIPPED` / `FAILED` 原因，`phase=WORKER_DAG_DONE` |
-| `RUNNING` | `SUCCEEDED` | Java 内部 `SUMMARY` / `EXTRACTION` 以及所有必做 step 全部成功 |
-| `RUNNING` | `PARTIAL_SUCCEEDED` | worker phase partial 或 Java optional step 失败，但核心产物可用且所有必做 step 已完成 |
-| `RUNNING` | `FAILED` | 不可降级 step 失败且重试耗尽 |
-| `PENDING` / `QUEUED` / `RUNNING` / `ORPHANED` | `CANCEL_PENDING` | 用户取消请求已接受 |
-| `CANCEL_PENDING` | `CANCELLED` | worker 确认停止，或 Java 确认无有效 lease 且不会再产生新写入 |
-| `FAILED` / `PARTIAL_SUCCEEDED` | `QUEUED` | 用户重试失败 step 或重建 task |
+| `PENDING`, `WORKER_DAG_RUNNING` | `QUEUED`, `WORKER_DAG_RUNNING` | task 创建后投递 outbox / MQ |
+| `QUEUED`, `WORKER_DAG_RUNNING` | `RUNNING`, `WORKER_DAG_RUNNING` | worker 领取或 Java 内部执行器开始处理 |
+| `RUNNING`, 任意非 `TERMINAL` | `RUNNING`, phase 不变 | heartbeat / progress update，只刷新 lease 和 step progress |
+| `RUNNING`, 任意非 `TERMINAL` | `ORPHANED`, phase 不变 | lease 过期且未进入终态 |
+| `ORPHANED`, phase 不变 | `QUEUED`, phase 不变 | Java lease scanner 重新入队 |
+| `RUNNING`, `WORKER_DAG_RUNNING` | `RUNNING`, `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG status=SUCCEEDED`；记录 worker phase 完成，但 task 不进入终态 |
+| `RUNNING`, `WORKER_DAG_RUNNING` | `RUNNING`, `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` 且携带 `skippedSteps`；写入 optional worker step 的 `SKIPPED` / `FAILED` 原因 |
+| `RUNNING`, `WORKER_DAG_DONE` | `RUNNING`, `JAVA_LLM_RUNNING` | `MEETING_FULL_PIPELINE` listener 开始推进 `SUMMARY` |
+| `RUNNING`, `WORKER_DAG_DONE` | `SUCCEEDED`, `TERMINAL` | 非 LLM task type 没有 Java 内部 step，且所有必做 step 已成功 |
+| `RUNNING`, `JAVA_LLM_RUNNING` | `SUCCEEDED`, `TERMINAL` | Java 内部 `SUMMARY` / `EXTRACTION` 以及所有必做 step 全部成功 |
+| `RUNNING`, `WORKER_DAG_DONE` / `JAVA_LLM_RUNNING` | `PARTIAL_SUCCEEDED`, `TERMINAL` | worker phase partial 或 Java optional step 失败，但核心产物可用且所有必做 step 已完成 |
+| `RUNNING`, 任意非 `TERMINAL` | `FAILED`, `TERMINAL` | 不可降级 step 失败且重试耗尽 |
+| `PENDING` / `QUEUED` / `RUNNING` / `ORPHANED`, 任意非 `TERMINAL` | `CANCEL_PENDING`, phase 不变 | 用户取消请求已接受 |
+| `CANCEL_PENDING`, 任意 phase | `CANCELLED`, `TERMINAL` | worker 确认停止，或 Java 确认无有效 lease 且不会再产生新写入 |
+| `FAILED` / `PARTIAL_SUCCEEDED`, `TERMINAL` | `QUEUED`, `WORKER_DAG_RUNNING` | 用户重试失败 step 或重建 task |
 
 ### 4.4 Meeting 状态
 
@@ -202,7 +205,7 @@ phase 迁移规则：
 | 事件 | payload 必填字段 |
 |---|---|
 | `ProcessingTaskStepChangedEvent` | `taskId`、`stepName`、`fromStatus`、`toStatus`、`attemptNo`、`progress` |
-| `WorkerPhaseCompletedEvent` | `taskId`、`attemptNo`、`workerStatus`、`completedSteps`、`skippedSteps`、`artifactManifestId` |
+| `WorkerPhaseCompletedEvent` | `taskId`、`taskType`、`attemptNo`、`workerStatus`、`completedSteps`、`skippedSteps`、`artifactManifestId` |
 | `TranscriptEditedEvent` | `meetingId`、`segmentId`、`oldTranscriptVersion`、`newTranscriptVersion`、`editorUserId` |
 | `SpeakerConfirmedEvent` | `meetingId`、`speakerLabel`、`personId`、`transcriptVersion`、`source` |
 | `ContentMarkedStaleEvent` | `sourceType`、`sourceId`、`oldStaleStatus`、`newStaleStatus`、`reason` |

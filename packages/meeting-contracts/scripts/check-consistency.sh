@@ -165,14 +165,14 @@ if pub_step_sources and pub_step_sources != enum_step_sources:
     print(f'  processingStepUpdateSource mismatch: enums={sorted(enum_step_sources)} pub={sorted(pub_step_sources)}')
     errors += 1
 
-# Worker task messages must not assign Java-owned LLM steps to ai-worker.
+# Worker task messages must not assign Java-owned steps to ai-worker.
 pipeline_steps = set(
     task_msg.get('properties', {})
       .get('pipelineSteps', {})
       .get('items', {})
       .get('enum', [])
 )
-forbidden_worker_steps = {'SUMMARY', 'EXTRACTION'}
+forbidden_worker_steps = {'AUDIO_UPLOAD', 'SUMMARY', 'EXTRACTION'}
 if pipeline_steps & forbidden_worker_steps:
     print(f'  pipelineSteps must not include Java-owned steps: {sorted(pipeline_steps & forbidden_worker_steps)}')
     errors += 1

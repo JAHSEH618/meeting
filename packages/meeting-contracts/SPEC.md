@@ -223,7 +223,7 @@ HMAC 签名路径：
 
 Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜测。
 
-`pipelineSteps` 表达本条消息要求消费方推进的 step 集合，不得包含 Java `TaskStepProgressService` 所有的 `SUMMARY` / `EXTRACTION`。schema 必须通过 enum 或 lint 禁止这两个值进入任务消息；worker 如果收到未知 step 或被禁止的 `SUMMARY` / `EXTRACTION`，必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
+`pipelineSteps` 表达本条消息要求消费方推进的 worker step 集合，不得包含 Java 在 task 创建前完成的 `AUDIO_UPLOAD`，也不得包含 Java `TaskStepProgressService` 所有的 `SUMMARY` / `EXTRACTION`。schema 必须通过 enum 或 lint 禁止这三个值进入任务消息；worker 如果收到未知 step 或被禁止的 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`，必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
 
 `expectedInputVersion.chunkStrategyVersion` 的默认值由 Java `meeting-api` 的 `meeting.chunk.strategy-version` 配置项提供。首次创建 `MEETING_FULL_PIPELINE` 任务时由 Java task 模块写入消息；重建 / 重索引任务使用当前 `knowledge_chunks.chunk_strategy_version` 或更高层配置指定的版本。
 
@@ -264,7 +264,7 @@ CI 要求：
 3. OpenAPI response 必须统一使用 `ApiResponse` envelope。
 4. 所有写操作必须声明 `X-Request-Id`、`X-Trace-Id` 和 `Idempotency-Key`，登录除外。
 5. `RagAnswerCoverage`、`ProcessingStepUpdateSource`、`ProcessingTaskStatus`、`ProcessingTaskPhase` 必须与 OpenAPI 和各端枚举生成物一致。
-6. `processing-task-message.schema.json` 的 `pipelineSteps` 不得允许 `SUMMARY` / `EXTRACTION`。
+6. `processing-task-message.schema.json` 的 `pipelineSteps` 不得允许 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`。
 
 ## 13. Spectral Lint
 
