@@ -15,3 +15,25 @@ meeting-api-infrastructure
 
 业务域作为各模块内 package 边界：`api/bff`、`user-auth`、`meeting`、`task`、`storage`、`llm-gateway`、`speaker`、`rag`、`document`、`export`、`audit`。
 
+## 本地命令
+
+```bash
+mvn clean package
+mvn -pl meeting-api-start -am compile
+mvn -pl meeting-api-start -am install -DskipTests
+java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
+```
+
+默认端口：`8080`。
+
+已初始化的最小链路：
+
+```text
+meeting-api-adapter       /api/meetings REST API、/internal callback 占位
+meeting-api-app           MeetingApplicationService
+meeting-api-domain        Meeting 聚合与 MeetingRepository 端口
+meeting-api-infrastructure InMemoryMeetingRepository，占位替代 PostgreSQL 实现
+meeting-api-start         Spring Boot 启动类与基础配置
+```
+
+后续接入数据库时，将 `InMemoryMeetingRepository` 替换为 PostgreSQL RepositoryImpl，并把 `docs/ddls/001_initial_schema.sql` 拆入正式 migration。
