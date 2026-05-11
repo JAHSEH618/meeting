@@ -38,20 +38,20 @@ domain 不依赖 adapter、app、infrastructure
 
 一期选型固定如下，除非单独更新本 SPEC 和父 POM：
 
-| 类别 | 选型 | 约束 |
-|---|---|---|
-| 构建 | Maven 多模块 | 父 POM 统一版本，模块不得各自引入冲突版本 |
-| Java | 17 LTS | `maven-compiler-plugin` 使用 `release=17` |
-| Spring Boot | 3.3.x | 与当前父 POM 对齐，不混用 Boot 2.x 依赖 |
-| ORM / SQL | MyBatis-Plus 3.5.x + 原生 SQL | RLS、`FOR UPDATE SKIP LOCKED`、pgvector 查询优先写显式 SQL；不引入 JPA |
-| Migration | Flyway 10.x | 路径 `src/main/resources/db/migration/V{yyyyMMddHHmm}__desc.sql` |
-| 连接池 | HikariCP | `maximumPoolSize=20` 起步，连接归还前 reset tenant context |
-| JSON | Jackson 2.17.x | camelCase、ISO-8601 UTC、未知字段按契约策略处理 |
-| 校验 | Jakarta Bean Validation 3.x | Controller 基础校验，业务语义校验放 app / domain |
-| 日志 | Logback + Logstash JSON encoder | MDC 必须包含 `traceId`、`requestId`、`tenantId`、`userId` |
-| 测试 | JUnit 5 + Mockito + ArchUnit + Testcontainers + WireMock | Testcontainers 覆盖 PostgreSQL / RabbitMQ / MinIO 替身 |
-| 度量 | Micrometer + Prometheus | actuator 暴露 `health`、`metrics`、`prometheus`、`info` |
-| API 文档 | springdoc-openapi 2.x | 生成结果必须与 `packages/meeting-contracts/openapi` 语义一致 |
+| 类别 | 选型 | 最低版本 | 升级触发 / 审批 | 约束 |
+|---|---|---|---|---|
+| 构建 | Maven 多模块 | 3.9.x | 父 POM 维护人审批 | 父 POM 统一版本，模块不得各自引入冲突版本 |
+| Java | 17 LTS | 17.0.10+ | 安全补丁自动评估，主版本升级需架构评审 | `maven-compiler-plugin` 使用 `release=17` |
+| Spring Boot | 3.3.x | 3.3.5+ | CVE、Spring Cloud 兼容性或依赖冲突触发 | 与当前父 POM 对齐，不混用 Boot 2.x 依赖 |
+| ORM / SQL | MyBatis-Plus 3.5.x + 原生 SQL | 3.5.7+ | SQL 能力或安全补丁触发 | RLS、`FOR UPDATE SKIP LOCKED`、pgvector 查询优先写显式 SQL；不引入 JPA |
+| Migration | Flyway 10.x | 10.17+ | PostgreSQL 版本升级或迁移能力需要 | 路径 `src/main/resources/db/migration/V{yyyyMMddHHmm}__desc.sql` |
+| 连接池 | HikariCP | 随 Spring Boot BOM | 性能回归或连接泄漏修复触发 | `maximumPoolSize=20` 起步，连接归还前 reset tenant context |
+| JSON | Jackson 2.17.x | 2.17.2+ | CVE 或 OpenAPI 兼容性触发 | camelCase、ISO-8601 UTC、未知字段按契约策略处理 |
+| 校验 | Jakarta Bean Validation 3.x | 随 Spring Boot BOM | 框架升级触发 | Controller 基础校验，业务语义校验放 app / domain |
+| 日志 | Logback + Logstash JSON encoder | BOM 对齐 | 安全补丁触发 | MDC 必须包含 `traceId`、`requestId`、`tenantId`、`userId` |
+| 测试 | JUnit 5 + Mockito + ArchUnit + Testcontainers + WireMock | BOM 对齐 | CI 稳定性或能力缺口触发 | Testcontainers 覆盖 PostgreSQL / RabbitMQ / MinIO 替身 |
+| 度量 | Micrometer + Prometheus | BOM 对齐 | 指标兼容性触发 | actuator 暴露 `health`、`metrics`、`prometheus`、`info` |
+| API 文档 | springdoc-openapi 2.x | 2.6+ | OpenAPI 契约变更触发 | 生成结果必须与 `packages/meeting-contracts/openapi` 语义一致 |
 
 ### 2.2 模块依赖与 CI 守卫
 
@@ -65,6 +65,8 @@ domain 不依赖 adapter、app、infrastructure
 6. `meeting-api-start`：聚合启动依赖，不写业务逻辑。
 
 CI 必须增加 ArchUnit 规则：domain 禁止 import `org.springframework.web..`、`org.springframework.jdbc..`、`com.baomidou..`、`com.rabbitmq..`；adapter 禁止访问 mapper package；app 禁止访问 infrastructure implementation package。
+
+ArchUnit 落地测试类固定为 `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java`。一期阶段规则失败级别为 `ERROR`，只允许对尚未实现模块使用带到期日期的 `@ArchIgnore`，不得长期以 WARN 绕过。
 
 ## 3. 业务域
 
@@ -99,6 +101,7 @@ CI 必须增加 ArchUnit 规则：domain 禁止 import `org.springframework.web.
 8. `meeting` 落库结构化转录。
 9. `llm-gateway` 生成纪要、待办、决策、风险。
 10. `rag` 将转录、纪要和结构化事项入库为 chunk。
+11. outbox publisher 投递成功后发布 `TASK_STARTED` / `TASK_STEP_UPDATED` SSE 事件；推送失败不得回滚业务事务，但必须进入 outbox 重试和告警。
 
 ### 4.2 文档知识库
 
@@ -124,6 +127,8 @@ CI 必须增加 ArchUnit 规则：domain 禁止 import `org.springframework.web.
 
 Public API 路由前缀为 `/api`。所有接口必须经过登录态鉴权、tenant context 设置、权限校验、审计和限流。
 
+事实来源：request / response / SSE schema 以 `packages/meeting-contracts/openapi/public-api.yaml` 为准；枚举与错误码分别以 `packages/meeting-contracts/schemas/common/enums.yaml`、`packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只描述 `meeting-api` 的鉴权、权限、事务和落地边界。
+
 | 能力 | Endpoint |
 |---|---|
 | 账号 | `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`GET /api/users`、`POST /api/users`、`PATCH /api/users/{userId}` |
@@ -139,6 +144,8 @@ Public API 路由前缀为 `/api`。所有接口必须经过登录态鉴权、te
 | 合规管理 | legal holds、deletion jobs、break-glass requests 和 audit |
 
 ## 6. Internal Callback
+
+事实来源：callback endpoint、请求头、签名字段、body schema 和错误响应以 `packages/meeting-contracts/openapi/internal-callback-api.yaml` 为准；本节只描述 Java 接收端的校验顺序和业务写入边界。
 
 `ai-worker` callback Endpoint：
 
@@ -168,6 +175,8 @@ POST  /internal/processing-tasks/{taskId}/fail
 
 ## 7. 数据与事务
 
+事实来源：表、字段、索引和 RLS policy 以 `docs/ddls/001_initial_schema.sql` 为准；错误码字典以 `packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只约束 Java 侧事务、tenant context 和 outbox 行为。
+
 所有租户表必须：
 
 1. 包含 `tenant_id`。
@@ -193,6 +202,17 @@ POST  /internal/processing-tasks/{taskId}/fail
 4. 长耗时外部调用、文件上传、LLM 调用、LibreOffice 转换不得包在数据库事务内；只在调用前后各自开启短事务。
 5. 默认使用 optimistic locking / version 列处理用户编辑冲突；声纹 enrollment 和同一 speaker profile 的 centroid 更新使用 `SELECT ... FOR UPDATE`。
 6. outbox publisher 使用 `SELECT ... FOR UPDATE SKIP LOCKED` 扫描未发布事件，单批默认 100 条。
+
+事务隔离级别：
+
+| 场景 | 隔离级别 | 锁策略 |
+|---|---|---|
+| 普通查询和列表 | `READ_COMMITTED` | 依赖 RLS 和权限过滤，不持有业务锁 |
+| 用户编辑转录、纪要和事项 | `READ_COMMITTED` | optimistic locking / version 列 |
+| callback 幂等落库 | `READ_COMMITTED` | `callback_events.idempotency_key` 唯一约束，必要时锁定 task 行 |
+| worker lease / outbox 扫描 | `READ_COMMITTED` | `FOR UPDATE SKIP LOCKED` |
+| speaker centroid 更新、撤销授权级联 | `READ_COMMITTED` | 对同一 profile 使用 `SELECT ... FOR UPDATE` |
+| deletion job 计划生成 | `READ_COMMITTED` | 先锁定 deletion job，再检查 legal hold；禁止长事务包围物理删除 |
 
 异常映射由 `ControllerAdvice` 查表完成，不在 Controller 中拼响应：
 
@@ -246,7 +266,32 @@ meeting-api-infrastructure/src/main/java/com/meeting/api/infrastructure/persiste
 5. 声纹模型原始输出。
 6. `CONFIDENTIAL` / `SECRET` 会议文本。
 
-## 9. 验收标准
+## 9. 性能与 SLO
+
+Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓存预热后为基线。LLM 和 ai-worker 长耗时计算不计入普通 API SLO，但进入对应异步任务和依赖调用指标。
+
+| 指标 | 目标 | 告警 | 观测点 |
+|---|---:|---:|---|
+| `GET /api/meetings` p95 | `<= 200ms` | `>= 500ms` 连续 5 分钟 | `http.server.requests` + endpoint tag |
+| `GET /api/meetings/{meetingId}/transcript` p95 | `<= 300ms` 首页 | `>= 800ms` | transcript 分页查询耗时 |
+| `POST /api/rag/query` p95 | `<= 6s` | `>= 10s` | RAG 总耗时，含检索和 DashScope |
+| callback 处理 p95（无 LLM） | `<= 150ms` | `>= 500ms` | `/internal/processing-tasks/**` |
+| outbox 发布 lag | `<= 5s` | `>= 30s` | `now - created_at` for unpublished events |
+| outbox backlog | `< 1000` 条 | `>= 5000` 条 | `domain_events_outbox status=PENDING` |
+| SSE 首字节 | `<= 1s` | `>= 3s` | 建连到首个 `TASK_SNAPSHOT` |
+| SSE 单 task 推送延迟 p95 | `<= 500ms` | `>= 2s` | event created 到 emitted |
+| upload session 初始化 p95 | `<= 300ms` | `>= 1s` | 不包含客户端直传 TOS |
+| signed URL 生成 p95 | `<= 200ms` | `>= 800ms` | TOS SDK 调用耗时 |
+
+性能落地要求：
+
+1. 每个 public endpoint、callback endpoint、outbox publisher、SSE emitter 必须打 Micrometer timer / counter，并带 `tenantId` 高基数字段的脱敏或采样策略。
+2. RAG 查询必须拆分记录 scope 计算、vector search、keyword search、permission recheck、LLM 调用和 response assembly 耗时。
+3. outbox publisher lag 超过告警阈值时，应停止只看 RabbitMQ 可用性，必须同时检查 DB 锁等待、publisher 异常和消息确认耗时。
+4. callback p95 超过阈值时，优先排查幂等表唯一键冲突、task 行锁、RLS policy 和 artifact 大字段写入。
+5. SLO 目标变更必须同步 `infra/meeting-infra` 告警规则和 dashboard。
+
+## 10. 验收标准
 
 1. 完成登录、租户隔离、会议创建、音频上传和任务创建。
 2. RabbitMQ 消息包含 task、tenant、meeting、audio URI、security level、attempt、版本和 trace。

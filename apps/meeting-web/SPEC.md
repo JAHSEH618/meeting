@@ -4,6 +4,17 @@
 
 `meeting-web` 是本地会议智能系统的一期 React SPA。它只调用 `meeting-api` 的 Public API 和 SSE，不直接访问 Python、RabbitMQ、PostgreSQL、TOS 或 DashScope。
 
+一期构建基线：
+
+| 项 | 约束 |
+|---|---|
+| Runtime | Node.js `20 LTS` 起步 |
+| Framework | React `18.3+`，暂不启用 React 19 专属 API |
+| Build | Vite `5+` |
+| Language | TypeScript `strict=true` |
+| API 类型 | 优先从 `packages/meeting-contracts/openapi/public-api.yaml` 生成；手写类型必须有 schema 映射说明 |
+| 包管理 | 跟随仓库统一 lockfile，不允许页面模块各自漂移 |
+
 核心职责：
 
 1. 承载用户主流程：登录、创建会议、上传音频、查看进度、编辑转录、确认 speaker、生成纪要、RAG 问答和导出。
@@ -23,25 +34,25 @@
 
 一期至少实现下列页面。路由命名可按项目实际 Router 规范调整，但页面能力必须覆盖。
 
-| 页面 | 建议路由 | 主要能力 |
-|---|---|---|
-| 登录页 | `/login` | 登录、错误提示、登录态初始化 |
-| 会议列表 | `/meetings` | 列表、搜索、状态筛选、安全等级筛选 |
-| 会议创建 | `/meetings/new` | 创建会议、选择安全等级、参会人 |
-| 音频上传 | `/meetings/:meetingId/audio` | 断点续传、上传进度、取消、重试 |
-| 任务进度 | `/meetings/:meetingId/tasks/:taskId` | SSE 步骤级进度、错误码、重试、取消 |
-| 转录编辑 | `/meetings/:meetingId/transcript` | segment 列表、编辑、版本和 STALE 提示 |
-| speaker 确认 | `/meetings/:meetingId/speakers` | 匿名 label、候选人、置信度、确认和拒绝 |
-| 声纹档案 | `/speaker-profiles` | 档案、授权、参考音频、撤销、删除 |
-| 纪要 | `/meetings/:meetingId/minutes` | 纪要章节、重生成、diff 或新建议 |
-| 待办/决策/风险 | `/meetings/:meetingId/items` | AI 建议、接受、拒绝、状态和 evidence |
-| 文档知识库 | `/documents` | 上传、解析状态、reindex、删除 |
-| RAG 问答 | `/rag` | 提问、范围选择、答案、citation |
-| 导出任务 | `/meetings/:meetingId/exports` | Markdown / DOCX / PDF、异步状态、短链撤销 |
-| 系统设置 | `/settings` | 基础配置、个人信息、租户上下文 |
-| 删除任务 | `/admin/deletion-jobs` | 创建、查看、失败项、证书入口 |
-| legal hold | `/admin/legal-holds` | 创建、释放、原因、审批人 |
-| break-glass | `/admin/break-glass` | 申请、审批、拒绝、审计 |
+| 页面 | 建议路由 | 需要权限 / 角色 | 主要能力 |
+|---|---|---|---|
+| 登录页 | `/login` | 无 | 登录、错误提示、登录态初始化 |
+| 会议列表 | `/meetings` | `meeting:read` | 列表、搜索、状态筛选、安全等级筛选 |
+| 会议创建 | `/meetings/new` | `meeting:create` | 创建会议、选择安全等级、参会人 |
+| 音频上传 | `/meetings/:meetingId/audio` | `meeting:upload-audio` | 断点续传、上传进度、取消、重试 |
+| 任务进度 | `/meetings/:meetingId/tasks/:taskId` | `task:read` | SSE 步骤级进度、错误码、重试、取消 |
+| 转录编辑 | `/meetings/:meetingId/transcript` | `transcript:read` / `transcript:edit` | segment 列表、编辑、版本和 STALE 提示 |
+| speaker 确认 | `/meetings/:meetingId/speakers` | `speaker:confirm` | 匿名 label、候选人、置信度、确认和拒绝 |
+| 声纹档案 | `/speaker-profiles` | `speaker:manage` | 档案、授权、参考音频、撤销、删除 |
+| 纪要 | `/meetings/:meetingId/minutes` | `minutes:read` / `minutes:regenerate` | 纪要章节、重生成、diff 或新建议 |
+| 待办/决策/风险 | `/meetings/:meetingId/items` | `action-item:read` / `action-item:edit` | AI 建议、接受、拒绝、状态和 evidence |
+| 文档知识库 | `/documents` | `document:read` / `document:manage` | 上传、解析状态、reindex、删除 |
+| RAG 问答 | `/rag` | `rag:query` | 提问、范围选择、答案、citation |
+| 导出任务 | `/meetings/:meetingId/exports` | `export:read` / `export:create` | Markdown / DOCX / PDF、异步状态、短链撤销 |
+| 系统设置 | `/settings` | 登录用户 | 基础配置、个人信息、租户上下文 |
+| 删除任务 | `/admin/deletion-jobs` | `compliance:delete` | 创建、查看、失败项、证书入口 |
+| legal hold | `/admin/legal-holds` | `compliance:legal-hold` | 创建、释放、原因、审批人 |
+| break-glass | `/admin/break-glass` | `security:break-glass` | 申请、审批、拒绝、审计 |
 
 会议详情可作为 `/meetings/:meetingId` 的聚合入口，但不替代上述独立页面能力。
 
@@ -94,6 +105,8 @@ SSE 断线后，前端携带 `Last-Event-Id` 尝试续接；服务端无法续�
 
 `meeting-web` 统一通过服务层访问 API。所有请求必须带：
 
+事实来源：Public API path、request / response schema、SSE event schema、枚举和错误码以 `packages/meeting-contracts/openapi/public-api.yaml`、`packages/meeting-contracts/schemas/common/enums.yaml`、`packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本 SPEC 只描述前端如何消费这些契约。
+
 ```http
 Authorization: Bearer <access_token>
 X-Request-Id: <request_id>
@@ -145,10 +158,18 @@ sseClient
 
 uploadClient
   -> create session
-  -> part queue 并发数默认 3
+  -> part queue 并发数默认 3，配置范围 1-5
   -> 单 part 重试 <= 3
   -> complete 前校验 fileSha256
 ```
+
+Token 与 CSRF：
+
+1. access token 只保存在内存状态中，用于注入 `Authorization: Bearer <token>`；不得写入 `localStorage`、`sessionStorage` 或可被脚本长期读取的持久化存储。
+2. refresh token 如启用，必须由后端设置 `HttpOnly`、`Secure`、`SameSite=Lax` 或更严格 cookie；前端不可读取 refresh token 明文。
+3. 使用 refresh cookie 的 endpoint 必须启用 CSRF 防护：后端下发非 HttpOnly CSRF token，前端通过 `X-CSRF-Token` 回传；跨站请求失败时 fail closed。
+4. 401 refresh 只能单飞合并，避免多个请求并发刷新导致 token 覆盖；refresh 失败必须清空内存 token 并回到登录页。
+5. 所有写操作由 idempotency interceptor 注入 `Idempotency-Key`；同一次用户动作重试必须复用原 key。
 
 ## 6. 状态管理
 
@@ -163,7 +184,27 @@ uploadClient
 5. speaker confirm / reject 成功后 invalidate transcript、speakers、rag answers。
 6. legal hold、deletion job、break-glass 变更后 invalidate 对应 admin list 和 audit。
 
-## 7. 表单、a11y、i18n 与性能
+离线行为：
+
+1. 网络断开时禁止提交会改变服务端事实的编辑、确认、删除、重生成和导出创建操作。
+2. 转录编辑框允许保留未提交草稿到内存或 session-scoped store，但不得标记为已保存；恢复网络后必须重新拉取当前版本并做版本冲突校验。
+3. 上传中断时保留 upload session、已完成 part 和本地 hash 进度；超过 upload session TTL 后必须重新创建 session。
+4. SSE 断开时先重连，再降级轮询；轮询结果仍以后端 snapshot 为准。
+
+## 7. 安全与前端数据边界
+
+浏览器端不得成为敏感事实或权限判断来源，所有安全结论以后端返回为准。
+
+1. CSP：生产默认 `default-src 'self'`；`connect-src` 只允许 `meeting-api`、SSE endpoint 和必要监控域；禁止 `unsafe-inline`，如确需内联样式必须使用 nonce / hash。
+2. Frame 防护：部署层必须设置 `X-Frame-Options: DENY` 或等价 `frame-ancestors 'none'`，除非后续明确支持可信内嵌。
+3. Markdown / RAG answer 渲染：纪要、RAG 答案、文档片段和 evidence 文本必须经过 sanitizer 后再渲染；允许标签采用白名单，禁止脚本、事件属性、`javascript:` URL 和不可信 iframe。
+4. XSS 输入清洗：用户可编辑的会议标题、转录文本、speaker 显示名、文档标题在展示层统一 escape；富文本能力一期不开放。
+5. 下载与外链：导出下载只使用后端签名 URL，不在前端拼 object key；外链点击必须使用 `rel="noopener noreferrer"`。
+6. 敏感字段：声纹 embedding、模型原始输出、内部 artifact body、HMAC secret、KMS key material 不得出现在前端 DTO、日志、监控 breadcrumb 或错误详情中。
+7. 错误展示：服务端 `error.details` 只用于受控字段展示；未知字段不得直接 JSON dump 到页面。
+8. 监控：前端错误监控默认只采集 route、error code、requestId、traceId 和浏览器环境；不得采集 transcript 正文、RAG answer、audio filename 原文或 token。
+
+## 8. 表单、a11y、i18n 与性能
 
 表单：使用 `react-hook-form + zod`；zod schema 名称与 OpenAPI request schema 对齐；错误消息通过稳定错误码和字段路径映射，不在组件里硬编码大段校验文案。
 
@@ -178,8 +219,10 @@ i18n：一期 UI 文案只交付 `zh-CN`，但错误码、枚举展示名和日�
 3. 按 feature route code split；RAG、转录编辑、导出管理和合规管理独立 chunk。
 4. 转录 segment 列表必须虚拟滚动，不能一次渲染数千 DOM 节点。
 5. 大文件上传不得把整文件读入内存，仅分片 hash / 上传。
+6. 转录分页默认首屏拉取 `200` 个 segment 或当前播放时间附近窗口；继续滚动按 cursor 懒加载，每页上限 `500` 个 segment。
+7. RAG answer、纪要 Markdown 和长文档预览必须按内容区域懒加载或虚拟化，避免一次性渲染超长 Markdown。
 
-## 8. 功能分包建议
+## 9. 功能分包建议
 
 ```text
 src/
@@ -211,7 +254,7 @@ src/
 3. 上传、SSE、RAG 对话等长流程封装为 feature service，不直接散落在页面组件中。
 4. 页面入口优先放在 `features/<domain>/pages/` 或由 `app/router.tsx` 集中映射，不再单独要求顶层 `pages/` 目录。
 
-## 9. 测试与验收标准
+## 10. 测试与验收标准
 
 测试层级：
 
@@ -219,6 +262,8 @@ src/
 2. Component：React Testing Library，覆盖登录、上传状态、任务进度、转录编辑、RAG citation、导出状态。
 3. API mock：Mock Service Worker，mock 统一响应信封、错误码、SSE 事件流。
 4. E2E：Playwright，覆盖登录 -> 创建会议 -> 上传 -> 任务进度 -> 转录 -> 纪要 -> RAG -> 导出的主链路，以及 `SECURITY_LEVEL_BLOCKED` 分支。
+5. 安全：覆盖 Markdown sanitizer、RAG answer XSS、token 不落持久化存储、CSRF header 缺失失败、错误详情不直出。
+6. 监控：接入 Sentry 或等价自研前端监控；验收环境必须能通过 `requestId` / `traceId` 关联到后端日志，且敏感正文不会进入事件 payload。
 
 1. 用户可以登录、创建会议、上传 4 小时以内音频并看到任务进入队列。
 2. 任务进度页面能展示 step 级状态，SSE 断线可恢复或回退轮询。

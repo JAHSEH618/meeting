@@ -89,6 +89,8 @@ GET /internal/workflows/{task_id}
 
 ## 5. 输入任务
 
+事实来源：RabbitMQ 任务消息 schema 以 `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` 为准；枚举值以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。本节只描述 `ai-worker` 的消费、校验和 fail-fast 行为。
+
 RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后的任务。
 
 任务必须包含：
@@ -187,6 +189,8 @@ async def meeting_full_pipeline(task: TaskMessage) -> TranscriptArtifact:
 
 ## 7. Callback 规范
 
+事实来源：callback endpoint、请求头、请求体和错误响应以 `packages/meeting-contracts/openapi/internal-callback-api.yaml` 为准。本节只描述 worker 发送端的签名、幂等、重试和 artifact 约束。
+
 所有 callback 必须携带：
 
 ```http
@@ -210,7 +214,7 @@ X-Signature
 5. 大 JSON 和中间产物写 TOS，callback 只传 URI、sha256、size、summary 和 metadata。
 6. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
 
-callback body schema 以 `packages/meeting-contracts/openapi/internal-callback-api.yaml` 为准。每个 step 的触发点：
+每个 step 的触发点：
 
 | step | callback endpoint | body schema |
 |---|---|---|

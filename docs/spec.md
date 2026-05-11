@@ -176,7 +176,23 @@
 2. 跨应用契约真值文件是 `packages/meeting-contracts/openapi/public-api.yaml`、`packages/meeting-contracts/openapi/internal-callback-api.yaml` 和 `packages/meeting-contracts/schemas/**`。
 3. 修改字段、枚举、错误码、状态机或 API 时，必须同步更新真值文件和本 spec 的约束说明；CI 应以真值文件 lint / schema 校验结果为准。
 
-### 2.2 一期不做
+### 2.2 事实来源映射表
+
+本文件是一期产品总规格；涉及可被代码生成、迁移或契约测试消费的内容时，以下文件是 single source of truth。各应用 SPEC 只描述本工程如何消费、校验和落地这些事实，不重新维护完整枚举或 schema 字典。
+
+| 事实类型 | Single source | 消费方 | 修改要求 |
+|---|---|---|---|
+| PostgreSQL DDL、RLS policy、索引、生命周期字段 | `docs/ddls/001_initial_schema.sql` | `meeting-api-infrastructure`、运维迁移脚本、RLS 测试 | 先改 DDL，再同步本 SPEC 的边界说明和迁移验收 |
+| Public API request / response / SSE schema | `packages/meeting-contracts/openapi/public-api.yaml` | `meeting-web`、`meeting-api-adapter`、契约测试 | 以 OpenAPI lint、codegen diff 和 MSW fixture 为准 |
+| Internal Callback request / response / header schema | `packages/meeting-contracts/openapi/internal-callback-api.yaml` | `ai-worker`、`meeting-api-adapter`、callback 回放测试 | 变更必须兼容旧 worker 重试窗口，breaking change 需跨工程同步 |
+| RabbitMQ 任务消息 | `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` | `meeting-api-app`、`ai-worker`、RabbitMQ 回放测试 | required 字段、默认值和 routing metadata 不得只改一端 |
+| 枚举：安全等级、任务状态、步骤、STALE、citation、事件类型 | `packages/meeting-contracts/schemas/common/enums.yaml` | Web 展示、Java enum、Python enum、文档示例 | 文档中出现的枚举清单只作说明，CI 以该文件生成/校验结果为准 |
+| 错误码、retryable、用户提示、运维标签 | `packages/meeting-contracts/schemas/common/error-codes.yaml` | `ControllerAdvice`、前端 error mapper、worker fail callback、告警规则 | 不允许跨文件手工扩展；新增错误码必须补 i18n key 和默认处理策略 |
+| Prompt 模板、参数、输出 schema | `apps/meeting-api/meeting-api-infrastructure/src/main/resources/prompts/**` 或 `prompt_templates` 表 | `llm-gateway`、artifact manifest、LLM 回归测试 | 生产发布必须写入 `artifact_manifests.prompt_template_version` |
+| 模型权重、license、checksum、准入记录 | `model_registry` 或 git 管理的模型准入 JSON | `ai-worker`、部署流水线、模型供应链验收 | 生产镜像启动前校验 checksum；失败拒绝 ready |
+| 部署拓扑、队列、告警和密钥策略 | `infra/meeting-infra/SPEC.md` 与对应 compose / k8s / rules 文件 | 本地联调、生产部署、SRE 验收 | 运行时配置不得与基础设施 SPEC 漂移 |
+
+### 2.3 一期不做
 
 1. 实时会议字幕。
 2. 在线多人协同编辑。
@@ -989,6 +1005,8 @@ stateDiagram-v2
 
 纪要、待办、决策、风险和 knowledge chunk 必须使用独立 `stale_status`，不能复用业务 `status`。业务 `status` 表示生命周期或人工业务状态，`stale_status` 表示内容是否与上游版本一致。
 
+事实来源：`packages/meeting-contracts/schemas/common/enums.yaml` 定义 `StaleStatus` 枚举；`docs/ddls/001_initial_schema.sql` 定义落库字段和约束。本节只约束状态迁移、触发方和业务副作用。
+
 ```text
 ACTIVE
 STALE
@@ -1019,6 +1037,41 @@ stale_status: ACTIVE / STALE / REBUILD_QUEUED / REBUILDING / VALIDATING / FAILED
 ```
 
 RAG 召回只允许 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
+
+状态迁移：
+
+```mermaid
+stateDiagram-v2
+    [*] --> ACTIVE
+    ACTIVE --> STALE: upstream version changed
+    STALE --> REBUILD_QUEUED: user or scheduler requests rebuild
+    FAILED --> REBUILD_QUEUED: retry requested
+    REBUILD_QUEUED --> REBUILDING: rebuild worker lease acquired
+    REBUILDING --> VALIDATING: new artifact written
+    VALIDATING --> ACTIVE: evidence and version validation passed
+    VALIDATING --> FAILED: validation failed
+    REBUILDING --> FAILED: rebuild failed
+    ACTIVE --> DELETED: deletion job
+    STALE --> DELETED: deletion job
+    REBUILD_QUEUED --> DELETED: deletion job
+    REBUILDING --> DELETED: deletion job cancels rebuild
+    VALIDATING --> DELETED: deletion job
+    FAILED --> DELETED: deletion job
+```
+
+关键转换的触发方和副作用：
+
+| 转换 | 触发方 | 副作用 |
+|---|---|---|
+| `ACTIVE -> STALE` | transcript edit、speaker confirm / reject、声纹授权撤销、`chunk_strategy_version` bump、上游 minutes / item 版本变化 | 写 `stale_reason`、`source_*_version`、审计事件；失效 RAG answer cache；不删除当前可读内容 |
+| `STALE -> REBUILD_QUEUED` | 用户点击重生成、自动重建调度器、撤销声纹授权后的去标识重建 | 创建 processing task 或 outbox 事件；绑定 `expected_transcript_version` / `expected_minutes_version`；发送 `TASK_STARTED` 前允许继续展示旧内容但标记过期 |
+| `FAILED -> REBUILD_QUEUED` | 用户重试或运维重放 | 新 attempt 必须生成新的 idempotency key；保留上一轮失败原因和 artifact manifest |
+| `REBUILD_QUEUED -> REBUILDING` | Java task scheduler 或 worker claim lease | 设置 lease、attempt、started_at；锁定本次 expected version；同一对象只允许一个 ACTIVE rebuild attempt |
+| `REBUILDING -> VALIDATING` | worker 写回新纪要 / chunk / embedding artifact | 暂存新版本，不覆盖当前 ACTIVE；触发 evidence、权限、hash、schema 和版本校验 |
+| `VALIDATING -> ACTIVE` | Java app 校验通过 | 原 ACTIVE 版本归档或标记 superseded；新版本对 RAG 可召回；发布 cache invalidation / SSE / audit |
+| `VALIDATING -> FAILED` | evidence 缺失、schema 不合法、权限过滤失败或 expected version 不一致 | 不覆盖当前 ACTIVE；写稳定错误码，版本不一致使用 `STALE_REBUILD_VERSION_MISMATCH` |
+| `REBUILDING -> FAILED` | worker fail callback、重试耗尽或依赖不可用 | 保留旧 ACTIVE；失败可重试时提供重试入口；记录 `artifact_manifest_id` |
+| `任意非 DELETED -> DELETED` | deletion job | 先检查 legal hold；存在 legal hold 时阻断并返回 `LEGAL_HOLD_BLOCKED`；通过后撤销召回、清理签名 URL、写 deletion certificate |
 
 ## 8. LLM Gateway 与 DashScope
 
@@ -1136,6 +1189,16 @@ timeout_ms: 120000
 4. `LLM_EVIDENCE_INVALID` 可使用同一输入重试 `1` 次；仍失败则关键结论进入待确认。
 5. 单次输入文本超过 `30000` 字符时启动 map-reduce：map chunk `8000` 字符、overlap `500` 字符，reduce 使用专用 `*_reduce_zh` prompt。
 
+LLM 失败与 task 终态关系：
+
+| 场景 | 可用产物 | task 终态 | 用户可见行为 |
+|---|---|---|---|
+| ASR / transcript 已成功，纪要 `LLM_PROVIDER_TIMEOUT` 重试耗尽 | 转录可用，纪要不可用 | `PARTIAL_SUCCEEDED` | 可查看转录；纪要显示可重试失败 |
+| 纪要成功，待办 / 决策 / 风险抽取失败 | 纪要可用，结构化事项缺失或部分缺失 | `PARTIAL_SUCCEEDED` | 已生成内容正常展示，失败事项提供重试 |
+| `LLM_SCHEMA_INVALID` | 原始 LLM 输出不得成为业务事实 | `PARTIAL_SUCCEEDED` 或 step `FAILED` | 展示“需重新生成 / 人工确认”，不落 ACTIVE 结构化结果 |
+| `LLM_EVIDENCE_INVALID` 重试后仍失败 | 无 evidence 的结论只能进入待确认 | `PARTIAL_SUCCEEDED` | 前端必须标明待确认，不允许作为 confirmed 业务事实 |
+| `SECURITY_LEVEL_BLOCKED` | 非 LLM 产物可用 | `PARTIAL_SUCCEEDED` | CONFIDENTIAL / SECRET 显示一期阻断提示 |
+
 ## 9. RAG 规格
 
 ### 9.1 Chunk 来源
@@ -1192,6 +1255,8 @@ stale_status: ACTIVE / STALE / REBUILD_QUEUED / REBUILDING / VALIDATING / FAILED
 ```
 
 RAG 查询只允许召回 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
+
+冷启动行为：会议上传后，只要结构化转录 chunk 已经写入且满足 `status=ACTIVE AND stale_status=ACTIVE`，RAG 可以在纪要生成前仅基于 transcript scope 回答；此时 response 必须带 `coverage=TRANSCRIPT_ONLY` 或等价字段，并提示纪要、待办、决策、风险尚未进入可检索范围。若转录也未完成，RAG 必须返回可解释空态，不调用 LLM 编造答案。
 
 ### 9.5 检索实现
 
@@ -1619,7 +1684,37 @@ retention:
   callback-events-days: 30
 ```
 
-## 14. 后续可扩展项
+## 14. 数据保留与生命周期
+
+生命周期策略必须由 deletion job 统一执行，不能由各模块临时删除物理对象。legal hold 优先级最高；命中 legal hold 的对象不得被 retention job、用户删除或归档清理物理删除，只能记录阻断原因和审计事件。
+
+| 对象 / 表 / 存储 | 默认 retention | 归档 / 清理触发 | legal hold 优先级 | deletion job 行为 |
+|---|---:|---|---|---|
+| `callback_events` | 30 天 | `expires_at < now()` | 命中 task / meeting hold 时保留 | 删除 request / response body，可保留 hash、status、trace 摘要 |
+| SSE event buffer | 30 分钟 | 超出窗口或 task 终态后过期 | 不作为长期证据，不受 hold 延长 | 清理 in-memory / Redis / PostgreSQL buffer；窗口外重连发送 snapshot |
+| RabbitMQ DLQ 消息 | 14 天 | DLQ TTL 到期或人工重放完成 | 命中 hold 时导出 DLQ 摘要到 audit / artifact 后再清队列 | 保留 task_id、tenant_id、step、error_code、artifact_manifest_id 摘要 |
+| `domain_events_outbox` 已发布事件 | 90 天在线 | `status=PUBLISHED` 且超过在线窗口 | hold 对应 aggregate 事件保留 | 可归档 payload，保留 dedupe_key、sequence_no、hash |
+| `audit_events` | 365 天最低 | 超过租户策略或合规归档 | 始终优先保留 | 只允许归档，不允许在 hold 生效期间物理删除 |
+| `llm_call_logs` | 180 天在线 | 超过在线窗口后摘要化 | 会议 / 文档 hold 命中时保留输入输出 hash 和必要审计 | 清理大字段，保留 provider、model、hash、token、error |
+| `rag_query_logs` | 90 天在线 | 超过在线窗口后聚合统计 | hold 命中时保留 citation 和 answer hash | 清理 query / answer 明文，保留 hash、scope、latency、error |
+| 原始会议音频 TOS | 按租户策略，默认 365 天 | 用户删除会议、租户 retention 到期、存储归档策略 | 命中 hold 禁止删除 | 删除前校验 hold；删除后写 object hash 到 `deletion_certificates` |
+| 标准化音频和中间 artifact TOS | 30 天 | task 终态成功 / 失败后到期 | hold 命中时保留 manifest 指向的必要 artifact | 删除可重建中间件；保留 `artifact_manifests` 元数据 |
+| 导出文件 TOS | 90 天或用户撤销短链后 7 天 | 短链撤销、导出过期、会议删除 | hold 命中时短链可撤销但文件不物理删 | 撤销 signed URL / download token，物理删除后写 certificate |
+| signed URL / upload session | signed URL 1 小时，upload session 24 小时 | 过期、complete、abort | hold 不延长临时凭证 | 失效凭证和未完成 part；不删除已受 hold 保护的源对象 |
+| `knowledge_chunks` / `document_chunks` | 随源对象 | 源删除、STALE 重建切换、chunk 策略淘汰 | 源对象 hold 命中时保留 | 标记 `status=DELETED` 后异步物理清理 embedding；RAG 立即不可召回 |
+| `speaker_embeddings` ciphertext | 授权有效期内保留 | 授权撤销、profile 删除、租户 retention 到期 | legal hold 可阻止物理删除，但新匹配必须排除撤销授权 | 删除或加密擦除 DEK；触发历史去标识 chunk 重建 |
+| `deletion_jobs` / `deletion_certificates` | 证书长期保留，默认 7 年 | 不参与普通 retention | hold 不阻断证书保留 | deletion job 只追加状态；certificate 不可修改 |
+| `model_registry` / prompt 版本记录 | 长期保留 | 模型 / prompt 下线后归档 | 与 artifact manifest 关联时保留 | 不物理删除被 artifact 引用的版本 |
+
+清理任务要求：
+
+1. 每次扫描必须先按 tenant、meeting、document、speaker profile、export job 维度检查 `legal_holds`。
+2. 删除物理对象前先写入 deletion plan，完成后写 `deletion_certificates`，失败项保留可重试状态。
+3. 对可重建中间产物允许先删物理对象，但必须保留 `artifact_manifests`、hash、模型版本和输入版本。
+4. 对用户可见业务事实默认先软删并从 RAG / 导出 / API 查询中移除，再由异步 job 做物理清理。
+5. retention 配置必须进入 `app.retention.*` 或 infra 环境配置，生产变更需要审计。
+
+## 15. 后续可扩展项
 
 以下能力不阻塞一期，但接口设计要预留：
 
@@ -1647,9 +1742,9 @@ P2 预留：
 3. 更复杂的审批和外发管控。
 4. 自动评测集扩展和模型灰度发布平台。
 
-## 15. 关键分层原则
+## 16. 关键分层原则
 
-### 15.1 AI 产物不等于业务事实
+### 16.1 AI 产物不等于业务事实
 
 1. AI 生成的待办、决策、风险默认是建议，用户确认后才成为业务事实。
 2. 重生成只能产生 diff、新版本或建议，不得覆盖用户确认字段。
@@ -1657,7 +1752,7 @@ P2 预留：
 4. evidence 必须保存 segment_id 和 `evidence_text_snapshot`；原文编辑后旧 evidence 进入 STALE，不静默改写。
 5. 纪要、待办、决策、风险的 `stale_status` 与业务 `status` 必须分离。
 
-### 15.2 删除、法定保全与证书
+### 16.2 删除、法定保全与证书
 
 1. `legal_hold=true` 的会议、文件、导出、audit 和 AI 产物不得被生命周期任务删除。
 2. legal_hold 创建和解除必须要求 break-glass reason、审批人和 audit_event。

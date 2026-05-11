@@ -32,6 +32,8 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 
 ## 2. 通用 JSON 约定
 
+事实来源：通用响应 envelope、公共 header、枚举和错误码以 `packages/meeting-contracts/openapi/*.yaml` 与 `packages/meeting-contracts/schemas/common/*.yaml` 为准。本节示例用于说明跨应用消费约定，不作为可独立修改的第二份 schema。
+
 ### 2.1 字段风格
 
 1. JSON 字段统一使用 `camelCase`。
@@ -153,6 +155,8 @@ X-Signature    = "hmac-sha256=" + hex(signature)
 
 ## 3. 枚举约定
 
+事实来源：完整枚举清单以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。下列枚举只列一期主要值，代码生成、前端 dictionary、Java enum 和 Python enum 必须从事实来源校验一致性。
+
 安全等级：
 
 ```json
@@ -211,6 +215,8 @@ X-Signature    = "hmac-sha256=" + hex(signature)
 ## 4. `meeting-web -> meeting-api` Public API
 
 Public API 路由前缀为 `/api`。所有接口必须经过登录态鉴权、租户上下文设置、权限校验、审计和限流。
+
+事实来源：endpoint、operationId、请求体、响应体、SSE 事件 schema 和错误响应以 `packages/meeting-contracts/openapi/public-api.yaml` 为准。本节样例用于联调和 fixture 编写，字段增删必须先改 OpenAPI。
 
 ### 4.1 登录
 
@@ -967,6 +973,8 @@ GET /api/exports/{exportId}
 
 ## 5. `meeting-api -> ai-worker` RabbitMQ 消息
 
+事实来源：RabbitMQ payload 以 `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` 为准；枚举值以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。本节只说明 routing 与典型消息形态。
+
 RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-message.schema.json` 校验。消息属性必须包含：
 
 ```json
@@ -1038,6 +1046,8 @@ RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-messag
 5. 消费失败可重试；重试耗尽后进入 DLQ，并保留 `taskId`、`tenantId`、`stepName`、`errorCode`、`workerId`、`artifactManifestId`。
 
 ## 6. `ai-worker -> meeting-api` Internal Callback API
+
+事实来源：callback endpoint、请求头、签名字段、body schema 和错误响应以 `packages/meeting-contracts/openapi/internal-callback-api.yaml` 为准。本节示例用于 worker / API 联调和回放测试，不允许单独扩展字段。
 
 Internal callback API 路由前缀为 `/internal`，必须使用独立鉴权 filter、独立审计日志和 HMAC-SHA256 签名校验。
 
@@ -1800,6 +1810,8 @@ callback `Idempotency-Key` 精确定义：
 ```
 
 ## 12. 错误码分类
+
+事实来源：完整错误码字典、retryable 默认值、用户提示、运维标签和 i18n key 以 `packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只给责任域分组，避免实现方在各自工程维护第二份错误码。
 
 错误码必须稳定，不直接暴露底层异常类名。
 

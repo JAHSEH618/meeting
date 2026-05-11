@@ -24,7 +24,33 @@ schemas/
   common/
     enums.yaml
     error-codes.yaml
+fixtures/
+  public-api/
+    meetings/
+    processing-tasks/
+    rag/
+  internal-callback/
+    step-update.request.json
+    transcript-callback.request.json
+    speaker-candidates.request.json
+    embeddings-callback.request.json
+    complete-task.request.json
+    fail-task.request.json
+  rabbitmq/
+    processing-task-message.valid.json
+    processing-task-message.invalid.json
 ```
+
+文件职责：
+
+| 文件 / 目录 | 事实类型 | 主要消费者 |
+|---|---|---|
+| `openapi/public-api.yaml` | Web 到 API 的 endpoint、schema、SSE 和错误响应 | `meeting-web`、`meeting-api-adapter`、MSW / Playwright |
+| `openapi/internal-callback-api.yaml` | Worker callback endpoint、header、签名字段、body schema | `ai-worker`、`meeting-api-adapter`、callback 回放测试 |
+| `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 worker 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
+| `schemas/common/enums.yaml` | 跨工程枚举 | Java / TypeScript / Python codegen |
+| `schemas/common/error-codes.yaml` | 稳定错误码、retryable、i18n key、运维标签 | 前端 error mapper、Java exception mapper、worker fail callback |
+| `fixtures/**` | 正反例样本和回放输入 | 契约测试、文档示例、回归测试 |
 
 ## 3. JSON 约定
 
@@ -193,6 +219,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 3. 删除字段、改字段含义、改枚举名属于 breaking change。
 4. breaking change 需要同时修改 `meeting-web`、`meeting-api` 和 `ai-worker`。
 5. callback payload 变更必须保持旧 worker 重试期间可被 Java 识别。
+6. 契约测试工具一期采用 OpenAPI / JSON Schema lint + fixture replay 的自研轻量组合；暂不引入 Pact，除非后续需要 provider verification workflow。
 
 ## 11. 验收标准
 
@@ -201,10 +228,11 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 3. 枚举与 Java、TypeScript、Python 使用的枚举一致。
 4. 错误码与前端提示、后端异常、worker 错误上报一致。
 5. Public API、callback API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
+6. `fixtures/**` 中每个 valid 样本必须通过对应 schema 校验；invalid 样本必须失败且错误路径稳定。
 
 ## 12. Code Generation
 
-生成命令：
+生成命令应固化到 `package.json` scripts 或仓库根 `Makefile`，下列命令是一期目标形态：
 
 ```bash
 openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts
