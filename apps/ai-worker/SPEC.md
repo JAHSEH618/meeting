@@ -1,0 +1,221 @@
+# ai-worker Spec
+
+## 1. 工程定位
+
+`ai-worker` 是独立部署的 Python AI 计算层，运行在独立 GPU 机器上。它负责音频处理、本地 ASR、说话人分离、声纹 embedding、文本 embedding 和必要的 workflow 编排。
+
+`ai-worker` 不直接写 Java 业务库，不自行判断用户业务权限。所有业务结果通过 `meeting-api` internal callback API 回写。
+
+## 2. 技术栈
+
+一期采用：
+
+```text
+Python 3.11+
+FastAPI
+Clean Architecture
+Celery 或 Dramatiq WorkerRuntime
+Prefect 或 Temporal WorkflowEngine
+LangGraph Agent
+ffmpeg / ffprobe
+本地 ASR 模型
+Diarization 模型
+Speaker Embedding 模型
+Text Embedding / Rerank 模型
+RabbitMQ client
+TOS client
+Java callback client
+```
+
+MVP 可以在 `Celery / Dramatiq` 中二选一，在 `Prefect / Temporal` 中二选一，但 Pipeline 业务逻辑必须通过 `WorkerRuntime`、`WorkflowEngine`、`ModelRuntime`、`ArtifactStore`、`CallbackClient` 等端口隔离具体 SDK。
+
+## 3. 包结构
+
+```text
+ai_worker/
+  interfaces/
+    api/                FastAPI 内部管理接口
+    workers/            RabbitMQ / Celery / Dramatiq 适配
+    callbacks/          callback payload 适配
+  application/
+    use_cases/          用例编排
+    workflows/          Pipeline DAG
+    agents/             LangGraph Agent
+  domain/
+    audio/              音频、channel、质量、VAD 领域对象
+    transcript/         ASR、segment、merge 领域对象
+    speaker/            speaker label、embedding、候选匹配
+    task/               task、step、attempt、lease
+    knowledge/          chunk、embedding request、artifact
+  infrastructure/
+    storage/            TOS client
+    mq/                 RabbitMQ runtime
+    workflow/           Prefect / Temporal 实现
+    llm_gateway/        经 Java llm-gateway 的调用端口
+    java_callback/      internal callback client
+  pipeline/
+    audio/
+    asr/
+    alignment/
+    diarization/
+    speaker/
+    embedding/
+    rag_indexing/
+  model_runtime/
+  common/
+```
+
+## 4. FastAPI 内部接口
+
+FastAPI 只作为内部管理、健康检查、模型状态和调试入口，不作为客户主产品入口。
+
+一期接口：
+
+```http
+GET /internal/health
+GET /internal/models
+GET /internal/workflows/{task_id}
+```
+
+可扩展接口：
+
+1. 上传测试音频。
+2. 触发内部 ASR smoke test。
+3. 查看模型加载状态、GPU 显存和版本 checksum。
+4. 查看 workflow DAG、当前 step、重试和取消状态。
+
+所有内部接口必须通过内网访问控制或内部鉴权保护，不能暴露给外部用户。
+
+## 5. 输入任务
+
+RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后的任务。
+
+任务必须包含：
+
+1. `taskId`、`taskType`、`tenantId`、`meetingId`。
+2. `audioFileId`、`audioUri`。
+3. `securityLevel`。
+4. `attemptNo`。
+5. `expectedInputVersion`。
+6. `language`。
+7. `channelMap` 或 channel 识别要求。
+8. `knownParticipants`。
+9. `minSpeakers`、`maxSpeakers`。
+10. `options`。
+11. `traceId`。
+
+缺失关键字段时，worker 应 fail fast，并通过 callback 写入稳定 `error_code`。
+
+## 6. Pipeline DAG
+
+### 6.1 音频预处理
+
+1. 使用 `ffprobe` 读取音频格式、时长、采样率、声道数和码率。
+2. 单场会议音频最长 4 小时，超出返回 `AUDIO_TOO_LONG`。
+3. 识别并保存 `channel_map`，保留多声道信息。
+4. 只有明确为多人单通道或确认可混音时，才转为 16kHz mono WAV。
+5. 音频无法读取返回 `AUDIO_CORRUPTED`。
+6. 格式不支持返回 `AUDIO_UNSUPPORTED_FORMAT`。
+7. 质量检测过低返回 `AUDIO_QUALITY_LOW` 或 partial result 策略。
+
+### 6.2 VAD 与 ASR
+
+1. VAD 先识别有效语音区间。
+2. ASR 按 30 到 120 秒批处理。
+3. chunk overlap 为 0.3 到 0.8 秒。
+4. 保存切片策略版本、VAD 版本、ASR 模型版本和权重 checksum。
+5. ASR 输出原始 JSON 写入 TOS，并作为 artifact 回写。
+6. 推理异常返回 `ASR_RUNTIME_ERROR`，显存不足返回 `ASR_GPU_OOM`。
+
+### 6.3 Diarization 与 Alignment
+
+1. Diarization 输出 `SPEAKER_00`、`SPEAKER_01` 等匿名 label。
+2. 保存 diarization turns、模型版本和置信度。
+3. `ALIGNMENT` 一期默认不全量执行，只在精确引用、报告导出或人工触发时按需启用。
+4. Diarization 失败返回 `DIARIZATION_FAILED`。
+5. Alignment 失败返回 `ALIGNMENT_FAILED`，不得阻断已有 ASR 可查看结果，除非任务配置要求强依赖。
+
+### 6.4 Speaker Embedding 与匹配
+
+1. 支持参考音频 embedding 提取。
+2. 支持会议 speaker label embedding 提取。
+3. 只在 `knownParticipants` 或 Java 授权范围内做候选匹配，不做全公司无差别搜索。
+4. embedding 不返回前端，不发送给 DashScope。
+5. embedding 明文不得写入普通日志。
+6. 生成候选时返回 speaker label、candidate person/profile、score、threshold、model version 和 artifact manifest。
+7. 提取失败返回 `SPEAKER_EMBEDDING_FAILED`，匹配失败返回 `SPEAKER_MATCH_FAILED`。
+
+### 6.5 Transcript Merge
+
+1. 合并 ASR segment、Diarization turn、speaker label 和置信度。
+2. 输出结构化转录，包含 `segmentId`、`startMs`、`endMs`、`speakerLabel`、`text`、`asrConfidence`、`diarizationConfidence`、`speakerConfidence`、`timestampPrecision`。
+3. callback 到 `POST /internal/processing-tasks/{taskId}/transcript`。
+4. 合并失败返回 `TRANSCRIPT_MERGE_FAILED`。
+
+### 6.6 Embedding
+
+1. 文本 embedding 用于会议 chunk、纪要 chunk、事项 chunk 和文档 chunk。
+2. 一期默认 bge-m3 或同级多语言模型。
+3. 产物可以通过 callback 回写向量或 TOS artifact URI，具体以 `meeting-contracts` 契约为准。
+4. 记录 embedding model version、checksum、chunk strategy version 和 source version。
+
+## 7. Callback 规范
+
+所有 callback 必须携带：
+
+```http
+X-Worker-Id
+X-Attempt-No
+X-Lease-Owner
+X-Request-Id
+X-Trace-Id
+X-Timestamp
+X-Nonce
+Idempotency-Key
+X-Signature
+```
+
+约束：
+
+1. HMAC-SHA256 签名。
+2. `Idempotency-Key` 对同一 task、step、attempt、payload version 稳定。
+3. callback 失败要重试，重试耗尽返回 `WRITEBACK_FAILED`。
+4. 每个 step 开始、进度、完成和失败都要回写。
+5. 大 JSON 和中间产物写 TOS，callback 只传 URI、sha256、size、summary 和 metadata。
+6. 所有 AI 对外结果必须能追溯到 `artifact_manifest`。
+
+## 8. 模型供应链
+
+1. 生产启动不得临时联网下载模型权重。
+2. 本地权重进入内网制品库。
+3. 记录模型 license、商用条款、来源 URL、checksum、审批人和发布时间。
+4. `GET /internal/models` 必须能展示已加载模型、版本、checksum、device、状态和最近错误。
+5. 每个 artifact manifest 记录实际模型版本和 checksum。
+
+## 9. 性能目标
+
+一期最低 GPU：
+
+```text
+RTX 3090 / 4090 24GB 或同等显存 GPU
+```
+
+目标：
+
+1. ASR RTF <= 0.3。
+2. Diarization RTF <= 0.4。
+3. 60 分钟会议端到端 <= 60 分钟，或记录 RTF 原因和瓶颈 step。
+4. ASR 和 Diarization 单 GPU 默认并发为 1。
+5. OOM 需要稳定错误码、自动释放资源并允许重试。
+
+## 10. 验收标准
+
+1. 能消费 `MEETING_FULL_PIPELINE` 任务。
+2. 能读取 TOS 音频并写入中间 artifact。
+3. 能输出 channel map、质量报告、ASR 原始结果、diarization turns 和结构化转录。
+4. 能生成 speaker candidates 且不泄露 embedding。
+5. 能按 step 回写状态、进度和错误码。
+6. 同一 callback 重放不产生重复业务结果。
+7. Worker 异常退出后，Java lease 过期可重新入队，旧 attempt 结果不能覆盖新 attempt。
+8. 所有模型产物绑定 artifact manifest。
+9. 模型状态、workflow 状态和 health 能通过内部接口查看。

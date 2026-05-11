@@ -152,11 +152,18 @@ npm install && npm run dev
 | 文档 | 内容 |
 |---|---|
 | [`docs/spec.md`](docs/spec.md) | 一期可执行规格：API 列表、数据库模型、RAG 规格、验收标准、错误码字典、默认配置 |
+| [`apps/meeting-web/SPEC.md`](apps/meeting-web/SPEC.md) | 前端工程规格：页面、交互状态、API 对接、验收 |
+| [`apps/meeting-api/SPEC.md`](apps/meeting-api/SPEC.md) | Java 后端工程规格：COLA 模块、业务域、流程、API、事务、安全 |
+| [`apps/ai-worker/SPEC.md`](apps/ai-worker/SPEC.md) | Python AI Worker 工程规格：Pipeline、模型、callback、性能目标 |
+| [`packages/meeting-contracts/SPEC.md`](packages/meeting-contracts/SPEC.md) | 跨工程契约规格：OpenAPI、JSON Schema、枚举、错误码、版本策略 |
+| [`infra/meeting-infra/SPEC.md`](infra/meeting-infra/SPEC.md) | 基础设施工程规格：部署、队列、配置、观测、安全基线 |
 | [`docs/structure.md`](docs/structure.md) | 架构 Mermaid 图 + 10 条架构要点 |
 | [`docs/app-api-contracts.md`](docs/app-api-contracts.md) | 应用间契约：Public API、Internal Callback API、RabbitMQ 消息、TOS URI、幂等、版本、错误码 |
 | [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md) | 完整技术方案：术语表、建设目标、架构、选型、Pipeline、安全、部署 |
 | [`docs/ddls/`](docs/ddls/) | PostgreSQL DDL 源稿 |
 | [`packages/meeting-contracts/`](packages/meeting-contracts/) | 跨工程契约事实来源：OpenAPI / JSON Schema / 错误码 |
+
+`apps/meeting-api/` 内部还按 COLA-V5 子项目拆分了 `SPEC.md`，见 [`apps/meeting-api/README.md`](apps/meeting-api/README.md)。
 
 ## License
 

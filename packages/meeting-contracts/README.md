@@ -2,6 +2,8 @@
 
 跨工程契约单一事实来源。
 
+详细工程规格见 [`SPEC.md`](SPEC.md)。
+
 内容：
 
 ```text
@@ -13,4 +15,3 @@ schemas/common/enums.yaml
 ```
 
 MVP 可先手写维护，后续再接入 SDK 生成和私有 npm / Maven / PyPI 发布。
-

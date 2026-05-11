@@ -1,5 +1,7 @@
 # 本地会议智能系统一期 Spec
 
+> 本文保留为一期总规格。工程和子项目级细化规格已拆到对应目录：`apps/meeting-web/SPEC.md`、`apps/meeting-api/SPEC.md`、`apps/ai-worker/SPEC.md`、`packages/meeting-contracts/SPEC.md`、`infra/meeting-infra/SPEC.md`。`meeting-api` 内部 COLA-V5 子项目规格见各子模块下的 `SPEC.md`。
+
 ## 1. 背景与目标
 
 一期目标是交付一个可用的本地会议智能系统闭环：

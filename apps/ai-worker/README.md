@@ -2,6 +2,8 @@
 
 Python 3.11+ AI 计算层。
 
+详细工程规格见 [`SPEC.md`](SPEC.md)。
+
 技术栈边界：
 
 ```text

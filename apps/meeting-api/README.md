@@ -2,6 +2,8 @@
 
 Java 17 + Spring Boot + COLA-V5 模块化单体。
 
+详细工程规格见 [`SPEC.md`](SPEC.md)。
+
 Maven 模块：
 
 ```text
@@ -37,3 +39,14 @@ meeting-api-start         Spring Boot 启动类与基础配置
 ```
 
 后续接入数据库时，将 `InMemoryMeetingRepository` 替换为 PostgreSQL RepositoryImpl，并把 `docs/ddls/001_initial_schema.sql` 拆入正式 migration。
+
+## 子项目规格
+
+| 子项目 | 规格 |
+|---|---|
+| meeting-api-start | [`meeting-api-start/SPEC.md`](meeting-api-start/SPEC.md) |
+| meeting-api-client | [`meeting-api-client/SPEC.md`](meeting-api-client/SPEC.md) |
+| meeting-api-adapter | [`meeting-api-adapter/SPEC.md`](meeting-api-adapter/SPEC.md) |
+| meeting-api-app | [`meeting-api-app/SPEC.md`](meeting-api-app/SPEC.md) |
+| meeting-api-domain | [`meeting-api-domain/SPEC.md`](meeting-api-domain/SPEC.md) |
+| meeting-api-infrastructure | [`meeting-api-infrastructure/SPEC.md`](meeting-api-infrastructure/SPEC.md) |
