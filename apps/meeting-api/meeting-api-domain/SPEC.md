@@ -108,7 +108,7 @@ phase 迁移规则：
 
 外部观察者不得仅用 `processing_tasks.status=RUNNING` 推断进度阶段；Public API 的 `ProcessingTaskDTO.phase` 是前端进度条、运维 dashboard 和告警阶段判断的事实来源。
 
-允许迁移边显式包含 status 与 phase 两个维度；主轴是 phase，worker phase 完成时 status 保持 `RUNNING`，仅 phase 从 `WORKER_DAG_RUNNING` 推进到 `WORKER_DAG_DONE`。
+允许迁移边显式包含 status 与 phase 两个维度；worker phase 完成期间 status 维持 `RUNNING`，task status 终态（`SUCCEEDED` / `PARTIAL_SUCCEEDED` / `FAILED` / `CANCELLED`）仅在 phase 推进至 `TERMINAL` 的同一事务中确定。
 
 | From (status, phase) | To (status, phase) | 触发 |
 |---|---|---|
