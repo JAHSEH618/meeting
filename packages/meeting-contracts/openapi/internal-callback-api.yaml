@@ -2,5 +2,435 @@ openapi: 3.1.0
 info:
   title: Meeting Internal Callback API
   version: 0.1.0
-paths: {}
-
+servers:
+  - url: /internal
+paths:
+  /processing-tasks/{taskId}/steps/{stepName}:
+    patch:
+      operationId: updateProcessingTaskStep
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/StepName'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpdateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/artifacts:
+    post:
+      operationId: createProcessingArtifact
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactCallbackRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/transcript:
+    post:
+      operationId: submitTranscript
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptCallbackRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/speaker-candidates:
+    post:
+      operationId: submitSpeakerCandidates
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeakerCandidatesCallbackRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/embeddings:
+    post:
+      operationId: submitTextEmbeddings
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingsCallbackRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/complete:
+    post:
+      operationId: completeProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteTaskRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/fail:
+    post:
+      operationId: failProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailTaskRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: {type: string}
+    StepName:
+      name: stepName
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]
+    WorkerId:
+      name: X-Worker-Id
+      in: header
+      required: true
+      schema: {type: string}
+    AttemptNo:
+      name: X-Attempt-No
+      in: header
+      required: true
+      schema: {type: integer, minimum: 1}
+    LeaseOwner:
+      name: X-Lease-Owner
+      in: header
+      required: true
+      schema: {type: string}
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema: {type: string}
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: true
+      schema: {type: string}
+    Timestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      schema: {type: string, format: date-time}
+    Nonce:
+      name: X-Nonce
+      in: header
+      required: true
+      schema: {type: string}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string}
+    Signature:
+      name: X-Signature
+      in: header
+      required: true
+      schema: {type: string, pattern: '^hmac-sha256=.+'}
+  responses:
+    Ok:
+      description: Standard callback response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+  schemas:
+    ApiResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data: {}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+    ErrorInfo:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        retryable: {type: boolean}
+        details:
+          type: object
+          additionalProperties: true
+    StepUpdateRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, stepName, status]
+      properties:
+        tenantId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        stepName: {$ref: '#/components/schemas/ProcessingStep'}
+        status: {type: string}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        errorCode: {type: [string, 'null']}
+        heartbeatAt: {type: string, format: date-time}
+        artifactManifestId: {type: [string, 'null']}
+    ArtifactCallbackRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, artifacts]
+      properties:
+        tenantId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        artifacts:
+          type: array
+          items:
+            type: object
+            required: [artifactType, artifactUri, sha256]
+            properties:
+              artifactType: {type: string}
+              artifactUri: {type: string, pattern: '^tos://.+'}
+              sha256: {type: string}
+              sizeBytes: {type: integer}
+              metadata:
+                type: object
+                additionalProperties: true
+        artifactManifestId: {type: [string, 'null']}
+    TranscriptCallbackRequest:
+      type: object
+      required: [tenantId, meetingId, taskId, attemptNo, transcriptVersion, segments]
+      properties:
+        tenantId: {type: string}
+        meetingId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        transcriptVersion: {type: integer}
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranscriptSegment'
+        metadata:
+          type: object
+          additionalProperties: true
+        artifactManifestId: {type: [string, 'null']}
+    TranscriptSegment:
+      type: object
+      required: [segmentId, startMs, endMs, speakerLabel, text]
+      properties:
+        segmentId: {type: string}
+        startMs: {type: integer}
+        endMs: {type: integer}
+        speakerLabel: {type: string}
+        text: {type: string}
+        asrConfidence: {type: number, minimum: 0, maximum: 1}
+        diarizationConfidence: {type: number, minimum: 0, maximum: 1}
+        speakerConfidence: {type: number, minimum: 0, maximum: 1}
+        timestampPrecision:
+          type: string
+          enum: [WORD, SEGMENT, APPROXIMATE]
+    SpeakerCandidatesCallbackRequest:
+      type: object
+      required: [tenantId, meetingId, taskId, attemptNo, speakerCandidates]
+      properties:
+        tenantId: {type: string}
+        meetingId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        speakerCandidates:
+          type: array
+          items:
+            type: object
+            required: [speakerLabel, candidates, embedding]
+            properties:
+              speakerLabel: {type: string}
+              candidates:
+                type: array
+                items:
+                  type: object
+                  required: [personId, speakerProfileId, confidence, matchStatus]
+                  properties:
+                    personId: {type: string}
+                    speakerProfileId: {type: string}
+                    confidence: {type: number, minimum: 0, maximum: 1}
+                    matchStatus: {type: string}
+              embedding:
+                $ref: '#/components/schemas/PlainSpeakerEmbedding'
+        artifactManifestId: {type: [string, 'null']}
+    PlainSpeakerEmbedding:
+      type: object
+      description: Plaintext embedding transported only over internal TLS + HMAC callback. meeting-api encrypts it with KMS before persistence.
+      required: [format, dimension, values, checksum, modelVersion, persistedBy]
+      properties:
+        format: {type: string, enum: [FLOAT32_ARRAY]}
+        dimension: {type: integer, minimum: 1}
+        values:
+          type: array
+          items: {type: number}
+        checksum: {type: string}
+        modelVersion: {type: string}
+        plaintextTransport: {type: string, enum: [INTERNAL_TLS_HMAC_CALLBACK]}
+        persistedBy: {type: string, enum: [MEETING_API_KMS_ENVELOPE_ENCRYPTION]}
+    EmbeddingsCallbackRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, embeddingBatchId, sourceType, embeddingModelVersion, chunkStrategyVersion, items]
+      properties:
+        tenantId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        embeddingBatchId: {type: string}
+        sourceType:
+          type: string
+          enum: [PRIMARY_TRANSCRIPT, AI_SUMMARY, DECISION, ACTION_ITEM, RISK, DOCUMENT]
+        embeddingModelVersion: {type: string}
+        chunkStrategyVersion: {type: string}
+        items:
+          type: array
+          items:
+            type: object
+            required: [chunkId, sourceId, sourceVersion, contentHash, embedding]
+            properties:
+              chunkId: {type: string}
+              sourceId: {type: string}
+              sourceVersion: {type: integer}
+              contentHash: {type: string}
+              embedding:
+                type: object
+                required: [format, dimension]
+                properties:
+                  format: {type: string, enum: [FLOAT32_ARRAY]}
+                  dimension: {type: integer}
+                  values:
+                    type: array
+                    items: {type: number}
+                  artifactUri:
+                    type: [string, 'null']
+                    pattern: '^tos://.+'
+                  sha256: {type: [string, 'null']}
+        artifactManifestId: {type: [string, 'null']}
+    CompleteTaskRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, status, completedSteps, finishedAt]
+      properties:
+        tenantId: {type: string}
+        meetingId: {type: [string, 'null']}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        status:
+          type: string
+          enum: [SUCCEEDED, PARTIAL_SUCCEEDED]
+        completedSteps:
+          type: array
+          items: {$ref: '#/components/schemas/ProcessingStep'}
+        skippedSteps:
+          type: array
+          items:
+            type: object
+            properties:
+              stepName: {$ref: '#/components/schemas/ProcessingStep'}
+              reason: {type: string}
+        artifactManifestId: {type: [string, 'null']}
+        finishedAt: {type: string, format: date-time}
+    FailTaskRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, failedStep, error, failedAt]
+      properties:
+        tenantId: {type: string}
+        meetingId: {type: [string, 'null']}
+        taskId: {type: string}
+        attemptNo: {type: integer}
+        failedStep: {$ref: '#/components/schemas/ProcessingStep'}
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+        artifactManifestId: {type: [string, 'null']}
+        failedAt: {type: string, format: date-time}
+    ProcessingStep:
+      type: string
+      enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]

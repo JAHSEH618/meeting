@@ -15,42 +15,26 @@
 
 ## 3. 配置项
 
-`application.yml` 至少包含：
+默认业务配置以 `docs/spec.md` §13 为事实来源，启动模块只维护 Spring Boot 运行时、profile、management endpoint 和依赖装配所需配置。避免在启动模块 SPEC 中复制完整业务默认值。
+
+`application.yml` 至少包含启动项：
 
 ```yaml
 server:
   port: 8080
 
-app:
-  max-audio-duration-hours: 4
-  max-audio-file-size-gb: 3
-  enabled-security-levels:
-    - PUBLIC
-    - INTERNAL
-  reserved-security-levels:
-    - CONFIDENTIAL
-    - SECRET
+spring:
+  profiles:
+    active: local
 
-database:
-  rls-enabled: true
-
-queue:
-  provider: rabbitmq
-
-storage:
-  provider: volcengine-tos
-
-llm:
-  provider: dashscope
-  text-redaction-before-third-party-llm: false
-  secret-fail-closed: true
-
-task:
-  lease:
-    ttlSeconds: 120
-    heartbeatIntervalSeconds: 20
-  step:
-    maxAttempts: 3
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - metrics
+          - prometheus
 ```
 
 敏感值通过环境变量注入：
@@ -91,6 +75,8 @@ profile 规则：
 5. TOS connectivity。
 6. DashScope 配置存在性，不在普通 health 中主动发送敏感内容。
 7. outbox publisher 状态。
+8. KMS connectivity 或 KMS 配置存在性。
+9. RabbitMQ 必要队列存在性和 queue depth 摘要。
 
 ## 6. 启动失败条件
 

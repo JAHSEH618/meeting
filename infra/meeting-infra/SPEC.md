@@ -47,7 +47,7 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 | `meeting-web` | 普通服务器或静态资源服务 | CPU / 网络 |
 | `meeting-api` | 普通服务器 | CPU、数据库连接池、外部 API |
 | `ai-worker` | 独立 GPU 机器 | GPU、显存、本地模型权重 |
-| `export runtime` | 普通服务器 | CPU、LibreOffice、字体 |
+| `export runtime` | `meeting-api` Java 进程内，一期不单独部署 | CPU、LibreOffice、字体 |
 | PostgreSQL | 数据库节点 | 存储、备份、RLS 验证 |
 | RabbitMQ | 消息队列节点 | 队列堆积、DLQ、连接数 |
 
@@ -80,6 +80,7 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 4. lease TTL 默认 120 秒。
 5. DLQ 保留默认 14 天。
 6. 队列堆积、消费失败率、DLQ 数量必须有告警。
+7. 一期 `export-queue` 由 `meeting-api` Java 进程内消费；独立 export worker 仅后续预留。
 
 ## 6. 配置与密钥
 
@@ -130,6 +131,8 @@ meeting-exports/
 6. ai-worker GPU 利用率、显存、RTF、step 失败率。
 7. export 成功率、转换耗时、文件大小。
 8. deletion job、legal hold、break-glass 审计事件。
+9. KMS 可用性、密钥轮换事件和声纹 embedding 加密失败率。
+10. outbox publisher backlog、单聚合发布顺序冲突和重试次数。
 
 trace 要求：
 
@@ -155,7 +158,7 @@ trace 要求：
 3. `meeting-api` 能连接数据库、RabbitMQ 和 TOS 配置。
 4. `ai-worker` 能访问 RabbitMQ、TOS、模型权重路径和 callback URL。
 5. `meeting-web` 能访问 `meeting-api`。
-6. export runtime 能生成 PDF。
+6. `meeting-api` 进程内 export consumer 能消费 `export-queue` 并生成 PDF。
 7. 关键指标和日志可查询。
 8. 密钥不进入 git。
 9. legal hold 下生命周期清理不会删除受保护对象。

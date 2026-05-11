@@ -3,13 +3,113 @@
   "$id": "https://meeting.local/schemas/processing-task-message.schema.json",
   "title": "ProcessingTaskMessage",
   "type": "object",
-  "required": ["taskId", "taskType", "tenantId", "traceId"],
+  "required": [
+    "taskId",
+    "taskType",
+    "tenantId",
+    "meetingId",
+    "securityLevel",
+    "attemptNo",
+    "expectedInputVersion",
+    "options",
+    "traceId"
+  ],
   "properties": {
-    "taskId": {"type": "string"},
-    "taskType": {"type": "string"},
-    "tenantId": {"type": "string"},
-    "traceId": {"type": "string"}
+    "taskId": {"type": "string", "minLength": 1},
+    "taskType": {
+      "type": "string",
+      "enum": [
+        "MEETING_FULL_PIPELINE",
+        "SPEAKER_ENROLLMENT",
+        "TEXT_EMBEDDING",
+        "RAG_REINDEX",
+        "EXPORT"
+      ]
+    },
+    "tenantId": {"type": "string", "minLength": 1},
+    "meetingId": {"type": ["string", "null"]},
+    "documentId": {"type": ["string", "null"]},
+    "exportId": {"type": ["string", "null"]},
+    "audioFileId": {"type": ["string", "null"]},
+    "audioUri": {"type": ["string", "null"], "pattern": "^(tos://.+)?$"},
+    "securityLevel": {
+      "type": "string",
+      "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]
+    },
+    "attemptNo": {"type": "integer", "minimum": 1},
+    "expectedInputVersion": {
+      "type": "object",
+      "required": ["chunkStrategyVersion"],
+      "properties": {
+        "transcriptVersion": {"type": ["integer", "null"], "minimum": 1},
+        "minutesVersion": {"type": ["integer", "null"], "minimum": 1},
+        "ragVersion": {"type": ["integer", "null"], "minimum": 1},
+        "documentVersion": {"type": ["integer", "null"], "minimum": 1},
+        "chunkStrategyVersion": {"type": "string", "minLength": 1},
+        "embeddingModelVersion": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "language": {"type": ["string", "null"]},
+    "channelMap": {
+      "type": ["object", "null"],
+      "properties": {
+        "channelCount": {"type": "integer", "minimum": 1},
+        "layout": {"type": "string"},
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["index", "label"],
+            "properties": {
+              "index": {"type": "integer", "minimum": 0},
+              "label": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "knownParticipants": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "minSpeakers": {"type": ["integer", "null"], "minimum": 1},
+    "maxSpeakers": {"type": ["integer", "null"], "minimum": 1},
+    "options": {
+      "type": "object",
+      "properties": {
+        "enableAsr": {"type": "boolean", "default": true},
+        "enableDiarization": {"type": "boolean", "default": true},
+        "enableSpeakerRecognition": {"type": "boolean", "default": true},
+        "enableRagIndexing": {"type": "boolean", "default": true},
+        "enableAlignment": {"type": "boolean", "default": false},
+        "exportFormat": {"type": ["string", "null"], "enum": ["MARKDOWN", "DOCX", "PDF", null]}
+      },
+      "additionalProperties": true
+    },
+    "traceId": {"type": "string", "minLength": 1},
+    "createdAt": {"type": ["string", "null"], "format": "date-time"}
   },
-  "additionalProperties": true
+  "allOf": [
+    {
+      "if": {
+        "properties": {"taskType": {"const": "MEETING_FULL_PIPELINE"}}
+      },
+      "then": {
+        "required": ["meetingId", "audioFileId", "audioUri", "language"]
+      }
+    },
+    {
+      "if": {
+        "properties": {"taskType": {"const": "EXPORT"}}
+      },
+      "then": {
+        "required": ["meetingId", "exportId"]
+      }
+    }
+  ],
+  "additionalProperties": false
 }
-

@@ -41,6 +41,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 5. 枚举值统一使用大写下划线，例如 `INTERNAL`、`RUNNING`、`STALE`。
 6. 金额、分数、置信度等数值不得用字符串表达；置信度范围为 `0.0` 到 `1.0`。
 7. 大文本、大数组、大模型输出优先写 TOS，API 中返回 `artifactUri`、`sha256` 和 summary。
+8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，一期值恒为 `false`；契约消费方不得把它当作可自行切换的脱敏开关。
 
 ### 2.2 公共请求头
 
@@ -523,6 +524,8 @@ GET /api/processing-tasks/{taskId}/events
 
 ```json
 {
+  "eventId": "task_001:00000042",
+  "sequenceNo": 42,
   "eventType": "TASK_STEP_UPDATED",
   "taskId": "task_001",
   "meetingId": "m_001",
@@ -534,6 +537,13 @@ GET /api/processing-tasks/{taskId}/events
   "emittedAt": "2026-05-11T06:36:00Z"
 }
 ```
+
+断线恢复：
+
+1. 服务端 SSE event id 使用 `eventId`。
+2. `sequenceNo` 在同一 `taskId` 内单调递增。
+3. 客户端重连时携带 `Last-Event-Id: task_001:00000042`。
+4. 服务端从该 event 之后续发；如果事件已过保留窗口，则先发送当前 task 快照，再继续推送新事件。
 
 ### 4.8 获取转录
 
@@ -1097,13 +1107,26 @@ POST /internal/processing-tasks/{taskId}/speaker-candidates
           "matchStatus": "CANDIDATE"
         }
       ],
-      "embeddingArtifactUri": "tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/speaker/task_001_speaker_01.enc",
-      "embeddingEncrypted": true
+      "embedding": {
+        "format": "FLOAT32_ARRAY",
+        "dimension": 192,
+        "values": [0.0123, -0.0456, 0.0789],
+        "checksum": "sha256:speaker_embedding_hash_001",
+        "modelVersion": "local-speaker-v1",
+        "plaintextTransport": "INTERNAL_TLS_HMAC_CALLBACK",
+        "persistedBy": "MEETING_API_KMS_ENVELOPE_ENCRYPTION"
+      }
     }
   ],
   "artifactManifestId": "artifact_manifest_002"
 }
 ```
+
+声纹 embedding 加密归属：
+
+1. `ai-worker` 通过 internal TLS + HMAC callback 将 speaker embedding 明文回写给 `meeting-api`，不得把明文 embedding 写入 TOS 或普通日志。
+2. `meeting-api` 在同一写入用例中调用 KMS 信封加密，数据库只保存密文、wrapped data key、checksum 和模型 metadata。
+3. `ai-worker` callback 成功或重试耗尽后必须清除进程内 embedding 明文引用。
 
 响应：
 
@@ -1120,7 +1143,61 @@ POST /internal/processing-tasks/{taskId}/speaker-candidates
 }
 ```
 
-### 6.5 标记完成
+### 6.5 回写文本 embedding
+
+```http
+POST /internal/processing-tasks/{taskId}/embeddings
+```
+
+请求：
+
+```json
+{
+  "tenantId": "t_001",
+  "taskId": "task_001",
+  "attemptNo": 1,
+  "embeddingBatchId": "emb_batch_001",
+  "sourceType": "DOCUMENT",
+  "embeddingModelVersion": "bge-m3-local-v1",
+  "chunkStrategyVersion": "chunk-2026.05.1",
+  "items": [
+    {
+      "chunkId": "chunk_001",
+      "sourceId": "doc_001",
+      "sourceVersion": 1,
+      "contentHash": "sha256:chunk_hash_001",
+      "embedding": {
+        "format": "FLOAT32_ARRAY",
+        "dimension": 1024,
+        "valuesPreview": [0.011, -0.022, 0.033],
+        "artifactUri": "tos://meeting-artifacts/tenant/t_001/task/task_001/embedding/emb_batch_001.json",
+        "sha256": "sha256:embedding_batch_hash_001"
+      }
+    }
+  ],
+  "artifactManifestId": "artifact_manifest_embedding_001"
+}
+```
+
+文本 embedding 批次可以直接回写 `values`，也可以通过 `artifactUri` 指向 TOS 中的批次 JSON；两者必须至少提供一个。大批次优先使用 `artifactUri`。
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "accepted": true,
+    "embeddingBatchId": "emb_batch_001",
+    "itemCount": 1
+  },
+  "error": null,
+  "requestId": "req_cb_005",
+  "traceId": "trace_001"
+}
+```
+
+### 6.6 标记完成
 
 ```http
 POST /internal/processing-tasks/{taskId}/complete
@@ -1167,12 +1244,12 @@ POST /internal/processing-tasks/{taskId}/complete
     "outboxEventId": "evt_001"
   },
   "error": null,
-  "requestId": "req_cb_005",
+  "requestId": "req_cb_006",
   "traceId": "trace_001"
 }
 ```
 
-### 6.6 标记失败
+### 6.7 标记失败
 
 ```http
 POST /internal/processing-tasks/{taskId}/fail
@@ -1284,6 +1361,8 @@ GET /internal/models
 ```http
 GET /internal/workflows/{taskId}
 ```
+
+`workflowId` 由 `ai-worker` 的 WorkflowEngine 生成。同一个 `taskId` 在不同 `attemptNo` 下可以对应不同 `workflowId`；`taskId` 是跨 attempt 稳定的业务任务 id，前端只使用 `taskId`。
 
 响应：
 

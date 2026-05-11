@@ -14,4 +14,4 @@ schemas/common/error-codes.yaml
 schemas/common/enums.yaml
 ```
 
-MVP 可先手写维护，后续再接入 SDK 生成和私有 npm / Maven / PyPI 发布。
+当前已提供最小可校验骨架：Public OpenAPI、Internal Callback OpenAPI、RabbitMQ task JSON Schema、枚举和错误码。后续再接入 SDK 生成和私有 npm / Maven / PyPI 发布。

@@ -19,7 +19,7 @@
 |---|---|
 | `meeting-api-start` | Spring Boot 启动、配置装配、profile、健康检查、组件扫描 |
 | `meeting-api-client` | DTO、Command、Query、Result、Facade、枚举、错误码契约 |
-| `meeting-api-adapter` | REST Controller、SSE、internal callback、BFF 响应适配、MQ 入站适配 |
+| `meeting-api-adapter` | REST Controller、SSE、internal callback、BFF 响应适配、`export-queue` consumer |
 | `meeting-api-app` | 应用服务、用例编排、事务边界、租户上下文、权限编排、outbox 发布 |
 | `meeting-api-domain` | 聚合、实体、值对象、领域服务、领域事件、Repository / Gateway 端口 |
 | `meeting-api-infrastructure` | PostgreSQL / pgvector、TOS、RabbitMQ、DashScope、LibreOffice、KMS、签名 URL、外部网关实现 |
@@ -115,6 +115,7 @@ PATCH /internal/processing-tasks/{taskId}/steps/{stepName}
 POST  /internal/processing-tasks/{taskId}/artifacts
 POST  /internal/processing-tasks/{taskId}/transcript
 POST  /internal/processing-tasks/{taskId}/speaker-candidates
+POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
 ```
@@ -150,6 +151,7 @@ POST  /internal/processing-tasks/{taskId}/fail
 3. 连接归还前 reset tenant context。
 4. 后台任务、callback、导出任务都必须携带并设置 tenant context。
 5. 领域事件写入 `domain_events_outbox` 必须与业务数据同事务提交。
+6. 同一聚合的 outbox 事件按 `sequence_no` 单调递增，publisher 必须保证单聚合内有序发布。
 
 ## 8. 安全等级与 LLM
 

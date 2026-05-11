@@ -289,6 +289,7 @@ CREATE TABLE IF NOT EXISTS processing_task_steps (
   output_hash text,
   error_code text,
   error_message text,
+  artifact_manifest_id text,
   started_at timestamptz,
   finished_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -306,6 +307,7 @@ CREATE TABLE IF NOT EXISTS callback_events (
   lease_owner text,
   idempotency_key text NOT NULL,
   request_hash text NOT NULL,
+  response_hash text,
   response_status integer,
   error_code text,
   request_json jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -825,6 +827,7 @@ CREATE TABLE IF NOT EXISTS domain_events_outbox (
   tenant_id text NOT NULL REFERENCES tenants(id),
   aggregate_type text NOT NULL,
   aggregate_id text NOT NULL,
+  sequence_no integer NOT NULL DEFAULT 1,
   event_type text NOT NULL,
   event_version integer NOT NULL DEFAULT 1,
   payload_json jsonb NOT NULL,
@@ -880,6 +883,8 @@ CREATE INDEX IF NOT EXISTS deletion_jobs_scope_idx ON deletion_jobs (tenant_id, 
 CREATE INDEX IF NOT EXISTS legal_holds_scope_idx ON legal_holds (tenant_id, scope_type, scope_id, status);
 CREATE INDEX IF NOT EXISTS audit_events_resource_idx ON audit_events (tenant_id, resource_type, resource_id, created_at);
 CREATE INDEX IF NOT EXISTS domain_events_outbox_status_idx ON domain_events_outbox (status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS domain_events_outbox_aggregate_seq_uk
+  ON domain_events_outbox (tenant_id, aggregate_type, aggregate_id, sequence_no);
 
 DO $$
 DECLARE

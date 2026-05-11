@@ -82,6 +82,7 @@ com.meeting.api.client
 3. `CreateProcessingTaskCommand`。
 4. `RetryTaskCommand`。
 5. `CancelTaskCommand`。
+6. `TaskEventDTO`：SSE 事件 DTO，包含 `eventId`、`sequenceNo`、`eventType`、`taskId`、`stepName`、`status`、`progress`、`errorCode`、`emittedAt`。
 
 必须表达 step 级状态、progress、attempt、lease 摘要、`errorCode` 和 `retryable`。
 
@@ -92,6 +93,7 @@ com.meeting.api.client
 3. `SpeakerCandidateDTO`。
 4. `ConfirmMeetingSpeakerCommand`。
 5. `RejectMeetingSpeakerCommand`。
+6. `SpeakerEmbeddingCallbackCommand`：仅 internal callback 使用，承载待 Java KMS 加密的明文 embedding，不对 Public API 暴露。
 
 转录 DTO 必须区分 `originalText`、`editedText`、`currentText`，但前端默认展示 `currentText`。
 
@@ -105,6 +107,7 @@ com.meeting.api.client
 6. `RagQueryCommand`。
 7. `RagAnswerDTO`。
 8. `CitationDTO`。
+9. `EmbeddingBatchCallbackCommand`：文本 chunk embedding 回写命令，支持直接向量或 TOS artifact URI。
 
 所有 AI 结果必须包含 `staleStatus` 和可选 `artifactManifestId`。
 

@@ -108,6 +108,8 @@ RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后�
 
 ## 6. Pipeline DAG
 
+`workflowId` 由 WorkflowEngine 内部生成。同一个 `taskId` 的不同 `attemptNo` 可以对应不同 `workflowId`；`taskId` 是跨 attempt 稳定的业务任务 id，Java 和前端只依赖 `taskId` 查询业务状态。
+
 ### 6.1 音频预处理
 
 1. 使用 `ffprobe` 读取音频格式、时长、采样率、声道数和码率。
@@ -142,8 +144,10 @@ RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后�
 3. 只在 `knownParticipants` 或 Java 授权范围内做候选匹配，不做全公司无差别搜索。
 4. embedding 不返回前端，不发送给 DashScope。
 5. embedding 明文不得写入普通日志。
-6. 生成候选时返回 speaker label、candidate person/profile、score、threshold、model version 和 artifact manifest。
-7. 提取失败返回 `SPEAKER_EMBEDDING_FAILED`，匹配失败返回 `SPEAKER_MATCH_FAILED`。
+6. speaker embedding 明文通过 internal TLS + HMAC callback 回写 Java，由 Java 一侧 KMS 信封加密落库；`ai-worker` 不持有 KMS 凭证。
+7. `ai-worker` 不得把 speaker embedding 明文写入 TOS；callback 成功或重试耗尽后必须清除进程内明文引用。
+8. 生成候选时返回 speaker label、candidate person/profile、score、threshold、model version 和 artifact manifest。
+9. 提取失败返回 `SPEAKER_EMBEDDING_FAILED`，匹配失败返回 `SPEAKER_MATCH_FAILED`。
 
 ### 6.5 Transcript Merge
 
@@ -156,7 +160,7 @@ RabbitMQ 任务消息由 `meeting-api` 创建，`ai-worker` 只消费授权后�
 
 1. 文本 embedding 用于会议 chunk、纪要 chunk、事项 chunk 和文档 chunk。
 2. 一期默认 bge-m3 或同级多语言模型。
-3. 产物可以通过 callback 回写向量或 TOS artifact URI，具体以 `meeting-contracts` 契约为准。
+3. 产物通过 `POST /internal/processing-tasks/{taskId}/embeddings` 回写；小批次可直接回写向量，大批次优先写 TOS artifact URI。
 4. 记录 embedding model version、checksum、chunk strategy version 和 source version。
 
 ## 7. Callback 规范

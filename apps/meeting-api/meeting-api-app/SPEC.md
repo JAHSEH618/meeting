@@ -96,26 +96,37 @@ policy/
 7. 生成纪要版本、AI 建议待办、决策和风险。
 8. 已确认业务字段不得被重生成覆盖。
 
-### 4.6 RAG 查询
+### 4.6 声纹 embedding 落库
+
+1. 接收 `ai-worker` 通过 internal TLS + HMAC callback 回写的 speaker embedding 明文。
+2. 校验 task、tenant、attempt、lease、idempotency key 和 artifact manifest。
+3. 调用 `KmsGateway` 生成 data key，并用 KMS master key 包裹 data key。
+4. 用 data key 加密每条 speaker embedding，只保存密文、wrapped data key、checksum、模型版本和授权关系。
+5. 明文 embedding 不写日志、不进入普通 artifact、不返回前端。
+6. 加密失败返回 `KMS_KEY_UNAVAILABLE` 或稳定的 speaker embedding 错误码，callback 可按错误码重试。
+7. 写入完成后发布 speaker candidate / enrollment 相关 outbox 事件。
+
+### 4.7 RAG 查询
 
 1. 鉴权并计算 allowed scope。
-2. 通过 rag repository 做 metadata filter + vector retrieval + keyword retrieval。
+2. 通过 rag repository 做 metadata filter + pgvector retrieval + PostgreSQL `tsvector` / `pg_trgm` keyword retrieval。
 3. 检索结果做二次权限和 STALE 校验。
 4. 组装上下文和 citation。
 5. 根据安全等级调用 LLM 或 fail closed。
 6. 保存 query log、LLM log 和 artifact manifest 关联。
 
-### 4.7 导出
+### 4.8 导出
 
 1. 校验会议访问和导出权限。
 2. 检查内容 STALE 状态。
 3. 绑定 `minutesVersion`、`transcriptVersion`、`ragVersion`。
 4. 创建 `export_jobs`。
-5. 投递 `export-queue` 或调用 export gateway。
-6. 文件写入 TOS 后更新状态。
-7. 支持取消和短链撤销。
+5. 写 outbox 事件，由 infrastructure publisher 投递 `export-queue`。
+6. `meeting-api` Java 进程内的 export consumer 领取任务并调用 `ExportGateway`。
+7. 文件写入 TOS 后更新状态。
+8. 支持取消和短链撤销。
 
-### 4.8 legal hold 与删除
+### 4.9 legal hold 与删除
 
 1. 创建 legal hold 时要求 reason、审批人和范围。
 2. deletion job 创建前检查 legal hold。

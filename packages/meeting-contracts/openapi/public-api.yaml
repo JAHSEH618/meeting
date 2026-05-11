@@ -2,5 +2,685 @@ openapi: 3.1.0
 info:
   title: Meeting Public API
   version: 0.1.0
-paths: {}
-
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /users:
+    get:
+      operationId: listUsers
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createUser
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /users/{userId}:
+    patch:
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings:
+    get:
+      operationId: listMeetings
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createMeeting
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMeetingRequest'
+      responses:
+        '200':
+          description: Meeting created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingResponse'
+  /meetings/{meetingId}:
+    get:
+      operationId: getMeeting
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    patch:
+      operationId: updateMeeting
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      operationId: deleteMeeting
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/files/audio/uploads:
+    post:
+      operationId: createAudioUpload
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts:
+    post:
+      operationId: createAudioUploadPart
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete:
+    post:
+      operationId: completeAudioUpload
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/files/audio/uploads/{uploadId}/abort:
+    post:
+      operationId: abortAudioUpload
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/files/audio/uploads/{uploadId}:
+    get:
+      operationId: getAudioUpload
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/processing-tasks:
+    post:
+      operationId: createProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/processing-tasks/latest:
+    get:
+      operationId: getLatestMeetingTask
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}:
+    get:
+      operationId: getProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/events:
+    get:
+      operationId: streamProcessingTaskEvents
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: Last-Event-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE task events. Each event data matches TaskEvent.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /processing-tasks/{taskId}/retry:
+    post:
+      operationId: retryProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /processing-tasks/{taskId}/cancel:
+    post:
+      operationId: cancelProcessingTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/transcript:
+    get:
+      operationId: getTranscript
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/transcript/segments/{segmentId}:
+    patch:
+      operationId: updateTranscriptSegment
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/SegmentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/transcript/regenerate:
+    post:
+      operationId: regenerateTranscriptDependents
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /speaker-profiles:
+    post:
+      operationId: createSpeakerProfile
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /speaker-profiles/{profileId}:
+    get:
+      operationId: getSpeakerProfile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      operationId: deleteSpeakerProfile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /speaker-profiles/{profileId}/enrollments:
+    post:
+      operationId: createSpeakerEnrollment
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /speaker-profiles/{profileId}/revoke:
+    post:
+      operationId: revokeSpeakerProfile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/speakers/{speakerLabel}/confirm:
+    post:
+      operationId: confirmMeetingSpeaker
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/SpeakerLabel'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/speakers/{speakerLabel}/reject:
+    post:
+      operationId: rejectMeetingSpeaker
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/SpeakerLabel'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/minutes:
+    get:
+      operationId: getMinutes
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/minutes/regenerate:
+    post:
+      operationId: regenerateMinutes
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/action-items:
+    get:
+      operationId: listActionItems
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/action-items/{itemId}:
+    patch:
+      operationId: updateActionItem
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/action-items/{itemId}/accept:
+    post:
+      operationId: acceptActionItem
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/action-items/{itemId}/reject:
+    post:
+      operationId: rejectActionItem
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/decisions:
+    get:
+      operationId: listDecisions
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/risks:
+    get:
+      operationId: listRisks
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /documents:
+    get:
+      operationId: listDocuments
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createDocument
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /documents/{documentId}:
+    get:
+      operationId: getDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      operationId: deleteDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /documents/{documentId}/reindex:
+    post:
+      operationId: reindexDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /rag/query:
+    post:
+      operationId: queryRag
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /rag/reindex/meetings/{meetingId}:
+    post:
+      operationId: reindexMeetingRag
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /rag/reindex/documents/{documentId}:
+    post:
+      operationId: reindexDocumentRag
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /meetings/{meetingId}/exports:
+    get:
+      operationId: listMeetingExports
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createMeetingExport
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /exports/{exportId}:
+    get:
+      operationId: getExport
+      parameters:
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /exports/{exportId}/cancel:
+    post:
+      operationId: cancelExport
+      parameters:
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /exports/{exportId}/revoke-link:
+    post:
+      operationId: revokeExportLink
+      parameters:
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /legal-holds:
+    get:
+      operationId: listLegalHolds
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createLegalHold
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /legal-holds/{legalHoldId}:
+    get:
+      operationId: getLegalHold
+      parameters:
+        - $ref: '#/components/parameters/LegalHoldId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      operationId: deleteLegalHold
+      parameters:
+        - $ref: '#/components/parameters/LegalHoldId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /legal-holds/{legalHoldId}/release:
+    put:
+      operationId: releaseLegalHold
+      parameters:
+        - $ref: '#/components/parameters/LegalHoldId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/deletion-jobs:
+    get:
+      operationId: listDeletionJobs
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createDeletionJob
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/deletion-jobs/{jobId}:
+    get:
+      operationId: getDeletionJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/deletion-jobs/{jobId}/certificate:
+    get:
+      operationId: getDeletionCertificate
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/break-glass/requests:
+    get:
+      operationId: listBreakGlassRequests
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      operationId: createBreakGlassRequest
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/break-glass/requests/{requestId}/approve:
+    post:
+      operationId: approveBreakGlassRequest
+      parameters:
+        - $ref: '#/components/parameters/BreakGlassRequestId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/break-glass/requests/{requestId}/reject:
+    post:
+      operationId: rejectBreakGlassRequest
+      parameters:
+        - $ref: '#/components/parameters/BreakGlassRequestId'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /admin/break-glass/audit:
+    get:
+      operationId: listBreakGlassAudit
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {type: string}
+    MeetingId:
+      name: meetingId
+      in: path
+      required: true
+      schema: {type: string}
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema: {type: string}
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: {type: string}
+    SegmentId:
+      name: segmentId
+      in: path
+      required: true
+      schema: {type: string}
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      schema: {type: string}
+    SpeakerLabel:
+      name: speakerLabel
+      in: path
+      required: true
+      schema: {type: string}
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: {type: string}
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema: {type: string}
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: {type: string}
+    LegalHoldId:
+      name: legalHoldId
+      in: path
+      required: true
+      schema: {type: string}
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: {type: string}
+    BreakGlassRequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: {type: string}
+  responses:
+    Ok:
+      description: Standard API response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+  schemas:
+    ApiResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data: {}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+    ErrorInfo:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        retryable: {type: boolean}
+        details:
+          type: object
+          additionalProperties: true
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: {type: string}
+        password: {type: string}
+    AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+    CreateMeetingRequest:
+      type: object
+      required: [title, securityLevel]
+      properties:
+        title: {type: string}
+        securityLevel:
+          type: string
+          enum: [PUBLIC, INTERNAL, CONFIDENTIAL, SECRET]
+        meetingDate:
+          type: string
+          format: date-time
+    MeetingResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+    TaskEvent:
+      type: object
+      required: [eventId, sequenceNo, eventType, taskId, status, emittedAt]
+      properties:
+        eventId: {type: string}
+        sequenceNo: {type: integer}
+        eventType:
+          type: string
+          enum: [TASK_SNAPSHOT, TASK_STEP_UPDATED, TASK_STATUS_CHANGED, TASK_FAILED, TASK_COMPLETED]
+        taskId: {type: string}
+        meetingId: {type: string}
+        stepName:
+          type: string
+          enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]
+        status: {type: string}
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        retryable: {type: boolean}
+        errorCode:
+          type: [string, 'null']
+        emittedAt:
+          type: string
+          format: date-time

@@ -1,9 +1,20 @@
 version: 0.1.0
+
 securityLevel:
   - PUBLIC
   - INTERNAL
   - CONFIDENTIAL
   - SECRET
+
+meetingStatus:
+  - DRAFT
+  - READY
+  - PROCESSING
+  - PARTIAL_SUCCEEDED
+  - SUCCEEDED
+  - FAILED
+  - DELETED
+
 taskStatus:
   - PENDING
   - QUEUED
@@ -14,6 +25,30 @@ taskStatus:
   - FAILED
   - CANCEL_PENDING
   - CANCELLED
+
+stepStatus:
+  - PENDING
+  - QUEUED
+  - RUNNING
+  - SUCCEEDED
+  - FAILED
+  - SKIPPED
+  - CANCELLED
+
+processingStep:
+  - AUDIO_UPLOAD
+  - AUDIO_PREPROCESS
+  - ASR
+  - ALIGNMENT
+  - DIARIZATION
+  - SPEAKER_EMBEDDING
+  - SPEAKER_MATCHING
+  - TRANSCRIPT_MERGE
+  - SUMMARY
+  - EXTRACTION
+  - RAG_INDEXING
+  - EXPORT
+
 staleStatus:
   - ACTIVE
   - STALE
@@ -21,4 +56,37 @@ staleStatus:
   - REBUILDING
   - VALIDATING
   - FAILED
+  - DELETED
 
+knowledgeChunkStatus:
+  - ACTIVE
+  - DELETED
+
+exportFormat:
+  - MARKDOWN
+  - DOCX
+  - PDF
+
+timestampPrecision:
+  - WORD
+  - SEGMENT
+  - APPROXIMATE
+
+citationType:
+  - MEETING_SEGMENT
+  - DOCUMENT_CHUNK
+
+taskEventType:
+  - TASK_SNAPSHOT
+  - TASK_STEP_UPDATED
+  - TASK_STATUS_CHANGED
+  - TASK_FAILED
+  - TASK_COMPLETED
+
+sourceType:
+  - PRIMARY_TRANSCRIPT
+  - AI_SUMMARY
+  - DECISION
+  - ACTION_ITEM
+  - RISK
+  - DOCUMENT

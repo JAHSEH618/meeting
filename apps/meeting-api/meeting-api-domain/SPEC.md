@@ -91,6 +91,13 @@ com.meeting.api.domain
 2. `CONFIDENTIAL` / `SECRET` 一期自动 LLM fail closed。
 3. 音频和声纹相关数据永远不得发送第三方 LLM。
 
+### 4.6 Legal Hold 保全范围
+
+1. Legal hold 的范围以 `(entityType, entityId)` 列表表达。
+2. 一个 legal hold 可以同时锁定 meeting、meeting file、document、export、artifact、audit event 等多类对象。
+3. 删除任务、生命周期清理、声纹撤销级联重建在执行前都必须检查命中的 legal hold。
+4. legal hold 创建、解除和命中阻断都必须产生 audit event。
+
 ## 5. 领域事件
 
 至少定义：

@@ -187,4 +187,4 @@ flowchart LR
 7. 生产实现建议通过 Prefect / Temporal 把串行 Pipeline 改成 DAG，并按 CPU、ASR、对齐、分人、声纹、embedding、rerank、LLM 拆 Celery / Dramatiq 队列做资源隔离。
 8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列。
 9. 一期预留但默认不启用：LocalLLM 用于后续 CONFIDENTIAL / SECRET 自动 LLM，Qdrant / Milvus 用于后续外置向量库，gpu-align-queue 用于按需 Forced Alignment，rerank-queue 用于后续独立 Rerank 扩容。
-10. `export-queue` 由 Java `export` 模块或独立 export worker 消费，不进入 Python `WorkerRunner`。
+10. 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，通过 LibreOffice headless 或等价组件生成 Markdown / DOCX / PDF；不进入 Python `WorkerRunner`。独立 export worker 仅作为后续资源隔离扩展。

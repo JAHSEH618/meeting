@@ -35,6 +35,7 @@ schemas/
 5. 枚举值使用大写下划线。
 6. 置信度范围为 `0.0` 到 `1.0`。
 7. 大文本、大数组和模型原始输出优先写 TOS，契约中返回 `artifactUri`、`sha256` 和 summary。
+8. `textRedactionBeforeThirdPartyLlm` 是 LLM 调用审计契约固定字段，一期值恒为 `false`；契约消费方不得把它当作可自行切换的脱敏开关。
 
 ## 4. 通用响应
 
@@ -81,6 +82,7 @@ schemas/
 6. `ExportFormat`: `MARKDOWN`、`DOCX`、`PDF`。
 7. `TimestampPrecision`: `WORD`、`SEGMENT`、`APPROXIMATE`。
 8. `CitationType`: `MEETING_SEGMENT`、`DOCUMENT_CHUNK`。
+9. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STEP_UPDATED`、`TASK_STATUS_CHANGED`、`TASK_FAILED`、`TASK_COMPLETED`。
 
 ## 6. 错误码
 
@@ -128,6 +130,7 @@ PATCH /internal/processing-tasks/{taskId}/steps/{stepName}
 POST  /internal/processing-tasks/{taskId}/artifacts
 POST  /internal/processing-tasks/{taskId}/transcript
 POST  /internal/processing-tasks/{taskId}/speaker-candidates
+POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
 ```
@@ -147,6 +150,18 @@ X-Signature
 ```
 
 schema 必须包含 `tenantId`、`taskId`、`artifactManifestId` 或足以生成 manifest 的字段。
+
+声纹 embedding 契约：
+
+1. `speaker-candidates` callback 可以携带 speaker embedding 明文向量。
+2. 明文向量只允许通过 internal TLS + HMAC callback 传输，不允许写入 TOS 明文 artifact。
+3. `meeting-api` 接收后负责 KMS 信封加密并落库。
+
+文本 embedding 契约：
+
+1. `embeddings` callback 支持直接向量数组或 TOS `artifactUri`。
+2. 大批量文本 embedding 优先使用 TOS artifact，callback 传 `artifactUri`、`sha256`、模型版本和 chunk 版本。
+3. Java 仍是 chunk 状态和权限事实来源。
 
 ## 9. RabbitMQ 消息 Schema
 

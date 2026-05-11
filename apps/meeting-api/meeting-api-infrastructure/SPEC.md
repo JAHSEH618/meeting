@@ -79,10 +79,12 @@ com.meeting.api.infrastructure
 实现消息发布和 outbox publisher：
 
 1. 业务事务只写 `domain_events_outbox`。
-2. publisher 后台扫描 outbox 并投递 RabbitMQ。
+2. publisher 后台扫描 outbox 并投递 RabbitMQ，publisher 实现在 infrastructure，app 层只负责编排启停和写出 outbox。
 3. 发布成功后标记 published。
 4. 发布失败记录 `OUTBOX_PUBLISH_FAILED` 并重试。
 5. 消息必须包含 `taskId`、`tenantId`、`traceId`。
+6. 同一聚合按 `(aggregate_type, aggregate_id, sequence_no)` 单调递增发布；跨聚合可以并发。
+7. `export-queue` 的消费入口在 adapter，导出渲染和 TOS 写入能力由 infrastructure 的 `ExportGateway` 提供。
 
 一期队列：
 
@@ -117,7 +119,7 @@ com.meeting.api.infrastructure
 1. Markdown 导出。
 2. DOCX 导出。
 3. PDF 导出。
-4. PDF 可通过 LibreOffice headless 转换。
+4. 一期由 `meeting-api` Java 进程内消费 `export-queue`，PDF 可通过 LibreOffice headless 子进程转换。
 5. 导出结果写入 TOS。
 6. 导出绑定输入版本。
 7. 短链可撤销。
@@ -128,12 +130,13 @@ com.meeting.api.infrastructure
 
 要求：
 
-1. 每条 speaker embedding 使用 data key 加密。
-2. data key 由 KMS master key 包裹。
-3. 数据库不存明文 float 数组。
-4. 不建立明文 pgvector 索引。
-5. KMS 不可用返回 `KMS_KEY_UNAVAILABLE`。
-6. 加解密操作写 audit event。
+1. KMS 凭证只部署在 `meeting-api` 一侧，`ai-worker` 不持有 KMS 凭证。
+2. Java 收到 speaker embedding 明文 callback 后，立即为每条 embedding 生成 data key 并执行应用层加密。
+3. data key 由 KMS master key 包裹。
+4. 数据库不存明文 float 数组。
+5. 不建立明文 pgvector 索引。
+6. KMS 不可用返回 `KMS_KEY_UNAVAILABLE`。
+7. 加解密操作写 audit event。
 
 ## 9. 幂等与 callback event
 

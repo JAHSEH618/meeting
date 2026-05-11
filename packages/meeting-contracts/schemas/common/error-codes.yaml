@@ -1,11 +1,143 @@
 version: 0.1.0
-errorCodes:
-  - AUDIO_UNSUPPORTED_FORMAT
-  - AUDIO_TOO_LONG
-  - ASR_RUNTIME_ERROR
-  - LLM_DATA_BOUNDARY_BLOCKED
-  - SECURITY_LEVEL_BLOCKED
-  - OUTBOX_PUBLISH_FAILED
-  - STALE_REBUILD_VERSION_MISMATCH
-  - KMS_KEY_UNAVAILABLE
 
+errorCodes:
+  - code: AUDIO_UNSUPPORTED_FORMAT
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频格式不支持
+    opsTags: [audio, validation]
+  - code: AUDIO_TOO_LONG
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频超过 4 小时上限
+    opsTags: [audio, validation]
+  - code: AUDIO_CORRUPTED
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频文件损坏或无法读取
+    opsTags: [audio, ffmpeg]
+  - code: AUDIO_QUALITY_LOW
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频质量过低
+    opsTags: [audio, quality]
+  - code: CHANNEL_MAP_FAILED
+    step: AUDIO_PREPROCESS
+    retryable: true
+    userMessage: 声道识别失败
+    opsTags: [audio, channel_map]
+  - code: ASR_RUNTIME_ERROR
+    step: ASR
+    retryable: true
+    userMessage: ASR 推理异常
+    opsTags: [asr, runtime]
+  - code: ASR_MODEL_TIMEOUT
+    step: ASR
+    retryable: true
+    userMessage: ASR 模型推理超时
+    opsTags: [asr, timeout]
+  - code: ASR_GPU_OOM
+    step: ASR
+    retryable: true
+    userMessage: ASR GPU 显存不足
+    opsTags: [asr, gpu, oom]
+  - code: DIARIZATION_FAILED
+    step: DIARIZATION
+    retryable: true
+    userMessage: 说话人分离失败
+    opsTags: [diarization]
+  - code: ALIGNMENT_FAILED
+    step: ALIGNMENT
+    retryable: true
+    userMessage: 时间戳对齐失败
+    opsTags: [alignment]
+  - code: SPEAKER_EMBEDDING_FAILED
+    step: SPEAKER_EMBEDDING
+    retryable: true
+    userMessage: 声纹特征提取失败
+    opsTags: [speaker, embedding]
+  - code: SPEAKER_MATCH_FAILED
+    step: SPEAKER_MATCHING
+    retryable: true
+    userMessage: 声纹匹配失败
+    opsTags: [speaker, matching]
+  - code: TRANSCRIPT_MERGE_FAILED
+    step: TRANSCRIPT_MERGE
+    retryable: true
+    userMessage: 转录合并失败
+    opsTags: [transcript]
+  - code: CALLBACK_AUTH_FAILED
+    step: CALLBACK
+    retryable: false
+    userMessage: Worker 回调鉴权失败
+    opsTags: [callback, auth]
+  - code: CALLBACK_IDEMPOTENCY_CONFLICT
+    step: CALLBACK
+    retryable: false
+    userMessage: Worker 回调幂等键冲突
+    opsTags: [callback, idempotency]
+  - code: LLM_SCHEMA_INVALID
+    step: LLM
+    retryable: true
+    userMessage: LLM 输出格式不符合要求
+    opsTags: [llm, schema]
+  - code: LLM_EVIDENCE_INVALID
+    step: LLM
+    retryable: true
+    userMessage: LLM 输出依据校验失败
+    opsTags: [llm, evidence]
+  - code: LLM_RATE_LIMIT
+    step: LLM
+    retryable: true
+    userMessage: LLM 服务限流
+    opsTags: [llm, rate_limit]
+  - code: SECURITY_LEVEL_BLOCKED
+    step: LLM
+    retryable: false
+    userMessage: 一期不支持该安全等级的自动 LLM 处理
+    opsTags: [llm, security]
+  - code: LLM_DATA_BOUNDARY_BLOCKED
+    step: LLM
+    retryable: false
+    userMessage: 数据边界策略阻断
+    opsTags: [llm, data_boundary]
+  - code: RAG_INDEX_FAILED
+    step: RAG_INDEXING
+    retryable: true
+    userMessage: RAG 入库失败
+    opsTags: [rag, indexing]
+  - code: VECTOR_SEARCH_FAILED
+    step: RAG
+    retryable: true
+    userMessage: 向量检索失败
+    opsTags: [rag, vector]
+  - code: EXPORT_FAILED
+    step: EXPORT
+    retryable: true
+    userMessage: 导出失败
+    opsTags: [export]
+  - code: WORKER_LEASE_EXPIRED
+    step: TASK
+    retryable: true
+    userMessage: Worker 租约已过期
+    opsTags: [task, lease]
+  - code: WRITEBACK_FAILED
+    step: CALLBACK
+    retryable: true
+    userMessage: Worker 回写失败
+    opsTags: [callback, writeback]
+  - code: OUTBOX_PUBLISH_FAILED
+    step: OUTBOX
+    retryable: true
+    userMessage: 事件发布失败
+    opsTags: [outbox, mq]
+  - code: STALE_REBUILD_VERSION_MISMATCH
+    step: REBUILD
+    retryable: false
+    userMessage: 重建完成时上游版本已变化
+    opsTags: [rebuild, version]
+  - code: KMS_KEY_UNAVAILABLE
+    step: SPEAKER_EMBEDDING
+    retryable: true
+    userMessage: 声纹加密密钥不可用
+    opsTags: [kms, speaker]

@@ -28,7 +28,6 @@
 | 登录页 | `/login` | 登录、错误提示、登录态初始化 |
 | 会议列表 | `/meetings` | 列表、搜索、状态筛选、安全等级筛选 |
 | 会议创建 | `/meetings/new` | 创建会议、选择安全等级、参会人 |
-| 会议详情 | `/meetings/:meetingId` | 基本信息、音频、任务、纪要、RAG 入口 |
 | 音频上传 | `/meetings/:meetingId/audio` | 断点续传、上传进度、取消、重试 |
 | 任务进度 | `/meetings/:meetingId/tasks/:taskId` | SSE 步骤级进度、错误码、重试、取消 |
 | 转录编辑 | `/meetings/:meetingId/transcript` | segment 列表、编辑、版本和 STALE 提示 |
@@ -44,6 +43,8 @@
 | legal hold | `/admin/legal-holds` | 创建、释放、原因、审批人 |
 | break-glass | `/admin/break-glass` | 申请、审批、拒绝、审计 |
 
+会议详情可作为 `/meetings/:meetingId` 的聚合入口，但不替代上述独立页面能力。
+
 ## 4. 交互状态
 
 ### 4.1 任务进度
@@ -56,9 +57,10 @@
 2. step 名称：`AUDIO_UPLOAD`、`AUDIO_PREPROCESS`、`ASR`、`ALIGNMENT`、`DIARIZATION`、`SPEAKER_EMBEDDING`、`SPEAKER_MATCHING`、`TRANSCRIPT_MERGE`、`SUMMARY`、`EXTRACTION`、`RAG_INDEXING`、`EXPORT`。
 3. 当前 step 状态、进度、开始时间、更新时间。
 4. `errorCode`、`retryable`、`attemptNo`、`maxAttempts`。
-5. 可操作按钮：取消、重试。按钮是否可用以后端状态为准。
+5. `eventId` 和 `sequenceNo`，用于断线恢复。
+6. 可操作按钮：取消、重试。按钮是否可用以后端状态为准。
 
-SSE 断线后，前端先尝试重连；重连失败时回退轮询 `GET /api/processing-tasks/{taskId}`。
+SSE 断线后，前端携带 `Last-Event-Id` 尝试续接；服务端无法续接时以前端收到的 task 快照为准。重连失败时回退轮询 `GET /api/processing-tasks/{taskId}`。
 
 ### 4.2 STALE 提示
 
@@ -112,20 +114,17 @@ Accept: application/json
 ```text
 src/
   app/                  Router、全局 Provider、鉴权守卫
-  pages/                页面入口
   features/
-    auth/
-    meetings/
-    uploads/
-    processing-tasks/
-    transcript/
-    speakers/
-    minutes/
-    knowledge/
-    rag/
-    exports/
-    compliance/
-    admin/
+    meetings/           会议列表、创建、详情和音频上传页面
+    transcript/         转录查看、编辑和 citation 定位
+    speakers/           speaker 候选确认和声纹档案视图
+    minutes/            纪要、待办、决策、风险
+    rag/                RAG 问答
+    exports/            导出任务
+    auth/               后续登录页和登录态视图
+    knowledge/          后续文档知识库
+    compliance/         后续 legal hold / deletion job
+    admin/              后续 break-glass
   services/             API client、SSE client、上传 client
   shared/
     components/
@@ -140,6 +139,7 @@ src/
 1. API DTO 类型从 `meeting-contracts` 生成或手写同步，不在页面内重复定义大型结构。
 2. 状态机、错误码、枚举放在 shared domain 或生成类型中。
 3. 上传、SSE、RAG 对话等长流程封装为 feature service，不直接散落在页面组件中。
+4. 页面入口优先放在 `features/<domain>/pages/` 或由 `app/router.tsx` 集中映射，不再单独要求顶层 `pages/` 目录。
 
 ## 7. 验收标准
 

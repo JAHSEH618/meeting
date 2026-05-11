@@ -78,7 +78,7 @@
 6. 不做全公司无差别声纹搜索。
 7. 声纹 embedding 不返回前端。
 8. 声纹数据不发送给 DashScope。
-9. 声纹 embedding 必须应用层信封加密存储：每条 embedding 使用 data key 加密，data key 由 KMS master key 包裹；数据库不存明文 float 数组，不建立明文 pgvector 索引。
+9. 声纹 embedding 必须由 Java 侧应用层信封加密存储：每条 embedding 使用 data key 加密，data key 由 KMS master key 包裹；数据库不存明文 float 数组，不建立明文 pgvector 索引。
 10. 撤销声纹授权必须级联：新匹配排除该 profile，历史转录中的 person_id 软屏蔽，相关 RAG chunk 标记 STALE 并重建去标识版，声纹 centroid 异步重建。
 
 #### 转录与编辑
@@ -122,7 +122,7 @@
 3. 不做图片 OCR。
 4. 不做扫描 PDF OCR。
 5. 不做复杂表格解析。
-6. 文档解析后进入知识库。
+6. 文档解析由 Java `document` 模块负责，优先使用 Apache Tika 或同类 JVM 解析库；PDF / DOCX 解析不进入 Python AI Pipeline。
 7. 文档 chunk 与会议 chunk 使用同一套 RAG 权限过滤和 citation 机制。
 
 #### RAG 问答
@@ -194,7 +194,7 @@ React meeting-web
       → RabbitMQ
       → TOS
       → DashScope
-      → LibreOffice headless / export worker
+      → Java export module + LibreOffice headless
       → Python ai-worker
           → 本地 ASR / Diarization / Speaker Embedding / Embedding / Rerank
           → TOS
@@ -223,7 +223,7 @@ COLA-V5 工程模块：
 |---|---|
 | meeting-api-start | Spring Boot 启动、配置装配、组件扫描、环境配置 |
 | meeting-api-client | 对外 DTO、Command、Query、Result、Facade 契约，不放业务实现 |
-| meeting-api-adapter | REST API、SSE、internal callback、MQ consumer、前端 BFF 适配 |
+| meeting-api-adapter | REST API、SSE、internal callback、`export-queue` consumer、前端 BFF 适配 |
 | meeting-api-app | 应用服务、用例编排、事务边界、租户上下文、权限编排、领域事件发布 |
 | meeting-api-domain | 聚合、实体、值对象、领域服务、领域事件、Repository / Gateway 接口 |
 | meeting-api-infrastructure | PostgreSQL / pgvector、TOS、RabbitMQ、DashScope、导出组件、外部网关实现 |
@@ -403,6 +403,8 @@ Java 是主产品 UI。Python 可通过 FastAPI 暴露非客户主路径的内�
 → Java 调用 DashScope
 → 返回答案和 citations
 ```
+
+一期 keyword retrieval 使用 PostgreSQL `tsvector` + `pg_trgm`，与 pgvector 召回结果在 app 层按 chunk 去重、合并和截断。外置搜索引擎不进入一期范围。
 
 ## 5. API 规格
 
@@ -592,6 +594,7 @@ PATCH /internal/processing-tasks/{taskId}/steps/{stepName}
 POST  /internal/processing-tasks/{taskId}/artifacts
 POST  /internal/processing-tasks/{taskId}/transcript
 POST  /internal/processing-tasks/{taskId}/speaker-candidates
+POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
 ```
@@ -604,6 +607,7 @@ Endpoint 语义：
 | `POST /artifacts` | 回写中间产物引用，例如 raw ASR JSON、diarization turns、quality report、embedding artifact URI | task / artifact |
 | `POST /transcript` | 回写结构化转录，这是会议事实写入，不等同于普通 artifact | meeting |
 | `POST /speaker-candidates` | 回写匿名 speaker label 到候选 person 的匹配结果 | speaker |
+| `POST /embeddings` | 回写文本 chunk embedding 批次结果，供 Java 写入 `knowledge_chunks` / pgvector | rag |
 | `POST /complete` | 标记 task 终态成功或部分成功，并触发 outbox 事件 | task |
 | `POST /fail` | 标记 task 失败，保存稳定 `error_code` 和可重试信息 | task |
 
@@ -723,7 +727,7 @@ domain_events_outbox
 | `evaluation_runs` | schema 预留 | ASR、Diarization、RAG、数据边界和导出评测运行记录 |
 | `human_feedback` | schema 预留 | 用户对纪要、RAG 答案、speaker 匹配的反馈 |
 | `term_dictionaries` | schema 预留 | 租户术语表、项目词典、Prompt / ASR 纠错词典版本 |
-| `model_registry` | schema 预留 | 模型权重、第三方 API、license / DPA、checksum、审批人和发布时间登记 |
+| `model_registry` | 必建但一期不强制写入 | 模型权重、第三方 API、license / DPA、checksum、审批人和发布时间登记；准入信息可先由 JSON 配置或 git 管理，模型清单超过 5 个或多 provider 灰度时再强制登记 |
 | `deletion_jobs` | 必建 | 删除任务、生命周期清理、撤销与去标识重建的异步执行记录 |
 | `deletion_certificates` | 必建 | 删除完成后的不可恢复 hash 清单和证明 |
 | `legal_holds` | 必建 | 法定保全、审计保全和 break-glass 保全范围，阻止生命周期删除 |
@@ -803,6 +807,74 @@ expected_input_version
 artifact_manifest_id
 ```
 
+`processing_task_steps` 必须包含：
+
+```text
+id
+tenant_id
+task_id
+step_name
+status
+progress
+attempt_count
+max_attempts
+lease_owner
+lease_expires_at
+heartbeat_at
+input_hash
+output_hash
+error_code
+error_message
+artifact_manifest_id
+started_at
+finished_at
+created_at
+updated_at
+```
+
+`callback_events` 必须包含：
+
+```text
+id
+tenant_id
+task_id
+step_name
+worker_id
+attempt_no
+lease_owner
+idempotency_key
+request_hash
+response_hash
+response_status
+error_code
+request_json
+response_json
+trace_id
+created_at
+```
+
+`domain_events_outbox` 必须包含：
+
+```text
+id
+tenant_id
+aggregate_type
+aggregate_id
+sequence_no
+event_type
+event_version
+payload_json
+dedupe_key
+status
+retry_count
+last_error
+published_at
+created_at
+updated_at
+```
+
+Outbox publisher 按 `(aggregate_type, aggregate_id, sequence_no)` 保证同一聚合内有序发布；跨聚合可以并发发布。
+
 Worker 心跳要求：
 
 ```text
@@ -812,6 +884,26 @@ Worker 心跳要求：
 4. 旧 attempt 的迟到 callback 必须被拒绝或进入幂等冲突处理。
 5. 重试耗尽进入 DLQ，保留 task_id、tenant_id、step_name、error_code、worker_id 和 artifact_manifest_id。
 6. `attempt_count` / `max_attempts` 是 step 级语义；task 级状态在所有可重试 step 都耗尽后进入 FAILED。
+```
+
+任务状态迁移：
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> QUEUED: outbox published
+    QUEUED --> RUNNING: worker lease acquired
+    RUNNING --> SUCCEEDED: all required steps completed
+    RUNNING --> PARTIAL_SUCCEEDED: optional step failed with usable artifacts
+    RUNNING --> FAILED: retry exhausted
+    RUNNING --> ORPHANED: lease expired
+    ORPHANED --> QUEUED: requeue allowed
+    PENDING --> CANCEL_PENDING: cancel requested
+    QUEUED --> CANCEL_PENDING: cancel requested
+    RUNNING --> CANCEL_PENDING: cancel requested
+    CANCEL_PENDING --> CANCELLED: worker acknowledged or no lease
+    PARTIAL_SUCCEEDED --> QUEUED: retry failed optional step
+    FAILED --> QUEUED: manual retry
 ```
 
 ### 7.4 STALE 状态机
@@ -991,14 +1083,23 @@ stale_status: ACTIVE / STALE / REBUILD_QUEUED / REBUILDING / VALIDATING / FAILED
 
 RAG 查询只允许召回 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
 
-### 9.5 RAG 缓存与重建
+### 9.5 检索实现
+
+一期检索由 PostgreSQL 完成：
+
+1. 向量召回使用 pgvector。
+2. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` 相似度。
+3. app 层合并 vector 与 keyword 候选，按 chunk 去重后做权限二次校验。
+4. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
+
+### 9.6 RAG 缓存与重建
 
 1. RAG 答案缓存必须绑定 `permission_version`、`chunk_index_version`、`chunk_strategy_version`、`embedding_model_version` 和 `security_level`。
 2. 权限、会议成员、security_level、声纹授权或 chunk 状态变化后，相关缓存必须失效。
 3. chunk 策略变更必须支持 shadow index 和分批 backfill；切换前查询仍使用旧 ACTIVE 索引。
 4. backfill 失败不能污染当前 ACTIVE 索引。
 
-### 9.6 Citation
+### 9.7 Citation
 
 会议 citation：
 
@@ -1089,6 +1190,8 @@ LibreOffice headless / export runtime
 
 `gpu-align-queue` 和 `rerank-queue` 一期接口预留；启用 Forced Alignment 或 Rerank 独立扩容时再打开。
 
+一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，导出实现通过 `ExportGateway` 调用 LibreOffice headless 或等价本地组件。不启动独立 export worker；当 LibreOffice 转换成为资源瓶颈或需要隔离部署时，再拆为独立进程。`export-queue` 不进入 Python `ai-worker`。
+
 ### 11.2 Python GPU 服务器
 
 部署：
@@ -1118,7 +1221,7 @@ Diarization RTF: <= 0.4
 2. 第三方 LLM API（DashScope）必须完成 DPA / 数据处理协议、数据保留、训练使用、跨境传输、日志保留和删除 SLA 准入。
 3. 生产启动不得临时联网下载模型权重。
 4. 模型权重、镜像和配置必须进入内网制品库，记录 checksum、license、来源 URL、审批人和发布时间。
-5. 一期可先把模型和第三方 API 准入信息登记到 `model_registry` schema 预留表；AI 产物仍通过 `artifact_manifests` 记录实际使用的模型版本、checksum 和 provider actual_model_version。
+5. `model_registry` 一期建表但不强制写入；准入信息可先由 JSON 配置或 git 管理。AI 产物仍通过 `artifact_manifests` 记录实际使用的模型版本、checksum 和 provider actual_model_version。
 
 ### 11.3 共享外部依赖
 
@@ -1150,7 +1253,7 @@ Diarization RTF: <= 0.4
 4. 会议 speaker 可生成候选人。
 5. 低置信候选必须人工确认。
 6. 人工确认后转录 speaker 展示更新。
-7. 声纹 embedding 落库为信封加密密文，数据库中不存在明文向量。
+7. 声纹 embedding 由 ai-worker 通过 internal TLS + HMAC callback 明文回写 Java，Java 使用 KMS 信封加密后落库，数据库中不存在明文向量。
 8. 撤销授权后，新匹配排除该 profile，历史 person_id 软屏蔽，相关 RAG chunk 进入 STALE / REBUILD_QUEUED。
 
 ### 12.3 权限与 RLS
@@ -1215,6 +1318,7 @@ Diarization RTF: <= 0.4
 | AUDIO_QUALITY_LOW | AUDIO_PREPROCESS | 音频质量过低 | 否 |
 | CHANNEL_MAP_FAILED | AUDIO_PREPROCESS | channel_map 识别失败 | 是 |
 | ASR_RUNTIME_ERROR | ASR | ASR 推理异常 | 是 |
+| ASR_MODEL_TIMEOUT | ASR | ASR 模型推理超时 | 是 |
 | ASR_GPU_OOM | ASR | ASR GPU 显存不足 | 是 |
 | DIARIZATION_FAILED | DIARIZATION | 说话人分离失败 | 是 |
 | ALIGNMENT_FAILED | ALIGNMENT | 对齐失败 | 是 |
@@ -1227,6 +1331,7 @@ Diarization RTF: <= 0.4
 | LLM_EVIDENCE_INVALID | LLM | evidence 校验失败 | 是 |
 | LLM_RATE_LIMIT | LLM | Provider 限流 | 是 |
 | SECURITY_LEVEL_BLOCKED | LLM | CONFIDENTIAL / SECRET 禁止出网 | 否 |
+| LLM_DATA_BOUNDARY_BLOCKED | LLM | 数据边界策略阻断 | 否 |
 | RAG_INDEX_FAILED | RAG_INDEXING | RAG 入库失败 | 是 |
 | VECTOR_SEARCH_FAILED | RAG | 向量检索失败 | 是 |
 | EXPORT_FAILED | EXPORT | 导出失败 | 是 |

@@ -2,7 +2,7 @@
 
 ## 1. 项目定位
 
-`meeting-api-adapter` 是入站适配层，负责 REST Controller、SSE、internal callback、BFF 响应适配和消息入口适配。它把外部协议转换为 `meeting-api-app` 的命令和查询，不直接写数据库，不实现领域规则。
+`meeting-api-adapter` 是协议适配层，负责 REST Controller、SSE、internal callback、BFF 响应适配和一期唯一的 MQ 入站场景 `export-queue` consumer。它把外部协议转换为 `meeting-api-app` 的命令和查询，不直接写数据库，不实现领域规则。
 
 ## 2. 包边界
 
@@ -21,6 +21,7 @@ com.meeting.api.adapter
   document/
   rag/
   export/
+    queue/
   compliance/
   internal/
   sse/
@@ -61,8 +62,9 @@ GET /api/processing-tasks/{taskId}/events
 1. 建连时鉴权并校验 task 访问权限。
 2. 发送当前 task 快照，避免前端错过历史状态。
 3. 后续推送 step 变更、终态、错误码和可重试状态。
-4. SSE 断线后允许前端使用 last event id 或回退轮询。
-5. 不推送跨租户数据。
+4. SSE 事件必须包含 `eventId` 和 `sequenceNo`。
+5. SSE 断线后允许前端使用 `Last-Event-Id` 请求头续接；服务端无法续接时发送当前 task 快照并继续推新事件。
+6. 不推送跨租户数据。
 
 ## 5. Internal Callback API
 
@@ -73,6 +75,7 @@ PATCH /internal/processing-tasks/{taskId}/steps/{stepName}
 POST  /internal/processing-tasks/{taskId}/artifacts
 POST  /internal/processing-tasks/{taskId}/transcript
 POST  /internal/processing-tasks/{taskId}/speaker-candidates
+POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
 ```
@@ -87,7 +90,19 @@ Adapter 层职责：
 
 不得在 Controller 中直接落库 callback 结果。
 
-## 6. BFF 响应适配
+## 6. Export Queue Consumer
+
+一期只有 `export-queue` 由 Java 进程内消费，其它音频、ASR、Diarization、speaker、embedding、LLM 队列由 `ai-worker` 或 app / infrastructure 对应组件处理，不在 adapter 中实现通用 MQ inbound。
+
+职责：
+
+1. 从 `export-queue` 读取 export job message。
+2. 校验 message 的 `tenantId`、`exportId`、`meetingId`、`traceId`。
+3. 转换为 app 层 `RunExportJobCommand`。
+4. ack / nack 由 app 层处理结果和 retry 策略决定。
+5. 不直接调用 LibreOffice，不直接写 TOS，不直接改 `export_jobs`。
+
+## 7. BFF 响应适配
 
 前端页面可能需要聚合视图，例如会议详情需要会议基本信息、最新任务、STALE 摘要、导出摘要。BFF 适配规则：
 
@@ -96,11 +111,12 @@ Adapter 层职责：
 3. BFF DTO 与领域对象隔离。
 4. 大文本按需懒加载，避免会议详情一次返回完整转录。
 
-## 7. 验收标准
+## 8. 验收标准
 
 1. `/api/meetings` 最小链路可用。
 2. `/internal` callback 占位演进为真实 header 校验和 app command 调用。
 3. SSE 能推送任务 step 级状态。
 4. Controller 无数据库访问代码。
 5. 统一异常映射到 `ErrorCode` 和 `ApiResponse`。
-6. Public API 与 internal callback API 分包清晰。
+6. `export-queue` consumer 只做消息适配和 app command 调用。
+7. Public API 与 internal callback API 分包清晰。
