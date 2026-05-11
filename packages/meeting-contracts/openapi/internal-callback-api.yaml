@@ -306,6 +306,7 @@ components:
       required: [tenantId, taskId, attemptNo, stepName, status]
       properties:
         tenantId: {type: string}
+        meetingId: {type: [string, 'null']}
         taskId: {type: string}
         attemptNo: {type: integer}
         stepName: {$ref: '#/components/schemas/ProcessingStep'}
@@ -319,6 +320,7 @@ components:
       required: [tenantId, taskId, attemptNo, artifacts]
       properties:
         tenantId: {type: string}
+        meetingId: {type: [string, 'null']}
         taskId: {type: string}
         attemptNo: {type: integer}
         artifacts:
@@ -337,10 +339,10 @@ components:
         artifactManifestId: {type: [string, 'null']}
     TranscriptCallbackRequest:
       type: object
-      required: [tenantId, meetingId, taskId, attemptNo, transcriptVersion, segments]
+      required: [tenantId, taskId, attemptNo, transcriptVersion, segments]
       properties:
         tenantId: {type: string}
-        meetingId: {type: string}
+        meetingId: {type: [string, 'null']}
         taskId: {type: string}
         attemptNo: {type: integer}
         transcriptVersion: {type: integer}
@@ -369,10 +371,10 @@ components:
           enum: [WORD, SEGMENT, APPROXIMATE]
     SpeakerCandidatesCallbackRequest:
       type: object
-      required: [tenantId, meetingId, taskId, attemptNo, speakerCandidates]
+      required: [tenantId, taskId, attemptNo, speakerCandidates]
       properties:
         tenantId: {type: string}
-        meetingId: {type: string}
+        meetingId: {type: [string, 'null']}
         taskId: {type: string}
         attemptNo: {type: integer}
         speakerCandidates:

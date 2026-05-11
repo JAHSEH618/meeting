@@ -41,9 +41,9 @@
       "type": "object",
       "required": ["chunkStrategyVersion"],
       "properties": {
-        "transcriptVersion": {"type": ["integer", "null"], "minimum": 1},
-        "minutesVersion": {"type": ["integer", "null"], "minimum": 1},
-        "ragVersion": {"type": ["integer", "null"], "minimum": 1},
+        "transcriptVersion": {"type": ["integer", "null"], "minimum": 0},
+        "minutesVersion": {"type": ["integer", "null"], "minimum": 0},
+        "ragVersion": {"type": ["integer", "null"], "minimum": 0},
         "documentVersion": {"type": ["integer", "null"], "minimum": 1},
         "chunkStrategyVersion": {"type": "string", "minLength": 1},
         "embeddingModelVersion": {"type": ["string", "null"]}

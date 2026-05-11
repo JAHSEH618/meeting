@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "action_items_v1",
+  "type": "object",
+  "required": ["actionItems", "artifactMetadata"],
+  "properties": {
+    "actionItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "status", "evidence"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "assigneeDisplayName": { "type": "string" },
+          "dueDate": { "type": "string" },
+          "dueDatePrecision": { "type": "string", "enum": ["EXACT", "RELATIVE", "IMPLIED"] },
+          "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+          "status": { "type": "string", "enum": ["SUGGESTED"] },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["segmentId", "startMs", "endMs", "evidenceTextSnapshot"],
+              "properties": {
+                "segmentId": { "type": "string" },
+                "startMs": { "type": "integer" },
+                "endMs": { "type": "integer" },
+                "evidenceTextSnapshot": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "artifactMetadata": {
+      "type": "object",
+      "required": ["promptTemplateId", "promptTemplateVersion"],
+      "properties": {
+        "promptTemplateId": { "type": "string" },
+        "promptTemplateVersion": { "type": "string" }
+      }
+    }
+  }
+}

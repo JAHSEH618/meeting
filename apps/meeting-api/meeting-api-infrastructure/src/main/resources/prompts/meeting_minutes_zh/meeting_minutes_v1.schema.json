@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "meeting_minutes_v1",
+  "type": "object",
+  "required": ["sections", "artifactMetadata"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "title"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["CONCLUSION", "DISCUSSION", "DECISION", "ACTION_ITEM", "RISK", "QUESTION"]
+          },
+          "title": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string" },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["segmentId", "startMs", "endMs", "evidenceTextSnapshot"],
+                    "properties": {
+                      "segmentId": { "type": "string" },
+                      "startMs": { "type": "integer" },
+                      "endMs": { "type": "integer" },
+                      "evidenceTextSnapshot": { "type": "string" }
+                    }
+                  }
+                },
+                "assigneeDisplayName": { "type": "string" },
+                "dueDate": { "type": "string", "format": "date" },
+                "severity": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+                "status": { "type": "string", "enum": ["PROPOSED", "SUGGESTED", "OPEN", "UNCONFIRMED"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "artifactMetadata": {
+      "type": "object",
+      "required": ["promptTemplateId", "promptTemplateVersion"],
+      "properties": {
+        "promptTemplateId": { "type": "string" },
+        "promptTemplateVersion": { "type": "string" }
+      }
+    }
+  }
+}

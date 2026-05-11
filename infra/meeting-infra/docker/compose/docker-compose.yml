@@ -1,0 +1,128 @@
+# 本地会议智能系统 · 本地开发环境
+# 用途：本地开发/联调；不适用于生产。
+# 启动：cp ../../.env.example .env && docker compose up -d
+
+services:
+  # ── 数据与基础设施 ──────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: meeting-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-meeting}
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meeting_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../../../docs/ddls/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meeting} -d ${POSTGRES_DB:-meeting}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: meeting-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-meeting}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-meeting_dev}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    container_name: meeting-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+      - ./minio/init-buckets.sh:/usr/local/bin/init-buckets.sh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 5;
+      /usr/local/bin/init-buckets.sh;
+      wait
+      "
+
+  vault-dev:
+    image: hashicorp/vault:1.17
+    container_name: meeting-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN:-meeting-dev-root-token}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    volumes:
+      - ./vault/init.sh:/usr/local/bin/vault-init.sh:ro
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    entrypoint: >
+      /bin/sh -c "
+      vault server -dev -dev-root-token-id=${VAULT_DEV_ROOT_TOKEN:-meeting-dev-root-token} -dev-listen-address=0.0.0.0:8200 &
+      sleep 3;
+      /usr/local/bin/vault-init.sh;
+      wait
+      "
+
+  # ── 可观测性（本地开发可选）────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: meeting-prometheus
+    profiles: ["observability"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: meeting-grafana
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:

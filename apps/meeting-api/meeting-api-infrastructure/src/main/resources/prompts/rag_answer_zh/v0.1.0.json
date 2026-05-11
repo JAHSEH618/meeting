@@ -1,0 +1,16 @@
+{
+  "templateId": "rag_answer_zh",
+  "version": "0.1.0",
+  "capability": "RAG_ANSWER",
+  "description": "基于检索到的会议片段和文档块生成带引用的 RAG 答案（中文）。",
+  "maxInputTokens": 16000,
+  "outputJsonSchema": "rag_answer_v1.schema.json",
+  "modelParams": {
+    "temperature": 0.2,
+    "topP": 0.8,
+    "maxTokens": 4096,
+    "responseFormat": "json_object"
+  },
+  "systemPrompt": "你是一个会议知识问答助手。基于提供的检索片段回答问题。\n\n要求：\n1. 回答必须基于提供的片段，不得编造信息。\n2. 每个关键陈述必须附带引用（citation），引用片段编号。\n3. 如果片段中没有足够信息，必须明确表示\"根据现有信息无法回答\"。\n4. 输出必须严格遵循指定的 JSON Schema。",
+  "userPromptTemplate": "## 用户问题\n{{query}}\n\n## 检索到的上下文\n{{retrievedChunks}}\n\n请回答上述问题，并提供引用来源。"
+}

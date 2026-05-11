@@ -1,0 +1,21 @@
+{
+  "queues": [
+    {"name": "audio-cpu-queue",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "audio-cpu-queue.dlq","vhost": "/", "durable": true},
+    {"name": "gpu-asr-queue",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-asr-queue.dlq",  "vhost": "/", "durable": true},
+    {"name": "gpu-diar-queue",     "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-diar-queue.dlq", "vhost": "/", "durable": true},
+    {"name": "gpu-speaker-queue",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-speaker-queue.dlq","vhost": "/", "durable": true},
+    {"name": "embed-queue",        "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "embed-queue.dlq",    "vhost": "/", "durable": true},
+    {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "llm-queue.dlq",      "vhost": "/", "durable": true},
+    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "export-queue.dlq",   "vhost": "/", "durable": true}
+  ],
+  "policies": [
+    {"name": "dlq-policy", "pattern": "^(?!.*\\.dlq$).*", "vhost": "/", "definition": {"dead-letter-exchange": "", "dead-letter-routing-key": "dlq"}, "apply-to": "queues"}
+  ]
+}

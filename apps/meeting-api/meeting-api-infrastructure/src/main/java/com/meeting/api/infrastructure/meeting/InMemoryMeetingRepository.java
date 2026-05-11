@@ -2,37 +2,39 @@ package com.meeting.api.infrastructure.meeting;
 
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Repository;
 
+/**
+ * In-memory repository for development / testing.
+ * Replace with MyBatis-Plus + PostgreSQL implementation in production.
+ */
 @Repository
 public class InMemoryMeetingRepository implements MeetingRepository {
-    private final ConcurrentMap<String, Meeting> meetings = new ConcurrentHashMap<>();
+    private final Map<String, Meeting> store = new ConcurrentHashMap<>();
 
     @Override
     public Meeting save(Meeting meeting) {
-        meetings.put(key(meeting.tenantId(), meeting.id()), meeting);
+        store.put(meeting.id(), meeting);
         return meeting;
     }
 
     @Override
     public Optional<Meeting> findById(String tenantId, String meetingId) {
-        return Optional.ofNullable(meetings.get(key(tenantId, meetingId)));
+        Meeting m = store.get(meetingId);
+        if (m != null && m.tenantId().equals(tenantId)) {
+            return Optional.of(m);
+        }
+        return Optional.empty();
     }
 
     @Override
     public List<Meeting> findByTenantId(String tenantId) {
-        return meetings.values().stream()
-            .filter(meeting -> meeting.tenantId().equals(tenantId))
-            .sorted(Comparator.comparing(Meeting::createdAt).reversed())
+        return store.values().stream()
+            .filter(m -> m.tenantId().equals(tenantId))
             .toList();
-    }
-
-    private String key(String tenantId, String meetingId) {
-        return tenantId + ":" + meetingId;
     }
 }

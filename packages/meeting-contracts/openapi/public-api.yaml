@@ -6,25 +6,20 @@ servers:
   - url: /api
 security:
   - bearerAuth: []
+
 x-api-conventions:
   successEnvelope: '#/components/schemas/ApiResponse'
-  writeHeaders:
-    - X-Request-Id
-    - X-Trace-Id
-    - Idempotency-Key
   idempotency:
     requiredFor: all non-login mutating operations
     conflictStatus: 409
-  common4xx: [400, 401, 403, 404, 409, 422, 423, 429]
-  common5xx: [500, 503]
-  sse:
-    eventIdFormat: '{taskId}:{sequenceNo}'
-    retentionWindowMinutes: 30
+
 paths:
+  # ── Auth ────────────────────────────────────────────────────
   /auth/login:
     post:
       operationId: login
       security: []
+      tags: [Auth]
       requestBody:
         required: true
         content:
@@ -33,51 +28,139 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Login result
+          description: Login successful
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '423':
+          $ref: '#/components/responses/Locked'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /auth/logout:
     post:
       operationId: logout
+      tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkEmpty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/me:
     get:
       operationId: getCurrentUser
+      tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Users ──────────────────────────────────────────────────
   /users:
     get:
       operationId: listUsers
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       operationId: createUser
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /users/{userId}:
     patch:
       operationId: updateUser
+      tags: [Users]
       parameters:
         - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  # ── Meetings ────────────────────────────────────────────────
   /meetings:
     get:
       operationId: listMeetings
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Meeting list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       operationId: createMeeting
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -89,99 +172,231 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MeetingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /meetings/{meetingId}:
     get:
       operationId: getMeeting
+      tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Meeting detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     patch:
       operationId: updateMeeting
+      tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: deleteMeeting
+      tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
+
+  # ── Audio Upload ────────────────────────────────────────────
   /meetings/{meetingId}/files/audio/uploads:
     post:
       operationId: createAudioUpload
+      tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts:
     post:
       operationId: createAudioUploadPart
+      tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete:
     post:
       operationId: completeAudioUpload
+      tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/abort:
     post:
       operationId: abortAudioUpload
+      tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkEmpty'
+
   /meetings/{meetingId}/files/audio/uploads/{uploadId}:
     get:
       operationId: getAudioUpload
+      tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Processing Tasks ────────────────────────────────────────
   /meetings/{meetingId}/processing-tasks:
     post:
       operationId: createProcessingTask
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingTaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /meetings/{meetingId}/processing-tasks/latest:
     get:
       operationId: getLatestMeetingTask
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Latest task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingTaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /processing-tasks/{taskId}:
     get:
       operationId: getProcessingTask
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingTaskResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /processing-tasks/{taskId}/events:
     get:
       operationId: streamProcessingTaskEvents
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - name: Last-Event-Id
@@ -196,364 +411,692 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+
   /processing-tasks/{taskId}/retry:
     post:
       operationId: retryProcessingTask
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /processing-tasks/{taskId}/cancel:
     post:
       operationId: cancelProcessingTask
+      tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Transcript ──────────────────────────────────────────────
   /meetings/{meetingId}/transcript:
     get:
       operationId: getTranscript
+      tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Transcript with segments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /meetings/{meetingId}/transcript/segments/{segmentId}:
     patch:
       operationId: updateTranscriptSegment
+      tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/SegmentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /meetings/{meetingId}/transcript/regenerate:
     post:
       operationId: regenerateTranscriptDependents
+      tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── Speaker Profiles ────────────────────────────────────────
   /speaker-profiles:
     post:
       operationId: createSpeakerProfile
+      tags: [Speakers]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /speaker-profiles/{profileId}:
     get:
       operationId: getSpeakerProfile
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       operationId: deleteSpeakerProfile
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /speaker-profiles/{profileId}/enrollments:
     post:
       operationId: createSpeakerEnrollment
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /speaker-profiles/{profileId}/revoke:
     post:
       operationId: revokeSpeakerProfile
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /meetings/{meetingId}/speakers/{speakerLabel}/confirm:
     post:
       operationId: confirmMeetingSpeaker
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/SpeakerLabel'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /meetings/{meetingId}/speakers/{speakerLabel}/reject:
     post:
       operationId: rejectMeetingSpeaker
+      tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/SpeakerLabel'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── Minutes ─────────────────────────────────────────────────
   /meetings/{meetingId}/minutes:
     get:
       operationId: getMinutes
+      tags: [Minutes]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Meeting minutes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MinutesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /meetings/{meetingId}/minutes/regenerate:
     post:
       operationId: regenerateMinutes
+      tags: [Minutes]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── Action Items ────────────────────────────────────────────
   /meetings/{meetingId}/action-items:
     get:
       operationId: listActionItems
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
   /meetings/{meetingId}/action-items/{itemId}:
     patch:
       operationId: updateActionItem
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
   /meetings/{meetingId}/action-items/{itemId}/accept:
     post:
       operationId: acceptActionItem
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
   /meetings/{meetingId}/action-items/{itemId}/reject:
     post:
       operationId: rejectActionItem
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /meetings/{meetingId}/decisions:
     get:
       operationId: listDecisions
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
   /meetings/{meetingId}/risks:
     get:
       operationId: listRisks
+      tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
+
+  # ── Documents ───────────────────────────────────────────────
   /documents:
     get:
       operationId: listDocuments
+      tags: [Documents]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createDocument
+      tags: [Documents]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
   /documents/{documentId}:
     get:
       operationId: getDocument
+      tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       operationId: deleteDocument
+      tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '423':
+          $ref: '#/components/responses/Locked'
   /documents/{documentId}/reindex:
     post:
       operationId: reindexDocument
+      tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── RAG ─────────────────────────────────────────────────────
   /rag/query:
     post:
       operationId: queryRag
+      tags: [RAG]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: RAG answer with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagAnswerResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
   /rag/reindex/meetings/{meetingId}:
     post:
       operationId: reindexMeetingRag
+      tags: [RAG]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /rag/reindex/documents/{documentId}:
     post:
       operationId: reindexDocumentRag
+      tags: [RAG]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── Export ──────────────────────────────────────────────────
   /meetings/{meetingId}/exports:
     get:
       operationId: listMeetingExports
+      tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createMeetingExport
+      tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Export job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /exports/{exportId}:
     get:
       operationId: getExport
+      tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Export job status + download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJobResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /exports/{exportId}/cancel:
     post:
       operationId: cancelExport
+      tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /exports/{exportId}/revoke-link:
     post:
       operationId: revokeExportLink
+      tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
+  # ── Compliance / Admin ──────────────────────────────────────
   /legal-holds:
     get:
       operationId: listLegalHolds
+      tags: [Compliance]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createLegalHold
+      tags: [Compliance]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /legal-holds/{legalHoldId}:
     get:
       operationId: getLegalHold
+      tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
     delete:
       operationId: deleteLegalHold
+      tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /legal-holds/{legalHoldId}/release:
     put:
       operationId: releaseLegalHold
+      tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/deletion-jobs:
     get:
       operationId: listDeletionJobs
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createDeletionJob
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/deletion-jobs/{jobId}:
     get:
       operationId: getDeletionJob
+      tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/JobId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/deletion-jobs/{jobId}/certificate:
     get:
       operationId: getDeletionCertificate
+      tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/JobId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/break-glass/requests:
     get:
       operationId: listBreakGlassRequests
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createBreakGlassRequest
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/break-glass/requests/{requestId}/approve:
     post:
       operationId: approveBreakGlassRequest
+      tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/BreakGlassRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/break-glass/requests/{requestId}/reject:
     post:
       operationId: rejectBreakGlassRequest
+      tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/BreakGlassRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+
   /admin/break-glass/audit:
     get:
       operationId: listBreakGlassAudit
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/OkPaginated'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   parameters:
     UserId:
       name: userId
@@ -635,20 +1178,95 @@ components:
       in: path
       required: true
       schema: {type: string}
+
   responses:
     Ok:
-      description: Standard API response
+      description: Standard success response
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiResponse'
-    Error:
-      description: Standard error response
+    OkEmpty:
+      description: Success with no data body
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiResponse'
+    OkPaginated:
+      description: Paginated success response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Conflict:
+      description: Version or state conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Unprocessable:
+      description: Semantic validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Locked:
+      description: Resource locked (legal hold, account lockout)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    PayloadTooLarge:
+      description: Upload exceeds size limit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Gone:
+      description: SSE event window expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+
   schemas:
+    # ── Envelope ───────────────────────────────────────────────
     ApiResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -661,6 +1279,7 @@ components:
             - type: 'null'
         requestId: {type: string}
         traceId: {type: string}
+
     ErrorInfo:
       type: object
       required: [code, message, retryable]
@@ -671,29 +1290,195 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    # ── Auth ───────────────────────────────────────────────────
     LoginRequest:
       type: object
       required: [username, password]
       properties:
         username: {type: string}
         password: {type: string}
-    AuthResponse:
-      allOf:
-        - $ref: '#/components/schemas/ApiResponse'
+
+    LoginResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [accessToken, refreshToken, expiresAt, user]
+          properties:
+            accessToken: {type: string}
+            refreshToken: {type: string}
+            expiresAt: {type: string, format: date-time}
+            user:
+              $ref: '#/components/schemas/AuthUser'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    AuthUserResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/AuthUser'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    AuthUser:
+      type: object
+      required: [userId, tenantId, displayName, roles, permissions]
+      properties:
+        userId: {type: string}
+        tenantId: {type: string}
+        personId: {type: string}
+        displayName: {type: string}
+        roles:
+          type: array
+          items: {type: string}
+        permissions:
+          type: array
+          items: {type: string}
+
+    # ── Meeting ────────────────────────────────────────────────
     CreateMeetingRequest:
       type: object
       required: [title, securityLevel]
       properties:
         title: {type: string}
-        securityLevel:
-          type: string
-          enum: [PUBLIC, INTERNAL, CONFIDENTIAL, SECRET]
-        meetingDate:
+        scheduledStartAt:
           type: string
           format: date-time
+        securityLevel:
+          $ref: '#/components/schemas/SecurityLevel'
+        language: {type: string, default: 'zh'}
+        participants:
+          type: array
+          items:
+            type: object
+            required: [personId, displayName, role]
+            properties:
+              personId: {type: string}
+              displayName: {type: string}
+              role: {type: string}
+
     MeetingResponse:
-      allOf:
-        - $ref: '#/components/schemas/ApiResponse'
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/Meeting'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    MeetingListResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Meeting'
+            page:
+              $ref: '#/components/schemas/PageInfo'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    Meeting:
+      type: object
+      required: [meetingId, tenantId, title, securityLevel, status, language, transcriptVersion, minutesVersion, createdAt]
+      properties:
+        meetingId: {type: string}
+        tenantId: {type: string}
+        title: {type: string}
+        scheduledStartAt: {type: string, format: date-time}
+        securityLevel:
+          $ref: '#/components/schemas/SecurityLevel'
+        status:
+          $ref: '#/components/schemas/MeetingStatus'
+        language: {type: string}
+        transcriptVersion: {type: integer, minimum: 0}
+        minutesVersion: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+
+    PageInfo:
+      type: object
+      properties:
+        cursor: {type: string}
+        hasMore: {type: boolean}
+        limit: {type: integer}
+
+    # ── Processing Task ────────────────────────────────────────
+    ProcessingTaskResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/ProcessingTask'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    ProcessingTask:
+      type: object
+      required: [taskId, meetingId, status, attemptNo, steps]
+      properties:
+        taskId: {type: string}
+        meetingId: {type: [string, 'null']}
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        attemptNo: {type: integer}
+        currentStep: {type: [string, 'null']}
+        lastErrorCode: {type: [string, 'null']}
+        retryable: {type: boolean}
+        estimatedWaitSeconds: {type: integer}
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessingTaskStep'
+
+    ProcessingTaskStep:
+      type: object
+      required: [stepName, status, progress]
+      properties:
+        stepName:
+          $ref: '#/components/schemas/ProcessingStep'
+        status:
+          $ref: '#/components/schemas/StepStatus'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        startedAt: {type: [string, 'null'], format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        heartbeatAt: {type: [string, 'null'], format: date-time}
+
     TaskEvent:
       type: object
       required: [eventId, sequenceNo, eventType, taskId, status, emittedAt]
@@ -704,27 +1489,207 @@ components:
           type: string
           enum: [TASK_SNAPSHOT, TASK_STARTED, TASK_STEP_UPDATED, TASK_HEARTBEAT, TRANSCRIPT_READY, TASK_FAILED, TASK_COMPLETED, TASK_CANCELLED]
         taskId: {type: string}
-        meetingId: {type: string}
-        stepName:
-          type: string
-          enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]
+        meetingId: {type: [string, 'null']}
+        stepName: {type: [string, 'null']}
         status: {type: string}
-        progress:
-          type: integer
-          minimum: 0
-          maximum: 100
-        retryable: {type: boolean}
-        errorCode:
-          type: [string, 'null']
-        emittedAt:
-          type: string
-          format: date-time
-        attemptNo: {type: integer}
-        transcriptVersion: {type: integer}
+        progress: {type: [integer, 'null']}
+        retryable: {type: [boolean, 'null']}
+        errorCode: {type: [string, 'null']}
+        emittedAt: {type: string, format: date-time}
+        attemptNo: {type: [integer, 'null']}
+        transcriptVersion: {type: [integer, 'null']}
         artifactManifestId: {type: [string, 'null']}
         completedSteps:
-          type: array
+          type: [array, 'null']
           items: {type: string}
-        leaseExpiresAt:
+        leaseExpiresAt: {type: [string, 'null'], format: date-time}
+
+    # ── Transcript ─────────────────────────────────────────────
+    TranscriptResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [meetingId, transcriptVersion, staleStatus, segments]
+          properties:
+            meetingId: {type: string}
+            transcriptVersion: {type: integer}
+            staleStatus: {type: string}
+            segments:
+              type: array
+              items:
+                $ref: '#/components/schemas/TranscriptSegment'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    TranscriptSegment:
+      type: object
+      required: [segmentId, startMs, endMs, speakerLabel, originalText, currentText, asrConfidence, timestampPrecision]
+      properties:
+        segmentId: {type: string}
+        startMs: {type: integer}
+        endMs: {type: integer}
+        speakerLabel: {type: string}
+        speakerDisplayName: {type: [string, 'null']}
+        originalText: {type: string}
+        editedText: {type: [string, 'null']}
+        currentText: {type: string}
+        asrConfidence: {type: number, minimum: 0, maximum: 1}
+        diarizationConfidence: {type: [number, 'null'], minimum: 0, maximum: 1}
+        timestampPrecision:
           type: string
-          format: date-time
+          enum: [WORD, SEGMENT, APPROXIMATE]
+
+    # ── Minutes ────────────────────────────────────────────────
+    MinutesResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [meetingId, minutesId, minutesVersion, staleStatus, markdown, sections]
+          properties:
+            meetingId: {type: string}
+            minutesId: {type: string}
+            minutesVersion: {type: integer}
+            staleStatus: {type: string}
+            markdown: {type: string}
+            sections:
+              type: array
+              items:
+                type: object
+                required: [type, title]
+                properties:
+                  type: {type: string}
+                  title: {type: string}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [text]
+                      properties:
+                        text: {type: string}
+                        evidence:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              segmentId: {type: string}
+                              startMs: {type: integer}
+                              endMs: {type: integer}
+                              evidenceTextSnapshot: {type: string}
+            artifactManifestId: {type: string}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    # ── RAG ────────────────────────────────────────────────────
+    RagAnswerResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [answer, citations, coverage, artifactManifestId]
+          properties:
+            answer: {type: string}
+            citations:
+              type: array
+              items:
+                anyOf:
+                  - $ref: '#/components/schemas/MeetingSegmentCitation'
+                  - $ref: '#/components/schemas/DocumentChunkCitation'
+            coverage:
+              type: string
+              enum: [TRANSCRIPT_ONLY, FULL]
+            artifactManifestId: {type: string}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    MeetingSegmentCitation:
+      type: object
+      required: [type, meetingId, meetingTitle, segmentId, speaker, startMs, endMs, content]
+      properties:
+        type: {type: string, const: MEETING_SEGMENT}
+        meetingId: {type: string}
+        meetingTitle: {type: string}
+        segmentId: {type: string}
+        speaker: {type: string}
+        startMs: {type: integer}
+        endMs: {type: integer}
+        content: {type: string}
+
+    DocumentChunkCitation:
+      type: object
+      required: [type, documentId, documentTitle, chunkId, page, content]
+      properties:
+        type: {type: string, const: DOCUMENT_CHUNK}
+        documentId: {type: string}
+        documentTitle: {type: string}
+        chunkId: {type: string}
+        page: {type: integer}
+        content: {type: string}
+
+    # ── Export ─────────────────────────────────────────────────
+    ExportJobResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [exportId, meetingId, status, format]
+          properties:
+            exportId: {type: string}
+            meetingId: {type: string}
+            status: {type: string}
+            format:
+              type: string
+              enum: [MARKDOWN, DOCX, PDF]
+            downloadUrl: {type: [string, 'null']}
+            downloadUrlExpiresAt: {type: [string, 'null'], format: date-time}
+            sha256: {type: [string, 'null']}
+            revoked: {type: boolean}
+            expiresAt: {type: string, format: date-time}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    # ── Enums (fact source: schemas/common/enums.yaml) ──────────
+    SecurityLevel:
+      type: string
+      enum: [PUBLIC, INTERNAL, CONFIDENTIAL, SECRET]
+
+    MeetingStatus:
+      type: string
+      enum: [CREATED, PROCESSING, SUCCEEDED, FAILED, DELETED]
+
+    TaskStatus:
+      type: string
+      enum: [PENDING, QUEUED, RUNNING, ORPHANED, PARTIAL_SUCCEEDED, SUCCEEDED, FAILED, CANCEL_PENDING, CANCELLED]
+
+    StepStatus:
+      type: string
+      enum: [PENDING, QUEUED, RUNNING, SUCCEEDED, FAILED, SKIPPED, CANCELLED]
+
+    ProcessingStep:
+      type: string
+      enum: [AUDIO_UPLOAD, AUDIO_PREPROCESS, ASR, ALIGNMENT, DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING, TRANSCRIPT_MERGE, SUMMARY, EXTRACTION, RAG_INDEXING, EXPORT]

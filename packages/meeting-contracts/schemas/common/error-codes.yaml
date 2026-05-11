@@ -1,6 +1,7 @@
 version: 0.1.0
 
 errorCodes:
+  # ── Auth ──────────────────────────────────────────────────────
   - code: AUTH_REQUIRED
     step: AUTH
     retryable: false
@@ -19,6 +20,8 @@ errorCodes:
     userMessage: 租户上下文缺失
     i18nKey: errors.TENANT_CONTEXT_MISSING
     opsTags: [tenant, rls]
+
+  # ── Validation ────────────────────────────────────────────────
   - code: VALIDATION_FAILED
     step: VALIDATION
     retryable: false
@@ -37,6 +40,14 @@ errorCodes:
     userMessage: 幂等键已被不同请求使用
     i18nKey: errors.IDEMPOTENCY_CONFLICT
     opsTags: [idempotency, conflict]
+
+  # ── Task ──────────────────────────────────────────────────────
+  - code: TASK_NOT_FOUND
+    step: TASK
+    retryable: false
+    userMessage: 任务不存在
+    i18nKey: errors.TASK_NOT_FOUND
+    opsTags: [task]
   - code: TASK_ATTEMPT_CONFLICT
     step: TASK
     retryable: false
@@ -49,18 +60,34 @@ errorCodes:
     userMessage: 任务租约已变化
     i18nKey: errors.TASK_LEASE_CONFLICT
     opsTags: [task, lease, conflict]
-  - code: LEGAL_HOLD_BLOCKED
-    step: COMPLIANCE
-    retryable: false
-    userMessage: 对象处于法定保全状态，不能删除
-    i18nKey: errors.LEGAL_HOLD_BLOCKED
-    opsTags: [compliance, legal_hold]
-  - code: DEPENDENCY_UNAVAILABLE
-    step: INFRA
+  - code: WORKER_LEASE_EXPIRED
+    step: TASK
     retryable: true
-    userMessage: 依赖服务暂不可用
-    i18nKey: errors.DEPENDENCY_UNAVAILABLE
-    opsTags: [dependency]
+    userMessage: Worker 租约已过期
+    i18nKey: errors.WORKER_LEASE_EXPIRED
+    opsTags: [task, lease]
+
+  # ── Storage / TOS ─────────────────────────────────────────────
+  - code: TOS_OBJECT_NOT_FOUND
+    step: STORAGE
+    retryable: false
+    userMessage: 存储对象不存在
+    i18nKey: errors.TOS_OBJECT_NOT_FOUND
+    opsTags: [tos, storage]
+  - code: TOS_READ_FAILED
+    step: STORAGE
+    retryable: true
+    userMessage: 存储读取失败
+    i18nKey: errors.TOS_READ_FAILED
+    opsTags: [tos, storage, io]
+  - code: TOS_WRITE_FAILED
+    step: STORAGE
+    retryable: true
+    userMessage: 存储写入失败
+    i18nKey: errors.TOS_WRITE_FAILED
+    opsTags: [tos, storage, io]
+
+  # ── Audio Pipeline ────────────────────────────────────────────
   - code: AUDIO_UNSUPPORTED_FORMAT
     step: AUDIO_PREPROCESS
     retryable: false
@@ -139,6 +166,8 @@ errorCodes:
     userMessage: 转录合并失败
     i18nKey: errors.TRANSCRIPT_MERGE_FAILED
     opsTags: [transcript]
+
+  # ── Callback ──────────────────────────────────────────────────
   - code: CALLBACK_AUTH_FAILED
     step: CALLBACK
     retryable: false
@@ -151,6 +180,20 @@ errorCodes:
     userMessage: Worker 回调幂等键冲突
     i18nKey: errors.CALLBACK_IDEMPOTENCY_CONFLICT
     opsTags: [callback, idempotency]
+  - code: WRITEBACK_FAILED
+    step: CALLBACK
+    retryable: true
+    userMessage: Worker 回写失败
+    i18nKey: errors.WRITEBACK_FAILED
+    opsTags: [callback, writeback]
+
+  # ── LLM ───────────────────────────────────────────────────────
+  - code: LLM_PROVIDER_TIMEOUT
+    step: LLM
+    retryable: true
+    userMessage: LLM 服务超时
+    i18nKey: errors.LLM_PROVIDER_TIMEOUT
+    opsTags: [llm, timeout]
   - code: LLM_SCHEMA_INVALID
     step: LLM
     retryable: true
@@ -181,6 +224,8 @@ errorCodes:
     userMessage: 数据边界策略阻断
     i18nKey: errors.LLM_DATA_BOUNDARY_BLOCKED
     opsTags: [llm, data_boundary]
+
+  # ── RAG ───────────────────────────────────────────────────────
   - code: RAG_INDEX_FAILED
     step: RAG_INDEXING
     retryable: true
@@ -193,39 +238,71 @@ errorCodes:
     userMessage: 向量检索失败
     i18nKey: errors.VECTOR_SEARCH_FAILED
     opsTags: [rag, vector]
+
+  # ── Export ────────────────────────────────────────────────────
   - code: EXPORT_FAILED
     step: EXPORT
     retryable: true
     userMessage: 导出失败
     i18nKey: errors.EXPORT_FAILED
     opsTags: [export]
-  - code: WORKER_LEASE_EXPIRED
-    step: TASK
+  - code: EXPORT_RENDER_FAILED
+    step: EXPORT
     retryable: true
-    userMessage: Worker 租约已过期
-    i18nKey: errors.WORKER_LEASE_EXPIRED
-    opsTags: [task, lease]
-  - code: WRITEBACK_FAILED
-    step: CALLBACK
-    retryable: true
-    userMessage: Worker 回写失败
-    i18nKey: errors.WRITEBACK_FAILED
-    opsTags: [callback, writeback]
+    userMessage: 导出渲染失败
+    i18nKey: errors.EXPORT_RENDER_FAILED
+    opsTags: [export, render]
+  - code: EXPORT_LINK_REVOKED
+    step: EXPORT
+    retryable: false
+    userMessage: 导出链接已被撤销
+    i18nKey: errors.EXPORT_LINK_REVOKED
+    opsTags: [export, link]
+
+  # ── Outbox ────────────────────────────────────────────────────
   - code: OUTBOX_PUBLISH_FAILED
     step: OUTBOX
     retryable: true
     userMessage: 事件发布失败
     i18nKey: errors.OUTBOX_PUBLISH_FAILED
     opsTags: [outbox, mq]
+
+  # ── Rebuild / STALE ───────────────────────────────────────────
   - code: STALE_REBUILD_VERSION_MISMATCH
     step: REBUILD
     retryable: false
     userMessage: 重建完成时上游版本已变化
     i18nKey: errors.STALE_REBUILD_VERSION_MISMATCH
     opsTags: [rebuild, version]
+
+  # ── KMS ───────────────────────────────────────────────────────
   - code: KMS_KEY_UNAVAILABLE
     step: SPEAKER_EMBEDDING
     retryable: true
     userMessage: 声纹加密密钥不可用
     i18nKey: errors.KMS_KEY_UNAVAILABLE
     opsTags: [kms, speaker]
+
+  # ── Compliance ────────────────────────────────────────────────
+  - code: LEGAL_HOLD_BLOCKED
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 对象处于法定保全状态，不能删除
+    i18nKey: errors.LEGAL_HOLD_BLOCKED
+    opsTags: [compliance, legal_hold]
+
+  # ── Infra ─────────────────────────────────────────────────────
+  - code: DEPENDENCY_UNAVAILABLE
+    step: INFRA
+    retryable: true
+    userMessage: 依赖服务暂不可用
+    i18nKey: errors.DEPENDENCY_UNAVAILABLE
+    opsTags: [dependency]
+
+  # ── Internal (service-level, not exposed to frontend) ─────────
+  - code: INTERNAL_ERROR
+    step: INFRA
+    retryable: false
+    userMessage: 服务内部错误
+    i18nKey: errors.INTERNAL_ERROR
+    opsTags: [internal]

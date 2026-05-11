@@ -1,19 +1,20 @@
 version: 0.1.0
 
+# ── 会议生命周期状态 ──────────────────────────────────────────
+# 事实来源。Java MeetingStatus、DDL CHECK 约束、前端展示均以此为准。
+# 一期不含 ARCHIVED / READY / DRAFT——从 simple lifecycle 起步。
+meetingStatus:
+  - CREATED
+  - PROCESSING
+  - SUCCEEDED
+  - FAILED
+  - DELETED
+
 securityLevel:
   - PUBLIC
   - INTERNAL
   - CONFIDENTIAL
   - SECRET
-
-meetingStatus:
-  - DRAFT
-  - READY
-  - PROCESSING
-  - PARTIAL_SUCCEEDED
-  - SUCCEEDED
-  - FAILED
-  - DELETED
 
 taskStatus:
   - PENDING

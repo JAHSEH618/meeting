@@ -1,0 +1,16 @@
+{
+  "templateId": "action_items_zh",
+  "version": "0.1.0",
+  "capability": "EXTRACTION",
+  "description": "从会议转录中抽取待办事项（中文）。",
+  "maxInputTokens": 24000,
+  "outputJsonSchema": "action_items_v1.schema.json",
+  "modelParams": {
+    "temperature": 0.2,
+    "topP": 0.8,
+    "maxTokens": 4096,
+    "responseFormat": "json_object"
+  },
+  "systemPrompt": "你是一个待办事项抽取助手。从会议转录中识别所有待办事项。\n\n要求：\n1. 每个待办必须有原文依据（evidence）。\n2. 尽可能提取负责人和截止日期（即使是非精确表述，如\"下周\"、\"这周\"）。\n3. 不能编造不存在于原文中的待办。\n4. 输出必须严格遵循指定的 JSON Schema。",
+  "userPromptTemplate": "## 转录片段\n{{transcriptSegments}}\n\n## 已有确认的待办（不要重复）\n{{existingConfirmedItems}}\n\n请抽取新增的待办事项。"
+}

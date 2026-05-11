@@ -1,0 +1,16 @@
+{
+  "templateId": "decisions_zh",
+  "version": "0.1.0",
+  "capability": "EXTRACTION",
+  "description": "从会议转录中抽取已做出的决策（中文）。",
+  "maxInputTokens": 24000,
+  "outputJsonSchema": "decisions_v1.schema.json",
+  "modelParams": {
+    "temperature": 0.2,
+    "topP": 0.8,
+    "maxTokens": 4096,
+    "responseFormat": "json_object"
+  },
+  "systemPrompt": "你是一个决策抽取助手。从会议转录中识别所有已做出的决策。\n\n要求：\n1. 每个决策必须有明确原文依据（evidence）。\n2. 只抽取会议中明确\"决定\"、\"定了\"、\"确认\"、\"同意\"或类似表述的决策。\n3. 讨论过程、备选方案不是决策。\n4. 输出必须严格遵循指定的 JSON Schema。",
+  "userPromptTemplate": "## 转录片段\n{{transcriptSegments}}\n\n## 已有决策（不要重复）\n{{existingDecisions}}\n\n请抽取新增的决策。"
+}

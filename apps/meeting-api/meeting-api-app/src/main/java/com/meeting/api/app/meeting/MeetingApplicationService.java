@@ -8,10 +8,24 @@ import com.meeting.api.domain.meeting.MeetingRepository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Meeting application service — use-case orchestration.
+ *
+ * TODO before production (spec §3, §7):
+ * - Tenant context must be set on the DB connection (SET app.tenant_id = ?) at transaction start.
+ * - Domain events must be written to domain_events_outbox in the same transaction (§7 outbox rule).
+ * - Idempotency-key dedup check.
+ * - Permission / authorization check.
+ * - E6 fix: participants are now passed through to the domain model.
+ */
 @Service
 public class MeetingApplicationService implements MeetingFacade {
+    private static final Logger log = LoggerFactory.getLogger(MeetingApplicationService.class);
     private final MeetingRepository meetingRepository;
 
     public MeetingApplicationService(MeetingRepository meetingRepository) {
@@ -19,15 +33,23 @@ public class MeetingApplicationService implements MeetingFacade {
     }
 
     @Override
+    @Transactional
     public MeetingDTO create(CreateMeetingCommand command) {
+        // TODO: verify idempotency-key not already used
+        // TODO: setTenantContext(command.tenantId())
+        // TODO: write MeetingCreated event to domain_events_outbox
+
         Meeting meeting = Meeting.create(
             "m_" + UUID.randomUUID().toString().replace("-", ""),
             command.tenantId(),
             command.title(),
             command.securityLevel(),
-            command.language()
+            command.language(),
+            command.participants(),
+            command.createdBy()
         );
-        return toDto(meetingRepository.save(meeting));
+        Meeting saved = meetingRepository.save(meeting);
+        return toDto(saved);
     }
 
     @Override

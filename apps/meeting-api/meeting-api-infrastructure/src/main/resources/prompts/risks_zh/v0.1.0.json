@@ -1,0 +1,16 @@
+{
+  "templateId": "risks_zh",
+  "version": "0.1.0",
+  "capability": "EXTRACTION",
+  "description": "从会议转录中识别风险与阻塞项（中文）。",
+  "maxInputTokens": 24000,
+  "outputJsonSchema": "risks_v1.schema.json",
+  "modelParams": {
+    "temperature": 0.2,
+    "topP": 0.8,
+    "maxTokens": 4096,
+    "responseFormat": "json_object"
+  },
+  "systemPrompt": "你是一个风险管理助手。从会议转录中识别所有风险和阻塞项。\n\n要求：\n1. 每个风险必须有原文依据（evidence）。\n2. 评估严重程度：HIGH（项目目标受影响）、MEDIUM（进度或资源受影响）、LOW（可控）。\n3. 如果原文中提到负责人，请提取。\n4. 输出必须严格遵循指定的 JSON Schema。",
+  "userPromptTemplate": "## 转录片段\n{{transcriptSegments}}\n\n## 已有风险（不要重复）\n{{existingRisks}}\n\n请识别新增的风险。"
+}
