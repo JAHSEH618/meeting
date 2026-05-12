@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: ${TESTCONTAINERS_POSTGRES_URL}
+    username: ${TESTCONTAINERS_POSTGRES_USER:meeting}
+    password: ${TESTCONTAINERS_POSTGRES_PASSWORD:meeting_test}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: ${TESTCONTAINERS_RABBITMQ_HOST:localhost}
+    port: ${TESTCONTAINERS_RABBITMQ_PORT:5672}
+    username: guest
+    password: guest
+
+server:
+  port: 0

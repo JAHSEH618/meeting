@@ -1,8 +1,8 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# 本地会议智能系统 · 一期 Flyway Migration
-# 来源: docs/ddls/001_initial_schema.sql
-# 路径: apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/
-# ──────────────────────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 本地会议智能系统 · 一期 Flyway Migration
+-- 来源: docs/ddls/001_initial_schema.sql
+-- 路径: apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/
+-- ──────────────────────────────────────────────────────────────────────────────
 
 BEGIN;
 
@@ -64,7 +64,7 @@ END $$;
 DO $$ BEGIN
   CREATE TYPE step_status AS ENUM (
     'PENDING', 'QUEUED', 'RUNNING',
-    'SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED',
+    'SUCCEEDED', 'FAILED',
     'SKIPPED', 'CANCELLED'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
