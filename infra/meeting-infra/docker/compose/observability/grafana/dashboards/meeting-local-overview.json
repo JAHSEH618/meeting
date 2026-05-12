@@ -1,22 +1,177 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": {"list": []},
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "links": [],
-  "panels": [],
+  "panels": [
+    {
+      "title": "API Request Rate (qps)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{application=\"meeting-api\"}[1m])) by (method, uri)",
+          "legendFormat": "{{method}} {{uri}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "API Latency p95 (ms)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application=\"meeting-api\"}[5m])) by (le, uri))",
+          "legendFormat": "p95 {{uri}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ms"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Task Pipeline Status",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(meeting_task_total{status=\"RUNNING\"}) or vector(0)",
+          "legendFormat": "Running"
+        }
+      ]
+    },
+    {
+      "title": "Task Success / Fail Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_task_total{status=\"SUCCEEDED\"}[5m])) by (task_type)",
+          "legendFormat": "success {{task_type}}"
+        },
+        {
+          "expr": "sum(rate(meeting_task_total{status=\"FAILED\"}[5m])) by (task_type)",
+          "legendFormat": "fail {{task_type}}"
+        }
+      ]
+    },
+    {
+      "title": "Callback p95 (ms)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_callback_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p95 {{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ms"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Outbox Pending",
+      "type": "gauge",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 12},
+      "targets": [
+        {
+          "expr": "meeting_outbox_pending_count or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"max": 1000}
+      }
+    },
+    {
+      "title": "SSE Active Connections",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "meeting_sse_active_connections or vector(0)"
+        }
+      ]
+    },
+    {
+      "title": "RAG Query p95 (ms)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_rag_query_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ms"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Rerank Availability",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 16},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_rerank_total{status!=\"SUCCEEDED\"}[5m])) / sum(rate(meeting_rerank_total[5m]))",
+          "legendFormat": "error_rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 0.05, "color": "yellow"}, {"value": 0.1, "color": "red"}]}}
+      }
+    },
+    {
+      "title": "LLM Call Latency (DashScope)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_llm_call_duration_seconds_bucket[5m])) by (le, model))",
+          "legendFormat": "p95 {{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Compliance: Legal Hold Blocks",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 24},
+      "targets": [
+        {
+          "expr": "sum(meeting_legal_hold_blocked_total) or vector(0)"
+        }
+      ]
+    },
+    {
+      "title": "KMS Encrypt/Decrypt Errors",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 24},
+      "targets": [
+        {
+          "expr": "sum(meeting_kms_error_total) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "red"}]}}
+      }
+    }
+  ],
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["meeting", "local"],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
   "title": "Meeting Local Overview",

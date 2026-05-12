@@ -1,18 +1,52 @@
 {
+  "exchanges": [
+    {
+      "name": "meeting.task.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "meeting.task.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
   "queues": [
-    {"name": "audio-cpu-queue",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "audio-cpu-queue.dlq"}},
-    {"name": "audio-cpu-queue.dlq","vhost": "/", "durable": true},
-    {"name": "gpu-asr-queue",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-asr-queue.dlq"}},
-    {"name": "gpu-asr-queue.dlq",  "vhost": "/", "durable": true},
-    {"name": "gpu-diar-queue",     "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-diar-queue.dlq"}},
-    {"name": "gpu-diar-queue.dlq", "vhost": "/", "durable": true},
-    {"name": "gpu-speaker-queue",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-speaker-queue.dlq"}},
-    {"name": "gpu-speaker-queue.dlq","vhost": "/", "durable": true},
-    {"name": "embed-queue",        "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "embed-queue.dlq"}},
-    {"name": "embed-queue.dlq",    "vhost": "/", "durable": true},
-    {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "llm-queue.dlq"}},
-    {"name": "llm-queue.dlq",      "vhost": "/", "durable": true},
-    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "export-queue.dlq"}},
-    {"name": "export-queue.dlq",   "vhost": "/", "durable": true}
+    {"name": "audio-cpu-queue",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "audio-cpu-queue.dlq"}},
+    {"name": "audio-cpu-queue.dlq","vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-asr-queue",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "gpu-asr-queue.dlq"}},
+    {"name": "gpu-asr-queue.dlq",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-diar-queue",     "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "gpu-diar-queue.dlq"}},
+    {"name": "gpu-diar-queue.dlq", "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-speaker-queue",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "gpu-speaker-queue.dlq"}},
+    {"name": "gpu-speaker-queue.dlq","vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "embed-queue",        "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "embed-queue.dlq"}},
+    {"name": "embed-queue.dlq",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "llm-queue.dlq"}},
+    {"name": "llm-queue.dlq",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "export-queue.dlq"}},
+    {"name": "export-queue.dlq",   "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}}
+  ],
+  "bindings": [
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "audio-cpu-queue",    "destination_type": "queue", "routing_key": "task.audio-cpu",    "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "gpu-asr-queue",      "destination_type": "queue", "routing_key": "task.gpu-asr",      "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "gpu-diar-queue",     "destination_type": "queue", "routing_key": "task.gpu-diar",     "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "gpu-speaker-queue",  "destination_type": "queue", "routing_key": "task.gpu-speaker",  "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "embed-queue",        "destination_type": "queue", "routing_key": "task.embed",        "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "llm-queue",          "destination_type": "queue", "routing_key": "task.llm",          "arguments": {}},
+    {"source": "meeting.task.exchange", "vhost": "/", "destination": "export-queue",       "destination_type": "queue", "routing_key": "task.export",       "arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "audio-cpu-queue.dlq","destination_type": "queue", "routing_key": "audio-cpu-queue.dlq","arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "gpu-asr-queue.dlq",  "destination_type": "queue", "routing_key": "gpu-asr-queue.dlq", "arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "gpu-diar-queue.dlq", "destination_type": "queue", "routing_key": "gpu-diar-queue.dlq","arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "gpu-speaker-queue.dlq","destination_type": "queue", "routing_key": "gpu-speaker-queue.dlq","arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "embed-queue.dlq",    "destination_type": "queue", "routing_key": "embed-queue.dlq",   "arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "llm-queue.dlq",      "destination_type": "queue", "routing_key": "llm-queue.dlq",     "arguments": {}},
+    {"source": "meeting.task.dlx",      "vhost": "/", "destination": "export-queue.dlq",   "destination_type": "queue", "routing_key": "export-queue.dlq",  "arguments": {}}
   ]
 }

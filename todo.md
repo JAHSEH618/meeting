@@ -8,20 +8,20 @@
 
 ### 工程：`packages/meeting-contracts`
 
-- [ ] 修正 `processing-task-message.schema.json` 的条件校验：`meetingId`、`documentId`、`speakerProfileId`、`speakerEnrollmentId`、`audioFileId`、`audioUri` 按 `taskType` 真实必填，避免 `TEXT_EMBEDDING` / `RAG_REINDEX` 传 `meetingId: null` 也通过校验。
-- [ ] 修正 `public-api.yaml` 中 `DELETE /meetings/{meetingId}` 当前错误引用 `CreateAudioUploadRequest` 的 requestBody，改为删除原因 / legal hold 检查所需 schema。
-- [ ] 补齐 OpenAPI response envelope 一致性：所有 4xx / 5xx 使用统一 `ApiResponse`，避免部分 internal API 直接返回裸 `ErrorInfo`。
-- [ ] 将 `scripts/check-consistency.sh` 中 lint / enum mismatch 从 `warn` 升级为 CI 失败，确保 contracts 真正成为硬门槛。
-- [ ] 固化 codegen 命令：TypeScript、Java、Python DTO / enum 生成或一致性 diff 校验必须可重复运行。
-- [ ] 增加 valid / invalid fixtures，覆盖 public API、internal callback、ai-worker internal API、processing-task-message、export-job-message。
+- [x] 修正 `processing-task-message.schema.json` 的条件校验：`meetingId`、`documentId`、`speakerProfileId`、`speakerEnrollmentId`、`audioFileId`、`audioUri` 按 `taskType` 真实必填，避免 `TEXT_EMBEDDING` / `RAG_REINDEX` 传 `meetingId: null` 也通过校验。
+- [x] 修正 `public-api.yaml` 中 `DELETE /meetings/{meetingId}` 当前错误引用 `CreateAudioUploadRequest` 的 requestBody，改为删除原因 / legal hold 检查所需 schema。
+- [x] 补齐 OpenAPI response envelope 一致性：所有 4xx / 5xx 使用统一 `ApiResponse`，避免部分 internal API 直接返回裸 `ErrorInfo`。
+- [x] 将 `scripts/check-consistency.sh` 中 lint / enum mismatch 从 `warn` 升级为 CI 失败，确保 contracts 真正成为硬门槛。
+- [x] 固化 codegen 命令：TypeScript、Java、Python DTO / enum 生成或一致性 diff 校验必须可重复运行。
+- [x] 增加 valid / invalid fixtures，覆盖 public API、internal callback、ai-worker internal API、processing-task-message、export-job-message。
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 修正 `V202605110001__initial_schema.sql` 顶部 `#` 注释为合法 SQL 注释，保证 Flyway 可执行。
-- [ ] 对齐 DDL 与 contracts 的 `StepStatus`：当前 DDL `step_status` 含 `PARTIAL_SUCCEEDED`，但 contracts / spec 的 step status 不包含该值。
-- [ ] 增加 ArchUnit 测试 `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java`，守住 COLA 依赖方向和 domain 禁止依赖 Spring Web / JDBC / MQ / SDK。
-- [ ] 增加 Maven 测试依赖与 Testcontainers 基线，先覆盖 PostgreSQL migration、RLS tenant context、RabbitMQ schema smoke。
-- [ ] 补齐 `application.yml` 基础配置：Flyway、datasource、RabbitMQ、TOS / MinIO、callback HMAC、chunk strategy、SSE、outbox、actuator prometheus。
+- [x] 修正 `V202605110001__initial_schema.sql` 顶部 `#` 注释为合法 SQL 注释，保证 Flyway 可执行。
+- [x] 对齐 DDL 与 contracts 的 `StepStatus`：当前 DDL `step_status` 含 `PARTIAL_SUCCEEDED`，但 contracts / spec 的 step status 不包含该值。
+- [x] 增加 ArchUnit 测试 `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java`，守住 COLA 依赖方向和 domain 禁止依赖 Spring Web / JDBC / MQ / SDK。
+- [x] 增加 Maven 测试依赖与 Testcontainers 基线，先覆盖 PostgreSQL migration、RLS tenant context、RabbitMQ schema smoke。
+- [x] 补齐 `application.yml` 基础配置：Flyway、datasource、RabbitMQ、TOS / MinIO、callback HMAC、chunk strategy、SSE、outbox、actuator prometheus。
 
 ### 工程：`infra/meeting-infra`
 
