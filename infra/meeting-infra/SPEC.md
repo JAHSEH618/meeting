@@ -184,7 +184,7 @@ Dashboard 文件清单：
 |---|---|
 | `observability/dashboards/meeting-api-overview.json` | QPS、p50/p95/p99、5xx 率、Controller 错误码 TopN、Hikari 连接池 |
 | `observability/dashboards/task-pipeline.json` | step RTF、失败率、ORPHANED 数、DLQ 深度、callback 冲突 |
-| `observability/dashboards/rag-quality.json` | 检索数量、rerank 命中、citation 缺失率、LLM token 和延迟 |
+| `observability/dashboards/rag-quality.json` | 检索数量、rerank 命中 / 延迟 / 降级次数、citation 缺失率、LLM token 和延迟 |
 | `observability/dashboards/compliance.json` | legal hold 数、deletion job 状态、break-glass 次数、审计事件 |
 | `observability/dashboards/ai-worker-gpu.json` | GPU 利用率、显存、模型加载状态、OOM、actor backlog |
 

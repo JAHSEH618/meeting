@@ -8,15 +8,16 @@
 
 1. 保存 Public API 的 OpenAPI 契约。
 2. 保存 Internal Callback API 的 OpenAPI 契约。
-3. 保存 RabbitMQ 消息 JSON Schema。
-4. 保存通用枚举和稳定错误码。
-5. 为后续 TypeScript、Java、Python SDK 生成提供输入。
+3. 保存 AI Worker Internal API 的 OpenAPI 契约。
+4. 保存 RabbitMQ 消息 JSON Schema。
+5. 保存通用枚举和稳定错误码。
+6. 为后续 TypeScript、Java、Python SDK 生成提供输入。
 
 ## 1.1 开发准入
 
 `meeting-contracts` 是各端并行开发前的硬门槛：
 
-1. MVP-0 必须能 lint `openapi/public-api.yaml`、`openapi/internal-callback-api.yaml`，并用 JSON Schema 校验 RabbitMQ task message。
+1. MVP-0 必须能 lint `openapi/public-api.yaml`、`openapi/internal-callback-api.yaml`、`openapi/ai-worker-internal-api.yaml`，并用 JSON Schema 校验 RabbitMQ task message。
 2. 枚举和错误码新增时必须先改 `schemas/common/*.yaml`，再同步 Java / TypeScript / Python 手写或生成类型。
 3. SDK codegen 可以在一期早期手写替代，但手写类型必须在对应工程中标注来源并接受契约一致性检查。
 4. `fixtures/**` 仍是后续增强；新增后才作为 CI 必过项，未新增前不能阻塞 MVP-0 开发。
@@ -27,6 +28,7 @@
 openapi/
   public-api.yaml
   internal-callback-api.yaml
+  ai-worker-internal-api.yaml
 schemas/
   rabbitmq/
     processing-task-message.schema.json
@@ -42,6 +44,7 @@ scripts/
 |---|---|---|
 | `openapi/public-api.yaml` | Web 到 API 的 endpoint、schema、SSE 和错误响应 | `meeting-web`、`meeting-api-adapter`、MSW / Playwright |
 | `openapi/internal-callback-api.yaml` | Worker callback endpoint、header、签名字段、body schema | `ai-worker`、`meeting-api-adapter`、callback 回放测试 |
+| `openapi/ai-worker-internal-api.yaml` | API 同步调用 worker 的内部 endpoint、header、签名字段、body schema | `meeting-api-infrastructure`、`meeting-api-domain`、`ai-worker`、RAG rerank 契约测试 |
 | `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 worker 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
 | `schemas/common/enums.yaml` | 跨工程枚举 | Java / TypeScript / Python codegen |
 | `schemas/common/error-codes.yaml` | 稳定错误码、retryable、i18n key、运维标签 | 前端 error mapper、Java exception mapper、worker fail callback |
@@ -112,6 +115,7 @@ scripts/
 12. `RagAnswerCoverage`: `TRANSCRIPT_ONLY`、`FULL`。
 13. `ProcessingStepUpdateSource`: `JAVA_TASK_SERVICE`、`AI_WORKER_CALLBACK`。
 14. `TaskEventType`: `TASK_SNAPSHOT`、`TASK_STARTED`、`TASK_STEP_UPDATED`、`TASK_HEARTBEAT`、`TRANSCRIPT_READY`、`TASK_FAILED`、`TASK_COMPLETED`、`TASK_CANCELLED`。
+15. `SourceType`: `PRIMARY_TRANSCRIPT`、`AI_SUMMARY`、`DECISION`、`ACTION_ITEM`、`RISK`、`DOCUMENT`。
 
 ## 6. 错误码
 
@@ -251,7 +255,7 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 2. JSON Schema 能校验示例消息。
 3. 枚举与 Java、TypeScript、Python 使用的枚举一致。
 4. 错误码与前端提示、后端异常、worker 错误上报一致。
-5. Public API、callback API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
+5. Public API、callback API、AI Worker Internal API、RabbitMQ schema 与 `docs/app-api-contracts.md` 无语义冲突。
 6. 如果引入 `fixtures/**`，每个 valid 样本必须通过对应 schema 校验；invalid 样本必须失败且错误路径稳定。
 7. `RagAnswerDTO` / RAG answer response 的 `coverage` 为必填字段，且与 `RagAnswerCoverage` 枚举一致。
 
@@ -262,7 +266,9 @@ Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜�
 ```bash
 openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts
 datamodel-codegen --input openapi/internal-callback-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py
+datamodel-codegen --input openapi/ai-worker-internal-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py
 openapi-generator generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api
+openapi-generator generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal
 datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py
 ```
 

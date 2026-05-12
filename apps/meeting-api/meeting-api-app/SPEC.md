@@ -134,10 +134,12 @@ policy/
 
 1. 鉴权并计算 allowed scope。
 2. 通过 rag repository 做 metadata filter + pgvector retrieval + PostgreSQL `tsvector` / `pg_trgm` keyword retrieval。
-3. 检索结果做二次权限和 STALE 校验。
-4. 组装上下文和 citation。
-5. 根据安全等级调用 LLM 或 fail closed。
-6. 保存 query log、LLM log 和 artifact manifest 关联。
+3. app 层用 RRF 合并候选，并对检索结果做二次权限和 STALE 校验。
+4. 调用 domain `RerankGateway` 通过 infrastructure 同步请求 `ai-worker` `POST /internal/rerank`，仅发送已授权候选；rerank 不重新判断权限。
+5. rerank 成功时按 `rerankScore` 取 `top_n`；rerank 超时或不可用时按配置降级为 RRF 排序，并在 `rag_query_logs` 记录降级原因。
+6. 组装上下文和 citation。
+7. 根据安全等级调用 LLM 或 fail closed。
+8. 保存 query log、LLM log 和 artifact manifest 关联。
 
 ### 4.8 导出
 

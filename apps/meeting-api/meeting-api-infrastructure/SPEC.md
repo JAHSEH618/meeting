@@ -34,6 +34,8 @@ Provider 适配器可以在目标包下再细分，例如 `storage/tos`；不新
 
 ## 3. PostgreSQL / pgvector
 
+运行时数据库事实源是 `src/main/resources/db/migration/*.sql` 的 Flyway migration。`docs/ddls/001_initial_schema.sql` 仅作为设计评审起点和历史快照，不作为运行时 schema 的第二份事实源。
+
 要求：
 
 1. 所有租户业务表包含 `tenant_id`。
@@ -44,7 +46,7 @@ Provider 适配器可以在目标包下再细分，例如 `storage/tos`；不新
 6. 普通业务查询禁止使用绕过 RLS 的账号。
 7. pgvector 只保存文本 chunk embedding，不保存声纹 embedding 明文向量。
 8. JSON / JSONB 字段在 Java 中使用强类型 record + Jackson 序列化，MyBatis 通过统一 `TypeHandler` 处理；除开放 metadata 字段外，禁止在业务代码中到处传递裸 `Map<String, Object>`。
-9. pgvector HNSW 索引参数默认 `m=16`、`ef_construction=64`；查询设置 `ef_search=80`。
+9. pgvector HNSW 索引参数默认 `m=16`、`ef_construction=64`；查询设置 `ef_search=80`，与 `docs/spec.md` §9.5 的检索默认值保持一致。
 
 必须实现的核心表访问：
 
@@ -138,7 +140,18 @@ Prompt template 加载：
 
 不得发送原始音频、标准化音频、声纹参考音频、声纹 embedding 和高敏会议文本。
 
-## 7. Export Runtime
+## 7. AI Worker Rerank Gateway
+
+实现 `RerankGateway`：
+
+1. 只由 `meeting-api-app` 的 RAG 查询用例调用，不对前端暴露。
+2. 使用内网 + HMAC 调用 `ai-worker` `POST /internal/rerank`，请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。
+3. 只发送 Java 已完成权限二次校验、`status=ACTIVE AND stale_status=ACTIVE` 的候选 chunk。
+4. 请求必须携带 `tenantId`、`requestId`、`traceId`、query 文本、候选 chunk id / source type / text snapshot / RRF score。
+5. 超时默认 `3s`；超时或 ai-worker 返回 5xx 时记录 `RERANK_UNAVAILABLE`，是否降级为 RRF 排序由 app 层策略决定并写入 `rag_query_logs`。
+6. 不通过 RabbitMQ，不创建独立 `rerank-queue`。
+
+## 8. Export Runtime
 
 实现 `ExportGateway`：
 
@@ -152,7 +165,7 @@ Prompt template 加载：
 
 导出失败返回 `EXPORT_FAILED`，并保留失败日志摘要。
 
-## 8. KMS 与声纹 embedding
+## 9. KMS 与声纹 embedding
 
 要求：
 
@@ -171,7 +184,7 @@ KMS provider：
 3. 密钥轮换默认 `90d`；新写入使用最新 key version，历史数据读时按记录的 `kms_key_version` 解密。
 4. `ai-worker` 不持有 KMS 凭证。
 
-## 9. 幂等与 callback event
+## 10. 幂等与 callback event
 
 需要持久化：
 
@@ -190,7 +203,7 @@ KMS provider：
 
 `processing_tasks.phase` 使用 `task_phase` enum，取值为 `WORKER_DAG_RUNNING`、`WORKER_DAG_DONE`、`JAVA_LLM_RUNNING`、`TERMINAL`。Repository 更新 status 时必须同时维护 phase：worker `/complete phase=WORKER_DAG` 后置为 `WORKER_DAG_DONE`，Java LLM listener 开始时置为 `JAVA_LLM_RUNNING`，任何 task 终态置为 `TERMINAL`。
 
-## 10. 验收标准
+## 11. 验收标准
 
 1. Repository 实现通过 RLS 测试，跨租户查询返回空或被拒绝。
 2. 连接池复用不泄露 tenant context。

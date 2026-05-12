@@ -30,6 +30,7 @@ com.meeting.api.client
     ProcessingStepUpdateSource
     RagAnswerCoverage
     StaleStatus
+    SourceType
   internal/
     callback/
       SpeakerEmbeddingCallbackCommand

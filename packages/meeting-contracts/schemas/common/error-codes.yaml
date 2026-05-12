@@ -244,6 +244,12 @@ errorCodes:
     userMessage: 向量检索失败
     i18nKey: errors.VECTOR_SEARCH_FAILED
     opsTags: [rag, vector]
+  - code: RERANK_UNAVAILABLE
+    step: RAG
+    retryable: true
+    userMessage: Rerank 服务不可用，已尝试降级
+    i18nKey: errors.RERANK_UNAVAILABLE
+    opsTags: [rag, rerank, ai_worker]
 
   # ── Export ────────────────────────────────────────────────────
   - code: EXPORT_FAILED

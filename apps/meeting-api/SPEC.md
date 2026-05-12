@@ -131,11 +131,12 @@ ArchUnit 落地测试类固定为 `meeting-api-start/src/test/java/com/meeting/a
 1. API 入口鉴权并设置 tenant context。
 2. `rag` 实时计算用户可访问 scope，不能把向量库作为权限事实来源。
 3. 执行 metadata filter、pgvector 检索和关键字召回。
-4. 检索结果返回前再次经过 PostgreSQL 权限校验。
+4. app 层用 RRF 合并候选，检索结果返回前再次经过 PostgreSQL 权限校验。
 5. 过滤 `status != ACTIVE` 或 `stale_status != ACTIVE` 的 chunk。
-6. 组装上下文和 citation。
-7. `llm-gateway` 按安全等级调用 DashScope 或 fail closed。
-8. 保存 `rag_query_logs`、`llm_call_logs` 和 `artifact_manifest` 关联。
+6. 通过 domain `RerankGateway` 同步调用 ai-worker `POST /internal/rerank` 做 query-time rerank；只发送已授权候选 chunk，schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。
+7. 组装上下文和 citation。
+8. `llm-gateway` 按安全等级调用 DashScope 或 fail closed。
+9. 保存 `rag_query_logs`、`llm_call_logs` 和 `artifact_manifest` 关联。
 
 ## 5. Public API
 
@@ -193,7 +194,7 @@ HMAC `signing_string` 的 `URL_PATH_WITH_QUERY` 必须使用原始 URI，包含 
 
 ## 7. 数据与事务
 
-事实来源：表、字段、索引和 RLS policy 以 `docs/ddls/001_initial_schema.sql` 为准；错误码字典以 `packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只约束 Java 侧事务、tenant context 和 outbox 行为。
+事实来源：表、字段、索引和 RLS policy 以 `meeting-api-infrastructure/src/main/resources/db/migration/*.sql` 的 Flyway migration 为准；`docs/ddls/001_initial_schema.sql` 只作为设计评审起点和历史快照。错误码字典以 `packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只约束 Java 侧事务、tenant context 和 outbox 行为。
 
 所有租户表必须：
 
@@ -325,5 +326,5 @@ Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓
 10. legal hold 阻止生命周期删除，deletion job 完成后生成 certificate。
 11. heartbeat callback 重放或连续上报不因 body hash 不同返回 409。
 12. `SUMMARY` / `EXTRACTION` step 由 Java 推进，前端可通过 SSE 看到 `TASK_STEP_UPDATED`。
-13. `/complete phase=WORKER_DAG` callback 中的 `skippedSteps` 会写入 worker-owned `processing_task_steps.status=SKIPPED`，但不会直接把 task 推进到终态。
+13. `/complete phase=WORKER_DAG` callback 中的 `skippedSteps` 会写入 worker-owned `processing_task_steps.status=SKIPPED`，但不会直接把 task 推进到 `SUCCEEDED`、`PARTIAL_SUCCEEDED` 或 `TERMINAL`。
 14. `meetings.status` 按 `CREATED -> PROCESSING -> SUCCEEDED / FAILED -> DELETED` 状态机推进；全量 rebuild 允许 `SUCCEEDED -> PROCESSING` 但一期仅 internal-only 运维触发，不提供 public API 或前端入口；局部 regenerate / reindex 不改变 meeting status，legal hold 命中时删除返回 423。

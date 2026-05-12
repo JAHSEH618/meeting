@@ -231,8 +231,9 @@ phase 迁移规则：
 11. `MessagePublisher`。
 12. `LlmGateway`。
 13. `EmbeddingGateway`。
-14. `ExportGateway`。
-15. `KmsGateway`。
+14. `RerankGateway`：RAG query-time 精排端口，输入为已授权候选 chunk，输出为 rerank score 和 rank；domain 只定义端口，不依赖 ai-worker HTTP client。
+15. `ExportGateway`。
+16. `KmsGateway`。
 
 ## 7. 验收标准
 

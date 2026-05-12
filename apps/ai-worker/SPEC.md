@@ -38,7 +38,7 @@ Pipeline 业务逻辑必须通过 `WorkerRuntime`、`WorkflowEngine`、`ModelRun
 2. MVP-1：接入音频预处理、VAD、ASR、Diarization、speaker embedding、transcript merge 和 artifact manifest。
 3. MVP-2：接入 text embedding、RAG indexing、rerank lazy-load、模型 checksum、GPU 指标和性能验收。
 
-一期不创建独立 `gpu-align-queue` 或 `rerank-queue`。Forced Alignment 只在需要精确时间戳时由 workflow 进程内按需执行；Rerank 模型在 `model_runtime` 内 lazy-load，作为 RAG indexing / query 流程的一部分执行。只有后续需要独立扩容或 GPU 调度隔离时，才新增对应 worker 队列。
+一期不创建独立 `gpu-align-queue` 或 `rerank-queue`。Forced Alignment 只在需要精确时间戳时由 workflow 进程内按需执行；Rerank 模型在 `model_runtime` 内 lazy-load，通过 FastAPI `POST /internal/rerank` 为 Java RAG query 提供同步精排能力。只有后续需要独立扩容或 GPU 调度隔离时，才新增对应 worker 队列。
 
 ## 3. 包结构
 
@@ -91,7 +91,16 @@ FastAPI 只作为内部管理、健康检查、模型状态和调试入口，不
 GET /internal/health
 GET /internal/models
 GET /internal/workflows/{task_id}
+POST /internal/rerank
 ```
+
+`POST /internal/rerank` 是 Java `meeting-api` 到 `ai-worker` 的同步内部调用，只服务 RAG query-time rerank，不作为前端 API。请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。调用要求：
+
+1. 仅允许内网 + HMAC 请求，签名规则与 callback 同源配置但方向相反。
+2. 请求必须携带 `tenantId`、`requestId`、`traceId`、query 文本和已授权候选 chunk。
+3. `ai-worker` 不重新判断用户权限，只做模型推理和候选重排。
+4. 返回每个候选的 `rerankScore` 和 `rank`，不写业务库。
+5. 模型未加载时 lazy-load；加载失败返回稳定错误码，Java 决定是否降级为 RRF 排序。
 
 可扩展接口：
 

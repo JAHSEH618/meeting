@@ -1,0 +1,214 @@
+openapi: 3.1.0
+info:
+  title: AI Worker Internal API
+  version: 0.1.0
+servers:
+  - url: /internal
+x-internal-conventions:
+  signingString: |
+    X-Timestamp + "\n" +
+    X-Nonce + "\n" +
+    HTTP_METHOD + "\n" +
+    URL_PATH_WITH_QUERY + "\n" +
+    SHA256(request_body).hex
+  signatureHeader: hmac-sha256=<hex>
+  timestampSkewSeconds: 300
+paths:
+  /rerank:
+    post:
+      operationId: rerankCandidates
+      summary: Rerank authorized RAG candidates.
+      description: >
+        Synchronous internal endpoint called only by meeting-api. The caller
+        must pre-filter candidates by tenant, permission, status, and
+        staleStatus; ai-worker only performs model inference and ranking.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerankRequest'
+      responses:
+        '200':
+          description: Rerank result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerankResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/AuthFailed'
+        '503':
+          $ref: '#/components/responses/RerankUnavailable'
+components:
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    Timestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+        format: date-time
+    Nonce:
+      name: X-Nonce
+      in: header
+      required: true
+      schema:
+        type: string
+    Signature:
+      name: X-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^hmac-sha256=[0-9a-f]{64}$'
+  schemas:
+    SourceType:
+      type: string
+      enum:
+        - PRIMARY_TRANSCRIPT
+        - AI_SUMMARY
+        - DECISION
+        - ACTION_ITEM
+        - RISK
+        - DOCUMENT
+    RerankRequest:
+      type: object
+      required:
+        - tenantId
+        - query
+        - candidates
+        - topN
+        - modelVersion
+      properties:
+        tenantId:
+          type: string
+        query:
+          type: string
+          minLength: 1
+        topN:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 8
+        modelVersion:
+          type: string
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/RerankCandidate'
+    RerankCandidate:
+      type: object
+      required:
+        - chunkId
+        - sourceType
+        - text
+        - rrfScore
+      properties:
+        chunkId:
+          type: string
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        text:
+          type: string
+          minLength: 1
+        rrfScore:
+          type: number
+          minimum: 0
+        sourceVersion:
+          type: integer
+          minimum: 1
+        citationHint:
+          type: object
+          additionalProperties: true
+    RerankResponse:
+      type: object
+      required:
+        - modelVersion
+        - items
+      properties:
+        modelVersion:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RerankResultItem'
+    RerankResultItem:
+      type: object
+      required:
+        - chunkId
+        - rank
+        - rerankScore
+      properties:
+        chunkId:
+          type: string
+        rank:
+          type: integer
+          minimum: 1
+        rerankScore:
+          type: number
+          minimum: 0
+          maximum: 1
+    ErrorInfo:
+      type: object
+      required:
+        - code
+        - message
+        - retryable
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: true
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorInfo'
+    AuthFailed:
+      description: HMAC authentication failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorInfo'
+    RerankUnavailable:
+      description: Rerank model or runtime unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorInfo'

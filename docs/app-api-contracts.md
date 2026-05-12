@@ -5,6 +5,7 @@
 ```text
 packages/meeting-contracts/openapi/public-api.yaml
 packages/meeting-contracts/openapi/internal-callback-api.yaml
+packages/meeting-contracts/openapi/ai-worker-internal-api.yaml
 packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json
 packages/meeting-contracts/schemas/common/enums.yaml
 packages/meeting-contracts/schemas/common/error-codes.yaml
@@ -16,6 +17,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 |---|---|---|---|
 | `meeting-web` | `meeting-api` | HTTPS JSON / SSE | 登录、会议、上传、任务进度、转录、纪要、RAG、导出、管理 |
 | `meeting-api` | RabbitMQ | JSON message | 投递音频处理、重建、导出等异步任务 |
+| `meeting-api` | `ai-worker` | Internal HTTPS JSON + HMAC | RAG query-time rerank，仅发送已授权候选 chunk |
 | `ai-worker` | `meeting-api` | Internal HTTPS JSON callback | 回写任务步骤、产物、转录、声纹候选和 worker phase 完成状态 |
 | `ai-worker` | TOS | TOS URI / SDK | 读取音频，写入中间 JSON、模型产物、导出中间件 |
 | `meeting-api` | TOS | TOS URI / SDK | 上传签名、文件元信息、导出文件、下载签名 |
@@ -796,6 +798,7 @@ POST /api/rag/query
   "success": true,
   "data": {
     "answer": "最大风险是供应商本周无法确认，导致预算缺口和交付排期同时受影响。",
+    "coverage": "FULL",
     "citations": [
       {
         "type": "MEETING_SEGMENT",
@@ -823,6 +826,8 @@ POST /api/rag/query
   "traceId": "trace_001"
 }
 ```
+
+内部实现顺序：`meeting-api` 先计算权限 scope，完成 pgvector / keyword 召回和 PostgreSQL 权限二次校验，再通过 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 定义的 `POST /internal/rerank` 同步调用 `ai-worker` 做 query-time rerank。`ai-worker` 不接收前端请求，也不重新判断业务权限。
 
 ### 4.12 导出
 
@@ -1825,6 +1830,7 @@ callback `Idempotency-Key` 精确定义：
 | Task | `TASK_NOT_FOUND`, `TASK_ATTEMPT_CONFLICT`, `TASK_LEASE_CONFLICT` | false |
 | Storage | `TOS_OBJECT_NOT_FOUND`, `TOS_READ_FAILED`, `TOS_WRITE_FAILED` | true |
 | AI Pipeline | `ASR_MODEL_TIMEOUT`, `DIARIZATION_FAILED`, `SPEAKER_MATCH_FAILED` | true |
+| RAG | `RAG_INDEX_FAILED`, `VECTOR_SEARCH_FAILED`, `RERANK_UNAVAILABLE` | true |
 | LLM | `SECURITY_LEVEL_BLOCKED`, `LLM_SCHEMA_INVALID`, `LLM_PROVIDER_TIMEOUT` | depends |
 | Export | `EXPORT_RENDER_FAILED`, `EXPORT_LINK_REVOKED` | depends |
 

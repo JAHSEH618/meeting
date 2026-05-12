@@ -6,7 +6,7 @@
 
 本文件修复后作为一期产品与架构总规格。开发时按以下优先级读取，不再把历史修正文件当作第二套并行事实来源：
 
-1. 可生成或可校验的事实源优先：`docs/ddls/001_initial_schema.sql`、`packages/meeting-contracts/openapi/*.yaml`、`packages/meeting-contracts/schemas/**`。
+1. 可生成或可校验的事实源优先：`apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/`、`packages/meeting-contracts/openapi/*.yaml`、`packages/meeting-contracts/schemas/**`。
 2. 产品、架构和跨模块流程以本文为准。
 3. 工程内结构、技术选型和落地边界以对应 `SPEC.md` 为准。
 4. `docs/spec-fixes.md` 与 `docs/spec-clarifications.md` 只保留为历史决策记录；如与本文、DDL 或 contracts 冲突，以本文和事实源为准。
@@ -200,8 +200,8 @@ meeting-web 登录/会议入口
 
 #### 落地真值文件
 
-1. DDL 真值文件是 `docs/ddls/001_initial_schema.sql`；本文件只描述模型边界和必须存在的表，不在 Markdown 中复制完整 DDL。
-2. 跨应用契约真值文件是 `packages/meeting-contracts/openapi/public-api.yaml`、`packages/meeting-contracts/openapi/internal-callback-api.yaml` 和 `packages/meeting-contracts/schemas/**`。
+1. 运行时 DDL 真值文件是 `apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/*.sql`；`docs/ddls/001_initial_schema.sql` 只作为设计评审起点和历史快照，不作为运行时迁移事实源。
+2. 跨应用契约真值文件是 `packages/meeting-contracts/openapi/public-api.yaml`、`packages/meeting-contracts/openapi/internal-callback-api.yaml`、`packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 和 `packages/meeting-contracts/schemas/**`。
 3. 修改字段、枚举、错误码、状态机或 API 时，必须同步更新真值文件和本 spec 的约束说明；CI 应以真值文件 lint / schema 校验结果为准。
 
 ### 2.2 事实来源映射表
@@ -210,11 +210,12 @@ meeting-web 登录/会议入口
 
 | 事实类型 | Single source | 消费方 | 修改要求 |
 |---|---|---|---|
-| PostgreSQL DDL、RLS policy、索引、生命周期字段 | `docs/ddls/001_initial_schema.sql` | `meeting-api-infrastructure`、运维迁移脚本、RLS 测试 | 先改 DDL，再同步本 SPEC 的边界说明和迁移验收 |
+| PostgreSQL DDL、RLS policy、索引、生命周期字段 | `apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/*.sql` | `meeting-api-infrastructure`、运维迁移脚本、RLS 测试 | 先改 Flyway migration，再同步本 SPEC 的边界说明和迁移验收；`docs/ddls/**` 只作评审快照 |
 | Public API request / response / SSE schema | `packages/meeting-contracts/openapi/public-api.yaml` | `meeting-web`、`meeting-api-adapter`、契约测试 | 以 OpenAPI lint、codegen diff 和 MSW fixture 为准 |
 | Internal Callback request / response / header schema | `packages/meeting-contracts/openapi/internal-callback-api.yaml` | `ai-worker`、`meeting-api-adapter`、callback 回放测试 | 变更必须兼容旧 worker 重试窗口，breaking change 需跨工程同步 |
+| AI Worker Internal API request / response / header schema | `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` | `meeting-api-infrastructure`、`meeting-api-domain`、`ai-worker`、RAG rerank 契约测试 | Java 同步调用 ai-worker 的内部能力先改该 OpenAPI；一期只暴露 `/internal/rerank` |
 | RabbitMQ 任务消息 | `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` | `meeting-api-app`、`ai-worker`、RabbitMQ 回放测试 | required 字段、默认值和 routing metadata 不得只改一端 |
-| 枚举：安全等级、任务状态、步骤、STALE、citation、事件类型 | `packages/meeting-contracts/schemas/common/enums.yaml` | Web 展示、Java enum、Python enum、文档示例 | 文档中出现的枚举清单只作说明，CI 以该文件生成/校验结果为准 |
+| 枚举：安全等级、任务状态、步骤、STALE、citation、source type、事件类型 | `packages/meeting-contracts/schemas/common/enums.yaml` | Web 展示、Java enum、Python enum、文档示例 | 文档中出现的枚举清单只作说明，CI 以该文件生成/校验结果为准 |
 | 错误码、retryable、用户提示、运维标签 | `packages/meeting-contracts/schemas/common/error-codes.yaml` | `ControllerAdvice`、前端 error mapper、worker fail callback、告警规则 | 不允许跨文件手工扩展；新增错误码必须补 i18n key 和默认处理策略 |
 | Prompt 模板、参数、输出 schema | `apps/meeting-api/meeting-api-infrastructure/src/main/resources/prompts/**` 或 `prompt_templates` 表 | `llm-gateway`、artifact manifest、LLM 回归测试 | 生产发布必须写入 `artifact_manifests.prompt_template_version` |
 | 模型权重、license、checksum、准入记录 | `model_registry` 或 git 管理的模型准入 JSON | `ai-worker`、部署流水线、模型供应链验收 | 生产镜像启动前校验 checksum；失败拒绝 ready |
@@ -401,6 +402,8 @@ Java 是主产品 UI。Python 可通过 FastAPI 暴露非客户主路径的内�
 4. 查看 worker 健康状态。
 
 这些接口不作为业务事实来源，不替代 Java 会议 UI。
+
+一期 RAG query-time rerank 是内部业务调用，不属于客户主产品入口。Java `meeting-api` 通过 `RerankGateway` 使用内网 + HMAC 同步调用 `ai-worker` 的 `POST /internal/rerank`，请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。该接口只接收 Java 已完成权限过滤和二次校验后的候选 chunk，不接受前端直接访问。
 
 ## 4. 核心流程
 
@@ -1033,7 +1036,7 @@ stateDiagram-v2
 
 纪要、待办、决策、风险和 knowledge chunk 必须使用独立 `stale_status`，不能复用业务 `status`。业务 `status` 表示生命周期或人工业务状态，`stale_status` 表示内容是否与上游版本一致。
 
-事实来源：`packages/meeting-contracts/schemas/common/enums.yaml` 定义 `StaleStatus` 枚举；`docs/ddls/001_initial_schema.sql` 定义落库字段和约束。本节只约束状态迁移、触发方和业务副作用。
+事实来源：`packages/meeting-contracts/schemas/common/enums.yaml` 定义 `StaleStatus` 枚举；Flyway migration 定义落库字段和约束。本节只约束状态迁移、触发方和业务副作用。
 
 ```text
 ACTIVE
@@ -1291,7 +1294,7 @@ RAG 查询只允许召回 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
 一期检索由 PostgreSQL 完成：
 
 1. 向量召回使用 pgvector HNSW：`m=16`、`ef_construction=64`；查询会话设置 `hnsw.ef_search=80`。
-2. 默认召回 `top_k=20`，rerank 后返回 `top_n=8`；cosine similarity 阈值默认 `0.45`。
+2. 默认召回 `top_k=20`，Java app 层用 RRF 合并候选并完成权限二次校验后，通过 `RerankGateway` 同步调用 ai-worker `POST /internal/rerank`，rerank 后返回 `top_n=8`；cosine similarity 阈值默认 `0.45`。
 3. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` GIN 索引。
 4. app 层用 RRF 融合 vector 与 keyword 候选，默认 `k=60`，按 chunk 去重后做权限二次校验。
 5. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
@@ -1559,6 +1562,7 @@ Diarization RTF: <= 0.4
 | LLM_DATA_BOUNDARY_BLOCKED | LLM | 数据边界策略阻断 | 否 |
 | RAG_INDEX_FAILED | RAG_INDEXING | RAG 入库失败 | 是 |
 | VECTOR_SEARCH_FAILED | RAG | 向量检索失败 | 是 |
+| RERANK_UNAVAILABLE | RAG | Rerank 服务不可用，已尝试降级 | 是 |
 | EXPORT_FAILED | EXPORT | 导出失败 | 是 |
 | WORKER_LEASE_EXPIRED | TASK | worker lease 过期 | 是 |
 | WRITEBACK_FAILED | CALLBACK | 回写重试耗尽 | 是 |

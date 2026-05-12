@@ -81,6 +81,10 @@ with open('$OPENAPI_DIR/internal-callback-api.yaml') as f:
 with open('$OPENAPI_DIR/public-api.yaml') as f:
     pub = yaml.safe_load(f)
 
+# Load AI worker internal OpenAPI
+with open('$OPENAPI_DIR/ai-worker-internal-api.yaml') as f:
+    worker_internal = yaml.safe_load(f)
+
 # Load RabbitMQ task message schema
 with open('$SCHEMAS_DIR/rabbitmq/processing-task-message.schema.json') as f:
     task_msg = yaml.safe_load(f)
@@ -215,6 +219,17 @@ for sch_name, sch in cb.get('components', {}).get('schemas', {}).items():
 
 if cb_source_types and cb_source_types != enum_source_types:
     print(f'  sourceType mismatch: enums={sorted(enum_source_types)} cb={sorted(cb_source_types)}')
+    errors += 1
+
+worker_source_types = set(
+    worker_internal.get('components', {})
+      .get('schemas', {})
+      .get('SourceType', {})
+      .get('enum', [])
+)
+
+if worker_source_types and worker_source_types != enum_source_types:
+    print(f'  sourceType mismatch: enums={sorted(enum_source_types)} worker-internal={sorted(worker_source_types)}')
     errors += 1
 
 # Compare TaskEventType enum vs public-api TaskEvent schema

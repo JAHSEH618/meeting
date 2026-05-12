@@ -45,7 +45,7 @@ flowchart LR
 
     subgraph Python["计算层: ai-worker"]
         Worker["ai-worker 应用<br/>Clean Architecture"]
-        FastAPI["FastAPI<br/>内部管理 / health / debug / workflow control"]
+        FastAPI["FastAPI<br/>内部管理 / health / rerank / workflow control"]
         WorkerRunner["Celery / Dramatiq Worker<br/>队列消费 / step 执行"]
         Workflow["Prefect / Temporal Workflow<br/>DAG / retry / cancel / resume"]
         Agent["LangGraph Agent<br/>总结 / RAG / 质量检查"]
@@ -154,6 +154,7 @@ flowchart LR
     Summary -- "通过 llm-gateway 调用" --> LLMG
     RAG -- "权限范围实时计算" --> DB
     RAG -- "候选召回" --> DB
+    RAG -- "已授权候选 rerank<br/>internal HMAC" --> FastAPI
     RAG -. "生产可切换" .-> VectorDB
     Indexing --> DB
     Indexing -. "生产可写入" .-> VectorDB
