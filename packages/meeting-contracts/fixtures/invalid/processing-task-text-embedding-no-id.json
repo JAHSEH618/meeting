@@ -1,0 +1,15 @@
+{
+  "taskId": "task_invalid_03",
+  "taskType": "TEXT_EMBEDDING",
+  "tenantId": "tenant_01",
+  "meetingId": null,
+  "documentId": null,
+  "securityLevel": "PUBLIC",
+  "attemptNo": 1,
+  "pipelineSteps": ["RAG_INDEXING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "options": {},
+  "traceId": "trace_invalid"
+}

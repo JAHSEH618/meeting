@@ -1,0 +1,12 @@
+{
+  "tenantId": "tenant_01",
+  "meetingId": "mtg_01HZ8XJK5GHIJKL",
+  "exportId": "export_01HZ8XJK5ABC",
+  "format": "MARKDOWN",
+  "expectedInputVersion": {
+    "transcriptVersion": 1,
+    "minutesVersion": 1
+  },
+  "traceId": "trace_01HZ8XJK5STUVWX",
+  "createdAt": "2026-05-11T00:00:00Z"
+}

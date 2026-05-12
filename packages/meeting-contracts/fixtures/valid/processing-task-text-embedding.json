@@ -1,0 +1,14 @@
+{
+  "taskId": "task_01HZ8XJK5ABCDEF",
+  "taskType": "TEXT_EMBEDDING",
+  "tenantId": "tenant_01",
+  "meetingId": "mtg_01HZ8XJK5GHIJKL",
+  "securityLevel": "INTERNAL",
+  "attemptNo": 1,
+  "pipelineSteps": ["RAG_INDEXING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "options": {},
+  "traceId": "trace_01HZ8XJK5STUVWX"
+}

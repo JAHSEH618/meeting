@@ -20,23 +20,58 @@ NC='\033[0m'
 pass() { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 fail() { echo -e "${RED}✗${NC} $1"; exit 1; }
+error_exit() { echo -e "${RED}✗${NC} $1"; HAS_ERRORS=1; }
 
 echo "=== Meeting Contracts Consistency Check ==="
 echo ""
 
+HAS_ERRORS=0
+
 # ── 1. Spectral Lint ────────────────────────────────────────────
 echo "--- Spectral Lint ---"
-if command -v spectral &>/dev/null; then
+if command -v npx &>/dev/null && [ -d "$CONTRACTS_DIR/node_modules" ]; then
+  # Lint public-api.yaml with public API rules only
+  pub_result=0
+  npx spectral lint "$OPENAPI_DIR/public-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" 2>&1 || pub_result=1
+  if [ $pub_result -eq 0 ]; then
+    pass "spectral: public-api.yaml (no errors)"
+  else
+    error_exit "spectral: public-api.yaml has errors"
+  fi
+
+  # Lint internal-callback-api.yaml with callback rules
+  cb_result=0
+  npx spectral lint "$OPENAPI_DIR/internal-callback-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-callback.yaml" 2>&1 || cb_result=1
+  if [ $cb_result -eq 0 ]; then
+    pass "spectral: internal-callback-api.yaml (no errors)"
+  else
+    error_exit "spectral: internal-callback-api.yaml has errors"
+  fi
+
+  # Lint ai-worker-internal-api.yaml with base + public rules
+  wk_result=0
+  npx spectral lint "$OPENAPI_DIR/ai-worker-internal-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" 2>&1 || wk_result=1
+  if [ $wk_result -eq 0 ]; then
+    pass "spectral: ai-worker-internal-api.yaml (no errors)"
+  else
+    error_exit "spectral: ai-worker-internal-api.yaml has errors"
+  fi
+elif command -v spectral &>/dev/null; then
   for f in "$OPENAPI_DIR"/*.yaml; do
     fname=$(basename "$f")
-    if spectral lint "$f" --ruleset "$CONTRACTS_DIR/.spectral.yaml" 2>&1; then
+    case "$fname" in
+      public-api.yaml) ruleset="$CONTRACTS_DIR/.spectral-public.yaml" ;;
+      internal-callback-api.yaml) ruleset="$CONTRACTS_DIR/.spectral-callback.yaml" ;;
+      *) ruleset="$CONTRACTS_DIR/.spectral-public.yaml" ;;
+    esac
+    if spectral lint "$f" --ruleset "$ruleset" 2>&1; then
       pass "spectral: $fname"
     else
-      warn "spectral: $fname has warnings/errors"
+      error_exit "spectral: $fname has errors"
     fi
   done
 else
-  warn "spectral not installed — skipping lint"
+  error_exit "spectral not installed — cannot verify OpenAPI contracts"
   echo "  Install: npm install -g @stoplight/spectral-cli"
 fi
 
@@ -69,7 +104,7 @@ RUBY
     done
     warn "jsonschema not installed — skipped Draft 2020-12 metaschema validation"
   else
-    warn "jsonschema not installed and ruby unavailable — skipping JSON Schema check"
+    error_exit "jsonschema not installed and ruby unavailable — cannot verify JSON Schema"
   fi
 fi
 
@@ -280,7 +315,7 @@ if errors:
     sys.exit(1)
 else:
     print('  All enum values consistent across yaml files')
-" && pass "enums consistent" || warn "enum mismatch detected"
+" && pass "enums consistent" || { error_exit "enum mismatch detected"; }
 else
   if command -v ruby &>/dev/null; then
     ENUMS_FILE="$ENUMS_FILE" OPENAPI_DIR="$OPENAPI_DIR" SCHEMAS_DIR="$SCHEMAS_DIR" ruby - <<'RUBY'
@@ -412,7 +447,7 @@ end
 RUBY
     pass "enums consistent"
   else
-    warn "pyyaml not installed and ruby unavailable — skipping enum consistency"
+    error_exit "pyyaml not installed and ruby unavailable — cannot verify enum consistency"
   fi
 fi
 
@@ -446,4 +481,86 @@ else
 fi
 
 echo ""
-echo "=== Consistency check complete ==="
+if [ "$HAS_ERRORS" -ne 0 ]; then
+  echo -e "${RED}=== Consistency check FAILED ===${NC}"
+  exit 1
+else
+  echo -e "${GREEN}=== Consistency check complete ===${NC}"
+fi
+
+# ── 5. Fixture Validation ─────────────────────────────────────────
+echo "--- Fixture Validation ---"
+FIXTURES_DIR="$CONTRACTS_DIR/fixtures"
+if python3 -c "import jsonschema" 2>/dev/null && [ -d "$FIXTURES_DIR" ]; then
+  python3 -c "
+import json, jsonschema, sys, os
+from pathlib import Path
+
+schema_map = {
+    'processing-task-message.schema.json': [
+        'valid/processing-task-meeting-full-pipeline.json',
+        'valid/processing-task-speaker-enrollment.json',
+        'valid/processing-task-text-embedding.json',
+        'valid/processing-task-rag-reindex.json',
+        'invalid/processing-task-meeting-null-meetingid.json',
+        'invalid/processing-task-forbidden-worker-steps.json',
+        'invalid/processing-task-text-embedding-no-id.json',
+        'invalid/processing-task-speaker-enrollment-missing-fields.json',
+    ],
+    'export-job-message.schema.json': [
+        'valid/export-job-message.json',
+        'invalid/export-job-invalid-format.json',
+    ]
+}
+
+errors = 0
+for schema_file, fixture_paths in schema_map.items():
+    schema_path = Path('$SCHEMAS_DIR/rabbitmq') / schema_file
+    if not schema_path.exists():
+        print(f'  SKIP schema not found: {schema_file}')
+        continue
+    with open(schema_path) as f:
+        schema = json.load(f)
+    validator = jsonschema.Draft202012Validator(schema)
+    for fp in fixture_paths:
+        fixture_path = Path('$FIXTURES_DIR') / fp
+        if not fixture_path.exists():
+            print(f'  SKIP fixture not found: {fp}')
+            continue
+        with open(fixture_path) as f:
+            instance = json.load(f)
+        is_valid = validator.is_valid(instance)
+        is_invalid_fixture = fp.startswith('invalid/')
+        if is_invalid_fixture:
+            if is_valid:
+                print(f'  FAIL {fp}: expected validation error but schema accepted it')
+                errors += 1
+            else:
+                print(f'  OK   {fp}: correctly rejected')
+        else:
+            if not is_valid:
+                errs = list(validator.iter_errors(instance))
+                print(f'  FAIL {fp}: schema validation failed')
+                for e in errs[:3]:
+                    print(f'       {e.json_path}: {e.message}')
+                errors += 1
+            else:
+                print(f'  OK   {fp}: valid')
+
+if errors:
+    print(f'  {errors} fixture validation error(s) found')
+    sys.exit(1)
+else:
+    print('  All fixtures validated successfully')
+" || HAS_ERRORS=1
+else
+  warn "jsonschema not installed or fixtures directory missing — skipping fixture validation"
+fi
+
+echo ""
+if [ "$HAS_ERRORS" -ne 0 ]; then
+  echo -e "${RED}=== Consistency check FAILED ===${NC}"
+  exit 1
+else
+  echo -e "${GREEN}=== Consistency check complete ===${NC}"
+fi

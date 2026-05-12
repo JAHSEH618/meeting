@@ -7,7 +7,6 @@
     "taskId",
     "taskType",
     "tenantId",
-    "meetingId",
     "securityLevel",
     "attemptNo",
     "pipelineSteps",
@@ -127,7 +126,12 @@
           "knownParticipants",
           "minSpeakers",
           "maxSpeakers"
-        ]
+        ],
+        "properties": {
+          "meetingId": {"type": "string", "minLength": 1},
+          "audioFileId": {"type": "string", "minLength": 1},
+          "audioUri": {"type": "string", "pattern": "^tos://.+"}
+        }
       }
     },
     {
@@ -135,7 +139,13 @@
         "properties": {"taskType": {"const": "SPEAKER_ENROLLMENT"}}
       },
       "then": {
-        "required": ["speakerProfileId", "speakerEnrollmentId", "audioFileId", "audioUri", "language"]
+        "required": ["speakerProfileId", "speakerEnrollmentId", "audioFileId", "audioUri", "language"],
+        "properties": {
+          "speakerProfileId": {"type": "string", "minLength": 1},
+          "speakerEnrollmentId": {"type": "string", "minLength": 1},
+          "audioFileId": {"type": "string", "minLength": 1},
+          "audioUri": {"type": "string", "pattern": "^tos://.+"}
+        }
       }
     },
     {
@@ -144,8 +154,18 @@
       },
       "then": {
         "anyOf": [
-          {"required": ["meetingId"]},
-          {"required": ["documentId"]}
+          {
+            "required": ["meetingId"],
+            "properties": {
+              "meetingId": {"type": "string", "minLength": 1}
+            }
+          },
+          {
+            "required": ["documentId"],
+            "properties": {
+              "documentId": {"type": "string", "minLength": 1}
+            }
+          }
         ]
       }
     }

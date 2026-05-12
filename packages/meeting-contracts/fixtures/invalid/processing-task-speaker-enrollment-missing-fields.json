@@ -1,0 +1,13 @@
+{
+  "taskId": "task_invalid_04",
+  "taskType": "SPEAKER_ENROLLMENT",
+  "tenantId": "tenant_01",
+  "securityLevel": "PUBLIC",
+  "attemptNo": 1,
+  "pipelineSteps": ["SPEAKER_EMBEDDING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "options": {},
+  "traceId": "trace_invalid"
+}

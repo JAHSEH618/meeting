@@ -1,0 +1,14 @@
+{
+  "taskId": "task_invalid_01",
+  "taskType": "MEETING_FULL_PIPELINE",
+  "tenantId": "tenant_01",
+  "meetingId": null,
+  "securityLevel": "INTERNAL",
+  "attemptNo": 1,
+  "pipelineSteps": ["AUDIO_PREPROCESS", "ASR"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "options": {},
+  "traceId": "trace_invalid"
+}

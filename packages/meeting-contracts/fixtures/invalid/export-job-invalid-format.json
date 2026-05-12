@@ -1,0 +1,9 @@
+{
+  "tenantId": "tenant_01",
+  "exportId": "export_01",
+  "format": "INVALID_FORMAT",
+  "expectedInputVersion": {
+    "transcriptVersion": 1
+  },
+  "traceId": "trace_invalid"
+}

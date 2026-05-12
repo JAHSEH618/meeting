@@ -1,0 +1,35 @@
+{
+  "taskId": "task_01HZ8XJK5ABCDEF",
+  "taskType": "MEETING_FULL_PIPELINE",
+  "tenantId": "tenant_01",
+  "meetingId": "mtg_01HZ8XJK5GHIJKL",
+  "securityLevel": "INTERNAL",
+  "attemptNo": 1,
+  "pipelineSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "language": "zh",
+  "channelMap": {
+    "channelCount": 2,
+    "layout": "stereo",
+    "channels": [
+      {"index": 0, "label": "left"},
+      {"index": 1, "label": "right"}
+    ]
+  },
+  "knownParticipants": ["person_01", "person_02"],
+  "minSpeakers": 2,
+  "maxSpeakers": 5,
+  "audioFileId": "file_01HZ8XJK5MNOPQR",
+  "audioUri": "tos://meeting-audio/file_01HZ8XJK5MNOPQR.wav",
+  "options": {
+    "enableAsr": true,
+    "enableDiarization": true,
+    "enableSpeakerRecognition": true,
+    "enableRagIndexing": true,
+    "enableAlignment": false
+  },
+  "traceId": "trace_01HZ8XJK5STUVWX",
+  "createdAt": "2026-05-11T00:00:00Z"
+}

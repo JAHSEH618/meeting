@@ -1,0 +1,92 @@
+extends:
+  - spectral:oas
+
+rules:
+  operation-operationId: error
+
+  meeting-operation-id-lower-camel:
+    description: operationId must use lowerCamelCase.
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].operationId
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][A-Za-z0-9]*$"
+
+  # ── Public API 写操作必须声明 header ──────────────────────────
+  meeting-public-write-request-id:
+    description: Public API mutating operations except login must declare X-Request-Id.
+    severity: error
+    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/XRequestId"
+
+  meeting-public-write-trace-id:
+    description: Public API mutating operations except login must declare X-Trace-Id.
+    severity: error
+    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/XTraceId"
+
+  meeting-public-write-idempotency-key:
+    description: Public API mutating operations except login must declare Idempotency-Key.
+    severity: error
+    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              "$ref":
+                const: "#/components/parameters/IdempotencyKey"
+
+  # ── 4xx / 5xx response 必须引用统一 ApiResponse schema ─────────────
+  meeting-4xx-error-response:
+    description: 4xx responses must use ApiResponse envelope.
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].responses[?(@property.match(/^4/))]
+    then:
+      field: content.application/json.schema
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          properties:
+            "$ref":
+              const: "#/components/schemas/ApiResponse"
+
+  meeting-5xx-error-response:
+    description: 5xx responses must use ApiResponse envelope.
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].responses[?(@property.match(/^5/))]
+    then:
+      field: content.application/json.schema
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          properties:
+            "$ref":
+              const: "#/components/schemas/ApiResponse"

@@ -2,7 +2,6 @@ extends:
   - spectral:oas
 
 rules:
-  # ── 基础规则 ──────────────────────────────────────────────────
   operation-operationId: error
 
   meeting-operation-id-lower-camel:
@@ -14,6 +13,7 @@ rules:
       functionOptions:
         match: "^[a-z][A-Za-z0-9]*$"
 
+  # ── Callback API server prefix ────────────────────────────────────
   meeting-callback-internal-server-prefix:
     description: Internal callback API must declare /internal as server prefix so generated clients sign the full request path.
     severity: error
@@ -49,61 +49,9 @@ rules:
             required:
               - servers
 
-  # ── Public API 写操作必须声明 header ──────────────────────────
-  meeting-public-write-request-id:
-    description: Public API mutating operations except login must declare X-Request-Id.
-    severity: error
-    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
-    then:
-      field: parameters
-      function: schema
-      functionOptions:
-        schema:
-          type: array
-          contains:
-            type: object
-            properties:
-              "$ref":
-                const: "#/components/parameters/XRequestId"
-
-  meeting-public-write-trace-id:
-    description: Public API mutating operations except login must declare X-Trace-Id.
-    severity: error
-    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
-    then:
-      field: parameters
-      function: schema
-      functionOptions:
-        schema:
-          type: array
-          contains:
-            type: object
-            properties:
-              "$ref":
-                const: "#/components/parameters/XTraceId"
-
-  meeting-public-write-idempotency-key:
-    description: Public API mutating operations except login must declare Idempotency-Key.
-    severity: error
-    given: $.paths[?(@property != "/auth/login")][post,put,patch,delete]
-    then:
-      field: parameters
-      function: schema
-      functionOptions:
-        schema:
-          type: array
-          contains:
-            type: object
-            properties:
-              "$ref":
-                const: "#/components/parameters/IdempotencyKey"
-
-  # ── Callback API 规则（仅对 internal-callback-api.yaml 生效）────────────
-  # Spectral JSONPath @property filter does not reliably filter paths, so these
-  # rules rely on being run only against the callback OpenAPI file via --exclude.
-  # They are deliberately NOT scoped to public-api.yaml paths.
+  # ── Callback API required headers ──────────────────────────────────
   meeting-callback-worker-id:
-    description: Callback operations must declare X-Worker-Id. Only applies to internal-callback-api.yaml.
+    description: Callback operations must declare X-Worker-Id.
     severity: error
     given: $.paths[*][post,patch]
     then:
@@ -119,7 +67,7 @@ rules:
                 const: "#/components/parameters/WorkerId"
 
   meeting-callback-attempt-no:
-    description: Callback operations must declare X-Attempt-No. Only applies to internal-callback-api.yaml.
+    description: Callback operations must declare X-Attempt-No.
     severity: error
     given: $.paths[*][post,patch]
     then:
@@ -135,7 +83,7 @@ rules:
                 const: "#/components/parameters/AttemptNo"
 
   meeting-callback-lease-owner:
-    description: Callback operations must declare X-Lease-Owner. Only applies to internal-callback-api.yaml.
+    description: Callback operations must declare X-Lease-Owner.
     severity: error
     given: $.paths[*][post,patch]
     then:
@@ -151,7 +99,7 @@ rules:
                 const: "#/components/parameters/LeaseOwner"
 
   meeting-callback-timestamp-nonce-signature:
-    description: Callback operations must declare X-Timestamp, X-Nonce, X-Signature. Only applies to internal-callback-api.yaml.
+    description: Callback operations must declare X-Timestamp, X-Nonce, X-Signature.
     severity: error
     given: $.paths[*][post,patch]
     then:
@@ -177,7 +125,7 @@ rules:
                   "$ref":
                     const: "#/components/parameters/Signature"
 
-  # ── 4xx response 必须引用统一 ApiResponse schema ─────────────
+  # ── 4xx / 5xx response 必须引用统一 ApiResponse schema ─────────────
   meeting-4xx-error-response:
     description: 4xx responses must use ApiResponse envelope.
     severity: error

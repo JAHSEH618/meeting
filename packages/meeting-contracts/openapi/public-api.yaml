@@ -255,14 +255,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateAudioUploadRequest'
+              $ref: '#/components/schemas/DeleteMeetingRequest'
       responses:
         '200':
-          description: Upload session created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AudioUploadSessionResponse'
+          $ref: '#/components/responses/Ok'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -656,7 +652,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSpeakerEnrollmentRequest'
+              $ref: '#/components/schemas/DeleteSpeakerProfileRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -2281,6 +2277,28 @@ components:
           type: string
           enum: [MEETING, MEETING_FILE, DOCUMENT, EXPORT, ARTIFACT, SPEAKER_PROFILE, AUDIT_EVENT]
         entityId: {type: string}
+
+    # ── Delete Requests ────────────────────────────────────────
+    DeleteMeetingRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        legalHoldAcknowledged:
+          type: boolean
+          default: false
+        expectedVersion:
+          type: integer
+          minimum: 0
+
+    DeleteSpeakerProfileRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
 
     # ── Enums (fact source: schemas/common/enums.yaml) ──────────
     SecurityLevel:

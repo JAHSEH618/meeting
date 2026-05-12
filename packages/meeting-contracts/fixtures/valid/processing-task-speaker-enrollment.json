@@ -1,0 +1,18 @@
+{
+  "taskId": "task_01HZ8XJK5ABCDEF",
+  "taskType": "SPEAKER_ENROLLMENT",
+  "tenantId": "tenant_01",
+  "speakerProfileId": "sp_01HZ8XJK5PQR",
+  "speakerEnrollmentId": "se_01HZ8XJK5STU",
+  "audioFileId": "file_01HZ8XJK5ENR",
+  "audioUri": "tos://meeting-audio/file_01HZ8XJK5ENR.wav",
+  "language": "zh",
+  "securityLevel": "PUBLIC",
+  "attemptNo": 1,
+  "pipelineSteps": ["SPEAKER_EMBEDDING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "v1"
+  },
+  "options": {},
+  "traceId": "trace_01HZ8XJK5STUVWX"
+}
