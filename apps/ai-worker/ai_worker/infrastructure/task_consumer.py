@@ -1,11 +1,19 @@
 """Task consumer — validates incoming messages and dispatches to workflow engine.
 
 This module bridges RabbitMQ message consumption to the workflow engine,
-providing fail-fast validation before any step execution begins.
+providing fail-fast validation before any step execution begins. When validation
+fails, it calls back to Java with INVALID_TASK_MESSAGE so the task is marked failed
+rather than being silently dropped or retried indefinitely.
 """
 
+import logging
+from datetime import datetime, timezone
+
 from ai_worker.domain.task import TaskMessage
+from ai_worker.infrastructure.java_callback.client import JavaCallbackClient
 from ai_worker.infrastructure.task_validator import validate_task_message, validate_pipeline_steps
+
+logger = logging.getLogger(__name__)
 
 
 def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | None, list[str]]:
@@ -47,3 +55,46 @@ def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | No
         created_at=raw_message.get("createdAt"),
     )
     return task_msg, []
+
+
+async def consume_and_validate(
+    raw_message: dict,
+    callback_client: JavaCallbackClient,
+) -> TaskMessage | None:
+    """Consume a raw RabbitMQ message, validate it, and fail-fast on invalid messages.
+
+    If the message fails validation, this function calls back to Java's
+    /internal/processing-tasks/{taskId}/fail endpoint with error code
+    INVALID_TASK_MESSAGE, ensuring the task is marked failed rather than
+    being retried indefinitely.
+
+    Returns the parsed TaskMessage if valid, or None if the message was
+    rejected (and the failure callback was attempted).
+    """
+    task_msg, errors = validate_and_parse_task_message(raw_message)
+
+    if task_msg is not None:
+        return task_msg
+
+    task_id = raw_message.get("taskId", "unknown")
+    tenant_id = raw_message.get("tenantId", "unknown")
+    attempt_no = raw_message.get("attemptNo", 1)
+    trace_id = raw_message.get("traceId", f"fail-fast-{task_id}")
+
+    logger.error(
+        "INVALID_TASK_MESSAGE: task_id=%s errors=%s",
+        task_id,
+        errors,
+    )
+
+    await callback_client.fail_task(
+        task_id=task_id,
+        attempt_no=attempt_no,
+        failed_step="AUDIO_PREPROCESS",
+        error_code="INVALID_TASK_MESSAGE",
+        error_message="; ".join(errors),
+        retryable=False,
+        trace_id=trace_id,
+    )
+
+    return None

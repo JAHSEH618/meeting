@@ -1,14 +1,14 @@
 package com.meeting.api;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.RabbitMQContainer;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.AfterAll;
+import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -26,8 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RabbitMqBaselineTest {
-
-    private static final String DEFINITIONS_RESOURCE = "/definitions.json";
 
     @Container
     static RabbitMQContainer rabbitmq = new RabbitMQContainer(
@@ -62,47 +60,44 @@ class RabbitMqBaselineTest {
         return sb.toString();
     }
 
-    @BeforeAll
-    void importDefinitions() throws Exception {
-        // Import the project definitions.json to create exchanges, queues, bindings, and policies
-        String definitionsJson;
-        Path defPath = Paths.get(
-            RabbitMqBaselineTest.class.getResource(DEFINITIONS_RESOURCE).toURI()
-        );
-        // Adjust path: test resource -> actual project definitions
-        // Try loading from the project root first
-        Path projectDefPath = Paths.get("").toAbsolutePath()
-            .resolve("../../meeting-api-infrastructure/src/main/resources/rabbitmq/definitions.json");
-        if (Files.exists(projectDefPath)) {
-            definitionsJson = Files.readString(projectDefPath);
-        } else {
-            // Fallback: load from contracts package
-            Path contractsDefPath = Paths.get("").toAbsolutePath()
-                .resolve("../../../packages/meeting-contracts/infra/rabbitmq/definitions.json");
-            if (Files.exists(contractsDefPath)) {
-                definitionsJson = Files.readString(contractsDefPath);
-            } else {
-                // Read from test classpath
-                definitionsJson = new String(
-                    RabbitMqBaselineTest.class.getResourceAsStream(DEFINITIONS_RESOURCE)
-                        .readAllBytes(),
-                    StandardCharsets.UTF_8
-                );
-            }
-        }
-
-        URL url = new URL(getBaseUrl() + "/api/definitions");
+    private void postJson(String path, String body) throws Exception {
+        URL url = new URL(getBaseUrl() + path);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Authorization", authHeader());
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setDoOutput(true);
         try (OutputStream os = conn.getOutputStream()) {
-            os.write(definitionsJson.getBytes(StandardCharsets.UTF_8));
+            os.write(body.getBytes(StandardCharsets.UTF_8));
         }
-        int responseCode = conn.getResponseCode();
-        // Accept both 200 and 201 for definitions import
-        assertThat(responseCode).isIn(200, 201, 204);
+        int code = conn.getResponseCode();
+        assertThat(code).isIn(200, 201, 204);
+    }
+
+    @BeforeAll
+    void importDefinitions() throws Exception {
+        // Find definitions.json from the infra package (relative to project root)
+        Path definitionsPath = Paths.get(
+            System.getProperty("user.dir"),
+            "..", "..", "infra", "meeting-infra",
+            "docker", "compose", "rabbitmq", "definitions.json"
+        ).normalize();
+
+        // Fallback: try with extra parent traversal from meeting-api-start working dir
+        if (!Files.exists(definitionsPath)) {
+            definitionsPath = Paths.get(
+                System.getProperty("user.dir"),
+                "meeting-api-infrastructure", "src", "main", "resources",
+                "rabbitmq", "definitions.json"
+            ).normalize();
+        }
+
+        assertThat(definitionsPath)
+            .as("definitions.json must exist at " + definitionsPath)
+            .exists();
+
+        String definitionsJson = Files.readString(definitionsPath);
+        postJson("/api/definitions", definitionsJson);
     }
 
     @Test

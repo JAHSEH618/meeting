@@ -20,11 +20,20 @@ ai-worker-api = "ai_worker.interfaces.api.main:run"
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
-  "ruff>=0.6"
+  "ruff>=0.6",
+  "pyright>=1.1"
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+include = ["ai_worker"]
+exclude = ["ai_worker/generated"]
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+pythonVersion = "3.11"
 
 [tool.setuptools.packages.find]
 include = ["ai_worker*"]

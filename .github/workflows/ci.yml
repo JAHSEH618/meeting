@@ -53,6 +53,14 @@ jobs:
       - name: Consistency Check
         run: bash scripts/check-consistency.sh
 
+      - name: Verify Generated Directories Exist
+        run: |
+          mkdir -p ../../apps/ai-worker/ai_worker/generated
+          mkdir -p ../../apps/meeting-api/meeting-api-client/generated/public-api
+          mkdir -p ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal
+          mkdir -p ../../apps/meeting-web/src/shared/api
+          echo "Generated output directories ready"
+
   # ── Java 后端 ─────────────────────────────────────────────────
   meeting-api:
     name: Meeting API (Java 17)
@@ -97,7 +105,7 @@ jobs:
         run: pip install uv
 
       - name: Install deps
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Type Check
         run: uv run pyright ai_worker/

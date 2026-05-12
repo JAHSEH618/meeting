@@ -508,7 +508,8 @@ for schema_file, fixture_paths in schema_map.items():
     for fp in fixture_paths:
         fixture_path = Path('$FIXTURES_DIR') / fp
         if not fixture_path.exists():
-            print(f'  SKIP fixture not found: {fp}')
+            print(f'  FAIL fixture not found: {fp}')
+            errors += 1
             continue
         with open(fixture_path) as f:
             instance = json.load(f)
@@ -549,6 +550,7 @@ from pathlib import Path
 
 errors = 0
 
+# ── Generic ApiResponse envelope schema ──────────────────────────
 api_response_schema = {
     'type': 'object',
     'required': ['success', 'data', 'error', 'requestId', 'traceId'],
@@ -574,6 +576,41 @@ api_response_schema = {
     },
 }
 
+# ── Route-specific response data schemas ────────────────────────
+login_response_data_schema = {
+    'type': 'object',
+    'required': ['accessToken', 'expiresAt', 'user'],
+    'properties': {
+        'accessToken': {'type': 'string'},
+        'expiresAt': {'type': 'string'},
+        'user': {
+            'type': 'object',
+            'required': ['userId', 'tenantId', 'displayName', 'roles', 'permissions'],
+            'properties': {
+                'userId': {'type': 'string'},
+                'tenantId': {'type': 'string'},
+                'displayName': {'type': 'string'},
+                'roles': {'type': 'array', 'items': {'type': 'string'}},
+                'permissions': {'type': 'array', 'items': {'type': 'string'}},
+            },
+        },
+    },
+}
+
+rerank_response_data_schema = {
+    'type': 'object',
+    'required': ['modelVersion', 'items'],
+    'properties': {
+        'modelVersion': {'type': 'string'},
+        'items': {'type': 'array'},
+    },
+}
+
+callback_step_update_data_schema = {
+    'type': 'null',
+}
+
+# ── Fixture map with per-route data schemas ──────────────────────
 openapi_fixture_map = {
     'valid/public-api-login-200.json': {
         'spec': 'openapi/public-api.yaml',
@@ -581,6 +618,7 @@ openapi_fixture_map = {
         'path': '/auth/login',
         'expected_status': 200,
         'expect_envelope': True,
+        'data_schema': login_response_data_schema,
     },
     'valid/callback-step-update-200.json': {
         'spec': 'openapi/internal-callback-api.yaml',
@@ -588,6 +626,7 @@ openapi_fixture_map = {
         'path': '/processing-tasks/{taskId}/steps/{stepName}',
         'expected_status': 200,
         'expect_envelope': True,
+        'data_schema': callback_step_update_data_schema,
     },
     'valid/ai-worker-rerank-200.json': {
         'spec': 'openapi/ai-worker-internal-api.yaml',
@@ -595,6 +634,7 @@ openapi_fixture_map = {
         'path': '/rerank',
         'expected_status': 200,
         'expect_envelope': True,
+        'data_schema': rerank_response_data_schema,
     },
     'invalid/public-api-login-missing-username.json': {
         'spec': 'openapi/public-api.yaml',
@@ -602,6 +642,8 @@ openapi_fixture_map = {
         'path': '/auth/login',
         'expected_status': 400,
         'expect_envelope': True,
+        # Error responses: data must be null, error must be present
+        'expect_error_response': True,
     },
     'invalid/callback-missing-hmac.json': {
         'spec': 'openapi/internal-callback-api.yaml',
@@ -609,6 +651,7 @@ openapi_fixture_map = {
         'path': '/processing-tasks/{taskId}/steps/{stepName}',
         'expected_status': 401,
         'expect_envelope': True,
+        'expect_error_response': True,
     },
     'invalid/ai-worker-rerank-empty-query.json': {
         'spec': 'openapi/ai-worker-internal-api.yaml',
@@ -616,6 +659,7 @@ openapi_fixture_map = {
         'path': '/rerank',
         'expected_status': 400,
         'expect_envelope': True,
+        'expect_error_response': True,
     },
 }
 
@@ -638,10 +682,35 @@ for fp, meta in openapi_fixture_map.items():
         response = fixture.get('response', fixture)
         try:
             envelope_validator.validate(response)
-            print(f'  OK   {fp}: status={status}, envelope valid')
         except jsonschema.ValidationError as e:
             print(f'  FAIL {fp}: envelope validation failed: {e.message}')
             errors += 1
+            continue
+        # Validate route-specific data schema for success responses
+        if not meta.get('expect_error_response', False):
+            data = response.get('data')
+            data_schema = meta.get('data_schema')
+            if data_schema and data is not None:
+                data_validator = jsonschema.Draft202012Validator(data_schema)
+                try:
+                    data_validator.validate(data)
+                except jsonschema.ValidationError as e:
+                    print(f'  FAIL {fp}: response data schema validation failed: {e.message}')
+                    errors += 1
+                    continue
+        else:
+            # Error response: data must be null, error must have code/message/retryable
+            data = response.get('data')
+            error_obj = response.get('error')
+            if data is not None:
+                print(f'  FAIL {fp}: error response data must be null, got {type(data).__name__}')
+                errors += 1
+                continue
+            if not isinstance(error_obj, dict) or 'code' not in error_obj or 'message' not in error_obj:
+                print(f'  FAIL {fp}: error response must have error with code and message')
+                errors += 1
+                continue
+        print(f'  OK   {fp}: status={status}, envelope+data valid')
     else:
         print(f'  OK   {fp}: status={status}')
 
