@@ -38,9 +38,9 @@
 
 ### 工程：`apps/ai-worker`
 
-- [ ] 建立 RabbitMQ task message JSON Schema 校验入口，失败时按 spec fail-fast 并 callback `INVALID_TASK_MESSAGE`。
-- [ ] 实现 HMAC signing / nonce / timestamp 的 callback client 基础能力，而不仅保留 Protocol。
-- [ ] 增加 `POST /internal/rerank` 占位实现与契约测试，至少能按输入候选返回稳定 rank，后续再接入真实模型。
+- [x] 建立 RabbitMQ task message JSON Schema 校验入口，失败时按 spec fail-fast 并 callback `INVALID_TASK_MESSAGE`。
+- [x] 实现 HMAC signing / nonce / timestamp 的 callback client 基础能力，而不仅保留 Protocol。
+- [x] 增加 `POST /internal/rerank` 占位实现与契约测试，至少能按输入候选返回稳定 rank，后续再接入真实模型。
 
 ## 阶段 1：MVP-0 纵向闭环
 

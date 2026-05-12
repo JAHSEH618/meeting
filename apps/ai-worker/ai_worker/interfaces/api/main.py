@@ -32,6 +32,32 @@ def create_app() -> FastAPI:
             "steps": [],
         }
 
+    @app.post("/internal/rerank")
+    def rerank(request: dict) -> dict:
+        query = request.get("query", "")
+        candidates = request.get("candidates", [])
+        top_n = request.get("topN", 8)
+        model_version = request.get("modelVersion", "placeholder-v0")
+
+        if not query or not candidates:
+            return {
+                "modelVersion": model_version,
+                "items": [],
+            }
+
+        ranked = []
+        for i, candidate in enumerate(candidates[:top_n]):
+            ranked.append({
+                "chunkId": candidate.get("chunkId", f"chunk_{i}"),
+                "rank": i + 1,
+                "rerankScore": round(1.0 - i * 0.05, 4),
+            })
+
+        return {
+            "modelVersion": model_version,
+            "items": ranked,
+        }
+
     return app
 
 
