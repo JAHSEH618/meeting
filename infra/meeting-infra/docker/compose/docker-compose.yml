@@ -1,6 +1,6 @@
 # 本地会议智能系统 · 本地开发环境
 # 用途：本地开发/联调；不适用于生产。
-# 启动：cp ../../.env.example .env && docker compose up -d
+# 启动：cp .env.example .env && docker compose up -d
 
 services:
   # ── 数据与基础设施 ──────────────────────────────────────────
@@ -120,6 +120,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../../observability/dashboards:/var/lib/grafana/dashboards-spec:ro
 
 volumes:
   postgres-data:

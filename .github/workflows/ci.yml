@@ -100,13 +100,36 @@ jobs:
         run: uv sync --frozen
 
       - name: Type Check
-        run: uv run pyright ai_worker/ || echo "WARNING: type checker not configured yet"
+        run: uv run pyright ai_worker/
 
       - name: Unit Tests
-        run: uv run pytest tests/ -x -q || echo "WARNING: test suite empty or failing"
+        run: uv run pytest tests/ -x -q
 
       - name: Imports Check
         run: uv run python -c "import ai_worker; print('ai_worker imports OK')"
+
+  # ── 前端 ──────────────────────────────────────────────────────
+  meeting-web:
+    name: Meeting Web (Node 20)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/meeting-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type Check
+        run: npx tsc --noEmit
+
+      - name: Unit Tests
+        run: npm test
 
   # ── DDL 语法校验 ──────────────────────────────────────────────
   ddl-check:
@@ -132,7 +155,7 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Run DDL
+      - name: Run All Migrations
         run: |
           PGPASSWORD=meeting_ci psql -h localhost -U meeting -d meeting_ci \
             -f apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V202605110001__initial_schema.sql \

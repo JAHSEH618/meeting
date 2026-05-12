@@ -37,11 +37,11 @@ paths:
               $ref: '#/components/schemas/RerankRequest'
       responses:
         '200':
-          description: Rerank result.
+          description: Rerank result wrapped in ApiResponse envelope.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RerankResponse'
+                $ref: '#/components/schemas/ApiResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -182,7 +182,10 @@ components:
       required: [success, data, error, requestId, traceId]
       properties:
         success: {type: boolean}
-        data: {}
+        data:
+          anyOf:
+            - $ref: '#/components/schemas/RerankResponse'
+            - type: 'null'
         error:
           anyOf:
             - $ref: '#/components/schemas/ErrorInfo'

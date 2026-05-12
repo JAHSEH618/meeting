@@ -132,7 +132,7 @@ meeting/
 
 ```bash
 # 1. 基础设施
-docker compose -f infra/meeting-infra/docker-compose.yml up -d
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 
 # 2. Java 后端
 cd apps/meeting-api

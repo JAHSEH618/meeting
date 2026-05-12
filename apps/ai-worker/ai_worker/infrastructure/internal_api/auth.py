@@ -49,7 +49,7 @@ def verify_hmac_signature(
 ) -> bool:
     signing_string = f"{timestamp}\n{nonce}\n{method}\n{path}\n{hashlib.sha256(body).hexdigest()}"
     expected = hmac.new(
-        settings.callback_hmac_secret.encode(),
+        settings.internal_api_hmac_secret.encode(),
         signing_string.encode(),
         hashlib.sha256,
     ).hexdigest()

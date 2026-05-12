@@ -12,7 +12,7 @@ from ai_worker.interfaces.api.main import create_app
 def _sign(method: str, path: str, body: bytes, timestamp: str, nonce: str) -> str:
     signing_string = f"{timestamp}\n{nonce}\n{method}\n{path}\n{hashlib.sha256(body).hexdigest()}"
     sig = hmac.new(
-        settings.callback_hmac_secret.encode(),
+        settings.internal_api_hmac_secret.encode(),
         signing_string.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -52,6 +52,7 @@ def test_rerank_endpoint_returns_stable_rank() -> None:
     response = client.post("/internal/rerank", content=body, headers=headers)
     assert response.status_code == 200
     data = response.json()
+    assert data["success"] is True
     assert data["data"]["modelVersion"] == "test-v0"
     assert len(data["data"]["items"]) == 2
     assert data["data"]["items"][0]["rank"] == 1
@@ -87,6 +88,9 @@ def test_rerank_endpoint_rejects_invalid_signature() -> None:
 
     response = client.post("/internal/rerank", content=body, headers=headers)
     assert response.status_code == 401
+    data = response.json()
+    assert data["success"] is False
+    assert data["error"]["code"] == "RERANK_AUTH_FAILED"
 
 
 def test_rerank_endpoint_rejects_empty_query() -> None:
@@ -103,6 +107,9 @@ def test_rerank_endpoint_rejects_empty_query() -> None:
 
     response = client.post("/internal/rerank", content=body, headers=headers)
     assert response.status_code == 400
+    data = response.json()
+    assert data["success"] is False
+    assert data["error"]["code"] == "RERANK_CONTRACT_ERROR"
 
 
 def test_rerank_endpoint_rejects_empty_candidates() -> None:
@@ -119,6 +126,9 @@ def test_rerank_endpoint_rejects_empty_candidates() -> None:
 
     response = client.post("/internal/rerank", content=body, headers=headers)
     assert response.status_code == 400
+    data = response.json()
+    assert data["success"] is False
+    assert data["error"]["code"] == "RERANK_CONTRACT_ERROR"
 
 
 def test_rerank_endpoint_truncates_to_top_n() -> None:

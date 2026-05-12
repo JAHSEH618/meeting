@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import JSONResponse
 
 from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
@@ -7,6 +8,30 @@ from ai_worker.infrastructure.internal_api.auth import (
     RerankResultItem,
     verify_hmac_signature,
 )
+
+
+def _error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    retryable: bool,
+    request_id: str,
+    trace_id: str,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "success": False,
+            "data": None,
+            "error": {
+                "code": code,
+                "message": message,
+                "retryable": retryable,
+            },
+            "requestId": request_id,
+            "traceId": trace_id,
+        },
+    )
 
 
 def create_app() -> FastAPI:
@@ -47,7 +72,7 @@ def create_app() -> FastAPI:
         x_timestamp: str = Header(...),
         x_nonce: str = Header(...),
         x_signature: str = Header(...),
-    ) -> dict:
+    ) -> JSONResponse:
         body = await request.body()
 
         if not verify_hmac_signature(
@@ -58,37 +83,25 @@ def create_app() -> FastAPI:
             nonce=x_nonce,
             signature=x_signature,
         ):
-            raise HTTPException(
+            return _error_response(
                 status_code=401,
-                detail={
-                    "success": False,
-                    "data": None,
-                    "error": {
-                        "code": "RERANK_AUTH_FAILED",
-                        "message": "HMAC signature verification failed",
-                        "retryable": False,
-                    },
-                    "requestId": x_request_id,
-                    "traceId": x_trace_id,
-                },
+                code="RERANK_AUTH_FAILED",
+                message="HMAC signature verification failed",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
             )
 
         try:
             rerank_req = RerankRequest.model_validate_json(body)
         except Exception as exc:
-            raise HTTPException(
+            return _error_response(
                 status_code=400,
-                detail={
-                    "success": False,
-                    "data": None,
-                    "error": {
-                        "code": "RERANK_CONTRACT_ERROR",
-                        "message": f"Invalid request: {exc}",
-                        "retryable": False,
-                    },
-                    "requestId": x_request_id,
-                    "traceId": x_trace_id,
-                },
+                code="RERANK_CONTRACT_ERROR",
+                message=f"Invalid request: {exc}",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
             )
 
         ranked = []
@@ -101,16 +114,19 @@ def create_app() -> FastAPI:
                 )
             )
 
-        return {
-            "success": True,
-            "data": RerankResponse(
-                modelVersion=rerank_req.modelVersion,
-                items=ranked,
-            ).model_dump(),
-            "error": None,
-            "requestId": x_request_id,
-            "traceId": x_trace_id,
-        }
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": RerankResponse(
+                    modelVersion=rerank_req.modelVersion,
+                    items=ranked,
+                ).model_dump(),
+                "error": None,
+                "requestId": x_request_id,
+                "traceId": x_trace_id,
+            },
+        )
 
     return app
 

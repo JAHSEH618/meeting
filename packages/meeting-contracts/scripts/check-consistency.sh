@@ -549,49 +549,83 @@ from pathlib import Path
 
 errors = 0
 
+api_response_schema = {
+    'type': 'object',
+    'required': ['success', 'data', 'error', 'requestId', 'traceId'],
+    'properties': {
+        'success': {'type': 'boolean'},
+        'data': {},
+        'error': {
+            'anyOf': [
+                {
+                    'type': 'object',
+                    'required': ['code', 'message', 'retryable'],
+                    'properties': {
+                        'code': {'type': 'string'},
+                        'message': {'type': 'string'},
+                        'retryable': {'type': 'boolean'},
+                    },
+                },
+                {'type': 'null'},
+            ],
+        },
+        'requestId': {'type': 'string'},
+        'traceId': {'type': 'string'},
+    },
+}
+
 openapi_fixture_map = {
     'valid/public-api-login-200.json': {
         'spec': 'openapi/public-api.yaml',
         'method': 'POST',
         'path': '/auth/login',
         'expected_status': 200,
+        'expect_envelope': True,
     },
     'valid/callback-step-update-200.json': {
         'spec': 'openapi/internal-callback-api.yaml',
         'method': 'PATCH',
         'path': '/processing-tasks/{taskId}/steps/{stepName}',
         'expected_status': 200,
+        'expect_envelope': True,
     },
     'valid/ai-worker-rerank-200.json': {
         'spec': 'openapi/ai-worker-internal-api.yaml',
         'method': 'POST',
         'path': '/rerank',
         'expected_status': 200,
+        'expect_envelope': True,
     },
     'invalid/public-api-login-missing-username.json': {
         'spec': 'openapi/public-api.yaml',
         'method': 'POST',
         'path': '/auth/login',
         'expected_status': 400,
+        'expect_envelope': True,
     },
     'invalid/callback-missing-hmac.json': {
         'spec': 'openapi/internal-callback-api.yaml',
         'method': 'PATCH',
         'path': '/processing-tasks/{taskId}/steps/{stepName}',
         'expected_status': 401,
+        'expect_envelope': True,
     },
     'invalid/ai-worker-rerank-empty-query.json': {
         'spec': 'openapi/ai-worker-internal-api.yaml',
         'method': 'POST',
         'path': '/rerank',
         'expected_status': 400,
+        'expect_envelope': True,
     },
 }
+
+envelope_validator = jsonschema.Draft202012Validator(api_response_schema)
 
 for fp, meta in openapi_fixture_map.items():
     fixture_path = Path('$FIXTURES_DIR') / fp
     if not fixture_path.exists():
-        print(f'  SKIP fixture not found: {fp}')
+        print(f'  FAIL fixture not found: {fp}')
+        errors += 1
         continue
     with open(fixture_path) as f:
         fixture = json.load(f)
@@ -599,6 +633,15 @@ for fp, meta in openapi_fixture_map.items():
     if status != meta['expected_status']:
         print(f'  FAIL {fp}: expected status {meta[\"expected_status\"]}, got {status}')
         errors += 1
+        continue
+    if meta.get('expect_envelope', False):
+        response = fixture.get('response', fixture)
+        try:
+            envelope_validator.validate(response)
+            print(f'  OK   {fp}: status={status}, envelope valid')
+        except jsonschema.ValidationError as e:
+            print(f'  FAIL {fp}: envelope validation failed: {e.message}')
+            errors += 1
     else:
         print(f'  OK   {fp}: status={status}')
 
@@ -609,7 +652,7 @@ else:
     print('  All OpenAPI fixtures validated successfully')
 " || HAS_ERRORS=1
 else
-  warn "jsonschema not installed or fixtures directory missing — skipping OpenAPI fixture validation"
+  fail "jsonschema not installed or fixtures directory missing — cannot verify OpenAPI fixtures"
 fi
 
 echo ""
