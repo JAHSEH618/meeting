@@ -25,10 +25,10 @@
 
 ### 工程：`infra/meeting-infra`
 
-- [ ] 增加仓库根或 compose 目录 `.env.example`，覆盖 PostgreSQL、RabbitMQ、MinIO、Vault、DashScope、callback HMAC、ai-worker HMAC、chunk strategy 等占位配置。
-- [ ] 验证 base compose 一键启动 PostgreSQL + pgvector、RabbitMQ、MinIO、Vault，并记录本地启动命令与健康检查。
-- [ ] 增加 RabbitMQ exchanges / bindings / policies，而不只是 queues，确保 outbox publisher 有稳定 routing 目标。
-- [ ] 补齐 Prometheus / Grafana dashboard 文件清单与 spec 对齐，至少覆盖 API、task pipeline、RAG、compliance、ai-worker GPU 的占位 dashboard。
+- [x] 增加仓库根或 compose 目录 `.env.example`，覆盖 PostgreSQL、RabbitMQ、MinIO、Vault、DashScope、callback HMAC、ai-worker HMAC、chunk strategy 等占位配置。
+- [x] 验证 base compose 一键启动 PostgreSQL + pgvector、RabbitMQ、MinIO、Vault，并记录本地启动命令与健康检查。
+- [x] 增加 RabbitMQ exchanges / bindings / policies，而不只是 queues，确保 outbox publisher 有稳定 routing 目标。
+- [x] 补齐 Prometheus / Grafana dashboard 文件清单与 spec 对齐，至少覆盖 API、task pipeline、RAG、compliance、ai-worker GPU 的占位 dashboard。
 
 ### 工程：`apps/meeting-web`
 
