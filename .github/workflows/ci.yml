@@ -36,13 +36,13 @@ jobs:
         run: pip install jsonschema pyyaml
 
       - name: Spectral Lint (public-api)
-        run: spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml
+        run: spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
 
       - name: Spectral Lint (internal-callback-api)
-        run: spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml
+        run: spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml --fail-severity warn
 
       - name: Spectral Lint (ai-worker-internal-api)
-        run: spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml
+        run: spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
 
       - name: Validate JSON Schema
         run: |

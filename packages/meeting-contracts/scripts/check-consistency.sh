@@ -31,7 +31,7 @@ HAS_ERRORS=0
 echo "--- Spectral Lint ---"
 if command -v npx &>/dev/null && [ -d "$CONTRACTS_DIR/node_modules" ]; then
   pub_result=0
-  npx spectral lint "$OPENAPI_DIR/public-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" 2>&1 || pub_result=1
+  npx spectral lint "$OPENAPI_DIR/public-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || pub_result=1
   if [ $pub_result -eq 0 ]; then
     pass "spectral: public-api.yaml"
   else
@@ -39,7 +39,7 @@ if command -v npx &>/dev/null && [ -d "$CONTRACTS_DIR/node_modules" ]; then
   fi
 
   cb_result=0
-  npx spectral lint "$OPENAPI_DIR/internal-callback-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-callback.yaml" 2>&1 || cb_result=1
+  npx spectral lint "$OPENAPI_DIR/internal-callback-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-callback.yaml" --fail-severity warn 2>&1 || cb_result=1
   if [ $cb_result -eq 0 ]; then
     pass "spectral: internal-callback-api.yaml"
   else
@@ -47,7 +47,7 @@ if command -v npx &>/dev/null && [ -d "$CONTRACTS_DIR/node_modules" ]; then
   fi
 
   wk_result=0
-  npx spectral lint "$OPENAPI_DIR/ai-worker-internal-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" 2>&1 || wk_result=1
+  npx spectral lint "$OPENAPI_DIR/ai-worker-internal-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || wk_result=1
   if [ $wk_result -eq 0 ]; then
     pass "spectral: ai-worker-internal-api.yaml"
   else
@@ -61,7 +61,7 @@ elif command -v spectral &>/dev/null; then
       internal-callback-api.yaml) ruleset="$CONTRACTS_DIR/.spectral-callback.yaml" ;;
       *) ruleset="$CONTRACTS_DIR/.spectral-public.yaml" ;;
     esac
-    if spectral lint "$f" --ruleset "$ruleset" 2>&1; then
+    if spectral lint "$f" --ruleset "$ruleset" --fail-severity warn 2>&1; then
       pass "spectral: $fname"
     else
       error_exit "spectral: $fname has errors"

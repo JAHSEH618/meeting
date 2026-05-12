@@ -1,23 +1,49 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE / Editor
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
 # Java
 target/
 build/
 .gradle/
+*.class
+*.jar
+*.war
+*.ear
+.settings/
+.classpath
+.project
 
 # Node
 node_modules/
 dist/
 .next/
 coverage/
+.npm
+.eslintcache
+*.tsbuildinfo
 
 # Python
 .venv/
 __pycache__/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.htmlcov/
+.tox/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
 
 # Infra and local env
 .env
@@ -25,9 +51,21 @@ __pycache__/
 !.env.example
 *.tfstate
 *.tfstate.*
+.terraform/
 
+# Agent / AI tools
 .obsidian/
-.deepseek/trusted
+.deepseek/
 .claude
 .agent
 .agents/
+skills-lock.json
+
+# Misc
+todo.md
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.ipynb_checkpoints/
