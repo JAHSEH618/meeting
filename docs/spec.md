@@ -2,6 +2,34 @@
 
 > 本文保留为一期总规格。工程和子项目级细化规格已拆到对应目录：`apps/meeting-web/SPEC.md`、`apps/meeting-api/SPEC.md`、`apps/ai-worker/SPEC.md`、`packages/meeting-contracts/SPEC.md`、`infra/meeting-infra/SPEC.md`。`meeting-api` 内部 COLA-V5 子项目规格见各子模块下的 `SPEC.md`。
 
+## 0. 开发准入与权威顺序
+
+本文件修复后作为一期产品与架构总规格。开发时按以下优先级读取，不再把历史修正文件当作第二套并行事实来源：
+
+1. 可生成或可校验的事实源优先：`docs/ddls/001_initial_schema.sql`、`packages/meeting-contracts/openapi/*.yaml`、`packages/meeting-contracts/schemas/**`。
+2. 产品、架构和跨模块流程以本文为准。
+3. 工程内结构、技术选型和落地边界以对应 `SPEC.md` 为准。
+4. `docs/spec-fixes.md` 与 `docs/spec-clarifications.md` 只保留为历史决策记录；如与本文、DDL 或 contracts 冲突，以本文和事实源为准。
+
+直接进入开发的最低标准不是“一次性实现全部一期能力”，而是先锁定可验证的纵向切片。第一阶段开发必须以以下 MVP-0 闭环为准：
+
+```text
+meeting-web 登录/会议入口
+→ meeting-api 创建会议和 processing task
+→ outbox / RabbitMQ 发送 ProcessingTaskMessage
+→ ai-worker 校验任务并发送 fake 或 smoke callback
+→ meeting-api 幂等接收 callback、推进 step
+→ meeting-web 通过 SSE 或轮询展示 task snapshot
+```
+
+在上述闭环打通前，允许补骨架、契约、迁移、CI 和本地环境；不允许多个团队并行铺开 RAG、导出、声纹、合规等高耦合功能。进入多模块并行开发前必须满足：
+
+1. contracts lint / schema 校验可在 CI 中运行。
+2. `meeting-api` ArchUnit 边界测试落地并纳入 CI。
+3. 本地基础设施 compose 能启动 PostgreSQL、RabbitMQ、MinIO / TOS 替身、Vault / KMS 替身。
+4. Java、Python、Web 均能接入同一套错误码、枚举和 trace / request id 约定。
+5. 子项目新增代码必须落入对应 `SPEC.md` 定义的目标包结构；当前缺失的目录在实现该业务域前补齐，不以临时 `.gitkeep` 骨架作为长期结构。
+
 ## 1. 背景与目标
 
 一期目标是交付一个可用的本地会议智能系统闭环：
@@ -865,7 +893,7 @@ RAG_INDEXING
 EXPORT
 ```
 
-`ALIGNMENT` 是可选 step；一期默认不全量执行，只在精确引用、报告导出或人工触发时按需进入 `gpu-align-queue`。
+`ALIGNMENT` 是可选 step；一期默认不全量执行，只在精确引用、报告导出或人工触发时由 `ai-worker` 进程内按需执行，不创建独立 `gpu-align-queue`。后续需要独立 GPU 扩容或隔离时，再启用 `gpu-align-queue`。
 
 `processing_tasks` 必须包含：
 
@@ -1365,7 +1393,7 @@ LibreOffice headless / export runtime
 | llm-queue | API / GPU | 纪要、抽取、RAG 问答 |
 | export-queue | CPU / IO | Markdown / DOCX / PDF 导出 |
 
-`gpu-align-queue` 和 `rerank-queue` 一期接口预留；启用 Forced Alignment 或 Rerank 独立扩容时再打开。
+`gpu-align-queue` 和 `rerank-queue` 一期只保留契约和代码扩展点，不在 RabbitMQ / Compose 中创建。Forced Alignment 按需在 `ai-worker` 进程内执行；Rerank 一期启用但由 `ai-worker` 进程内 lazy-load 模型执行。只有当二者需要独立扩容、独立 GPU 调度或故障隔离时，才打开对应队列。
 
 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，导出实现通过 `ExportGateway` 调用 LibreOffice headless 或等价本地组件。不启动独立 export worker；当 LibreOffice 转换成为资源瓶颈或需要隔离部署时，再拆为独立进程。`export-queue` 不进入 Python `ai-worker`。
 

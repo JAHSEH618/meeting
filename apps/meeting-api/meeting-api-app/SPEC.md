@@ -6,7 +6,7 @@
 
 ## 2. 包边界
 
-建议包结构：
+目标包结构（新增用例必须按业务域落包；MVP-0 至少覆盖 `meeting`、`task`、`common`，并在需要时补齐 `command/query/executor/assembler/policy` 子包）：
 
 ```text
 com.meeting.api.app
@@ -45,6 +45,7 @@ policy/
 5. app 层调用 domain 聚合或领域服务执行核心规则。
 6. app 层通过 domain 端口调用 Repository / Gateway。
 7. app 层负责幂等键检查和重放结果返回。
+8. 任何跨业务域流程先由 app 层编排，再调用 domain 端口；禁止 adapter 或 infrastructure 绕过 app 层推进业务状态。
 
 幂等重放存储：
 

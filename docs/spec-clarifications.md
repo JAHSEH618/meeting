@@ -1,7 +1,8 @@
 # Spec 澄清 · 一期实现一致性决议
 
-> 本文是对 `docs/spec.md` 中 4 处跨章节不一致的澄清，作为实现前的权威参考。
-> 澄清后的结论应在 `docs/spec.md` 和 `infra/meeting-infra/SPEC.md` 的对应位置同步更新。
+> 状态：历史决策记录。
+> 当前开发不再把本文作为第二套权威规格读取；活动规则以 `docs/spec.md`、`infra/meeting-infra/SPEC.md`、`apps/meeting-web/SPEC.md`、`packages/meeting-contracts/**` 和可校验事实源为准。
+> 如果本文与活动规格冲突，以活动规格为准。
 
 ## C1. Rerank 一期是否启用
 

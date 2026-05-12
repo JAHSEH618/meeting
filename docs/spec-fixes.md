@@ -1,8 +1,8 @@
 # Spec 修正补丁 · A5/A6/A7/A8/A9/A10/A11/A12
 
-> 本文是对 `docs/spec.md` 和 `docs/app-api-contracts.md` 的实质性修正。
-> 修正后的规则应逐步合入原文件对应章节。
-> 在合入前，本文是这些问题的权威参考。
+> 状态：历史决策记录。
+> 当前开发不再把本文作为第二套权威规格读取；活动规则以 `docs/spec.md`、`docs/app-api-contracts.md`、`packages/meeting-contracts/**` 和各子项目 `SPEC.md` 为准。
+> 如果本文与活动规格或可校验事实源冲突，以活动规格和事实源为准。
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## 2. 包边界
 
-建议包结构：
+目标包结构（新增聚合、领域服务、事件和端口必须按业务域落包；MVP-0 至少覆盖 `meeting`、`task`、`common`）：
 
 ```text
 com.meeting.api.domain
@@ -26,6 +26,8 @@ com.meeting.api.domain
   audit/
   common/
 ```
+
+缺失业务域目录不是实现方把领域对象放入其它包的理由。开始实现某个业务域前，先创建对应 package，再补聚合、值对象、领域事件和 Repository / Gateway 端口。
 
 ## 3. 核心聚合与实体
 

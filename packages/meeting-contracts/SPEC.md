@@ -12,6 +12,15 @@
 4. 保存通用枚举和稳定错误码。
 5. 为后续 TypeScript、Java、Python SDK 生成提供输入。
 
+## 1.1 开发准入
+
+`meeting-contracts` 是各端并行开发前的硬门槛：
+
+1. MVP-0 必须能 lint `openapi/public-api.yaml`、`openapi/internal-callback-api.yaml`，并用 JSON Schema 校验 RabbitMQ task message。
+2. 枚举和错误码新增时必须先改 `schemas/common/*.yaml`，再同步 Java / TypeScript / Python 手写或生成类型。
+3. SDK codegen 可以在一期早期手写替代，但手写类型必须在对应工程中标注来源并接受契约一致性检查。
+4. `fixtures/**` 仍是后续增强；新增后才作为 CI 必过项，未新增前不能阻塞 MVP-0 开发。
+
 ## 2. 文件结构
 
 ```text

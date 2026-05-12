@@ -34,11 +34,11 @@ flowchart LR
     subgraph Queue["资源隔离队列"]
         QAudio["audio-cpu-queue<br/>ffmpeg / VAD / 质量检测"]
         QAsr["gpu-asr-queue<br/>Qwen3-ASR"]
-        QAlign["gpu-align-queue<br/>[预留/按需] Forced Alignment"]
+        QAlign["gpu-align-queue<br/>[后续独立队列] Forced Alignment"]
         QDiar["gpu-diar-queue<br/>Diarization"]
         QSpeaker["gpu-speaker-queue<br/>Speaker Embedding"]
         QEmbed["embed-queue<br/>Text Embedding"]
-        QRerank["rerank-queue<br/>[预留/后续] Reranker"]
+        QRerank["rerank-queue<br/>[后续独立队列] Reranker"]
         QLLM["llm-queue<br/>纪要 / 抽取 / 问答"]
         QExport["export-queue<br/>[一期] Markdown / DOCX / PDF"]
     end
@@ -101,23 +101,23 @@ flowchart LR
     Task -- "发布异步任务" --> MQ
     MQ --> QAudio
     MQ --> QAsr
-    MQ --> QAlign
     MQ --> QDiar
     MQ --> QSpeaker
     MQ --> QEmbed
-    MQ --> QRerank
     MQ --> QLLM
     MQ --> QExport
+    MQ -. "后续启用" .-> QAlign
+    MQ -. "后续启用" .-> QRerank
 
     QAudio --> WorkerRunner
     QAsr --> WorkerRunner
-    QAlign --> WorkerRunner
     QDiar --> WorkerRunner
     QSpeaker --> WorkerRunner
     QEmbed --> WorkerRunner
-    QRerank --> WorkerRunner
     QLLM --> WorkerRunner
     QExport --> Export
+    QAlign -. "后续独立消费" .-> WorkerRunner
+    QRerank -. "后续独立消费" .-> WorkerRunner
 
     Worker --> FastAPI
     Worker --> WorkerRunner
@@ -184,8 +184,8 @@ flowchart LR
 4. Python 侧采用 FastAPI + Clean Architecture + Celery / Dramatiq Worker + Prefect / Temporal Workflow + LangGraph Agent；`model-runtime` 在 MVP 是 `ai-worker` 内部包，只有当模型需要独立扩容、依赖隔离或显存隔离时才拆为 HTTP / gRPC 服务。
 5. RAG 权限必须由 Java 实时计算，向量库只做候选召回，不能作为权限事实来源。
 6. LLM 调用统一经过 `llm-gateway`，集中处理模型路由、数据边界策略、Prompt 版本、结构化输出、fallback 和审计；一期转写文本发送第三方 LLM 前不做脱敏。
-7. 生产实现建议通过 Prefect / Temporal 把串行 Pipeline 改成 DAG，并按 CPU、ASR、对齐、分人、声纹、embedding、rerank、LLM 拆 Celery / Dramatiq 队列做资源隔离。
-8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列。
-9. 一期预留但默认不启用：LocalLLM 用于后续 CONFIDENTIAL / SECRET 自动 LLM，Qdrant / Milvus 用于后续外置向量库，gpu-align-queue 用于按需 Forced Alignment，rerank-queue 用于后续独立 Rerank 扩容。
+7. 生产实现建议通过 Prefect / Temporal 把串行 Pipeline 改成 DAG，并按 CPU、ASR、分人、声纹、embedding、LLM 拆 Celery / Dramatiq 队列做资源隔离；Forced Alignment 和 Rerank 一期在 `ai-worker` 进程内按需执行或 lazy-load。
+8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列；不创建 `gpu-align-queue` 和 `rerank-queue`。
+9. 一期预留但默认不启用：LocalLLM 用于后续 CONFIDENTIAL / SECRET 自动 LLM，Qdrant / Milvus 用于后续外置向量库，`gpu-align-queue` 用于后续 Forced Alignment 独立扩容，`rerank-queue` 用于后续独立 Rerank 扩容。
 10. 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，通过 LibreOffice headless 或等价组件生成 Markdown / DOCX / PDF；不进入 Python `WorkerRunner`。独立 export worker 仅作为后续资源隔离扩展。
 11. 数据流向约束：所有 PostgreSQL 业务写操作都源自 `meeting-api`；`ai-worker` 不持有业务库凭证，不直接写 `knowledge_chunks`、`transcript_segments` 或任何声纹表，只能通过 internal callback API 回写结构化结果或 artifact URI。

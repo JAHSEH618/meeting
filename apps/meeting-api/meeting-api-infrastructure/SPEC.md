@@ -6,7 +6,7 @@
 
 ## 2. 包边界
 
-建议包结构：
+目标包结构（新增外部系统实现必须按端口和业务域落包；MVP-0 至少覆盖 `persistence/meeting`、`persistence/task`、`mq`、`idempotency`、`tenant`、`config`）：
 
 ```text
 com.meeting.api.infrastructure
@@ -29,6 +29,8 @@ com.meeting.api.infrastructure
   tenant/
   config/
 ```
+
+Provider 适配器可以在目标包下再细分，例如 `storage/tos`；不新增长期顶层 provider 包来绕过端口命名。已有临时占位目录在实现对应端口时应迁移到目标包结构。
 
 ## 3. PostgreSQL / pgvector
 

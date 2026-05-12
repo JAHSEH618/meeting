@@ -68,6 +68,15 @@ CI 必须增加 ArchUnit 规则：domain 禁止 import `org.springframework.web.
 
 ArchUnit 落地测试类固定为 `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java`。一期阶段规则失败级别为 `ERROR`，只允许对尚未实现模块使用带到期日期的 `@ArchIgnore`，不得长期以 WARN 绕过。
 
+### 2.3 开发准入与阶段化结构
+
+`meeting-api` 可以从 MVP-0 纵向切片开始开发，但不能跳过模块边界：
+
+1. MVP-0 必须覆盖 `client/common`、`client/enums`、`client/meeting`、`client/task`、`adapter/meeting`、`adapter/internal`、`adapter/sse`、`app/meeting`、`app/task`、`domain/meeting`、`domain/task`、`infrastructure/persistence/meeting`、`infrastructure/persistence/task`、`infrastructure/mq`、`infrastructure/idempotency` 和 `start`。
+2. 新增业务域前，必须先在相关 COLA 层创建对应 package，再放入 Controller、ApplicationService、Aggregate、RepositoryImpl 或 Gateway；禁止把未归类代码放在 `common`、`web`、`mq` 等泛化包下长期存在。
+3. `local` / `test` 可以使用 in-memory 占位实现；`dev` 及以上环境必须使用 PostgreSQL / RabbitMQ / TOS 替身或真实实现，并通过 RLS / tenant context 相关测试。
+4. ArchUnit 测试落地前，只允许单人或小范围推进骨架和 MVP-0；进入多业务域并行开发前必须把架构边界测试接入 CI。
+
 ## 3. 业务域
 
 业务域不是独立服务，而是各 COLA 模块内的 package 边界。

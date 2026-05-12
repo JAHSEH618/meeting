@@ -12,7 +12,7 @@
 
 ## 2. 包边界
 
-建议包结构：
+目标包结构（新增契约对象必须按此扩展；MVP-0 至少覆盖 `common`、`enums`、`meeting`、`task` 和 `internal/callback`）：
 
 ```text
 com.meeting.api.client

@@ -4,6 +4,14 @@
 
 `meeting-api-start` 是 Spring Boot 启动模块，负责应用启动、配置装配、profile、健康检查、组件扫描和运行时入口。它不承载业务规则。
 
+## 1.1 开发准入
+
+启动模块是架构边界和运行时配置的验收入口：
+
+1. MVP-0 必须能启动 `local` profile，并装配 adapter、app、domain、infrastructure。
+2. ArchUnit 测试固定放在 `src/test/java/com/meeting/api/ArchitectureBoundaryTest.java`，用于守住 COLA 依赖方向和禁止规则。
+3. 启动模块不新增业务 service、Repository 或 Controller；需要业务逻辑时回到对应 COLA 模块。
+
 ## 2. 启动职责
 
 1. 启动 Spring Boot 应用。

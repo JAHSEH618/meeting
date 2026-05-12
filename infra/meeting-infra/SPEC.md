@@ -11,6 +11,15 @@
 3. 定义 RabbitMQ 队列、交换机、DLQ 和资源隔离。
 4. 定义配置、密钥、观测、日志、备份和安全基线。
 
+## 1.1 开发准入
+
+本工程分为两个开发层级，避免把本地依赖环境和全栈镜像发布混在一个准入条件里：
+
+1. `base compose`：本地开发必选，只启动 PostgreSQL、RabbitMQ、MinIO / TOS 替身、Vault / KMS 替身和可选观测组件。Java、Web、Python 应用可以在宿主机直接运行并连接这些依赖。
+2. `full-stack compose`：联调和镜像 smoke test 使用，包含 `meeting-api`、`meeting-web`、`ai-worker` 镜像构建。只有对应 Dockerfile 和镜像裁剪策略落地后才作为 CI 必过项。
+
+进入多人并行开发前，`base compose` 必须可一键启动；进入端到端验收前，`full-stack compose` 或等价 K8s dev overlay 必须可用。
+
 ## 2. 目录规划
 
 ```text
@@ -42,7 +51,7 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 
 ## 3.1 Docker Compose 服务清单
 
-本地 compose 至少包含：
+`docker/compose/docker-compose.yml` 是本地 `base compose`，至少包含：
 
 | service | image / build | ports | healthcheck | volumes / env |
 |---|---|---|---|---|
@@ -50,14 +59,19 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 | `rabbitmq` | `rabbitmq:3.13-management` | `5672:5672`、`15672:15672` | `rabbitmq-diagnostics ping` | `rabbitmq-data`；创建一期队列和 DLQ |
 | `minio` | `minio/minio` | `9000:9000`、`9001:9001` | `/minio/health/live` | `minio-data`；本地替代 TOS |
 | `vault-dev` | `hashicorp/vault` | `8200:8200` | `/v1/sys/health` | 仅 local / dev 替代 KMS |
-| `meeting-api` | build `apps/meeting-api`，镜像内安装 LibreOffice headless 和字体包 | `8080:8080` | `/actuator/health` | env 注入 DB / MQ / TOS / DashScope / KMS；本地 PDF 转换 smoke |
-| `meeting-web` | build `apps/meeting-web` nginx | `5173:80` | HTTP 200 | API base URL |
-| `ai-worker` | build `apps/ai-worker` | `8090:8090` | `/internal/health` | 模型权重只读挂载；GPU runtime 可选 |
 | `prometheus` | `prom/prometheus` | `9090:9090` | `/-/healthy` | scrape configs |
 | `grafana` | `grafana/grafana` | `3000:3000` | `/api/health` | dashboard provisioning |
 | `loki` / `tempo` | 官方镜像或内部镜像 | internal | HTTP health | 日志 / trace 本地调试 |
 
-Compose 不写真实密钥，只提交 `.env.example`。
+`prometheus`、`grafana`、`loki` / `tempo` 可以使用 compose profile 控制，但引用的配置文件必须随仓库提交。Compose 不写真实密钥；仓库应提交 `.env.example`，同时保留安全默认值，使单人本地开发在没有 `.env` 时也能启动非敏感依赖。
+
+`full-stack compose` 或等价 dev overlay 在进入端到端验收前必须补齐：
+
+| service | image / build | ports | healthcheck | volumes / env |
+|---|---|---|---|---|
+| `meeting-api` | build `apps/meeting-api`，镜像内安装 LibreOffice headless 和字体包 | `8080:8080` | `/actuator/health` | env 注入 DB / MQ / TOS / DashScope / KMS；本地 PDF 转换 smoke |
+| `meeting-web` | build `apps/meeting-web` nginx | `5173:80` | HTTP 200 | API base URL |
+| `ai-worker` | build `apps/ai-worker` | `8090:8090` | `/internal/health` | 模型权重只读挂载；GPU runtime 可选 |
 
 `meeting-api` 镜像内嵌 LibreOffice headless 和字体包时必须使用多阶段构建并裁剪不需要的 LibreOffice 模块；如果压缩后镜像体积超过 1.5GB，下一轮部署设计应重新评估独立 export 服务或 sidecar，避免 K8s pull 和滚动更新时间不可控。
 
@@ -187,6 +201,8 @@ k8s/base/
   rabbitmq/{statefulset,service,policy}.yaml
 k8s/overlays/{dev,staging,prod}/kustomization.yaml
 ```
+
+`dev` overlay 是端到端联调前的必备项；`staging` 和 `prod` overlay 是预生产 / 生产发布准入，不阻塞本地 MVP-0 纵向切片开发。新增 overlay 时必须与 Terraform、备份和密钥策略一起评审。
 
 备份 / 恢复：
 

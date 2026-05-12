@@ -30,6 +30,16 @@ prometheus-client / structlog
 
 Pipeline 业务逻辑必须通过 `WorkerRuntime`、`WorkflowEngine`、`ModelRuntime`、`ArtifactStore`、`CallbackClient` 等端口隔离具体 SDK。Celery、Temporal、Ray、独立 model server 都是后续替换选项，不进入一期默认实现。
 
+## 2.1 开发准入
+
+`ai-worker` 先实现可替换端口和 callback 闭环，再接入重模型：
+
+1. MVP-0：校验 RabbitMQ task message、workflow registry、step 集合、HMAC callback client 和 fake / smoke pipeline，能把 step 状态回写 `meeting-api`。
+2. MVP-1：接入音频预处理、VAD、ASR、Diarization、speaker embedding、transcript merge 和 artifact manifest。
+3. MVP-2：接入 text embedding、RAG indexing、rerank lazy-load、模型 checksum、GPU 指标和性能验收。
+
+一期不创建独立 `gpu-align-queue` 或 `rerank-queue`。Forced Alignment 只在需要精确时间戳时由 workflow 进程内按需执行；Rerank 模型在 `model_runtime` 内 lazy-load，作为 RAG indexing / query 流程的一部分执行。只有后续需要独立扩容或 GPU 调度隔离时，才新增对应 worker 队列。
+
 ## 3. 包结构
 
 ```text
@@ -63,6 +73,11 @@ ai_worker/
     embedding/
     rag_indexing/
   model_runtime/
+    asr/
+    diarization/
+    speaker/
+    embedding/
+    rerank/
   common/
 ```
 

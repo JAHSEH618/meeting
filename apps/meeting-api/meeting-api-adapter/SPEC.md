@@ -6,7 +6,7 @@
 
 ## 2. 包边界
 
-建议包结构：
+目标包结构（新增入口必须按业务域落包；MVP-0 至少覆盖 `meeting`、`internal`、`sse`、`common`，`export/queue` 在导出切片开始前补齐）：
 
 ```text
 com.meeting.api.adapter
@@ -35,6 +35,7 @@ com.meeting.api.adapter
 3. 所有响应使用 `ApiResponse`。
 4. 所有异常转换为稳定 `ErrorCode`。
 5. internal callback 与 public API 分包隔离。
+6. RabbitMQ 入站只允许 `export/queue`；其它 worker 任务消费不放在 adapter。已有临时 `mq` 占位不得承载新的通用 MQ inbound 逻辑。
 
 ## 3. Public REST API
 

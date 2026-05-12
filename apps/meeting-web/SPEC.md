@@ -22,6 +22,16 @@
 3. 将服务端的任务状态、错误码、STALE 状态和引用来源准确展示给用户，不伪造处理结果。
 4. 对 `CONFIDENTIAL` / `SECRET` 自动 LLM 阻断给出明确提示：`一期不支持该安全等级的自动 LLM 处理`。
 
+## 1.1 开发准入
+
+前端不按页面清单一次性铺开开发，先按可验证纵向切片推进：
+
+1. MVP-0：`auth`、`meetings`、`tasks`、`shared/api`、SSE / 轮询 task snapshot，支撑“创建会议 -> 创建任务 -> 展示进度”。
+2. MVP-1：`transcript`、`minutes`、`items`、`documents`、`rag`，支撑转录、纪要、结构化事项、文档和 RAG 主流程。
+3. MVP-2：`exports`、`speakers`、`settings`、`compliance`、`admin`，支撑导出、声纹、租户设置和合规管理。
+
+任何新页面或长流程必须先补齐 `shared/api` 类型、错误码映射和 request / trace id 处理，再实现 UI。缺失的 feature 目录在实现该能力前创建，不用临时页面把多个业务域混在一起。
+
 ## 2. 非职责
 
 1. 不保存业务事实，所有事实以 `meeting-api` 返回为准。
@@ -244,15 +254,18 @@ src/
   app/                  Router、全局 Provider、鉴权守卫
   features/
     meetings/           会议列表、创建、详情和音频上传页面
+    tasks/              任务进度、SSE 续接和重试 / 取消视图
     transcript/         转录查看、编辑和 citation 定位
     speakers/           speaker 候选确认和声纹档案视图
     minutes/            纪要、待办、决策、风险
+    items/              待办、决策、风险的独立编辑和确认视图
     rag/                RAG 问答
     exports/            导出任务
-    auth/               后续登录页和登录态视图
-    knowledge/          后续文档知识库
+    auth/               登录页和登录态视图
+    documents/          文档知识库
+    settings/           个人、租户和基础配置
     compliance/         legal hold / deletion job / deletion certificate
-    admin/              后续 break-glass
+    admin/              break-glass 和系统管理
   services/             API client、SSE client、上传 client
   shared/
     components/
