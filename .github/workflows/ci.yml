@@ -36,10 +36,13 @@ jobs:
         run: pip install jsonschema pyyaml
 
       - name: Spectral Lint (public-api)
-        run: spectral lint openapi/public-api.yaml --ruleset .spectral.yaml
+        run: spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml
 
       - name: Spectral Lint (internal-callback-api)
-        run: spectral lint openapi/internal-callback-api.yaml --ruleset .spectral.yaml
+        run: spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml
+
+      - name: Spectral Lint (ai-worker-internal-api)
+        run: spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml
 
       - name: Validate JSON Schema
         run: |
@@ -53,13 +56,23 @@ jobs:
       - name: Consistency Check
         run: bash scripts/check-consistency.sh
 
+      - name: Install npm deps
+        run: npm ci
+
       - name: Verify Generated Directories Exist
         run: |
           mkdir -p ../../apps/ai-worker/ai_worker/generated
           mkdir -p ../../apps/meeting-api/meeting-api-client/generated/public-api
           mkdir -p ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal
           mkdir -p ../../apps/meeting-web/src/shared/api
-          echo "Generated output directories ready"
+
+      - name: Codegen Diff Check
+        run: |
+          npm run codegen:ts
+          git diff --exit-code ../../apps/meeting-web/src/shared/api/types.gen.ts || {
+            echo "::error::types.gen.ts is out of date. Run 'npm run codegen:ts' and commit the result."
+            exit 1
+          }
 
   # ── Java 后端 ─────────────────────────────────────────────────
   meeting-api:
@@ -165,6 +178,7 @@ jobs:
 
       - name: Run All Migrations
         run: |
-          PGPASSWORD=meeting_ci psql -h localhost -U meeting -d meeting_ci \
-            -f apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V202605110001__initial_schema.sql \
-            -v ON_ERROR_STOP=1
+          for f in apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V*.sql; do
+            echo "Applying $(basename "$f")..."
+            PGPASSWORD=meeting_ci psql -h localhost -U meeting -d meeting_ci -f "$f" -v ON_ERROR_STOP=1
+          done

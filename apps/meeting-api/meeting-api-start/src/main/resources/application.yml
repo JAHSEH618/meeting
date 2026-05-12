@@ -52,7 +52,7 @@ management:
 meeting:
   security:
     callback:
-      hmac-secret: ${CALLBACK_HMAC_SECRET:change-me-in-production}
+      hmac-secret: ${AI_WORKER_CALLBACK_HMAC_SECRET:change-me-in-production}
       timestamp-skew-seconds: 300
     ai-worker:
       hmac-secret: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:change-me-in-production}

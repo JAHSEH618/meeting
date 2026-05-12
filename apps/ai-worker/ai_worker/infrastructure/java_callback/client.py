@@ -3,8 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
-import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
@@ -124,6 +123,7 @@ class JavaCallbackClient:
     async def update_step(
         self,
         task_id: str,
+        tenant_id: str,
         step_name: str,
         attempt_no: int,
         status: str,
@@ -134,7 +134,7 @@ class JavaCallbackClient:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
         idempotency_key = f"{task_id}:{step_name}:{attempt_no}:v1"
         body = {
-            "tenantId": "tenant_placeholder",
+            "tenantId": tenant_id,
             "taskId": task_id,
             "attemptNo": attempt_no,
             "stepName": step_name,
@@ -148,6 +148,7 @@ class JavaCallbackClient:
     async def submit_transcript(
         self,
         task_id: str,
+        tenant_id: str,
         meeting_id: str,
         attempt_no: int,
         transcript_version: int,
@@ -158,7 +159,7 @@ class JavaCallbackClient:
         path = f"/internal/processing-tasks/{task_id}/transcript"
         idempotency_key = f"{task_id}:transcript:{attempt_no}:v1"
         body = {
-            "tenantId": "tenant_placeholder",
+            "tenantId": tenant_id,
             "meetingId": meeting_id,
             "taskId": task_id,
             "attemptNo": attempt_no,
@@ -171,6 +172,7 @@ class JavaCallbackClient:
     async def complete_worker_phase(
         self,
         task_id: str,
+        tenant_id: str,
         meeting_id: str,
         attempt_no: int,
         status: str,
@@ -181,13 +183,13 @@ class JavaCallbackClient:
         path = f"/internal/processing-tasks/{task_id}/complete"
         idempotency_key = f"{task_id}:complete:{attempt_no}:v1"
         body = {
-            "tenantId": "tenant_placeholder",
+            "tenantId": tenant_id,
             "meetingId": meeting_id,
             "taskId": task_id,
             "attemptNo": attempt_no,
             "phase": "WORKER_DAG",
             "status": status,
-            "completedSteps": [{"stepName": s} for s in completed_steps],
+            "completedSteps": completed_steps,
             "skippedSteps": skipped_steps or [],
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
@@ -196,6 +198,7 @@ class JavaCallbackClient:
     async def fail_task(
         self,
         task_id: str,
+        tenant_id: str,
         attempt_no: int,
         failed_step: str,
         error_code: str,
@@ -206,7 +209,7 @@ class JavaCallbackClient:
         path = f"/internal/processing-tasks/{task_id}/fail"
         idempotency_key = f"{task_id}:fail:{attempt_no}:v1"
         body = {
-            "tenantId": "tenant_placeholder",
+            "tenantId": tenant_id,
             "taskId": task_id,
             "attemptNo": attempt_no,
             "failedStep": failed_step,

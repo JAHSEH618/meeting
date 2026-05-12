@@ -1,0 +1,2 @@
+[console_scripts]
+ai-worker-api = ai_worker.interfaces.api.main:run

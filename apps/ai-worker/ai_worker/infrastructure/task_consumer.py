@@ -7,7 +7,6 @@ rather than being silently dropped or retried indefinitely.
 """
 
 import logging
-from datetime import datetime, timezone
 
 from ai_worker.domain.task import TaskMessage
 from ai_worker.infrastructure.java_callback.client import JavaCallbackClient
@@ -77,7 +76,6 @@ async def consume_and_validate(
         return task_msg
 
     task_id = raw_message.get("taskId", "unknown")
-    tenant_id = raw_message.get("tenantId", "unknown")
     attempt_no = raw_message.get("attemptNo", 1)
     trace_id = raw_message.get("traceId", f"fail-fast-{task_id}")
 
@@ -89,6 +87,7 @@ async def consume_and_validate(
 
     await callback_client.fail_task(
         task_id=task_id,
+        tenant_id=raw_message.get("tenantId", "unknown"),
         attempt_no=attempt_no,
         failed_step="AUDIO_PREPROCESS",
         error_code="INVALID_TASK_MESSAGE",

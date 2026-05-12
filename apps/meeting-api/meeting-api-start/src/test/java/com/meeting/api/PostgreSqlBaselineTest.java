@@ -122,8 +122,6 @@ class PostgreSqlBaselineTest {
 
     @Test
     void rlsShouldEnforceTenantIsolation() throws Exception {
-        // Check that app.tenant_id is the correct session variable for RLS
-        // (DDL uses app.tenant_id, not app.current_tenant_id)
         try (Statement stmt = conn.createStatement()) {
             // Verify RLS is enabled on tenant-owned tables
             try (ResultSet rs = stmt.executeQuery(
@@ -134,15 +132,14 @@ class PostgreSqlBaselineTest {
                 while (rs.next()) {
                     rlsTableCount++;
                 }
-                // At minimum, meetings table should have RLS
                 assertThat(rlsTableCount).isGreaterThan(0);
             }
 
             // Set tenant context using the DDL's convention: app.tenant_id
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
 
-            // Create a test meeting for tenant A
-            stmt.execute("INSERT INTO meetings (meeting_id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) " +
+            // Create a test meeting for tenant A — PK column is "id" not "meeting_id"
+            stmt.execute("INSERT INTO meetings (id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) " +
                 "VALUES ('mtg_rls_test_a', 'tenant_isolation_a', 'RLS Test A', 'INTERNAL', 'CREATED', 'zh', 0, 0) " +
                 "ON CONFLICT DO NOTHING");
         }
@@ -152,22 +149,15 @@ class PostgreSqlBaselineTest {
             stmt.execute("SET app.tenant_id = 'tenant_isolation_b'");
 
             try (ResultSet rs = stmt.executeQuery(
-                "SELECT COUNT(*) FROM meetings WHERE tenant_id = 'tenant_isolation_a'")) {
-                assertThat(rs.next()).isTrue();
-                // RLS should prevent tenant B from seeing tenant A's data
-                // If RLS is properly configured, this should return 0
-                // If RLS is not yet enforcing, this returns 1 — both outcomes are acceptable for phase 0 baseline
-                long count = rs.getLong(1);
-                // We document the current state: ideally 0, but 1 means RLS policies exist but
-                // the force-enable check hasn't been verified yet
-                assertThat(count).isBetween(0L, 1L);
+                "SELECT id FROM meetings WHERE tenant_id = 'tenant_isolation_a'")) {
+                assertThat(rs.next()).isFalse();
             }
         }
 
         // Clean up
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
-            stmt.execute("DELETE FROM meetings WHERE meeting_id = 'mtg_rls_test_a'");
+            stmt.execute("DELETE FROM meetings WHERE id = 'mtg_rls_test_a'");
         }
     }
 }

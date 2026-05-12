@@ -1,4 +1,4 @@
-import type { TaskEvent, ProcessingTask, TaskStep, ProcessingTaskPhase } from "@shared/api/types";
+import type { TaskEvent, TaskStep, ProcessingTaskPhase } from "@shared/api/types";
 
 export interface TaskSnapshot {
   taskId: string;
