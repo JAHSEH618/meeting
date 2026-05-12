@@ -214,7 +214,8 @@ meeting-web 登录/会议入口
 | Public API request / response / SSE schema | `packages/meeting-contracts/openapi/public-api.yaml` | `meeting-web`、`meeting-api-adapter`、契约测试 | 以 OpenAPI lint、codegen diff 和 MSW fixture 为准 |
 | Internal Callback request / response / header schema | `packages/meeting-contracts/openapi/internal-callback-api.yaml` | `ai-worker`、`meeting-api-adapter`、callback 回放测试 | 变更必须兼容旧 worker 重试窗口，breaking change 需跨工程同步 |
 | AI Worker Internal API request / response / header schema | `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` | `meeting-api-infrastructure`、`meeting-api-domain`、`ai-worker`、RAG rerank 契约测试 | Java 同步调用 ai-worker 的内部能力先改该 OpenAPI；一期只暴露 `/internal/rerank` |
-| RabbitMQ 任务消息 | `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` | `meeting-api-app`、`ai-worker`、RabbitMQ 回放测试 | required 字段、默认值和 routing metadata 不得只改一端 |
+| RabbitMQ worker 任务消息 | `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` | `meeting-api-app`、`ai-worker`、RabbitMQ 回放测试 | required 字段、默认值和 routing metadata 不得只改一端 |
+| RabbitMQ export 任务消息 | `packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json` | `meeting-api-adapter`、`meeting-api-app`、RabbitMQ 回放测试 | `export-queue` 不进入 Python `ai-worker` |
 | 枚举：安全等级、任务状态、步骤、STALE、citation、source type、事件类型 | `packages/meeting-contracts/schemas/common/enums.yaml` | Web 展示、Java enum、Python enum、文档示例 | 文档中出现的枚举清单只作说明，CI 以该文件生成/校验结果为准 |
 | 错误码、retryable、用户提示、运维标签 | `packages/meeting-contracts/schemas/common/error-codes.yaml` | `ControllerAdvice`、前端 error mapper、worker fail callback、告警规则 | 不允许跨文件手工扩展；新增错误码必须补 i18n key 和默认处理策略 |
 | Prompt 模板、参数、输出 schema | `apps/meeting-api/meeting-api-infrastructure/src/main/resources/prompts/**` 或 `prompt_templates` 表 | `llm-gateway`、artifact manifest、LLM 回归测试 | 生产发布必须写入 `artifact_manifests.prompt_template_version` |
@@ -1026,8 +1027,8 @@ stateDiagram-v2
 | `RUNNING -> ORPHANED` | Java 定时扫描，默认每 `30s` | 不发布业务完成事件；清空过期 lease；等待重入队或失败 |
 | `ORPHANED -> QUEUED` | Java task scheduler | `attempt_count < max_attempts` 时重新投递；`attempt_no` 自增 |
 | `ORPHANED -> FAILED` | Java task scheduler | 重试耗尽；写 `WORKER_LEASE_EXPIRED`；发送 `TASK_FAILED` |
-| `RUNNING -> SUCCEEDED` | ai-worker `/complete` callback | 写 `TASK_COMPLETED` outbox；触发下游 `SUMMARY` / `RAG_INDEXING` 链；发送 `TASK_COMPLETED` SSE |
-| `RUNNING -> PARTIAL_SUCCEEDED` | ai-worker `/complete` callback | 标记可用产物和失败 optional step；后续可单独重试 optional step |
+| `RUNNING, WORKER_DAG_RUNNING -> RUNNING, WORKER_DAG_DONE` | ai-worker `/complete phase=WORKER_DAG` callback | 写 `WORKER_PHASE_COMPLETED` outbox；callback 响应不等待 LLM；由 Java app listener 后续推进 `SUMMARY` / `EXTRACTION` 或非 LLM task 终态 |
+| `RUNNING, WORKER_DAG_RUNNING -> RUNNING, WORKER_DAG_DONE` | ai-worker `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` callback | 标记 worker phase partial 和 optional worker step；task 不进入终态，终态由 Java 在后续 phase 规则中确定 |
 | `RUNNING -> FAILED` | ai-worker `/fail` callback | 保存稳定错误码、artifact manifest、retryable；按错误码决定是否重试 |
 | `RUNNING -> CANCEL_PENDING` | 用户取消 | 写取消请求审计；callback 到 worker 或等待 lease 过期 |
 | `CANCEL_PENDING -> CANCELLED` | worker 确认或 Java lease 扫描 | 终止未完成 step；不覆盖已落库可用 artifact |
@@ -1399,7 +1400,7 @@ LibreOffice headless / export runtime
 
 `gpu-align-queue` 和 `rerank-queue` 一期只保留契约和代码扩展点，不在 RabbitMQ / Compose 中创建。Forced Alignment 按需在 `ai-worker` 进程内执行；Rerank 一期启用但由 `ai-worker` 进程内 lazy-load 模型执行。只有当二者需要独立扩容、独立 GPU 调度或故障隔离时，才打开对应队列。
 
-一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，导出实现通过 `ExportGateway` 调用 LibreOffice headless 或等价本地组件。不启动独立 export worker；当 LibreOffice 转换成为资源瓶颈或需要隔离部署时，再拆为独立进程。`export-queue` 不进入 Python `ai-worker`。
+一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，消息体以 `packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json` 为准；导出实现通过 `ExportGateway` 调用 LibreOffice headless 或等价本地组件。不启动独立 export worker；当 LibreOffice 转换成为资源瓶颈或需要隔离部署时，再拆为独立进程。`export-queue` 不进入 Python `ai-worker`。
 
 ### 11.2 Python GPU 服务器
 

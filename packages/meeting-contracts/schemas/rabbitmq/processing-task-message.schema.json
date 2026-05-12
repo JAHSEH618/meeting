@@ -23,14 +23,14 @@
         "MEETING_FULL_PIPELINE",
         "SPEAKER_ENROLLMENT",
         "TEXT_EMBEDDING",
-        "RAG_REINDEX",
-        "EXPORT"
+        "RAG_REINDEX"
       ]
     },
     "tenantId": {"type": "string", "minLength": 1},
     "meetingId": {"type": ["string", "null"]},
     "documentId": {"type": ["string", "null"]},
-    "exportId": {"type": ["string", "null"]},
+    "speakerProfileId": {"type": ["string", "null"]},
+    "speakerEnrollmentId": {"type": ["string", "null"]},
     "audioFileId": {"type": ["string", "null"]},
     "audioUri": {"type": ["string", "null"], "pattern": "^(tos://.+)?$"},
     "securityLevel": {
@@ -52,8 +52,7 @@
           "SPEAKER_EMBEDDING",
           "SPEAKER_MATCHING",
           "TRANSCRIPT_MERGE",
-          "RAG_INDEXING",
-          "EXPORT"
+          "RAG_INDEXING"
         ]
       }
     },
@@ -119,15 +118,35 @@
         "properties": {"taskType": {"const": "MEETING_FULL_PIPELINE"}}
       },
       "then": {
-        "required": ["meetingId", "audioFileId", "audioUri", "language"]
+        "required": [
+          "meetingId",
+          "audioFileId",
+          "audioUri",
+          "language",
+          "channelMap",
+          "knownParticipants",
+          "minSpeakers",
+          "maxSpeakers"
+        ]
       }
     },
     {
       "if": {
-        "properties": {"taskType": {"const": "EXPORT"}}
+        "properties": {"taskType": {"const": "SPEAKER_ENROLLMENT"}}
       },
       "then": {
-        "required": ["meetingId", "exportId"]
+        "required": ["speakerProfileId", "speakerEnrollmentId", "audioFileId", "audioUri", "language"]
+      }
+    },
+    {
+      "if": {
+        "properties": {"taskType": {"enum": ["TEXT_EMBEDDING", "RAG_REINDEX"]}}
+      },
+      "then": {
+        "anyOf": [
+          {"required": ["meetingId"]},
+          {"required": ["documentId"]}
+        ]
       }
     }
   ],

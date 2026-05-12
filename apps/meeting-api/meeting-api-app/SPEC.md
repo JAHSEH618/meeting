@@ -90,7 +90,7 @@ policy/
 6. 根据 endpoint 推进 task step、保存 artifact、保存 transcript、保存 speaker candidates 或记录 worker phase 完成。
 7. `POST /complete` 必须校验 `phase=WORKER_DAG`；`status=SUCCEEDED` 只表示 worker DAG 阶段成功，`status=PARTIAL_SUCCEEDED` 只表示 worker phase partial 并写入 `skippedSteps`，两者都不得直接把 task 推进到 `SUCCEEDED`。
 8. worker phase callback 成功响应前，app 层必须在同一事务内将 `processing_tasks.phase` 从 `WORKER_DAG_RUNNING` 推进到 `WORKER_DAG_DONE`，并写入 `WorkerPhaseCompletedEvent` / `WORKER_PHASE_COMPLETED` outbox 事件；payload 必须包含 `taskType`。
-9. `WORKER_PHASE_COMPLETED` 由 app 层 listener 异步消费；listener 根据 `taskType` 决定是否进入 `JAVA_LLM_RUNNING`，非 LLM 任务（`TEXT_EMBEDDING` / `RAG_REINDEX` / `SPEAKER_ENROLLMENT` / `EXPORT`）直接将 `phase` 置为 `TERMINAL` 并写入 task 终态。
+9. `WORKER_PHASE_COMPLETED` 由 app 层 listener 异步消费；listener 根据 `taskType` 决定是否进入 `JAVA_LLM_RUNNING`，非 LLM worker 任务（`TEXT_EMBEDDING` / `RAG_REINDEX` / `SPEAKER_ENROLLMENT`）直接将 `phase` 置为 `TERMINAL` 并写入 task 终态。`EXPORT` 不进入 ai-worker phase 流程，由 Java `export-queue` consumer 单独推进 export job 状态。
 10. `MEETING_FULL_PIPELINE` listener 开始推进 `SUMMARY` 前将 `processing_tasks.phase` 改为 `JAVA_LLM_RUNNING`；Java 内部 step 全部满足终态规则后，才通过 `TaskStepProgressService` 将 task 推进到 `SUCCEEDED` 或 `PARTIAL_SUCCEEDED`、`phase=TERMINAL`，并发布终态事件；callback 端不得阻塞等待 LLM 调用完成。
 11. 对重复 callback 返回已处理结果。
 12. 对幂等键相同但 payload 不一致返回 `CALLBACK_IDEMPOTENCY_CONFLICT`。

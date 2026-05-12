@@ -315,7 +315,7 @@ Java 侧 SLO 以局域网办公环境、PostgreSQL / RabbitMQ / TOS 可用、缓
 ## 10. 验收标准
 
 1. 完成登录、租户隔离、会议创建、音频上传和任务创建。
-2. RabbitMQ 消息包含 task、tenant、meeting、audio URI、security level、attempt、`pipelineSteps`、版本和 trace，且不得把 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` 分配给 `ai-worker`。
+2. RabbitMQ worker 任务消息包含 task、tenant、meeting / document、audio URI（音频类任务）、security level、attempt、`pipelineSteps`、版本和 trace，且不得把 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` / `EXPORT` 分配给 `ai-worker`；`export-queue` 使用独立 `export-job-message.schema.json`。
 3. callback 支持幂等重放，旧 attempt 不能覆盖新结果。
 4. 转录落库区分 `original_text`、`edited_text`、`current_text`。
 5. 编辑转录后纪要、事项和 RAG chunk 标记 STALE。

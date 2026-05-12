@@ -32,6 +32,7 @@ openapi/
 schemas/
   rabbitmq/
     processing-task-message.schema.json
+    export-job-message.schema.json
   common/
     enums.yaml
     error-codes.yaml
@@ -45,7 +46,8 @@ scripts/
 | `openapi/public-api.yaml` | Web 到 API 的 endpoint、schema、SSE 和错误响应 | `meeting-web`、`meeting-api-adapter`、MSW / Playwright |
 | `openapi/internal-callback-api.yaml` | Worker callback endpoint、header、签名字段、body schema | `ai-worker`、`meeting-api-adapter`、callback 回放测试 |
 | `openapi/ai-worker-internal-api.yaml` | API 同步调用 worker 的内部 endpoint、header、签名字段、body schema | `meeting-api-infrastructure`、`meeting-api-domain`、`ai-worker`、RAG rerank 契约测试 |
-| `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 worker 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
+| `schemas/rabbitmq/processing-task-message.schema.json` | API 投递给 `ai-worker` 的任务消息 | `meeting-api-app`、`ai-worker`、RabbitMQ contract test |
+| `schemas/rabbitmq/export-job-message.schema.json` | Java `export-queue` 任务消息 | `meeting-api-adapter`、`meeting-api-app`、RabbitMQ contract test |
 | `schemas/common/enums.yaml` | 跨工程枚举 | Java / TypeScript / Python codegen |
 | `schemas/common/error-codes.yaml` | 稳定错误码、retryable、i18n key、运维标签 | 前端 error mapper、Java exception mapper、worker fail callback |
 | `scripts/` | 契约生成、lint、枚举一致性和 CI 辅助脚本 | CI、pre-commit、各端 codegen |
@@ -215,7 +217,7 @@ HMAC 签名路径：
 
 ## 9. RabbitMQ 消息 Schema
 
-`processing-task-message.schema.json` 必须定义：
+`processing-task-message.schema.json` 只描述投递给 `ai-worker` 的任务消息，必须定义：
 
 1. `taskId`。
 2. `taskType`。
@@ -236,7 +238,9 @@ HMAC 签名路径：
 
 Schema 必须开启 required 校验，禁止关键字段缺失后由 worker 猜测。
 
-`pipelineSteps` 表达本条消息要求消费方推进的 worker step 集合，不得包含 Java 在 task 创建前完成的 `AUDIO_UPLOAD`，也不得包含 Java `TaskStepProgressService` 所有的 `SUMMARY` / `EXTRACTION`。schema 必须通过 enum 或 lint 禁止这三个值进入任务消息；worker 如果收到未知 step 或被禁止的 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`，必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
+`pipelineSteps` 表达本条消息要求消费方推进的 worker step 集合，不得包含 Java 在 task 创建前完成的 `AUDIO_UPLOAD`，不得包含 Java `TaskStepProgressService` 所有的 `SUMMARY` / `EXTRACTION`，也不得包含 Java 进程内 `export-queue` 消费的 `EXPORT`。schema 必须通过 enum 或 lint 禁止这些值进入 worker 任务消息；worker 如果收到未知 step 或被禁止的 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` / `EXPORT`，必须 fail fast 并上报 `INVALID_TASK_MESSAGE`。
+
+`export-job-message.schema.json` 单独描述 `export-queue` 消息，必须包含 `tenantId`、`meetingId`、`exportId`、`format`、`expectedInputVersion` 和 `traceId`。该消息由 Java adapter 的 export queue consumer 读取，不进入 Python `ai-worker`。
 
 `expectedInputVersion.chunkStrategyVersion` 的默认值由 Java `meeting-api` 的 `meeting.chunk.strategy-version` 配置项提供。首次创建 `MEETING_FULL_PIPELINE` 任务时由 Java task 模块写入消息；重建 / 重索引任务使用当前 `knowledge_chunks.chunk_strategy_version` 或更高层配置指定的版本。
 
@@ -270,6 +274,7 @@ datamodel-codegen --input openapi/ai-worker-internal-api.yaml --input-file-type 
 openapi-generator generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api
 openapi-generator generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal
 datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py
+jsonschema2pojo --source schemas/rabbitmq/export-job-message.schema.json --target ../../apps/meeting-api/meeting-api-client/generated/export-job-message
 ```
 
 CI 要求：
@@ -279,7 +284,7 @@ CI 要求：
 3. OpenAPI response 必须统一使用 `ApiResponse` envelope。
 4. 所有写操作必须声明 `X-Request-Id`、`X-Trace-Id` 和 `Idempotency-Key`，登录除外。
 5. `RagAnswerCoverage`、`ProcessingStepUpdateSource`、`ProcessingTaskStatus`、`ProcessingTaskPhase` 必须与 OpenAPI 和各端枚举生成物一致。
-6. `processing-task-message.schema.json` 的 `pipelineSteps` 不得允许 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION`。
+6. `processing-task-message.schema.json` 的 `pipelineSteps` 不得允许 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` / `EXPORT`。
 
 ## 13. Spectral Lint
 

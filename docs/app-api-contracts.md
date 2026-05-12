@@ -978,7 +978,7 @@ GET /api/exports/{exportId}
 
 ## 5. `meeting-api -> ai-worker` RabbitMQ 消息
 
-事实来源：RabbitMQ payload 以 `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` 为准；枚举值以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。本节只说明 routing 与典型消息形态。
+事实来源：`ai-worker` RabbitMQ payload 以 `packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json` 为准；枚举值以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。本节只说明 routing 与典型消息形态。`export-queue` 不进入 Python `ai-worker`，其消息体以 `packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json` 为准。
 
 RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-message.schema.json` 校验。消息属性必须包含：
 
@@ -1049,6 +1049,23 @@ RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-messag
 3. `securityLevel` 为 `CONFIDENTIAL` / `SECRET` 时，任何 LLM 相关 step 必须 fail closed。
 4. `audioUri` 只允许读取授权 TOS 前缀，不允许任意路径读取。
 5. 消费失败可重试；重试耗尽后进入 DLQ，并保留 `taskId`、`tenantId`、`stepName`、`errorCode`、`workerId`、`artifactManifestId`。
+
+`export-queue` 消息示例：
+
+```json
+{
+  "tenantId": "t_001",
+  "meetingId": "m_001",
+  "exportId": "exp_001",
+  "format": "PDF",
+  "expectedInputVersion": {
+    "transcriptVersion": 3,
+    "minutesVersion": 2,
+    "ragVersion": 4
+  },
+  "traceId": "trace_001"
+}
+```
 
 ## 6. `ai-worker -> meeting-api` Internal Callback API
 

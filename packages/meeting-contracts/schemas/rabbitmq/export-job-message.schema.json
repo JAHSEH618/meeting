@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meeting.local/schemas/export-job-message.schema.json",
+  "title": "ExportJobMessage",
+  "type": "object",
+  "required": [
+    "tenantId",
+    "meetingId",
+    "exportId",
+    "format",
+    "expectedInputVersion",
+    "traceId"
+  ],
+  "properties": {
+    "tenantId": {"type": "string", "minLength": 1},
+    "meetingId": {"type": "string", "minLength": 1},
+    "exportId": {"type": "string", "minLength": 1},
+    "format": {"type": "string", "enum": ["MARKDOWN", "DOCX", "PDF"]},
+    "expectedInputVersion": {
+      "type": "object",
+      "required": ["transcriptVersion"],
+      "properties": {
+        "transcriptVersion": {"type": "integer", "minimum": 0},
+        "minutesVersion": {"type": ["integer", "null"], "minimum": 0},
+        "ragVersion": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "traceId": {"type": "string", "minLength": 1},
+    "createdAt": {"type": ["string", "null"], "format": "date-time"}
+  },
+  "additionalProperties": false
+}

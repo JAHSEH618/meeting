@@ -1,21 +1,18 @@
 {
   "queues": [
-    {"name": "audio-cpu-queue",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "audio-cpu-queue",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "audio-cpu-queue.dlq"}},
     {"name": "audio-cpu-queue.dlq","vhost": "/", "durable": true},
-    {"name": "gpu-asr-queue",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-asr-queue",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-asr-queue.dlq"}},
     {"name": "gpu-asr-queue.dlq",  "vhost": "/", "durable": true},
-    {"name": "gpu-diar-queue",     "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-diar-queue",     "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-diar-queue.dlq"}},
     {"name": "gpu-diar-queue.dlq", "vhost": "/", "durable": true},
-    {"name": "gpu-speaker-queue",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "gpu-speaker-queue",  "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "gpu-speaker-queue.dlq"}},
     {"name": "gpu-speaker-queue.dlq","vhost": "/", "durable": true},
-    {"name": "embed-queue",        "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "embed-queue",        "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "embed-queue.dlq"}},
     {"name": "embed-queue.dlq",    "vhost": "/", "durable": true},
-    {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "llm-queue.dlq"}},
     {"name": "llm-queue.dlq",      "vhost": "/", "durable": true},
-    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
+    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "", "x-dead-letter-routing-key": "export-queue.dlq"}},
     {"name": "export-queue.dlq",   "vhost": "/", "durable": true}
-  ],
-  "policies": [
-    {"name": "dlq-policy", "pattern": "^(?!.*\\.dlq$).*", "vhost": "/", "definition": {"dead-letter-exchange": "", "dead-letter-routing-key": "dlq"}, "apply-to": "queues"}
   ]
 }

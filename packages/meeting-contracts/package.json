@@ -1,0 +1,13 @@
+{
+  "name": "@meeting/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "check": "bash scripts/check-consistency.sh",
+    "lint:openapi": "spectral lint \"openapi/*.yaml\" --ruleset .spectral.yaml"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.15.0",
+    "ajv-cli": "^5.0.0"
+  }
+}

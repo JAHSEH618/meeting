@@ -43,18 +43,34 @@ fi
 # ── 2. JSON Schema 校验 ────────────────────────────────────────
 echo "--- JSON Schema ---"
 if python3 -c "import jsonschema" 2>/dev/null; then
-  SCHEMA_FILE="$SCHEMAS_DIR/rabbitmq/processing-task-message.schema.json"
-  if [ -f "$SCHEMA_FILE" ]; then
-    python3 -c "
+  for SCHEMA_FILE in "$SCHEMAS_DIR"/rabbitmq/*.schema.json; do
+    if [ -f "$SCHEMA_FILE" ]; then
+      python3 -c "
 import json, jsonschema
 with open('$SCHEMA_FILE') as f:
     schema = json.load(f)
 jsonschema.Draft202012Validator.check_schema(schema)
 print('Schema is valid Draft 2020-12')
-" && pass "JSON Schema: processing-task-message.schema.json"
-  fi
+" && pass "JSON Schema: $(basename "$SCHEMA_FILE")"
+    fi
+  done
 else
-  warn "jsonschema not installed — skipping JSON Schema check"
+  if command -v ruby &>/dev/null; then
+    for SCHEMA_FILE in "$SCHEMAS_DIR"/rabbitmq/*.schema.json; do
+      if [ -f "$SCHEMA_FILE" ]; then
+        SCHEMA_FILE="$SCHEMA_FILE" ruby - <<'RUBY'
+require 'json'
+schema = JSON.parse(File.read(ENV.fetch('SCHEMA_FILE')))
+raise 'missing $schema' unless schema.key?('$schema')
+raise 'schema root must be object' unless schema['type'] == 'object'
+RUBY
+        pass "JSON syntax/basic shape: $(basename "$SCHEMA_FILE")"
+      fi
+    done
+    warn "jsonschema not installed — skipped Draft 2020-12 metaschema validation"
+  else
+    warn "jsonschema not installed and ruby unavailable — skipping JSON Schema check"
+  fi
 fi
 
 # ── 3. 枚举一致性 ───────────────────────────────────────────────
@@ -176,9 +192,17 @@ pipeline_steps = set(
       .get('items', {})
       .get('enum', [])
 )
-forbidden_worker_steps = {'AUDIO_UPLOAD', 'SUMMARY', 'EXTRACTION'}
+task_types = set(
+    task_msg.get('properties', {})
+      .get('taskType', {})
+      .get('enum', [])
+)
+if 'EXPORT' in task_types:
+    print('  processing-task-message.schema.json must not include EXPORT taskType; use export-job-message.schema.json')
+    errors += 1
+forbidden_worker_steps = {'AUDIO_UPLOAD', 'SUMMARY', 'EXTRACTION', 'EXPORT'}
 if pipeline_steps & forbidden_worker_steps:
-    print(f'  pipelineSteps must not include Java-owned steps: {sorted(pipeline_steps & forbidden_worker_steps)}')
+    print(f'  pipelineSteps must not include non-ai-worker steps: {sorted(pipeline_steps & forbidden_worker_steps)}')
     errors += 1
 
 expected_pipeline_steps = enum_steps - forbidden_worker_steps
@@ -258,7 +282,138 @@ else:
     print('  All enum values consistent across yaml files')
 " && pass "enums consistent" || warn "enum mismatch detected"
 else
-  warn "pyyaml not installed — skipping enum consistency"
+  if command -v ruby &>/dev/null; then
+    ENUMS_FILE="$ENUMS_FILE" OPENAPI_DIR="$OPENAPI_DIR" SCHEMAS_DIR="$SCHEMAS_DIR" ruby - <<'RUBY'
+require 'json'
+require 'set'
+require 'yaml'
+
+errors = 0
+enums = YAML.load_file(ENV.fetch('ENUMS_FILE'))
+cb = YAML.load_file(File.join(ENV.fetch('OPENAPI_DIR'), 'internal-callback-api.yaml'))
+pub = YAML.load_file(File.join(ENV.fetch('OPENAPI_DIR'), 'public-api.yaml'))
+worker_internal = YAML.load_file(File.join(ENV.fetch('OPENAPI_DIR'), 'ai-worker-internal-api.yaml'))
+task_msg = JSON.parse(File.read(File.join(ENV.fetch('SCHEMAS_DIR'), 'rabbitmq', 'processing-task-message.schema.json')))
+
+enum_steps = Set.new(enums.fetch('processingStep', []))
+cb_steps = Set.new(cb.dig('components', 'parameters', 'StepName', 'schema', 'enum') || [])
+if !cb_steps.empty? && cb_steps != enum_steps
+  puts "  processingStep mismatch: enums=#{enum_steps.to_a.sort} cb=#{cb_steps.to_a.sort}"
+  errors += 1
+end
+
+enum_task_status = Set.new(enums.fetch('processingTaskStatus', []))
+pub_task_status = Set.new(pub.dig('components', 'schemas', 'ProcessingTaskStatus', 'enum') || [])
+if !pub_task_status.empty? && pub_task_status != enum_task_status
+  puts "  processingTaskStatus mismatch: enums=#{enum_task_status.to_a.sort} pub=#{pub_task_status.to_a.sort}"
+  errors += 1
+end
+
+enum_task_phase = Set.new(enums.fetch('processingTaskPhase', []))
+pub_task_phase = Set.new(pub.dig('components', 'schemas', 'ProcessingTaskPhase', 'enum') || [])
+if !pub_task_phase.empty? && pub_task_phase != enum_task_phase
+  puts "  processingTaskPhase mismatch: enums=#{enum_task_phase.to_a.sort} pub=#{pub_task_phase.to_a.sort}"
+  errors += 1
+end
+
+processing_task = pub.dig('components', 'schemas', 'ProcessingTask') || {}
+unless (processing_task['required'] || []).include?('phase')
+  puts '  ProcessingTask.phase must be required'
+  errors += 1
+end
+unless processing_task.dig('properties', 'phase', '$ref') == '#/components/schemas/ProcessingTaskPhase'
+  puts '  ProcessingTask.phase must directly reference ProcessingTaskPhase'
+  errors += 1
+end
+
+enum_rag_coverage = Set.new(enums.fetch('ragAnswerCoverage', []))
+pub_rag_coverage = Set.new(pub.dig('components', 'schemas', 'RagAnswerCoverage', 'enum') || [])
+if !pub_rag_coverage.empty? && pub_rag_coverage != enum_rag_coverage
+  puts "  ragAnswerCoverage mismatch: enums=#{enum_rag_coverage.to_a.sort} pub=#{pub_rag_coverage.to_a.sort}"
+  errors += 1
+end
+rag_answer = pub.dig('components', 'schemas', 'RagAnswerDTO') || {}
+unless (rag_answer['required'] || []).include?('coverage')
+  puts '  RagAnswerDTO.coverage must be required'
+  errors += 1
+end
+
+enum_step_sources = Set.new(enums.fetch('processingStepUpdateSource', []))
+pub_step_sources = Set.new(pub.dig('components', 'schemas', 'ProcessingStepUpdateSource', 'enum') || [])
+if !pub_step_sources.empty? && pub_step_sources != enum_step_sources
+  puts "  processingStepUpdateSource mismatch: enums=#{enum_step_sources.to_a.sort} pub=#{pub_step_sources.to_a.sort}"
+  errors += 1
+end
+
+pipeline_steps = Set.new(task_msg.dig('properties', 'pipelineSteps', 'items', 'enum') || [])
+task_types = Set.new(task_msg.dig('properties', 'taskType', 'enum') || [])
+if task_types.include?('EXPORT')
+  puts '  processing-task-message.schema.json must not include EXPORT taskType; use export-job-message.schema.json'
+  errors += 1
+end
+forbidden_worker_steps = Set.new(%w[AUDIO_UPLOAD SUMMARY EXTRACTION EXPORT])
+overlap = pipeline_steps & forbidden_worker_steps
+unless overlap.empty?
+  puts "  pipelineSteps must not include non-ai-worker steps: #{overlap.to_a.sort}"
+  errors += 1
+end
+expected_pipeline_steps = enum_steps - forbidden_worker_steps
+if !pipeline_steps.empty? && pipeline_steps != expected_pipeline_steps
+  puts "  pipelineSteps drift vs processingStep: missing=#{(expected_pipeline_steps - pipeline_steps).to_a.sort} extra=#{(pipeline_steps - expected_pipeline_steps).to_a.sort}"
+  errors += 1
+end
+
+task_step = pub.dig('components', 'schemas', 'ProcessingTaskStep') || {}
+unless (task_step['required'] || []).include?('source')
+  puts '  ProcessingTaskStep.source must be required'
+  errors += 1
+end
+unless task_step.dig('properties', 'source', '$ref') == '#/components/schemas/ProcessingStepUpdateSource'
+  puts '  ProcessingTaskStep.source must directly reference ProcessingStepUpdateSource'
+  errors += 1
+end
+
+complete_req = cb.dig('components', 'schemas', 'CompleteWorkerPhaseRequest') || {}
+unless (complete_req['required'] || []).include?('phase')
+  puts '  CompleteWorkerPhaseRequest.phase must be required'
+  errors += 1
+end
+phase_values = Set.new(complete_req.dig('properties', 'phase', 'enum') || [])
+unless phase_values == Set.new(['WORKER_DAG'])
+  puts "  CompleteWorkerPhaseRequest.phase must only allow WORKER_DAG, got #{phase_values.to_a.sort}"
+  errors += 1
+end
+
+enum_source_types = Set.new(enums.fetch('sourceType', []))
+cb_source_types = Set.new(cb.dig('components', 'schemas', 'EmbeddingsCallbackRequest', 'properties', 'sourceType', 'enum') || [])
+if !cb_source_types.empty? && cb_source_types != enum_source_types
+  puts "  sourceType mismatch: enums=#{enum_source_types.to_a.sort} cb=#{cb_source_types.to_a.sort}"
+  errors += 1
+end
+worker_source_types = Set.new(worker_internal.dig('components', 'schemas', 'SourceType', 'enum') || [])
+if !worker_source_types.empty? && worker_source_types != enum_source_types
+  puts "  sourceType mismatch: enums=#{enum_source_types.to_a.sort} worker-internal=#{worker_source_types.to_a.sort}"
+  errors += 1
+end
+
+enum_task_events = Set.new(enums.fetch('taskEventType', []))
+pub_task_events = Set.new(pub.dig('components', 'schemas', 'TaskEvent', 'properties', 'eventType', 'enum') || [])
+if !pub_task_events.empty? && pub_task_events != enum_task_events
+  puts "  taskEventType mismatch: enums=#{enum_task_events.to_a.sort} pub=#{pub_task_events.to_a.sort}"
+  errors += 1
+end
+
+if errors.positive?
+  puts "  #{errors} enum mismatch(es) found"
+  exit 1
+else
+  puts '  All enum values consistent across yaml files'
+end
+RUBY
+    pass "enums consistent"
+  else
+    warn "pyyaml not installed and ruby unavailable — skipping enum consistency"
+  fi
 fi
 
 # ── 4. 错误码完整性 ────────────────────────────────────────────
@@ -274,7 +429,17 @@ print(len(codes) if isinstance(codes, list) else len(codes.get('errorCodes', [])
 " 2>/dev/null)
     pass "error-codes.yaml: $count entries"
   else
-    warn "pyyaml not installed — skipping error code count"
+    if command -v ruby &>/dev/null; then
+      count=$(ERROR_CODES_FILE="$ERROR_CODES_FILE" ruby - <<'RUBY'
+require 'yaml'
+codes = YAML.load_file(ENV.fetch('ERROR_CODES_FILE'))
+puts(codes.is_a?(Array) ? codes.length : (codes['errorCodes'] || []).length)
+RUBY
+)
+      pass "error-codes.yaml: $count entries"
+    else
+      warn "pyyaml not installed and ruby unavailable — skipping error code count"
+    fi
   fi
 else
   warn "error-codes.yaml not found"

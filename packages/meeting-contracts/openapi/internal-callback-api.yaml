@@ -59,6 +59,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -85,6 +86,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -111,6 +113,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -137,6 +140,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -164,6 +168,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -190,6 +195,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
       requestBody:
+        required: true
         content:
           application/json:
             schema:

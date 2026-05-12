@@ -49,6 +49,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/OkEmpty'
@@ -94,6 +95,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -117,6 +124,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -210,6 +223,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeetingRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -231,9 +250,19 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAudioUploadRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUploadSessionResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -279,9 +308,19 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAudioUploadPartRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Signed upload URL for one part
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUploadPartResponse'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete:
     post:
@@ -293,9 +332,19 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteAudioUploadRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Upload completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUploadSessionResponse'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/abort:
     post:
@@ -306,6 +355,7 @@ paths:
         - $ref: '#/components/parameters/UploadId'
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           $ref: '#/components/responses/OkEmpty'
@@ -335,6 +385,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProcessingTaskRequest'
       responses:
         '200':
           description: Task created
@@ -495,6 +551,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTranscriptSegmentRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -520,12 +582,31 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegenerateTranscriptDependentsRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
 
   # ── Speaker Profiles ────────────────────────────────────────
   /speaker-profiles:
+    get:
+      operationId: listSpeakerProfiles
+      tags: [Speakers]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Speaker profile list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeakerProfileListResponse'
     post:
       operationId: createSpeakerProfile
       tags: [Speakers]
@@ -533,6 +614,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpeakerProfileRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -564,6 +651,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpeakerEnrollmentRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -594,11 +687,35 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeSpeakerProfileRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /meetings/{meetingId}/speakers:
+    get:
+      operationId: listMeetingSpeakers
+      tags: [Speakers]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Meeting speaker labels and candidates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingSpeakerListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /meetings/{meetingId}/speakers/{speakerLabel}/confirm:
     post:
@@ -610,6 +727,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmMeetingSpeakerRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -624,6 +747,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectMeetingSpeakerRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -660,6 +789,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegenerateMinutesRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -686,6 +821,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateActionItemRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -757,6 +898,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -809,6 +956,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagQueryRequest'
       responses:
         '200':
           description: RAG answer with citations
@@ -873,6 +1027,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExportRequest'
       responses:
         '200':
           description: Export job created
@@ -947,6 +1107,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLegalHoldRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -970,6 +1136,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseLegalHoldRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -1004,6 +1176,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeletionJobRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -1049,6 +1227,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBreakGlassRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -1062,6 +1246,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveBreakGlassRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -1075,6 +1265,12 @@ paths:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectBreakGlassRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -1291,6 +1487,32 @@ components:
           type: object
           additionalProperties: true
 
+    # ── User Requests ─────────────────────────────────────────
+    CreateUserRequest:
+      type: object
+      required: [username, displayName, roles]
+      properties:
+        username: {type: string, minLength: 1}
+        displayName: {type: string, minLength: 1}
+        email: {type: [string, 'null'], format: email}
+        personId: {type: [string, 'null']}
+        roles:
+          type: array
+          minItems: 1
+          items: {type: string}
+
+    UpdateUserRequest:
+      type: object
+      minProperties: 1
+      properties:
+        displayName: {type: string}
+        email: {type: [string, 'null'], format: email}
+        enabled: {type: boolean}
+        roles:
+          type: array
+          items: {type: string}
+        expectedVersion: {type: integer, minimum: 0}
+
     # ── Auth ───────────────────────────────────────────────────
     LoginRequest:
       type: object
@@ -1371,6 +1593,23 @@ components:
               displayName: {type: string}
               role: {type: string}
 
+    UpdateMeetingRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title: {type: string, minLength: 1}
+        scheduledStartAt: {type: [string, 'null'], format: date-time}
+        participants:
+          type: array
+          items:
+            type: object
+            required: [personId, displayName, role]
+            properties:
+              personId: {type: string}
+              displayName: {type: string}
+              role: {type: string}
+        expectedVersion: {type: integer, minimum: 0}
+
     MeetingResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1430,7 +1669,105 @@ components:
         hasMore: {type: boolean}
         limit: {type: integer}
 
+    # ── Audio Upload ──────────────────────────────────────────
+    CreateAudioUploadRequest:
+      type: object
+      required: [fileName, contentType, sizeBytes, sha256]
+      properties:
+        fileName: {type: string, minLength: 1}
+        contentType: {type: string, minLength: 1}
+        sizeBytes: {type: integer, minimum: 1}
+        sha256: {type: string, minLength: 1}
+        partSizeBytes: {type: integer, minimum: 5242880}
+
+    CreateAudioUploadPartRequest:
+      type: object
+      required: [partNumber, sizeBytes]
+      properties:
+        partNumber: {type: integer, minimum: 1}
+        sizeBytes: {type: integer, minimum: 1}
+        sha256: {type: [string, 'null']}
+
+    CompleteAudioUploadRequest:
+      type: object
+      required: [fileSha256, parts]
+      properties:
+        fileSha256: {type: string, minLength: 1}
+        durationMs: {type: [integer, 'null'], minimum: 1}
+        parts:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [partNumber, etag]
+            properties:
+              partNumber: {type: integer, minimum: 1}
+              etag: {type: string, minLength: 1}
+              sha256: {type: [string, 'null']}
+
+    AudioUploadSessionResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/AudioUploadSession'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    AudioUploadSession:
+      type: object
+      required: [uploadId, meetingId, status, expiresAt]
+      properties:
+        uploadId: {type: string}
+        meetingId: {type: string}
+        status: {type: string}
+        objectUri: {type: [string, 'null']}
+        expiresAt: {type: string, format: date-time}
+        partSizeBytes: {type: [integer, 'null']}
+
+    AudioUploadPartResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [uploadId, partNumber, uploadUrl, expiresAt]
+          properties:
+            uploadId: {type: string}
+            partNumber: {type: integer}
+            uploadUrl: {type: string}
+            expiresAt: {type: string, format: date-time}
+            headers:
+              type: object
+              additionalProperties: {type: string}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
     # ── Processing Task ────────────────────────────────────────
+    CreateProcessingTaskRequest:
+      type: object
+      required: [taskType]
+      properties:
+        taskType:
+          type: string
+          enum: [MEETING_FULL_PIPELINE]
+        options:
+          type: object
+          additionalProperties: true
+        expectedInputVersion:
+          type: object
+          additionalProperties: true
+
     ProcessingTaskResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1517,6 +1854,25 @@ components:
         leaseExpiresAt: {type: [string, 'null'], format: date-time}
 
     # ── Transcript ─────────────────────────────────────────────
+    UpdateTranscriptSegmentRequest:
+      type: object
+      required: [currentText, expectedTranscriptVersion]
+      properties:
+        currentText: {type: string}
+        expectedTranscriptVersion: {type: integer, minimum: 0}
+
+    RegenerateTranscriptDependentsRequest:
+      type: object
+      required: [regenerateScope, expectedTranscriptVersion]
+      properties:
+        regenerateScope:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [SUMMARY, ACTION_ITEMS, DECISIONS, RISKS, RAG_INDEXING, EXPORTS]
+        expectedTranscriptVersion: {type: integer, minimum: 0}
+
     TranscriptResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1558,7 +1914,130 @@ components:
           type: string
           enum: [WORD, SEGMENT, APPROXIMATE]
 
+    # ── Speakers ──────────────────────────────────────────────
+    CreateSpeakerProfileRequest:
+      type: object
+      required: [personId, displayName, consentReference]
+      properties:
+        personId: {type: string}
+        displayName: {type: string}
+        consentReference: {type: string}
+        authorizedScope:
+          type: array
+          items: {type: string}
+
+    CreateSpeakerEnrollmentRequest:
+      type: object
+      required: [audioFileId, consentReference]
+      properties:
+        audioFileId: {type: string}
+        consentReference: {type: string}
+        language: {type: [string, 'null']}
+
+    RevokeSpeakerProfileRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1}
+
+    ConfirmMeetingSpeakerRequest:
+      type: object
+      required: [personId, speakerProfileId, expectedTranscriptVersion]
+      properties:
+        personId: {type: string}
+        speakerProfileId: {type: string}
+        expectedTranscriptVersion: {type: integer, minimum: 0}
+
+    RejectMeetingSpeakerRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string}
+        candidatePersonId: {type: [string, 'null']}
+        candidateSpeakerProfileId: {type: [string, 'null']}
+
+    SpeakerProfileListResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [items, page]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SpeakerProfile'
+            page:
+              $ref: '#/components/schemas/PageInfo'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    SpeakerProfile:
+      type: object
+      required: [speakerProfileId, personId, displayName, status]
+      properties:
+        speakerProfileId: {type: string}
+        personId: {type: string}
+        displayName: {type: string}
+        status: {type: string}
+        enrollmentCount: {type: integer}
+        lastEnrolledAt: {type: [string, 'null'], format: date-time}
+
+    MeetingSpeakerListResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [meetingId, speakers]
+          properties:
+            meetingId: {type: string}
+            speakers:
+              type: array
+              items:
+                $ref: '#/components/schemas/MeetingSpeaker'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    MeetingSpeaker:
+      type: object
+      required: [speakerLabel, confirmationStatus, candidates]
+      properties:
+        speakerLabel: {type: string}
+        displayName: {type: [string, 'null']}
+        personId: {type: [string, 'null']}
+        speakerProfileId: {type: [string, 'null']}
+        confirmationStatus: {type: string}
+        candidates:
+          type: array
+          items:
+            type: object
+            required: [personId, speakerProfileId, displayName, confidence]
+            properties:
+              personId: {type: string}
+              speakerProfileId: {type: string}
+              displayName: {type: string}
+              confidence: {type: number, minimum: 0, maximum: 1}
+
     # ── Minutes ────────────────────────────────────────────────
+    RegenerateMinutesRequest:
+      type: object
+      required: [expectedTranscriptVersion]
+      properties:
+        expectedTranscriptVersion: {type: integer, minimum: 0}
+        expectedMinutesVersion: {type: [integer, 'null'], minimum: 0}
+
     MinutesResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1605,7 +2084,48 @@ components:
         requestId: {type: string}
         traceId: {type: string}
 
+    # ── Items ─────────────────────────────────────────────────
+    UpdateActionItemRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title: {type: string}
+        assigneePersonId: {type: [string, 'null']}
+        dueAt: {type: [string, 'null'], format: date-time}
+        status: {type: string}
+        expectedVersion: {type: integer, minimum: 0}
+
+    # ── Documents ─────────────────────────────────────────────
+    CreateDocumentRequest:
+      type: object
+      required: [fileName, contentType, sizeBytes, sha256, securityLevel]
+      properties:
+        fileName: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer, minimum: 1}
+        sha256: {type: string}
+        securityLevel:
+          $ref: '#/components/schemas/SecurityLevel'
+        title: {type: [string, 'null']}
+
     # ── RAG ────────────────────────────────────────────────────
+    RagQueryRequest:
+      type: object
+      required: [question, scope]
+      properties:
+        question: {type: string, minLength: 1}
+        scope:
+          type: object
+          properties:
+            meetingIds:
+              type: array
+              items: {type: string}
+            documentIds:
+              type: array
+              items: {type: string}
+        topN: {type: integer, minimum: 1, maximum: 20, default: 8}
+        includeStale: {type: boolean, default: false}
+
     RagAnswerResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1660,6 +2180,19 @@ components:
         content: {type: string}
 
     # ── Export ─────────────────────────────────────────────────
+    CreateExportRequest:
+      type: object
+      required: [format, expectedTranscriptVersion]
+      properties:
+        format:
+          type: string
+          enum: [MARKDOWN, DOCX, PDF]
+        expectedTranscriptVersion: {type: integer, minimum: 0}
+        expectedMinutesVersion: {type: [integer, 'null'], minimum: 0}
+        includeTranscript: {type: boolean, default: true}
+        includeMinutes: {type: boolean, default: true}
+        includeItems: {type: boolean, default: true}
+
     ExportJobResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -1686,6 +2219,68 @@ components:
             - type: 'null'
         requestId: {type: string}
         traceId: {type: string}
+
+    # ── Compliance / Admin Requests ───────────────────────────
+    CreateLegalHoldRequest:
+      type: object
+      required: [reason, scopes]
+      properties:
+        reason: {type: string, minLength: 1}
+        expiresAt: {type: [string, 'null'], format: date-time}
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ComplianceScope'
+
+    ReleaseLegalHoldRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1}
+
+    CreateDeletionJobRequest:
+      type: object
+      required: [reason, scopes]
+      properties:
+        reason: {type: string, minLength: 1}
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ComplianceScope'
+
+    CreateBreakGlassRequest:
+      type: object
+      required: [reason, scopes, expiresAt]
+      properties:
+        reason: {type: string, minLength: 1}
+        expiresAt: {type: string, format: date-time}
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ComplianceScope'
+
+    ApproveBreakGlassRequest:
+      type: object
+      properties:
+        comment: {type: [string, 'null']}
+
+    RejectBreakGlassRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1}
+
+    ComplianceScope:
+      type: object
+      required: [entityType, entityId]
+      properties:
+        entityType:
+          type: string
+          enum: [MEETING, MEETING_FILE, DOCUMENT, EXPORT, ARTIFACT, SPEAKER_PROFILE, AUDIT_EVENT]
+        entityId: {type: string}
 
     # ── Enums (fact source: schemas/common/enums.yaml) ──────────
     SecurityLevel:

@@ -110,7 +110,7 @@ Adapter 层职责：
 职责：
 
 1. 从 `export-queue` 读取 export job message。
-2. 校验 message 的 `tenantId`、`exportId`、`meetingId`、`traceId`。
+2. 按 `packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json` 校验 message 的 `tenantId`、`exportId`、`meetingId`、`format`、`expectedInputVersion`、`traceId`。
 3. 转换为 app 层 `RunExportJobCommand`。
 4. ack / nack 由 app 层处理结果和 retry 策略决定。
 5. 不直接调用 LibreOffice，不直接写 TOS，不直接改 `export_jobs`。

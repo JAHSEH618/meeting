@@ -104,7 +104,7 @@ phase 迁移规则：
 |---|---|---|
 | `WORKER_DAG_RUNNING` | `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG` callback 幂等落库成功 |
 | `WORKER_DAG_DONE` | `JAVA_LLM_RUNNING` | app 层 listener 开始推进 `SUMMARY` |
-| `WORKER_DAG_DONE` | `TERMINAL` | task type 无 Java LLM 阶段（`TEXT_EMBEDDING` / `RAG_REINDEX` / `SPEAKER_ENROLLMENT` / `EXPORT`），listener 收到 `WORKER_PHASE_COMPLETED` 后按必做 step 结果直接置 task 终态 |
+| `WORKER_DAG_DONE` | `TERMINAL` | worker task type 无 Java LLM 阶段（`TEXT_EMBEDDING` / `RAG_REINDEX` / `SPEAKER_ENROLLMENT`），listener 收到 `WORKER_PHASE_COMPLETED` 后按必做 step 结果直接置 task 终态；`EXPORT` 由 Java `export-queue` consumer 推进 export job 状态，不进入 worker DAG phase |
 | `JAVA_LLM_RUNNING` | `TERMINAL` | `SUMMARY` / `EXTRACTION` 与所有必做 step 达到终态 |
 | 任意非 `TERMINAL` | `TERMINAL` | task `FAILED`、`CANCELLED` 或 deletion / cleanup 强制终止 |
 
@@ -122,7 +122,7 @@ phase 迁移规则：
 | `RUNNING`, `WORKER_DAG_RUNNING` | `RUNNING`, `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG status=SUCCEEDED`；记录 worker phase 完成，但 task 不进入终态 |
 | `RUNNING`, `WORKER_DAG_RUNNING` | `RUNNING`, `WORKER_DAG_DONE` | `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` 且携带 `skippedSteps`；写入 optional worker step 的 `SKIPPED` / `FAILED` 原因 |
 | `RUNNING`, `WORKER_DAG_DONE` | `RUNNING`, `JAVA_LLM_RUNNING` | `MEETING_FULL_PIPELINE` listener 开始推进 `SUMMARY` |
-| `RUNNING`, `WORKER_DAG_DONE` | `SUCCEEDED`, `TERMINAL` | 非 LLM task type 没有 Java 内部 step，且所有必做 step 已成功 |
+| `RUNNING`, `WORKER_DAG_DONE` | `SUCCEEDED`, `TERMINAL` | 非 LLM worker task type 没有 Java 内部 step，且所有必做 step 已成功 |
 | `RUNNING`, `JAVA_LLM_RUNNING` | `SUCCEEDED`, `TERMINAL` | Java 内部 `SUMMARY` / `EXTRACTION` 以及所有必做 step 全部成功 |
 | `RUNNING`, `WORKER_DAG_DONE` / `JAVA_LLM_RUNNING` | `PARTIAL_SUCCEEDED`, `TERMINAL` | worker phase partial 或 Java optional step 失败，但核心产物可用且所有必做 step 已完成 |
 | `RUNNING`, 任意非 `TERMINAL` | `FAILED`, `TERMINAL` | 不可降级 step 失败且重试耗尽 |
