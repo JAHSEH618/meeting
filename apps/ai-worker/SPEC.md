@@ -96,11 +96,17 @@ POST /internal/rerank
 
 `POST /internal/rerank` 是 Java `meeting-api` 到 `ai-worker` 的同步内部调用，只服务 RAG query-time rerank，不作为前端 API。请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。调用要求：
 
-1. 仅允许内网 + HMAC 请求，签名规则与 callback 同源配置但方向相反。
+1. 仅允许内网 + HMAC 请求，签名算法和 signing string 结构与 callback 同源，但使用独立方向密钥。`meeting.ai-worker.hmac-secret` / worker inbound secret 用于 Java -> ai-worker rerank；callback HMAC secret 只用于 ai-worker -> Java callback，二者不得复用。
 2. 请求必须携带 `tenantId`、`requestId`、`traceId`、query 文本和已授权候选 chunk。
 3. `ai-worker` 不重新判断用户权限，只做模型推理和候选重排。
 4. 返回每个候选的 `rerankScore` 和 `rank`，不写业务库。
 5. 模型未加载时 lazy-load；加载失败返回稳定错误码，Java 决定是否降级为 RRF 排序。
+
+配置要求：
+
+1. worker 侧必须配置 Java -> ai-worker inbound HMAC secret，名称可按部署环境映射为 `AI_WORKER_INBOUND_HMAC_SECRET`；该值与 Java `meeting.ai-worker.hmac-secret` 相同。
+2. worker 侧 callback client 使用独立的 callback HMAC secret；不得与 inbound rerank secret 共用。
+3. 缺少 inbound rerank secret 时，prod / staging profile 必须拒绝 ready。
 
 可扩展接口：
 

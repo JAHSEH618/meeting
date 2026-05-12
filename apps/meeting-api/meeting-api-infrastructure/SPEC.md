@@ -147,9 +147,11 @@ Prompt template 加载：
 1. 只由 `meeting-api-app` 的 RAG 查询用例调用，不对前端暴露。
 2. 使用内网 + HMAC 调用 `ai-worker` `POST /internal/rerank`，请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。
 3. 只发送 Java 已完成权限二次校验、`status=ACTIVE AND stale_status=ACTIVE` 的候选 chunk。
-4. 请求必须携带 `tenantId`、`requestId`、`traceId`、query 文本、候选 chunk id / source type / text snapshot / RRF score。
-5. 超时默认 `3s`；超时或 ai-worker 返回 5xx 时记录 `RERANK_UNAVAILABLE`，是否降级为 RRF 排序由 app 层策略决定并写入 `rag_query_logs`。
-6. 不通过 RabbitMQ，不创建独立 `rerank-queue`。
+4. HMAC 使用 `meeting.ai-worker.hmac-secret`，不得复用 ai-worker -> Java callback HMAC secret。
+5. 请求必须携带 `tenantId`、`requestId`、`traceId`、query 文本、候选 chunk id / source type / text snapshot / RRF score，以及来自 `meeting.ai-worker.rerank.model-version` 的 `modelVersion`。
+6. 超时默认 `3s`，由 `meeting.ai-worker.rerank.timeout-ms` 配置；超时、503 或 ai-worker 5xx 时记录 `RERANK_UNAVAILABLE`，是否降级为 RRF 排序由 app 层策略决定并写入 `rag_query_logs`。
+7. 400 / 401 视为契约破坏或 HMAC 配置错误，记录 `RERANK_CONTRACT_ERROR`，不降级为 RRF，触发告警并让 RAG query 返回 502。
+8. 不通过 RabbitMQ，不创建独立 `rerank-queue`。
 
 ## 8. Export Runtime
 

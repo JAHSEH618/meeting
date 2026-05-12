@@ -195,19 +195,19 @@ components:
           additionalProperties: true
   responses:
     BadRequest:
-      description: Invalid request.
+      description: Invalid request. meeting-api must treat this as RERANK_CONTRACT_ERROR and must not silently downgrade.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorInfo'
     AuthFailed:
-      description: HMAC authentication failed.
+      description: HMAC authentication failed. meeting-api must treat this as RERANK_CONTRACT_ERROR and must not silently downgrade.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorInfo'
     RerankUnavailable:
-      description: Rerank model or runtime unavailable.
+      description: Rerank model or runtime unavailable. meeting-api may downgrade to RRF and record RERANK_UNAVAILABLE.
       content:
         application/json:
           schema:

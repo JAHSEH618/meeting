@@ -250,6 +250,12 @@ errorCodes:
     userMessage: Rerank 服务不可用，已尝试降级
     i18nKey: errors.RERANK_UNAVAILABLE
     opsTags: [rag, rerank, ai_worker]
+  - code: RERANK_CONTRACT_ERROR
+    step: RAG
+    retryable: false
+    userMessage: Rerank 内部契约或签名配置错误
+    i18nKey: errors.RERANK_CONTRACT_ERROR
+    opsTags: [rag, rerank, contract, security]
 
   # ── Export ────────────────────────────────────────────────────
   - code: EXPORT_FAILED

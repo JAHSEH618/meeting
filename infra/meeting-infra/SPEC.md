@@ -55,7 +55,7 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 
 | service | image / build | ports | healthcheck | volumes / env |
 |---|---|---|---|---|
-| `postgres` | `pgvector/pgvector:pg15` 或内部等价镜像 | `5432:5432` | `pg_isready` | `postgres-data`；初始化 `docs/ddls/001_initial_schema.sql` |
+| `postgres` | `pgvector/pgvector:pg15` 或内部等价镜像 | `5432:5432` | `pg_isready` | `postgres-data`；不挂载 `docs/ddls/**` 初始化 schema，运行时 schema 由 `meeting-api` Flyway migration 接管 |
 | `rabbitmq` | `rabbitmq:3.13-management` | `5672:5672`、`15672:15672` | `rabbitmq-diagnostics ping` | `rabbitmq-data`；创建一期队列和 DLQ |
 | `minio` | `minio/minio` | `9000:9000`、`9001:9001` | `/minio/health/live` | `minio-data`；本地替代 TOS |
 | `vault-dev` | `hashicorp/vault` | `8200:8200` | `/v1/sys/health` | 仅 local / dev 替代 KMS |
@@ -86,7 +86,7 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 | PostgreSQL | 数据库节点 | 存储、备份、RLS 验证 |
 | RabbitMQ | 消息队列节点 | 队列堆积、DLQ、连接数 |
 
-`ai-worker` 与 `meeting-api` 可分开部署，通过 RabbitMQ、TOS URI 和 internal callback API 协作。
+`ai-worker` 与 `meeting-api` 可分开部署，通过 RabbitMQ、TOS URI、internal callback API 和 `POST /internal/rerank` 协作。
 
 ## 5. RabbitMQ 队列
 
@@ -126,15 +126,19 @@ MVP 可先使用 Docker Compose；生产部署优先 K8s + Terraform。
 3. TOS endpoint、bucket、access key、secret key。
 4. DashScope API key。
 5. callback HMAC secret。
-6. KMS master key 或 KMS 访问配置。
-7. JWT / session secret。
-8. CORS allowed origins。
-9. 模型权重路径和 checksum。
-10. `meeting.chunk.strategy-version`，例如 `chunk-2026.05.1`。
-11. callback HMAC timestamp skew，例如 `meeting.callback.timestamp-skew-seconds=300`。
-12. callback 幂等事件保留期，例如 `meeting.callback-events.retention-days=30`。
+6. ai-worker base URL，例如 `meeting.ai-worker.base-url=http://ai-worker:8090`。
+7. Java -> ai-worker rerank HMAC secret，例如 `meeting.ai-worker.hmac-secret`；不得复用 callback HMAC secret。
+8. Rerank 同步调用超时，例如 `meeting.ai-worker.rerank.timeout-ms=3000`。
+9. Rerank 模型版本，例如 `meeting.ai-worker.rerank.model-version=bge-reranker-v2-m3@v1`。
+10. KMS master key 或 KMS 访问配置。
+11. JWT / session secret。
+12. CORS allowed origins。
+13. 模型权重路径和 checksum。
+14. `meeting.chunk.strategy-version`，例如 `chunk-2026.05.1`。
+15. callback HMAC timestamp skew，例如 `meeting.callback.timestamp-skew-seconds=300`。
+16. callback 幂等事件保留期，例如 `meeting.callback-events.retention-days=30`。
 
-密钥不得写入仓库。Compose 可使用 `.env.example` 占位，真实值通过本机 `.env`、K8s Secret 或密钥管理系统注入。
+密钥不得写入仓库。Compose 可使用 `.env.example` 占位，真实值通过本机 `.env`、K8s Secret 或密钥管理系统注入。`meeting.callback.hmac-secret` 用于 ai-worker -> meeting-api callback；`meeting.ai-worker.hmac-secret` 用于 meeting-api -> ai-worker rerank，两个方向必须使用不同 secret，独立轮换。
 
 ## 7. 存储桶规划
 

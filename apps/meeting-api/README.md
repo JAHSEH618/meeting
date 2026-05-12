@@ -38,7 +38,7 @@ meeting-api-infrastructure InMemoryMeetingRepository，占位替代 PostgreSQL �
 meeting-api-start         Spring Boot 启动类与基础配置
 ```
 
-后续接入数据库时，将 `InMemoryMeetingRepository` 替换为 PostgreSQL RepositoryImpl，并把 `docs/ddls/001_initial_schema.sql` 拆入正式 migration。
+后续接入数据库时，将 `InMemoryMeetingRepository` 替换为 PostgreSQL RepositoryImpl，并以 `meeting-api-infrastructure/src/main/resources/db/migration/*.sql` 的 Flyway migration 作为运行时 schema 事实源。`docs/ddls/001_initial_schema.sql` 只保留为评审快照。
 
 ## 子项目规格
 

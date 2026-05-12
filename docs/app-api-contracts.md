@@ -827,7 +827,7 @@ POST /api/rag/query
 }
 ```
 
-内部实现顺序：`meeting-api` 先计算权限 scope，完成 pgvector / keyword 召回和 PostgreSQL 权限二次校验，再通过 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 定义的 `POST /internal/rerank` 同步调用 `ai-worker` 做 query-time rerank。`ai-worker` 不接收前端请求，也不重新判断业务权限。
+内部实现顺序：`meeting-api` 先计算权限 scope，完成 pgvector / keyword 召回和 PostgreSQL 权限二次校验，再通过 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 定义的 `POST /internal/rerank` 同步调用 `ai-worker` 做 query-time rerank。`ai-worker` 不接收前端请求，也不重新判断业务权限。Rerank 超时、503 或 5xx 可降级为 RRF 排序；400 / 401 表示内部契约或签名配置错误，返回 `RERANK_CONTRACT_ERROR`，不降级。
 
 ### 4.12 导出
 
@@ -1830,7 +1830,7 @@ callback `Idempotency-Key` 精确定义：
 | Task | `TASK_NOT_FOUND`, `TASK_ATTEMPT_CONFLICT`, `TASK_LEASE_CONFLICT` | false |
 | Storage | `TOS_OBJECT_NOT_FOUND`, `TOS_READ_FAILED`, `TOS_WRITE_FAILED` | true |
 | AI Pipeline | `ASR_MODEL_TIMEOUT`, `DIARIZATION_FAILED`, `SPEAKER_MATCH_FAILED` | true |
-| RAG | `RAG_INDEX_FAILED`, `VECTOR_SEARCH_FAILED`, `RERANK_UNAVAILABLE` | true |
+| RAG | `RAG_INDEX_FAILED`, `VECTOR_SEARCH_FAILED`, `RERANK_UNAVAILABLE`, `RERANK_CONTRACT_ERROR` | depends |
 | LLM | `SECURITY_LEVEL_BLOCKED`, `LLM_SCHEMA_INVALID`, `LLM_PROVIDER_TIMEOUT` | depends |
 | Export | `EXPORT_RENDER_FAILED`, `EXPORT_LINK_REVOKED` | depends |
 

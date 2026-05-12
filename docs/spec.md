@@ -403,7 +403,7 @@ Java 是主产品 UI。Python 可通过 FastAPI 暴露非客户主路径的内�
 
 这些接口不作为业务事实来源，不替代 Java 会议 UI。
 
-一期 RAG query-time rerank 是内部业务调用，不属于客户主产品入口。Java `meeting-api` 通过 `RerankGateway` 使用内网 + HMAC 同步调用 `ai-worker` 的 `POST /internal/rerank`，请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。该接口只接收 Java 已完成权限过滤和二次校验后的候选 chunk，不接受前端直接访问。
+一期 RAG query-time rerank 是内部业务调用，不属于客户主产品入口。Java `meeting-api` 通过 `RerankGateway` 使用内网 + HMAC 同步调用 `ai-worker` 的 `POST /internal/rerank`，请求 / 响应 schema 以 `packages/meeting-contracts/openapi/ai-worker-internal-api.yaml` 为准。该接口只接收 Java 已完成权限过滤和二次校验后的候选 chunk，不接受前端直接访问。Java -> ai-worker rerank 使用 `meeting.ai-worker.hmac-secret`，不得复用 ai-worker -> Java callback HMAC secret；`RerankRequest.modelVersion` 来自 `meeting.ai-worker.rerank.model-version` 配置。
 
 ## 4. 核心流程
 
@@ -1295,9 +1295,10 @@ RAG 查询只允许召回 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
 
 1. 向量召回使用 pgvector HNSW：`m=16`、`ef_construction=64`；查询会话设置 `hnsw.ef_search=80`。
 2. 默认召回 `top_k=20`，Java app 层用 RRF 合并候选并完成权限二次校验后，通过 `RerankGateway` 同步调用 ai-worker `POST /internal/rerank`，rerank 后返回 `top_n=8`；cosine similarity 阈值默认 `0.45`。
-3. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` GIN 索引。
-4. app 层用 RRF 融合 vector 与 keyword 候选，默认 `k=60`，按 chunk 去重后做权限二次校验。
-5. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
+3. Rerank 超时、503 或 5xx 可按配置降级为 RRF 排序并记录 `RERANK_UNAVAILABLE`；400 / 401 视为契约或签名配置错误，记录 `RERANK_CONTRACT_ERROR`，不降级，RAG query 返回 502 并触发告警。
+4. 关键词召回使用 `tsvector` 全文索引和 `pg_trgm` GIN 索引。
+5. app 层用 RRF 融合 vector 与 keyword 候选，默认 `k=60`，按 chunk 去重后做权限二次校验。
+6. 外置搜索引擎、Qdrant / Milvus 和独立 rerank 队列都属于后续扩展。
 
 ### 9.6 RAG 缓存与重建
 
@@ -1563,6 +1564,7 @@ Diarization RTF: <= 0.4
 | RAG_INDEX_FAILED | RAG_INDEXING | RAG 入库失败 | 是 |
 | VECTOR_SEARCH_FAILED | RAG | 向量检索失败 | 是 |
 | RERANK_UNAVAILABLE | RAG | Rerank 服务不可用，已尝试降级 | 是 |
+| RERANK_CONTRACT_ERROR | RAG | Rerank 内部契约或签名配置错误 | 否 |
 | EXPORT_FAILED | EXPORT | 导出失败 | 是 |
 | WORKER_LEASE_EXPIRED | TASK | worker lease 过期 | 是 |
 | WRITEBACK_FAILED | CALLBACK | 回写重试耗尽 | 是 |

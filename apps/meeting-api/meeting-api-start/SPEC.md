@@ -59,6 +59,10 @@ management:
 | `meeting.callback.timestamp-skew-seconds` | 300 | HMAC timestamp 容忍窗口 |
 | `meeting.callback-events.retention-days` | 30 | callback 幂等重放保留 |
 | `meeting.chunk.strategy-version` | 无默认值 | 首次 `MEETING_FULL_PIPELINE` 任务写入 `expectedInputVersion.chunkStrategyVersion` 的来源 |
+| `meeting.ai-worker.base-url` | 无默认值 | Java 同步调用 `ai-worker` 内部接口的 base URL，例如 `http://ai-worker:8090` |
+| `meeting.ai-worker.hmac-secret` | 无默认值 | Java -> ai-worker 内部调用签名密钥；不得复用 ai-worker -> Java callback HMAC secret |
+| `meeting.ai-worker.rerank.timeout-ms` | 3000 | `POST /internal/rerank` 同步调用超时 |
+| `meeting.ai-worker.rerank.model-version` | 无默认值 | Java 组装 `RerankRequest.modelVersion` 的来源，例如 `bge-reranker-v2-m3@v1` |
 
 敏感值通过环境变量注入：
 
@@ -67,8 +71,9 @@ management:
 3. TOS access key 和 secret key。
 4. DashScope API key。
 5. callback HMAC secret。
-6. KMS 配置。
-7. JWT / session secret。
+6. Java -> ai-worker HMAC secret。
+7. KMS 配置。
+8. JWT / session secret。
 
 ## 4. Profile
 
@@ -86,6 +91,7 @@ profile 规则：
 2. `prod` 不允许缺少 callback HMAC secret。
 3. `prod` 不允许关闭 RLS。
 4. `prod` 不允许临时下载模型权重或写入测试 bucket。
+5. `prod` 不允许缺少 `meeting.ai-worker.base-url`、`meeting.ai-worker.hmac-secret` 或 `meeting.ai-worker.rerank.model-version`。
 
 ## 5. 健康检查
 
@@ -100,6 +106,7 @@ profile 规则：
 7. outbox publisher 状态。
 8. KMS connectivity 或 KMS 配置存在性。
 9. RabbitMQ 必要队列存在性和 queue depth 摘要。
+10. ai-worker rerank endpoint reachability：prod / staging 至少校验 `meeting.ai-worker.base-url` 可连通，并通过轻量探测或模型状态确认 rerank runtime 可用；普通 health 不发送真实业务 query 文本。
 
 ## 6. 启动失败条件
 
@@ -112,6 +119,7 @@ profile 规则：
 5. 数据库 migration 版本不匹配。
 6. 必要队列缺失且配置要求启动时校验。
 7. `meeting.chunk.strategy-version` 缺失或为空。
+8. prod profile 下 `meeting.ai-worker.base-url`、`meeting.ai-worker.hmac-secret` 或 `meeting.ai-worker.rerank.model-version` 缺失。
 
 ## 7. 验收标准
 
