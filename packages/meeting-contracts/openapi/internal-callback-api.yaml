@@ -1,7 +1,11 @@
 openapi: 3.1.0
 info:
   title: Meeting Internal Callback API
+  description: HMAC-authenticated callback API for ai-worker to report processing results back to meeting-api.
   version: 0.1.0
+  contact:
+    name: Meeting API Team
+    email: api@meeting.dev
 servers:
   - url: /internal
 x-callback-conventions:
@@ -15,10 +19,16 @@ x-callback-conventions:
   timestampSkewSeconds: 300
   idempotencyKeyFormat: '{taskId}:{stepName}:{attemptNo}:{payloadVersion}'
   idempotencyRetentionDays: 30
+tags:
+  - name: Callback
+    description: HMAC-signed callback operations from ai-worker to meeting-api
+
 paths:
   /processing-tasks/{taskId}/steps/{stepName}:
     patch:
       operationId: updateProcessingTaskStep
+      description: Report step progress, heartbeat, or completion for a processing task step.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/StepName'
@@ -47,6 +57,8 @@ paths:
   /processing-tasks/{taskId}/artifacts:
     post:
       operationId: createProcessingArtifact
+      description: Register one or more processing artifacts (e.g. normalized audio) for a task.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'
@@ -74,6 +86,8 @@ paths:
   /processing-tasks/{taskId}/transcript:
     post:
       operationId: submitTranscript
+      description: Submit transcript segments produced by ASR and diarization pipeline.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'
@@ -101,6 +115,8 @@ paths:
   /processing-tasks/{taskId}/speaker-candidates:
     post:
       operationId: submitSpeakerCandidates
+      description: Submit speaker matching candidates with plaintext embeddings for a task.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'
@@ -128,6 +144,8 @@ paths:
   /processing-tasks/{taskId}/embeddings:
     post:
       operationId: submitTextEmbeddings
+      description: Submit text embeddings for RAG indexing chunks.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'
@@ -155,6 +173,8 @@ paths:
   /processing-tasks/{taskId}/complete:
     post:
       operationId: completeWorkerPhase
+      description: Mark the worker DAG phase complete without moving the task to terminal SUCCEEDED.
+      tags: [Callback]
       summary: Mark the worker DAG phase complete without moving the task to terminal SUCCEEDED.
       parameters:
         - $ref: '#/components/parameters/TaskId'
@@ -183,6 +203,8 @@ paths:
   /processing-tasks/{taskId}/fail:
     post:
       operationId: failProcessingTask
+      description: Report a fatal failure for a processing task.
+      tags: [Callback]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/WorkerId'

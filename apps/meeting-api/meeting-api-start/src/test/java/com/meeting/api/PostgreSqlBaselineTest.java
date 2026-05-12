@@ -135,6 +135,10 @@ class PostgreSqlBaselineTest {
                 assertThat(rlsTableCount).isGreaterThan(0);
             }
 
+            // Insert tenant rows required by FK before inserting meetings
+            stmt.execute("INSERT INTO tenants (id, name) VALUES ('tenant_isolation_a', 'Tenant Isolation A') ON CONFLICT DO NOTHING");
+            stmt.execute("INSERT INTO tenants (id, name) VALUES ('tenant_isolation_b', 'Tenant Isolation B') ON CONFLICT DO NOTHING");
+
             // Set tenant context using the DDL's convention: app.tenant_id
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
 
@@ -158,6 +162,7 @@ class PostgreSqlBaselineTest {
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
             stmt.execute("DELETE FROM meetings WHERE id = 'mtg_rls_test_a'");
+            stmt.execute("DELETE FROM tenants WHERE id IN ('tenant_isolation_a', 'tenant_isolation_b')");
         }
     }
 }

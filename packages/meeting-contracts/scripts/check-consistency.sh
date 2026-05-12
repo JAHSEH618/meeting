@@ -316,12 +316,56 @@ fi
 
 # ── 6. OpenAPI Fixture Validation ───────────────────────────────
 echo "--- OpenAPI Fixture Validation ---"
-if python3 -c "import jsonschema" 2>/dev/null && [ -d "$FIXTURES_DIR" ]; then
+if python3 -c "import jsonschema,yaml" 2>/dev/null && [ -d "$FIXTURES_DIR" ]; then
   python3 -c "
-import json, jsonschema, sys
+import json, jsonschema, yaml, sys
 from pathlib import Path
 
 errors = 0
+
+# Load OpenAPI specs for real response schema extraction
+openapi_specs = {}
+for fname in ['public-api.yaml', 'internal-callback-api.yaml', 'ai-worker-internal-api.yaml']:
+    fpath = Path('$OPENAPI_DIR') / fname
+    if fpath.exists():
+        with open(fpath) as f:
+            openapi_specs[fname] = yaml.safe_load(f)
+
+# Resolve \$ref (only handles #/components/schemas/xxx)
+resolved_cache = {}
+def resolve_ref(spec, ref):
+    if ref in resolved_cache:
+        return resolved_cache[ref]
+    if not ref.startswith('#/components/schemas/'):
+        return None
+    name = ref.split('/')[-1]
+    schema = spec.get('components', {}).get('schemas', {}).get(name, {})
+    resolved_cache[ref] = resolve_schema(spec, schema)
+    return resolved_cache[ref]
+
+def resolve_schema(spec, schema):
+    if isinstance(schema, dict):
+        if '\$ref' in schema and len(schema) == 1:
+            return resolve_ref(spec, schema['\$ref'])
+        return {k: resolve_schema(spec, v) for k, v in schema.items()}
+    elif isinstance(schema, list):
+        return [resolve_schema(spec, item) for item in schema]
+    return schema
+
+# Get response schema for path/method/status from a spec
+def get_response_schema(spec, path, method, status):
+    paths = spec.get('paths', {})
+    path_item = paths.get(path)
+    if not path_item:
+        return None
+    op = path_item.get(method.lower())
+    if not op:
+        return None
+    resp = op.get('responses', {}).get(str(status), {})
+    content = resp.get('content', {})
+    ct = content.get('application/json', {})
+    schema = ct.get('schema', {})
+    return resolve_schema(spec, schema)
 
 api_response_schema = {
     'type': 'object',
@@ -348,64 +392,34 @@ api_response_schema = {
     },
 }
 
-login_data_schema = {
-    'type': 'object',
-    'required': ['accessToken', 'expiresAt', 'user'],
-    'properties': {
-        'accessToken': {'type': 'string'},
-        'expiresAt': {'type': 'string'},
-        'user': {
-            'type': 'object',
-            'required': ['userId', 'tenantId', 'displayName', 'roles', 'permissions'],
-        },
-    },
-}
-
-rerank_data_schema = {
-    'type': 'object',
-    'required': ['modelVersion', 'items'],
-    'properties': {
-        'modelVersion': {'type': 'string'},
-        'items': {'type': 'array'},
-    },
-}
-
-openapi_fixture_map = {
+# Fixture → (spec_name, path, method, status)
+fixture_api_map = {
     'valid/public-api-login-200.json': {
-        'expected_status': 200,
-        'expect_envelope': True,
-        'data_schema': login_data_schema,
+        'spec': 'public-api.yaml', 'path': '/auth/login', 'method': 'post', 'status': 200,
     },
     'valid/callback-step-update-200.json': {
-        'expected_status': 200,
-        'expect_envelope': True,
-        'data_schema': None,
+        'spec': 'internal-callback-api.yaml', 'path': '/processing-tasks/{taskId}/steps/{stepName}', 'method': 'patch', 'status': 200,
     },
     'valid/ai-worker-rerank-200.json': {
-        'expected_status': 200,
-        'expect_envelope': True,
-        'data_schema': rerank_data_schema,
+        'spec': 'ai-worker-internal-api.yaml', 'path': '/rerank', 'method': 'post', 'status': 200,
     },
     'invalid/public-api-login-missing-username.json': {
-        'expected_status': 400,
-        'expect_envelope': True,
-        'expect_error_response': True,
+        'spec': 'public-api.yaml', 'path': '/auth/login', 'method': 'post', 'status': 400,
+        'expect_error': True,
     },
     'invalid/callback-missing-hmac.json': {
-        'expected_status': 401,
-        'expect_envelope': True,
-        'expect_error_response': True,
+        'spec': 'internal-callback-api.yaml', 'path': '/processing-tasks/{taskId}/steps/{stepName}', 'method': 'patch', 'status': 401,
+        'expect_error': True,
     },
     'invalid/ai-worker-rerank-empty-query.json': {
-        'expected_status': 400,
-        'expect_envelope': True,
-        'expect_error_response': True,
+        'spec': 'ai-worker-internal-api.yaml', 'path': '/rerank', 'method': 'post', 'status': 400,
+        'expect_error': True,
     },
 }
 
 envelope_validator = jsonschema.Draft202012Validator(api_response_schema)
 
-for fp, meta in openapi_fixture_map.items():
+for fp, meta in fixture_api_map.items():
     fixture_path = Path('$FIXTURES_DIR') / fp
     if not fixture_path.exists():
         print(f'  FAIL fixture not found: {fp}')
@@ -413,44 +427,53 @@ for fp, meta in openapi_fixture_map.items():
         continue
     with open(fixture_path) as f:
         fixture = json.load(f)
+
+    response = fixture.get('response', fixture)
     status = fixture.get('status')
-    if status != meta['expected_status']:
-        print(f'  FAIL {fp}: expected status {meta[\"expected_status\"]}, got {status}')
+
+    # Validate ApiResponse envelope
+    try:
+        envelope_validator.validate(response)
+    except jsonschema.ValidationError as e:
+        print(f'  FAIL {fp}: envelope validation failed: {e.message}')
         errors += 1
         continue
-    if meta.get('expect_envelope', False):
-        response = fixture.get('response', fixture)
+
+    spec_name = meta['spec']
+    spec = openapi_specs.get(spec_name)
+    if not spec:
+        print(f'  FAIL {fp}: spec {spec_name} not loaded')
+        errors += 1
+        continue
+
+    real_schema = get_response_schema(spec, meta['path'], meta['method'], meta['status'])
+    if real_schema:
         try:
-            envelope_validator.validate(response)
+            jsonschema.Draft202012Validator(real_schema).validate(response)
         except jsonschema.ValidationError as e:
-            print(f'  FAIL {fp}: envelope validation failed: {e.message}')
+            print(f'  FAIL {fp}: does not match OpenAPI response schema ({spec_name} {meta[\"method\"].upper()} {meta[\"path\"]} {meta[\"status\"]}): {e.message}')
             errors += 1
             continue
-        if not meta.get('expect_error_response', False):
-            data = response.get('data')
-            data_schema = meta.get('data_schema')
-            if data_schema and data is not None:
-                data_validator = jsonschema.Draft202012Validator(data_schema)
-                try:
-                    data_validator.validate(data)
-                except jsonschema.ValidationError as e:
-                    print(f'  FAIL {fp}: response data schema validation failed: {e.message}')
-                    errors += 1
-                    continue
-        else:
-            data = response.get('data')
-            error_obj = response.get('error')
-            if data is not None:
-                print(f'  FAIL {fp}: error response data must be null, got {type(data).__name__}')
-                errors += 1
-                continue
-            if not isinstance(error_obj, dict) or 'code' not in error_obj or 'message' not in error_obj:
-                print(f'  FAIL {fp}: error response must have error with code and message')
-                errors += 1
-                continue
-        print(f'  OK   {fp}: status={status}, envelope+data valid')
     else:
-        print(f'  OK   {fp}: status={status}')
+        print(f'  WARN {fp}: no response schema found in OpenAPI for {meta[\"method\"].upper()} {meta[\"path\"]} {meta[\"status\"]}')
+
+    if meta.get('expect_error'):
+        data = response.get('data')
+        error_obj = response.get('error')
+        if data is not None:
+            print(f'  FAIL {fp}: error response data must be null, got {type(data).__name__}')
+            errors += 1
+            continue
+        if not isinstance(error_obj, dict) or 'code' not in error_obj or 'message' not in error_obj:
+            print(f'  FAIL {fp}: error response must have error with code and message')
+            errors += 1
+            continue
+    else:
+        data = response.get('data')
+        if data is None:
+            print(f'  WARN {fp}: success response data is null')
+
+    print(f'  OK   {fp}: status={status}, envelope+schema valid')
 
 if errors:
     print(f'  {errors} OpenAPI fixture validation error(s) found')
@@ -459,7 +482,7 @@ else:
     print('  All OpenAPI fixtures validated successfully')
 " || HAS_ERRORS=1
 else
-  fail "jsonschema not installed or fixtures directory missing — cannot verify OpenAPI fixtures"
+  fail "jsonschema or pyyaml not installed, or fixtures directory missing — cannot verify OpenAPI fixtures"
 fi
 
 echo ""

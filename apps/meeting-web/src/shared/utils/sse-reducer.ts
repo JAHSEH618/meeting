@@ -1,9 +1,9 @@
-import type { TaskEvent, TaskStep, ProcessingTaskPhase } from "@shared/api/types";
+import type { TaskEvent, ProcessingTaskStep as TaskStep, ProcessingTaskPhase, ProcessingTaskStatus } from "@shared/api/types";
 
 export interface TaskSnapshot {
   taskId: string;
   meetingId: string;
-  status: string;
+  status: ProcessingTaskStatus | string;
   phase: ProcessingTaskPhase | null;
   attemptNo: number;
   currentStep: string | null;
@@ -51,7 +51,7 @@ export function sseReducer(state: TaskSnapshot, event: TaskEvent): TaskSnapshot 
         currentStep: event.stepName ?? state.currentStep,
         steps: state.steps.map((s) =>
           s.stepName === event.stepName
-            ? { ...s, status: event.status, progress: event.progress ?? s.progress }
+            ? { ...s, status: event.status as TaskStep["status"], progress: event.progress ?? s.progress }
             : s
         ),
         completedSteps: event.completedSteps ?? state.completedSteps,

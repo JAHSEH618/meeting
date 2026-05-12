@@ -255,7 +255,7 @@ cp .env.example .env                                                    # 按需
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
-启动后包含：PostgreSQL 15 + pgvector · RabbitMQ · MinIO（TOS 替代）· Vault-dev（KMS 替代）· Prometheus · Grafana · Loki。
+启动后包含：PostgreSQL 15 + pgvector · RabbitMQ · MinIO（TOS 替代）· Vault-dev（KMS 替代）。Prometheus · Grafana 需加 `--profile observability` 启动；Loki 待补充。
 
 ### 2 校验并生成契约（任何 schema 改动后必做）
 

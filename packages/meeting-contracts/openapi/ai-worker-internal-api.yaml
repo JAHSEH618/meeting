@@ -1,7 +1,11 @@
 openapi: 3.1.0
 info:
   title: AI Worker Internal API
+  description: Internal API for synchronous AI inference calls from meeting-api, protected by HMAC authentication.
   version: 0.1.0
+  contact:
+    name: Meeting API Team
+    email: api@meeting.dev
 servers:
   - url: /internal
 x-internal-conventions:
@@ -13,10 +17,15 @@ x-internal-conventions:
     SHA256(request_body).hex
   signatureHeader: hmac-sha256=<hex>
   timestampSkewSeconds: 300
+tags:
+  - name: Internal
+    description: Synchronous internal inference endpoints called by meeting-api
+
 paths:
   /rerank:
     post:
       operationId: rerankCandidates
+      tags: [Internal]
       summary: Rerank authorized RAG candidates.
       description: >
         Synchronous internal endpoint called only by meeting-api. The caller

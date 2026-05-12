@@ -6,6 +6,8 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import json
+
 import httpx
 
 from ai_worker.common.config import settings
@@ -78,7 +80,7 @@ class JavaCallbackClient:
         idempotency_key: str,
         max_retries: int = 3,
     ) -> CallbackResponse:
-        body_str = httpx._compat.json_dumps(body) if body else "{}"
+        body_str = json.dumps(body) if body else "{}"
         headers = self._build_headers(
             method, path, body_str,
             task_id, attempt_no, trace_id, idempotency_key,

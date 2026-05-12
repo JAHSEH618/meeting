@@ -1,7 +1,11 @@
 openapi: 3.1.0
 info:
   title: Meeting Public API
+  description: Meeting Intelligence Platform Public API
   version: 0.1.0
+  contact:
+    name: Meeting API Team
+    email: api@meeting.dev
 servers:
   - url: /api
 security:
@@ -13,11 +17,42 @@ x-api-conventions:
     requiredFor: all non-login mutating operations
     conflictStatus: 409
 
+tags:
+  - name: Auth
+    description: Authentication and authorization
+  - name: Users
+    description: User management
+  - name: Meetings
+    description: Meeting resources
+  - name: Files
+    description: Audio file upload management
+  - name: Tasks
+    description: Processing task lifecycle
+  - name: Transcript
+    description: Transcript access and editing
+  - name: Speakers
+    description: Speaker profiles and matching
+  - name: Minutes
+    description: AI-generated meeting minutes
+  - name: Items
+    description: Action items, decisions, and risks
+  - name: Documents
+    description: Document management and indexing
+  - name: RAG
+    description: Retrieval-augmented generation queries
+  - name: Exports
+    description: Meeting export jobs
+  - name: Compliance
+    description: Legal holds and compliance
+  - name: Admin
+    description: Administrative operations including deletion jobs and break-glass
+
 paths:
   # ── Auth ────────────────────────────────────────────────────
   /auth/login:
     post:
       operationId: login
+      description: Authenticate user with credentials and obtain access token.
       security: []
       tags: [Auth]
       requestBody:
@@ -45,6 +80,7 @@ paths:
   /auth/logout:
     post:
       operationId: logout
+      description: Invalidate current access token and end session.
       tags: [Auth]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -59,6 +95,7 @@ paths:
   /auth/me:
     get:
       operationId: getCurrentUser
+      description: Retrieve the authenticated user profile and permissions.
       tags: [Auth]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -77,6 +114,7 @@ paths:
   /users:
     get:
       operationId: listUsers
+      description: List users in the current tenant with pagination.
       tags: [Users]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -90,6 +128,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
     post:
       operationId: createUser
+      description: Create a new user in the current tenant.
       tags: [Users]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -118,6 +157,7 @@ paths:
   /users/{userId}:
     patch:
       operationId: updateUser
+      description: Update an existing user profile and roles.
       tags: [Users]
       parameters:
         - $ref: '#/components/parameters/UserId'
@@ -150,6 +190,7 @@ paths:
   /meetings:
     get:
       operationId: listMeetings
+      description: List meetings accessible to the authenticated user.
       tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -167,6 +208,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
     post:
       operationId: createMeeting
+      description: Create a new meeting with participants and security level.
       tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -197,6 +239,7 @@ paths:
   /meetings/{meetingId}:
     get:
       operationId: getMeeting
+      description: Retrieve a single meeting by ID.
       tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -217,6 +260,7 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       operationId: updateMeeting
+      description: Update meeting metadata, participants, or security level.
       tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -244,6 +288,7 @@ paths:
           $ref: '#/components/responses/Conflict'
     delete:
       operationId: deleteMeeting
+      description: Soft-delete a meeting with legal-hold acknowledgement.
       tags: [Meetings]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -274,12 +319,19 @@ paths:
   /meetings/{meetingId}/files/audio/uploads:
     post:
       operationId: createAudioUpload
+      description: Initiate a multipart audio upload session for a meeting.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAudioUploadRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -297,6 +349,7 @@ paths:
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts:
     post:
       operationId: createAudioUploadPart
+      description: Request a signed upload URL for one part of a multipart upload.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -321,6 +374,7 @@ paths:
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete:
     post:
       operationId: completeAudioUpload
+      description: Finalize a multipart audio upload after all parts are transferred.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -345,6 +399,7 @@ paths:
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/abort:
     post:
       operationId: abortAudioUpload
+      description: Abort an in-progress multipart audio upload session.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -359,6 +414,7 @@ paths:
   /meetings/{meetingId}/files/audio/uploads/{uploadId}:
     get:
       operationId: getAudioUpload
+      description: Check the status of an audio upload session.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -375,6 +431,7 @@ paths:
   /meetings/{meetingId}/processing-tasks:
     post:
       operationId: createProcessingTask
+      description: Start a processing pipeline for a meeting audio file.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -408,6 +465,7 @@ paths:
   /meetings/{meetingId}/processing-tasks/latest:
     get:
       operationId: getLatestMeetingTask
+      description: Retrieve the latest processing task for a meeting.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -426,6 +484,7 @@ paths:
   /processing-tasks/{taskId}:
     get:
       operationId: getProcessingTask
+      description: Retrieve a processing task by ID.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
@@ -448,6 +507,7 @@ paths:
   /processing-tasks/{taskId}/events:
     get:
       operationId: streamProcessingTaskEvents
+      description: Subscribe to SSE events for a processing task.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
@@ -462,7 +522,7 @@ paths:
           content:
             text/event-stream:
               schema:
-                type: string
+                $ref: '#/components/schemas/TaskEvent'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -471,6 +531,7 @@ paths:
   /processing-tasks/{taskId}/retry:
     post:
       operationId: retryProcessingTask
+      description: Retry a failed or orphaned processing task.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
@@ -494,6 +555,7 @@ paths:
   /processing-tasks/{taskId}/cancel:
     post:
       operationId: cancelProcessingTask
+      description: Request cancellation of a running processing task.
       tags: [Tasks]
       parameters:
         - $ref: '#/components/parameters/TaskId'
@@ -518,6 +580,7 @@ paths:
   /meetings/{meetingId}/transcript:
     get:
       operationId: getTranscript
+      description: Retrieve the transcript with segments for a meeting.
       tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -540,6 +603,7 @@ paths:
   /meetings/{meetingId}/transcript/segments/{segmentId}:
     patch:
       operationId: updateTranscriptSegment
+      description: Edit a single transcript segment text.
       tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -572,6 +636,7 @@ paths:
   /meetings/{meetingId}/transcript/regenerate:
     post:
       operationId: regenerateTranscriptDependents
+      description: Regenerate downstream artefacts affected by transcript edits.
       tags: [Transcript]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -592,6 +657,7 @@ paths:
   /speaker-profiles:
     get:
       operationId: listSpeakerProfiles
+      description: List speaker profiles in the current tenant.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -605,6 +671,7 @@ paths:
                 $ref: '#/components/schemas/SpeakerProfileListResponse'
     post:
       operationId: createSpeakerProfile
+      description: Create a new speaker profile with consent reference.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -629,6 +696,7 @@ paths:
   /speaker-profiles/{profileId}:
     get:
       operationId: getSpeakerProfile
+      description: Retrieve a speaker profile by ID.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
@@ -641,6 +709,7 @@ paths:
           $ref: '#/components/responses/NotFound'
     delete:
       operationId: deleteSpeakerProfile
+      description: Delete a speaker profile and its enrollments.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
@@ -664,12 +733,19 @@ paths:
   /speaker-profiles/{profileId}/enrollments:
     post:
       operationId: createSpeakerEnrollment
+      description: Add a voice enrollment to a speaker profile.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpeakerEnrollmentRequest'
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -677,6 +753,7 @@ paths:
   /speaker-profiles/{profileId}/revoke:
     post:
       operationId: revokeSpeakerProfile
+      description: Revoke a speaker profile, disabling future matching.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/ProfileId'
@@ -698,6 +775,7 @@ paths:
   /meetings/{meetingId}/speakers:
     get:
       operationId: listMeetingSpeakers
+      description: List speaker labels and match candidates for a meeting.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -716,6 +794,7 @@ paths:
   /meetings/{meetingId}/speakers/{speakerLabel}/confirm:
     post:
       operationId: confirmMeetingSpeaker
+      description: Confirm a speaker candidate match for a label.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -736,6 +815,7 @@ paths:
   /meetings/{meetingId}/speakers/{speakerLabel}/reject:
     post:
       operationId: rejectMeetingSpeaker
+      description: Reject a speaker candidate match for a label.
       tags: [Speakers]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -757,6 +837,7 @@ paths:
   /meetings/{meetingId}/minutes:
     get:
       operationId: getMinutes
+      description: Retrieve AI-generated minutes for a meeting.
       tags: [Minutes]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -779,6 +860,7 @@ paths:
   /meetings/{meetingId}/minutes/regenerate:
     post:
       operationId: regenerateMinutes
+      description: Regenerate AI minutes from the current transcript version.
       tags: [Minutes]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -799,6 +881,7 @@ paths:
   /meetings/{meetingId}/action-items:
     get:
       operationId: listActionItems
+      description: List action items extracted from a meeting.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -810,6 +893,7 @@ paths:
   /meetings/{meetingId}/action-items/{itemId}:
     patch:
       operationId: updateActionItem
+      description: Update an action item title, assignee, due date, or status.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -829,6 +913,7 @@ paths:
   /meetings/{meetingId}/action-items/{itemId}/accept:
     post:
       operationId: acceptActionItem
+      description: Accept an AI-suggested action item as confirmed.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -842,6 +927,7 @@ paths:
   /meetings/{meetingId}/action-items/{itemId}/reject:
     post:
       operationId: rejectActionItem
+      description: Reject an AI-suggested action item.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -856,6 +942,7 @@ paths:
   /meetings/{meetingId}/decisions:
     get:
       operationId: listDecisions
+      description: List decisions extracted from a meeting.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -867,6 +954,7 @@ paths:
   /meetings/{meetingId}/risks:
     get:
       operationId: listRisks
+      description: List risks extracted from a meeting.
       tags: [Items]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -880,6 +968,7 @@ paths:
   /documents:
     get:
       operationId: listDocuments
+      description: List documents accessible to the authenticated user.
       tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -889,6 +978,7 @@ paths:
           $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createDocument
+      description: Register a new document for indexing.
       tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -906,6 +996,7 @@ paths:
   /documents/{documentId}:
     get:
       operationId: getDocument
+      description: Retrieve a document by ID.
       tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
@@ -918,6 +1009,7 @@ paths:
           $ref: '#/components/responses/NotFound'
     delete:
       operationId: deleteDocument
+      description: Delete a document and its indexed chunks.
       tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
@@ -934,6 +1026,7 @@ paths:
   /documents/{documentId}/reindex:
     post:
       operationId: reindexDocument
+      description: Reindex a document into the RAG vector store.
       tags: [Documents]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
@@ -948,6 +1041,7 @@ paths:
   /rag/query:
     post:
       operationId: queryRag
+      description: Submit a RAG query and receive an answer with citations.
       tags: [RAG]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -980,6 +1074,7 @@ paths:
   /rag/reindex/meetings/{meetingId}:
     post:
       operationId: reindexMeetingRag
+      description: Reindex a meeting transcript and minutes into the RAG vector store.
       tags: [RAG]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -993,6 +1088,7 @@ paths:
   /rag/reindex/documents/{documentId}:
     post:
       operationId: reindexDocumentRag
+      description: Reindex a document into the RAG vector store.
       tags: [RAG]
       parameters:
         - $ref: '#/components/parameters/DocumentId'
@@ -1007,6 +1103,7 @@ paths:
   /meetings/{meetingId}/exports:
     get:
       operationId: listMeetingExports
+      description: List export jobs for a meeting.
       tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -1017,6 +1114,7 @@ paths:
           $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createMeetingExport
+      description: Create a new export job for a meeting.
       tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/MeetingId'
@@ -1044,6 +1142,7 @@ paths:
   /exports/{exportId}:
     get:
       operationId: getExport
+      description: Retrieve an export job status and download URL.
       tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
@@ -1062,6 +1161,7 @@ paths:
   /exports/{exportId}/cancel:
     post:
       operationId: cancelExport
+      description: Cancel an in-progress export job.
       tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
@@ -1075,6 +1175,7 @@ paths:
   /exports/{exportId}/revoke-link:
     post:
       operationId: revokeExportLink
+      description: Revoke the download URL of a completed export.
       tags: [Exports]
       parameters:
         - $ref: '#/components/parameters/ExportId'
@@ -1089,6 +1190,7 @@ paths:
   /legal-holds:
     get:
       operationId: listLegalHolds
+      description: List legal holds in the current tenant.
       tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1098,6 +1200,7 @@ paths:
           $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createLegalHold
+      description: Place a legal hold on one or more entities.
       tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1116,6 +1219,7 @@ paths:
   /legal-holds/{legalHoldId}:
     get:
       operationId: getLegalHold
+      description: Retrieve a legal hold by ID.
       tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
@@ -1126,6 +1230,7 @@ paths:
           $ref: '#/components/responses/Ok'
     delete:
       operationId: deleteLegalHold
+      description: Delete a legal hold (alias for release).
       tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
@@ -1145,6 +1250,7 @@ paths:
   /legal-holds/{legalHoldId}/release:
     put:
       operationId: releaseLegalHold
+      description: Release a legal hold and unfreeze affected entities.
       tags: [Compliance]
       parameters:
         - $ref: '#/components/parameters/LegalHoldId'
@@ -1158,6 +1264,7 @@ paths:
   /admin/deletion-jobs:
     get:
       operationId: listDeletionJobs
+      description: List data deletion jobs in the current tenant.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1167,6 +1274,7 @@ paths:
           $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createDeletionJob
+      description: Create a data deletion job for specified entities.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1185,6 +1293,7 @@ paths:
   /admin/deletion-jobs/{jobId}:
     get:
       operationId: getDeletionJob
+      description: Retrieve a deletion job by ID.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/JobId'
@@ -1197,6 +1306,7 @@ paths:
   /admin/deletion-jobs/{jobId}/certificate:
     get:
       operationId: getDeletionCertificate
+      description: Retrieve the deletion certificate for a completed job.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/JobId'
@@ -1209,6 +1319,7 @@ paths:
   /admin/break-glass/requests:
     get:
       operationId: listBreakGlassRequests
+      description: List break-glass access requests.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1218,6 +1329,7 @@ paths:
           $ref: '#/components/responses/OkPaginated'
     post:
       operationId: createBreakGlassRequest
+      description: Request temporary elevated access to restricted data.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -1236,6 +1348,7 @@ paths:
   /admin/break-glass/requests/{requestId}/approve:
     post:
       operationId: approveBreakGlassRequest
+      description: Approve a pending break-glass access request.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/BreakGlassRequestId'
@@ -1255,6 +1368,7 @@ paths:
   /admin/break-glass/requests/{requestId}/reject:
     post:
       operationId: rejectBreakGlassRequest
+      description: Reject a pending break-glass access request.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/BreakGlassRequestId'
@@ -1274,6 +1388,7 @@ paths:
   /admin/break-glass/audit:
     get:
       operationId: listBreakGlassAudit
+      description: List the break-glass access audit trail.
       tags: [Admin]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -2280,6 +2395,7 @@ components:
     # ── Delete Requests ────────────────────────────────────────
     DeleteMeetingRequest:
       type: object
+      required: [reason]
       properties:
         reason:
           type: string

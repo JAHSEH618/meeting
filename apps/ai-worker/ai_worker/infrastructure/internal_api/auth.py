@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 from datetime import datetime, timezone
+from typing import Annotated
 
-from pydantic import BaseModel, Field, constr, conint
+from pydantic import BaseModel, Field, StringConstraints
 
 from ai_worker.common.config import settings
 
@@ -12,7 +13,7 @@ from ai_worker.common.config import settings
 class RerankCandidate(BaseModel):
     chunkId: str
     sourceType: str
-    text: constr(min_length=1)
+    text: Annotated[str, StringConstraints(min_length=1)]
     rrfScore: float
     sourceVersion: int | None = None
     citationHint: dict | None = None
@@ -20,15 +21,15 @@ class RerankCandidate(BaseModel):
 
 class RerankRequest(BaseModel):
     tenantId: str
-    query: constr(min_length=1)
+    query: Annotated[str, StringConstraints(min_length=1)]
     candidates: list[RerankCandidate] = Field(..., min_length=1, max_length=50)
-    topN: conint(ge=1, le=20) = 8
+    topN: int = Field(default=8, ge=1, le=20)
     modelVersion: str
 
 
 class RerankResultItem(BaseModel):
     chunkId: str
-    rank: conint(ge=1)
+    rank: int = Field(ge=1)
     rerankScore: float
 
 

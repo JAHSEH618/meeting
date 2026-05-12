@@ -59,18 +59,32 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      - name: Verify Generated Directories Exist
-        run: |
-          mkdir -p ../../apps/ai-worker/ai_worker/generated
-          mkdir -p ../../apps/meeting-api/meeting-api-client/generated/public-api
-          mkdir -p ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal
-          mkdir -p ../../apps/meeting-web/src/shared/api
+      - name: Install Python codegen deps
+        run: pip install datamodel-code-generator
 
-      - name: Codegen Diff Check
+      - name: Codegen Diff Check (TS)
         run: |
           npm run codegen:ts
           git diff --exit-code ../../apps/meeting-web/src/shared/api/types.gen.ts || {
             echo "::error::types.gen.ts is out of date. Run 'npm run codegen:ts' and commit the result."
+            exit 1
+          }
+
+      - name: Codegen Diff Check (Python)
+        run: |
+          npm run codegen:py-callback
+          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py || {
+            echo "::error::internal_callback_types.py is out of date. Run 'npm run codegen:py-callback' and commit."
+            exit 1
+          }
+          npm run codegen:py-worker-internal
+          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py || {
+            echo "::error::ai_worker_internal_types.py is out of date. Run 'npm run codegen:py-worker-internal' and commit."
+            exit 1
+          }
+          npm run codegen:py-task-msg
+          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/processing_task_message.py || {
+            echo "::error::processing_task_message.py is out of date. Run 'npm run codegen:py-task-msg' and commit."
             exit 1
           }
 
