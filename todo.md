@@ -32,9 +32,9 @@
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 接入 contracts codegen 产物或建立手写类型一致性测试，替换当前 `src/shared/api/types.ts` 中长期手写 DTO 的风险点。
-- [ ] 移除 access token `sessionStorage` 持久化，改为内存 access token；refresh token 只走后端 HttpOnly cookie。
-- [ ] 增加前端基础测试栈落地：Vitest、React Testing Library、MSW、error mapper、idempotency key、SSE reducer。
+- [x] 接入 contracts codegen 产物或建立手写类型一致性测试，替换当前 `src/shared/api/types.ts` 中长期手写 DTO 的风险点。
+- [x] 移除 access token `sessionStorage` 持久化，改为内存 access token；refresh token 只走后端 HttpOnly cookie。
+- [x] 增加前端基础测试栈落地：Vitest、React Testing Library、MSW、error mapper、idempotency key、SSE reducer。
 
 ### 工程：`apps/ai-worker`
 
