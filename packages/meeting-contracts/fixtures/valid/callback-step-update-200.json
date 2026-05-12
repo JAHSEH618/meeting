@@ -1,0 +1,13 @@
+{
+  "spec": "openapi/internal-callback-api.yaml",
+  "method": "PATCH",
+  "path": "/processing-tasks/task_fixture_01/steps/ASR",
+  "status": 200,
+  "response": {
+    "success": true,
+    "data": null,
+    "error": null,
+    "requestId": "req_cb_fixture_01",
+    "traceId": "trace_cb_fixture_01"
+  }
+}

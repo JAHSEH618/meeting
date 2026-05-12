@@ -48,5 +48,38 @@
     {"source": "meeting.task.dlx",      "vhost": "/", "destination": "embed-queue.dlq",    "destination_type": "queue", "routing_key": "embed-queue.dlq",   "arguments": {}},
     {"source": "meeting.task.dlx",      "vhost": "/", "destination": "llm-queue.dlq",      "destination_type": "queue", "routing_key": "llm-queue.dlq",     "arguments": {}},
     {"source": "meeting.task.dlx",      "vhost": "/", "destination": "export-queue.dlq",   "destination_type": "queue", "routing_key": "export-queue.dlq",  "arguments": {}}
+  ],
+  "policies": [
+    {
+      "name": "ha-policy",
+      "vhost": "/",
+      "pattern": "^(audio-cpu|gpu-asr|gpu-diar|gpu-speaker|embed|llm|export)-queue$",
+      "definition": {
+        "ha-mode": "quorum",
+        "ha-sync-batch-size": 1
+      },
+      "apply-to": "queues"
+    },
+    {
+      "name": "dlq-ttl-policy",
+      "vhost": "/",
+      "pattern": ".*\\.dlq$",
+      "definition": {
+        "message-ttl": 604800000,
+        "max-length": 10000,
+        "overflow": "reject-publish"
+      },
+      "apply-to": "queues"
+    },
+    {
+      "name": "task-queue-ttl-policy",
+      "vhost": "/",
+      "pattern": "^(audio-cpu|gpu-asr|gpu-diar|gpu-speaker|embed|llm|export)-queue$",
+      "definition": {
+        "max-length": 50000,
+        "overflow": "reject-publish"
+      },
+      "apply-to": "queues"
+    }
   ]
 }

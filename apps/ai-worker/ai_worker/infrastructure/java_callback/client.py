@@ -81,7 +81,7 @@ class JavaCallbackClient:
     ) -> CallbackResponse:
         body_str = httpx._compat.json_dumps(body) if body else "{}"
         headers = self._build_headers(
-            method, f"/internal{path}", body_str,
+            method, path, body_str,
             task_id, attempt_no, trace_id, idempotency_key,
         )
 

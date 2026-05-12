@@ -177,6 +177,18 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    ApiResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data: {}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
     ErrorInfo:
       type: object
       required:
@@ -199,16 +211,16 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorInfo'
+            $ref: '#/components/schemas/ApiResponse'
     AuthFailed:
       description: HMAC authentication failed. meeting-api must treat this as RERANK_CONTRACT_ERROR and must not silently downgrade.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorInfo'
+            $ref: '#/components/schemas/ApiResponse'
     RerankUnavailable:
       description: Rerank model or runtime unavailable. meeting-api may downgrade to RRF and record RERANK_UNAVAILABLE.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorInfo'
+            $ref: '#/components/schemas/ApiResponse'

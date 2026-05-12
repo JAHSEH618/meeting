@@ -1,0 +1,152 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Step RTF (Real-Time Factor)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(meeting_task_step_duration_seconds_bucket[$__rate_interval])) by (le, step_name)) / on() sum(rate(meeting_task_step_media_duration_seconds_bucket[$__rate_interval])) by (le, step_name)",
+          "legendFormat": "p50 {{step_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_task_step_duration_seconds_bucket[$__rate_interval])) by (le, step_name)) / on() sum(rate(meeting_task_step_media_duration_seconds_bucket[$__rate_interval])) by (le, step_name)",
+          "legendFormat": "p95 {{step_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short", "decimals": 2},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Step Failure Rate by Type",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_task_step_failures_total[$__rate_interval])) by (step_name, failure_type)",
+          "legendFormat": "{{step_name}} {{failure_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "ORPHANED Task Count",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(meeting_task_total{status=\"ORPHANED\"}) or vector(0)",
+          "legendFormat": "orphaned"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "red"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "DLQ Depth by Queue",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8},
+      "targets": [
+        {
+          "expr": "meeting_task_dlq_depth",
+          "legendFormat": "{{queue_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 50, "color": "yellow"}, {"value": 200, "color": "red"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Callback Conflict Count",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_callback_conflict_total[$__rate_interval])) by (callback_type)",
+          "legendFormat": "{{callback_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Task Throughput by Status",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_task_total[$__rate_interval])) by (status, task_type)",
+          "legendFormat": "{{status}} {{task_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Step Duration p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_task_step_duration_seconds_bucket[$__rate_interval])) by (le, step_name))",
+          "legendFormat": "p95 {{step_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["meeting", "task-pipeline"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "Prometheus", "value": "prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "type": "datasource"
+      },
+      {
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {"selected": true, "text": "auto", "value": "$__auto_interval_interval"},
+        "hide": 2,
+        "name": "interval",
+        "options": [],
+        "query": "1m,5m,10m,30m,1h",
+        "type": "interval"
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Task Pipeline",
+  "uid": "task-pipeline",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,17 @@
+{
+  "spec": "openapi/internal-callback-api.yaml",
+  "method": "PATCH",
+  "path": "/processing-tasks/task_fixture_err/steps/ASR",
+  "status": 401,
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "CALLBACK_AUTH_FAILED",
+      "message": "HMAC signature verification failed",
+      "retryable": false
+    },
+    "requestId": "req_cb_err_01",
+    "traceId": "trace_cb_err_01"
+  }
+}

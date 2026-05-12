@@ -63,7 +63,7 @@ async function request<T>(
 // ── Auth ───────────────────────────────────────────────────────────
 
 export async function login(username: string, password: string) {
-  return request<{ accessToken: string; refreshToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser }>(
+  return request<{ accessToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser }>(
     "POST",
     "/auth/login",
     { username, password },
@@ -85,7 +85,7 @@ export async function createMeeting(data: import("@shared/api/types").CreateMeet
 }
 
 export async function listMeetings() {
-  return request<import("@shared/api/types").Meeting[]>("GET", "/meetings");
+  return request<import("@shared/api/types").Page<import("@shared/api/types").Meeting>>("GET", "/meetings");
 }
 
 export async function getMeeting(meetingId: string) {

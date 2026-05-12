@@ -1,0 +1,17 @@
+{
+  "spec": "openapi/ai-worker-internal-api.yaml",
+  "method": "POST",
+  "path": "/rerank",
+  "status": 400,
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "RERANK_CONTRACT_ERROR",
+      "message": "query must not be empty",
+      "retryable": false
+    },
+    "requestId": "req_worker_err_01",
+    "traceId": "trace_worker_err_01"
+  }
+}

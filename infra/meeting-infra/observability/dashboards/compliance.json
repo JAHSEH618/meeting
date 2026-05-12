@@ -1,0 +1,169 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Legal Hold Count",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(meeting_compliance_legal_hold_count) or vector(0)",
+          "legendFormat": "active holds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Deletion Job Status",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 6, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_compliance_deletion_job_total{status=\"SUCCEEDED\"}[$__rate_interval])) by (job_type)",
+          "legendFormat": "success {{job_type}}"
+        },
+        {
+          "expr": "sum(rate(meeting_compliance_deletion_job_total{status=\"FAILED\"}[$__rate_interval])) by (job_type)",
+          "legendFormat": "failed {{job_type}}"
+        },
+        {
+          "expr": "sum(rate(meeting_compliance_deletion_job_total{status=\"PENDING\"}[$__rate_interval])) by (job_type)",
+          "legendFormat": "pending {{job_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Deletion Job Queue Depth",
+      "type": "gauge",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(meeting_compliance_deletion_job_pending) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 100, "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 50, "color": "yellow"}, {"value": 80, "color": "red"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Break-Glass Event Count",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_compliance_break_glass_total[$__rate_interval])) by (actor, reason)",
+          "legendFormat": "{{actor}} - {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Break-Glass Events Total",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 6},
+      "targets": [
+        {
+          "expr": "sum(meeting_compliance_break_glass_total) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "red"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Audit Event Count",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 6},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_compliance_audit_event_total[$__rate_interval])) by (event_type)",
+          "legendFormat": "{{event_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Legal Holds over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "targets": [
+        {
+          "expr": "sum(meeting_compliance_legal_hold_count) by (hold_type)",
+          "legendFormat": "{{hold_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Audit Lag p95 (seconds)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_compliance_audit_lag_seconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["meeting", "compliance"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "Prometheus", "value": "prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "type": "datasource"
+      },
+      {
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {"selected": true, "text": "auto", "value": "$__auto_interval_interval"},
+        "hide": 2,
+        "name": "interval",
+        "options": [],
+        "query": "1m,5m,10m,30m,1h",
+        "type": "interval"
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Compliance",
+  "uid": "compliance",
+  "version": 1,
+  "weekStart": ""
+}

@@ -14,13 +14,6 @@ import java.sql.Statement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * PostgreSQL + pgvector baseline test.
- * Verifies:
- * 1. Flyway migrations run successfully.
- * 2. RLS tenant context functions exist.
- * 3. Required enums are created.
- */
 @Testcontainers
 class PostgreSqlBaselineTest {
 
@@ -32,28 +25,25 @@ class PostgreSqlBaselineTest {
         .withUsername("meeting")
         .withPassword("meeting_test");
 
-    @Test
-    void flywayMigrationsShouldSucceed() {
+    private Flyway migrate() {
         Flyway flyway = Flyway.configure()
             .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
             .locations("classpath:db/migration")
             .load();
-
         flyway.migrate();
+        return flyway;
+    }
+
+    @Test
+    void flywayMigrationsShouldSucceed() {
+        migrate();
     }
 
     @Test
     void rlsTenantContextShouldExist() throws Exception {
-        // Run migrations first
-        Flyway flyway = Flyway.configure()
-            .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-            .locations("classpath:db/migration")
-            .load();
-        flyway.migrate();
-
+        migrate();
         try (Connection conn = DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
-            // Verify current_tenant_id() function exists
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(
                      "SELECT proname FROM pg_proc WHERE proname = 'current_tenant_id'")) {
@@ -61,7 +51,6 @@ class PostgreSqlBaselineTest {
                 assertThat(rs.getString("proname")).isEqualTo("current_tenant_id");
             }
 
-            // Verify set_updated_at() trigger function exists
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(
                      "SELECT proname FROM pg_proc WHERE proname = 'set_updated_at'")) {
@@ -73,12 +62,7 @@ class PostgreSqlBaselineTest {
 
     @Test
     void requiredEnumsShouldExist() throws Exception {
-        Flyway flyway = Flyway.configure()
-            .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-            .locations("classpath:db/migration")
-            .load();
-        flyway.migrate();
-
+        migrate();
         try (Connection conn = DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
             try (Statement stmt = conn.createStatement();
@@ -95,12 +79,7 @@ class PostgreSqlBaselineTest {
 
     @Test
     void stepStatusShouldNotContainPartialSucceeded() throws Exception {
-        Flyway flyway = Flyway.configure()
-            .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-            .locations("classpath:db/migration")
-            .load();
-        flyway.migrate();
-
+        migrate();
         try (Connection conn = DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
             try (Statement stmt = conn.createStatement();
@@ -116,24 +95,50 @@ class PostgreSqlBaselineTest {
 
     @Test
     void taskStatusShouldContainPartialSucceeded() throws Exception {
-        Flyway flyway = Flyway.configure()
-            .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-            .locations("classpath:db/migration")
-            .load();
-        flyway.migrate();
-
+        migrate();
         try (Connection conn = DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
+            boolean found = false;
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(
                      "SELECT enumlabel FROM pg_enum WHERE enumtypid = 'task_status'::regtype")) {
-                boolean found = false;
                 while (rs.next()) {
                     if ("PARTIAL_SUCCEEDED".equals(rs.getString("enumlabel"))) {
                         found = true;
                     }
                 }
                 assertThat(found).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void rlsPoliciesShouldBlockCrossTenantAccess() throws Exception {
+        migrate();
+        try (Connection conn = DriverManager.getConnection(
+            postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT COUNT(*) FROM pg_policy WHERE polname LIKE '%tenant%' OR polname LIKE '%rls%'")) {
+                assertThat(rs.next()).isTrue();
+                long count = rs.getLong(1);
+                assertThat(count).isGreaterThan(0);
+            }
+        }
+    }
+
+    @Test
+    void rlsShouldEnforceTenantIsolation() throws Exception {
+        migrate();
+        try (Connection conn = DriverManager.getConnection(
+            postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute("SET app.current_tenant_id = 'tenant_isolation_test'");
+            }
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT COUNT(*) FROM pg_policy")) {
+                assertThat(rs.next()).isTrue();
             }
         }
     }

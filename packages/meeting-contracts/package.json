@@ -5,10 +5,13 @@
   "scripts": {
     "check": "bash scripts/check-consistency.sh",
     "lint:openapi": "spectral lint \"openapi/*.yaml\" --ruleset .spectral.yaml",
-    "codegen:ts": "openapi-typescript openapi/public-api.yaml -o ../meeting-web/src/shared/api/types.gen.ts",
-    "codegen:py-callback": "datamodel-codegen --input openapi/internal-callback-api.yaml --input-file-type openapi --output ../ai-worker/ai_worker/generated/internal_callback_types.py",
-    "codegen:py-worker-internal": "datamodel-codegen --input openapi/ai-worker-internal-api.yaml --input-file-type openapi --output ../ai-worker/ai_worker/generated/ai_worker_internal_types.py",
-    "codegen:py-task-msg": "datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../ai-worker/ai_worker/generated/processing_task_message.py",
+    "codegen:ts": "openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts",
+    "codegen:py-callback": "datamodel-codegen --input openapi/internal-callback-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py",
+    "codegen:py-worker-internal": "datamodel-codegen --input openapi/ai-worker-internal-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py",
+    "codegen:py-task-msg": "datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py",
+    "codegen:java-public": "openapi-generator generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api",
+    "codegen:java-worker-internal": "openapi-generator generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal",
+    "codegen:java-export-job": "jsonschema2pojo --source schemas/rabbitmq/export-job-message.schema.json --target ../../apps/meeting-api/meeting-api-client/generated/export-job-message",
     "codegen": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg"
   },
   "devDependencies": {

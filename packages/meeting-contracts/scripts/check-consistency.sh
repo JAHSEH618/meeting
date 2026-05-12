@@ -71,8 +71,7 @@ elif command -v spectral &>/dev/null; then
     fi
   done
 else
-  error_exit "spectral not installed — cannot verify OpenAPI contracts"
-  echo "  Install: npm install -g @stoplight/spectral-cli"
+  fail "spectral not installed — cannot verify OpenAPI contracts. Install: npm install -g @stoplight/spectral-cli"
 fi
 
 # ── 2. JSON Schema 校验 ────────────────────────────────────────
@@ -90,22 +89,7 @@ print('Schema is valid Draft 2020-12')
     fi
   done
 else
-  if command -v ruby &>/dev/null; then
-    for SCHEMA_FILE in "$SCHEMAS_DIR"/rabbitmq/*.schema.json; do
-      if [ -f "$SCHEMA_FILE" ]; then
-        SCHEMA_FILE="$SCHEMA_FILE" ruby - <<'RUBY'
-require 'json'
-schema = JSON.parse(File.read(ENV.fetch('SCHEMA_FILE')))
-raise 'missing $schema' unless schema.key?('$schema')
-raise 'schema root must be object' unless schema['type'] == 'object'
-RUBY
-        pass "JSON syntax/basic shape: $(basename "$SCHEMA_FILE")"
-      fi
-    done
-    warn "jsonschema not installed — skipped Draft 2020-12 metaschema validation"
-  else
-    error_exit "jsonschema not installed and ruby unavailable — cannot verify JSON Schema"
-  fi
+  fail "jsonschema not installed — cannot verify Draft 2020-12 schemas. Install: pip install jsonschema"
 fi
 
 # ── 3. 枚举一致性 ───────────────────────────────────────────────
@@ -446,9 +430,8 @@ else
 end
 RUBY
     pass "enums consistent"
-  else
-    error_exit "pyyaml not installed and ruby unavailable — cannot verify enum consistency"
-  fi
+else
+  fail "pyyaml not installed and ruby unavailable — cannot verify enum consistency. Install: pip install pyyaml"
 fi
 
 # ── 4. 错误码完整性 ────────────────────────────────────────────
@@ -555,6 +538,78 @@ else:
 " || HAS_ERRORS=1
 else
   warn "jsonschema not installed or fixtures directory missing — skipping fixture validation"
+fi
+
+# ── 6. OpenAPI Fixture Validation ───────────────────────────────
+echo "--- OpenAPI Fixture Validation ---"
+if python3 -c "import jsonschema" 2>/dev/null && [ -d "$FIXTURES_DIR" ]; then
+  python3 -c "
+import json, jsonschema, sys
+from pathlib import Path
+
+errors = 0
+
+openapi_fixture_map = {
+    'valid/public-api-login-200.json': {
+        'spec': 'openapi/public-api.yaml',
+        'method': 'POST',
+        'path': '/auth/login',
+        'expected_status': 200,
+    },
+    'valid/callback-step-update-200.json': {
+        'spec': 'openapi/internal-callback-api.yaml',
+        'method': 'PATCH',
+        'path': '/processing-tasks/{taskId}/steps/{stepName}',
+        'expected_status': 200,
+    },
+    'valid/ai-worker-rerank-200.json': {
+        'spec': 'openapi/ai-worker-internal-api.yaml',
+        'method': 'POST',
+        'path': '/rerank',
+        'expected_status': 200,
+    },
+    'invalid/public-api-login-missing-username.json': {
+        'spec': 'openapi/public-api.yaml',
+        'method': 'POST',
+        'path': '/auth/login',
+        'expected_status': 400,
+    },
+    'invalid/callback-missing-hmac.json': {
+        'spec': 'openapi/internal-callback-api.yaml',
+        'method': 'PATCH',
+        'path': '/processing-tasks/{taskId}/steps/{stepName}',
+        'expected_status': 401,
+    },
+    'invalid/ai-worker-rerank-empty-query.json': {
+        'spec': 'openapi/ai-worker-internal-api.yaml',
+        'method': 'POST',
+        'path': '/rerank',
+        'expected_status': 400,
+    },
+}
+
+for fp, meta in openapi_fixture_map.items():
+    fixture_path = Path('$FIXTURES_DIR') / fp
+    if not fixture_path.exists():
+        print(f'  SKIP fixture not found: {fp}')
+        continue
+    with open(fixture_path) as f:
+        fixture = json.load(f)
+    status = fixture.get('status')
+    if status != meta['expected_status']:
+        print(f'  FAIL {fp}: expected status {meta[\"expected_status\"]}, got {status}')
+        errors += 1
+    else:
+        print(f'  OK   {fp}: status={status}')
+
+if errors:
+    print(f'  {errors} OpenAPI fixture validation error(s) found')
+    sys.exit(1)
+else:
+    print('  All OpenAPI fixtures validated successfully')
+" || HAS_ERRORS=1
+else
+  warn "jsonschema not installed or fixtures directory missing — skipping OpenAPI fixture validation"
 fi
 
 echo ""

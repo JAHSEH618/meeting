@@ -1,0 +1,167 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Retrieval Count",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_rag_retrieval_total[$__rate_interval])) by (retriever_type)",
+          "legendFormat": "{{retriever_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Rerank Hit Rate",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_rag_rerank_total{status=\"SUCCEEDED\"}[$__rate_interval])) / sum(rate(meeting_rag_rerank_total[$__rate_interval]))",
+          "legendFormat": "hit rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"steps": [{"value": 0, "color": "red"}, {"value": 0.8, "color": "yellow"}, {"value": 0.95, "color": "green"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Rerank Latency p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_rag_rerank_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Rerank Degradation Count",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_rag_rerank_degradation_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "degradations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 0.01, "color": "red"}]}},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Citation Missing Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_rag_citation_missing_total[$__rate_interval])) / sum(rate(meeting_rag_retrieval_total[$__rate_interval]))",
+          "legendFormat": "citation missing rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1},
+        "overrides": []
+      }
+    },
+    {
+      "title": "LLM Token Consumption",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "sum(rate(meeting_llm_token_total{direction=\"input\"}[$__rate_interval])) by (model)",
+          "legendFormat": "input {{model}}"
+        },
+        {
+          "expr": "sum(rate(meeting_llm_token_total{direction=\"output\"}[$__rate_interval])) by (model)",
+          "legendFormat": "output {{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "LLM Latency p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_llm_call_duration_seconds_bucket[$__rate_interval])) by (le, model))",
+          "legendFormat": "p95 {{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Retrieval Latency p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(meeting_rag_retrieval_duration_seconds_bucket[$__rate_interval])) by (le, retriever_type))",
+          "legendFormat": "p95 {{retriever_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"},
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["meeting", "rag"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "Prometheus", "value": "prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "type": "datasource"
+      },
+      {
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {"selected": true, "text": "auto", "value": "$__auto_interval_interval"},
+        "hide": 2,
+        "name": "interval",
+        "options": [],
+        "query": "1m,5m,10m,30m,1h",
+        "type": "interval"
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "RAG Quality",
+  "uid": "rag-quality",
+  "version": 1,
+  "weekStart": ""
+}

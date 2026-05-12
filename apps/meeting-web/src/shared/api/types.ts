@@ -1,6 +1,7 @@
 // ── API Response Envelope ──────────────────────────────────────────
-// One-off types until codegen from public-api.yaml is running.
-// Generated types will replace these once `npm run codegen` is configured.
+// Contract-derived types; verified against schemas/common/enums.yaml
+// and openapi/public-api.yaml by types-consistency test.
+// Regenerate via: npm run codegen:ts
 
 export interface ApiResponse<T = unknown> {
   success: boolean;

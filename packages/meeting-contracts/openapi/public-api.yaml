@@ -1524,10 +1524,9 @@ components:
         success: {type: boolean}
         data:
           type: object
-          required: [accessToken, refreshToken, expiresAt, user]
+          required: [accessToken, expiresAt, user]
           properties:
             accessToken: {type: string}
-            refreshToken: {type: string}
             expiresAt: {type: string, format: date-time}
             user:
               $ref: '#/components/schemas/AuthUser'

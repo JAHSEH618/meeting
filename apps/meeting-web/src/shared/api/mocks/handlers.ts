@@ -17,11 +17,10 @@ const meetingList: Meeting[] = [
 
 export const handlers = [
   http.post("/api/auth/login", () => {
-    return HttpResponse.json<ApiResponse<{ accessToken: string; refreshToken: string; expiresAt: string; user: AuthUser }>>({
+    return HttpResponse.json<ApiResponse<{ accessToken: string; expiresAt: string; user: AuthUser }>>({
       success: true,
       data: {
         accessToken: "mock-access-token",
-        refreshToken: "mock-refresh-token",
         expiresAt: new Date(Date.now() + 3600000).toISOString(),
         user: {
           userId: "user_01",

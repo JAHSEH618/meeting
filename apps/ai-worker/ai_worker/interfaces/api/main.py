@@ -1,6 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Request
 
 from ai_worker.common.config import settings
+from ai_worker.infrastructure.internal_api.auth import (
+    RerankRequest,
+    RerankResponse,
+    RerankResultItem,
+    verify_hmac_signature,
+)
 
 
 def create_app() -> FastAPI:
@@ -33,29 +39,77 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/internal/rerank")
-    def rerank(request: dict) -> dict:
-        query = request.get("query", "")
-        candidates = request.get("candidates", [])
-        top_n = request.get("topN", 8)
-        model_version = request.get("modelVersion", "placeholder-v0")
+    async def rerank(
+        request: Request,
+        x_request_id: str = Header(...),
+        x_trace_id: str = Header(...),
+        x_tenant_id: str = Header(...),
+        x_timestamp: str = Header(...),
+        x_nonce: str = Header(...),
+        x_signature: str = Header(...),
+    ) -> dict:
+        body = await request.body()
 
-        if not query or not candidates:
-            return {
-                "modelVersion": model_version,
-                "items": [],
-            }
+        if not verify_hmac_signature(
+            method=request.method,
+            path=str(request.url.path),
+            body=body,
+            timestamp=x_timestamp,
+            nonce=x_nonce,
+            signature=x_signature,
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "RERANK_AUTH_FAILED",
+                        "message": "HMAC signature verification failed",
+                        "retryable": False,
+                    },
+                    "requestId": x_request_id,
+                    "traceId": x_trace_id,
+                },
+            )
+
+        try:
+            rerank_req = RerankRequest.model_validate_json(body)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "RERANK_CONTRACT_ERROR",
+                        "message": f"Invalid request: {exc}",
+                        "retryable": False,
+                    },
+                    "requestId": x_request_id,
+                    "traceId": x_trace_id,
+                },
+            )
 
         ranked = []
-        for i, candidate in enumerate(candidates[:top_n]):
-            ranked.append({
-                "chunkId": candidate.get("chunkId", f"chunk_{i}"),
-                "rank": i + 1,
-                "rerankScore": round(1.0 - i * 0.05, 4),
-            })
+        for i, candidate in enumerate(rerank_req.candidates[: rerank_req.topN]):
+            ranked.append(
+                RerankResultItem(
+                    chunkId=candidate.chunkId,
+                    rank=i + 1,
+                    rerankScore=round(1.0 - i * 0.05, 4),
+                )
+            )
 
         return {
-            "modelVersion": model_version,
-            "items": ranked,
+            "success": True,
+            "data": RerankResponse(
+                modelVersion=rerank_req.modelVersion,
+                items=ranked,
+            ).model_dump(),
+            "error": None,
+            "requestId": x_request_id,
+            "traceId": x_trace_id,
         }
 
     return app

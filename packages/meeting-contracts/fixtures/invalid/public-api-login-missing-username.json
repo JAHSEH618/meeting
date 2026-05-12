@@ -1,0 +1,17 @@
+{
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/auth/login",
+  "status": 400,
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "INVALID_REQUEST",
+      "message": "username is required",
+      "retryable": false
+    },
+    "requestId": "req_fixture_err_01",
+    "traceId": "trace_fixture_err_01"
+  }
+}

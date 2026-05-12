@@ -1,0 +1,23 @@
+{
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/auth/login",
+  "status": 200,
+  "response": {
+    "success": true,
+    "data": {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9.fixture",
+      "expiresAt": "2026-05-12T12:00:00Z",
+      "user": {
+        "userId": "user_fixture_01",
+        "tenantId": "tenant_fixture_01",
+        "displayName": "Fixture User",
+        "roles": ["admin"],
+        "permissions": ["meeting:create", "meeting:read"]
+      }
+    },
+    "error": null,
+    "requestId": "req_fixture_01",
+    "traceId": "trace_fixture_01"
+  }
+}
