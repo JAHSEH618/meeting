@@ -20,6 +20,7 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.meeting.api.client.publicapi.model.ProcessingTaskPhase;
+import com.meeting.api.client.publicapi.model.ProcessingTaskStep;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -198,6 +199,11 @@ public class TaskEvent {
   @SerializedName(SERIALIZED_NAME_COMPLETED_STEPS)
   @javax.annotation.Nullable
   private List<String> completedSteps;
+
+  public static final String SERIALIZED_NAME_STEPS = "steps";
+  @SerializedName(SERIALIZED_NAME_STEPS)
+  @javax.annotation.Nullable
+  private List<ProcessingTaskStep> steps;
 
   public static final String SERIALIZED_NAME_LEASE_EXPIRES_AT = "leaseExpiresAt";
   @SerializedName(SERIALIZED_NAME_LEASE_EXPIRES_AT)
@@ -519,6 +525,33 @@ public class TaskEvent {
   }
 
 
+  public TaskEvent steps(@javax.annotation.Nullable List<ProcessingTaskStep> steps) {
+    this.steps = steps;
+    return this;
+  }
+
+  public TaskEvent addStepsItem(ProcessingTaskStep stepsItem) {
+    if (this.steps == null) {
+      this.steps = new ArrayList<>();
+    }
+    this.steps.add(stepsItem);
+    return this;
+  }
+
+  /**
+   * Get steps
+   * @return steps
+   */
+  @javax.annotation.Nullable
+  public List<ProcessingTaskStep> getSteps() {
+    return steps;
+  }
+
+  public void setSteps(@javax.annotation.Nullable List<ProcessingTaskStep> steps) {
+    this.steps = steps;
+  }
+
+
   public TaskEvent leaseExpiresAt(@javax.annotation.Nullable OffsetDateTime leaseExpiresAt) {
     this.leaseExpiresAt = leaseExpiresAt;
     return this;
@@ -564,6 +597,7 @@ public class TaskEvent {
         Objects.equals(this.transcriptVersion, taskEvent.transcriptVersion) &&
         Objects.equals(this.artifactManifestId, taskEvent.artifactManifestId) &&
         Objects.equals(this.completedSteps, taskEvent.completedSteps) &&
+        Objects.equals(this.steps, taskEvent.steps) &&
         Objects.equals(this.leaseExpiresAt, taskEvent.leaseExpiresAt);
   }
 
@@ -573,7 +607,7 @@ public class TaskEvent {
 
   @Override
   public int hashCode() {
-    return Objects.hash(eventId, sequenceNo, eventType, taskId, meetingId, stepName, status, phase, progress, retryable, errorCode, emittedAt, attemptNo, transcriptVersion, artifactManifestId, completedSteps, leaseExpiresAt);
+    return Objects.hash(eventId, sequenceNo, eventType, taskId, meetingId, stepName, status, phase, progress, retryable, errorCode, emittedAt, attemptNo, transcriptVersion, artifactManifestId, completedSteps, steps, leaseExpiresAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -603,6 +637,7 @@ public class TaskEvent {
     sb.append("    transcriptVersion: ").append(toIndentedString(transcriptVersion)).append("\n");
     sb.append("    artifactManifestId: ").append(toIndentedString(artifactManifestId)).append("\n");
     sb.append("    completedSteps: ").append(toIndentedString(completedSteps)).append("\n");
+    sb.append("    steps: ").append(toIndentedString(steps)).append("\n");
     sb.append("    leaseExpiresAt: ").append(toIndentedString(leaseExpiresAt)).append("\n");
     sb.append("}");
     return sb.toString();
@@ -622,7 +657,7 @@ public class TaskEvent {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("eventId", "sequenceNo", "eventType", "taskId", "meetingId", "stepName", "status", "phase", "progress", "retryable", "errorCode", "emittedAt", "attemptNo", "transcriptVersion", "artifactManifestId", "completedSteps", "leaseExpiresAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("eventId", "sequenceNo", "eventType", "taskId", "meetingId", "stepName", "status", "phase", "progress", "retryable", "errorCode", "emittedAt", "attemptNo", "transcriptVersion", "artifactManifestId", "completedSteps", "steps", "leaseExpiresAt"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("eventId", "sequenceNo", "eventType", "taskId", "status", "emittedAt"));
@@ -689,6 +724,20 @@ public class TaskEvent {
       // ensure the optional json data is an array if present
       if (jsonObj.get("completedSteps") != null && !jsonObj.get("completedSteps").isJsonNull() && !jsonObj.get("completedSteps").isJsonArray()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `completedSteps` to be an array in the JSON string but got `%s`", jsonObj.get("completedSteps").toString()));
+      }
+      if (jsonObj.get("steps") != null && !jsonObj.get("steps").isJsonNull()) {
+        JsonArray jsonArraysteps = jsonObj.getAsJsonArray("steps");
+        if (jsonArraysteps != null) {
+          // ensure the json data is an array
+          if (!jsonObj.get("steps").isJsonArray()) {
+            throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `steps` to be an array in the JSON string but got `%s`", jsonObj.get("steps").toString()));
+          }
+
+          // validate the optional field `steps` (array)
+          for (int i = 0; i < jsonArraysteps.size(); i++) {
+            ProcessingTaskStep.validateJsonElement(jsonArraysteps.get(i));
+          };
+        }
       }
   }
 

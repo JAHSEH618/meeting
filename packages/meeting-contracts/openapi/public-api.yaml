@@ -1973,6 +1973,10 @@ components:
         completedSteps:
           type: [array, 'null']
           items: {type: string}
+        steps:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ProcessingTaskStep'
         leaseExpiresAt: {type: [string, 'null'], format: date-time}
 
     # ── Transcript ─────────────────────────────────────────────

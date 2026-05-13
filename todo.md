@@ -49,16 +49,17 @@
 > 阶段 0 当前定位：本地开发准入、契约/codegen 门禁、基础 Testcontainers smoke、Web/AI Worker 测试栈已可重复验证；真实持久化链路、Java callback 安全闭环、outbox/RabbitMQ 实投递、worker fake pipeline 消费与回调仍属于阶段 1 MVP-0 范围，不能视为集成风险已解除。
 >
 > 已知间歇性问题（非代码缺陷，环境依赖）：
-> - `./mvnw verify` 需要 Docker daemon；本轮已在 Colima 下通过。无 Docker 或未导出 Colima socket 时会先通过 Testcontainers preflight 快速失败并提示前提，`./mvnw test` 仍可通过（8 unit tests）。
+> - `apps/meeting-api` 的所有 `./mvnw` 命令必须使用 JDK 17（enforcer 范围 `[17,18)`）；默认 JDK 21 会失败。macOS 可先执行 `export JAVA_HOME=$(/usr/libexec/java_home -v 17)`。
+> - `./mvnw verify` 需要 Docker daemon；本轮已在 Colima 下通过。无 Docker 或未导出 Colima socket 时会先通过 Testcontainers preflight 快速失败并提示前提，`./mvnw test` 仍可通过。
 > - `npm run codegen` 是有副作用的维护命令，会原地更新 TS / Python / Java generated 文件；验收优先使用无副作用的 `npm run codegen:check-temp` 或 `npm run check`。Python codegen 依赖 `datamodel-codegen`，缺失时本地 drift 检查会失败。
 
 | 验收命令 | 工作目录 | 测试数 | 环境前提 | 备注 |
 |----------|----------|--------|----------|------|
-| `npm run check` | `packages/meeting-contracts` | 8 steps | Node + Python3 | codegen 到 temp diff，不写目标路径 |
-| `npm run codegen:check-temp` | `packages/meeting-contracts` | 7 targets | Node + Python3 | 纯检查；生成到 temp 后 diff，不写目标路径 |
-| `npm run codegen` | `packages/meeting-contracts` | 7 targets | Node + Python3 | 有副作用维护命令；temp 生成→cleanup→copy，需目标路径可写 |
-| `./mvnw test` | `apps/meeting-api` | 8 unit | JDK 17 | 无需 Docker |
-| `./mvnw verify` | `apps/meeting-api` | 25 total | JDK 17 + Docker | 已通过；使用 Colima socket + Testcontainers baseline，含 preflight (1)、PostgreSQL IT (7)、RabbitMQ IT (9，含 exchange / queue / binding / policy definitions) |
+| `npm run check` | `packages/meeting-contracts` | 8 steps | Node + Python3 + JDK 17 | codegen 到 temp diff，不写目标路径；不依赖全局 spectral / npx 临时安装 |
+| `npm run codegen:check-temp` | `packages/meeting-contracts` | 7 targets | Node + Python3 + JDK 17 | 纯检查；生成到 temp 后 diff，不写目标路径 |
+| `npm run codegen` | `packages/meeting-contracts` | 7 targets | Node + Python3 + JDK 17 | 有副作用维护命令；temp 生成→cleanup→copy，需目标路径可写 |
+| `./mvnw test` | `apps/meeting-api` | unit + ArchUnit | **JDK 17 only** | 无需 Docker；覆盖架构边界、会议 service/repository/controller 行为基线 |
+| `./mvnw verify` | `apps/meeting-api` | unit + IT | **JDK 17 only** + Docker | 使用 Colima socket + Testcontainers baseline，含 preflight、PostgreSQL IT、RabbitMQ topology definitions 结构化校验 |
 | `uv run pytest` | `apps/ai-worker` | ~39 | Python 3.11 | — |
 | `uv run pyright ai_worker/` | `apps/ai-worker` | — | Python 3.11 | 0 errors |
 | `npm test` | `apps/meeting-web` | 35 | Node 20 | 测试脚本禁用 Node experimental WebStorage，避免 localStorage warning |

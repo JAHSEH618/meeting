@@ -29,20 +29,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Spectral
-        run: npm install -g @stoplight/spectral-cli
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Install npm deps
+        run: npm ci
 
       - name: Install Python deps
         run: pip install -r requirements.txt
 
       - name: Spectral Lint (public-api)
-        run: spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
+        run: ./node_modules/.bin/spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
 
       - name: Spectral Lint (internal-callback-api)
-        run: spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml --fail-severity warn
+        run: ./node_modules/.bin/spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml --fail-severity warn
 
       - name: Spectral Lint (ai-worker-internal-api)
-        run: spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
+        run: ./node_modules/.bin/spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
 
       - name: Validate JSON Schema
         run: |
@@ -54,52 +59,7 @@ jobs:
           "
 
       - name: Consistency Check
-        run: bash scripts/check-consistency.sh
-
-      - name: Install npm deps
-        run: npm ci
-
-      - name: Set up Java for codegen
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: temurin
-
-      - name: Codegen Diff Check (TS + Python + Java)
-        run: |
-          set -euo pipefail
-
-          # Helper: detect both modified and newly-created (untracked) generated files
-          check_clean() {
-            local path="$1"
-            local name="$2"
-            git add -N "$path"
-            git diff --exit-code "$path" || {
-              echo "::error::$name is out of date or contains untracked files. Run 'npm run codegen' and commit the result."
-              exit 1
-            }
-          }
-
-          npm run codegen:ts
-          check_clean ../../apps/meeting-web/src/shared/api/types.gen.ts "TS types.gen.ts"
-
-          npm run codegen:py-callback
-          check_clean ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py "Python internal_callback_types.py"
-
-          npm run codegen:py-worker-internal
-          check_clean ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py "Python ai_worker_internal_types.py"
-
-          npm run codegen:py-task-msg
-          check_clean ../../apps/ai-worker/ai_worker/generated/processing_task_message.py "Python processing_task_message.py"
-
-          npm run codegen:java-public
-          check_clean ../../apps/meeting-api/meeting-api-client/generated/public-api "Java public-api generated models"
-
-          npm run codegen:java-worker-internal
-          check_clean ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal "Java ai-worker-internal generated models"
-
-          npm run codegen:java-export-job
-          check_clean ../../apps/meeting-api/meeting-api-client/generated/export-job "Java export-job generated models"
+        run: npm run check
 
   # ── Java 后端 ─────────────────────────────────────────────────
   meeting-api:

@@ -18,9 +18,9 @@
     "codegen:check": "npm run codegen:check-temp"
   },
   "devDependencies": {
-    "@stoplight/spectral-cli": "^6.15.0",
-    "ajv-cli": "^5.0.0",
-    "openapi-typescript": "^7.0.0",
-    "@openapitools/openapi-generator-cli": "^2.13.0"
+    "@stoplight/spectral-cli": "6.15.1",
+    "ajv-cli": "5.0.0",
+    "openapi-typescript": "7.13.0",
+    "@openapitools/openapi-generator-cli": "2.32.0"
   }
 }

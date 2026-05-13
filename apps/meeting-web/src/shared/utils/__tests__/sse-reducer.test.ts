@@ -48,7 +48,7 @@ describe("sseReducer", () => {
       retryable: false,
       steps: [makeStep("ASR", "SUCCEEDED", 100)],
       completedSteps: ["ASR"],
-    } as unknown as TaskEvent;
+    } satisfies TaskEvent;
     const next = sseReducer(baseState, event);
     expect(next.status).toBe("SUCCEEDED");
     expect(next.phase).toBe("TERMINAL");
@@ -116,7 +116,7 @@ describe("sseReducer", () => {
       transcriptVersion: 3,
     };
     const next = sseReducer(baseState, event);
-    expect((next as unknown as { transcriptVersion: number }).transcriptVersion).toBe(3);
+    expect(next.transcriptVersion).toBe(3);
   });
 
   it("unknown event type returns the same state", () => {

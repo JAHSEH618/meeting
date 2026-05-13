@@ -27,48 +27,38 @@ echo ""
 
 HAS_ERRORS=0
 
+# ── 0. Toolchain preflight ─────────────────────────────────────
+echo "--- Toolchain Preflight ---"
+SPECTRAL_BIN="$CONTRACTS_DIR/node_modules/.bin/spectral"
+if [ ! -x "$SPECTRAL_BIN" ]; then
+  fail "local spectral not found. Run 'npm ci' in $CONTRACTS_DIR before contract checks."
+fi
+pass "local spectral available"
+
 # ── 1. Spectral Lint ────────────────────────────────────────────
 echo "--- Spectral Lint ---"
-if command -v npx &>/dev/null && [ -d "$CONTRACTS_DIR/node_modules" ]; then
-  pub_result=0
-  npx spectral lint "$OPENAPI_DIR/public-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || pub_result=1
-  if [ $pub_result -eq 0 ]; then
-    pass "spectral: public-api.yaml"
-  else
-    error_exit "spectral: public-api.yaml has errors"
-  fi
-
-  cb_result=0
-  npx spectral lint "$OPENAPI_DIR/internal-callback-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-callback.yaml" --fail-severity warn 2>&1 || cb_result=1
-  if [ $cb_result -eq 0 ]; then
-    pass "spectral: internal-callback-api.yaml"
-  else
-    error_exit "spectral: internal-callback-api.yaml has errors"
-  fi
-
-  wk_result=0
-  npx spectral lint "$OPENAPI_DIR/ai-worker-internal-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || wk_result=1
-  if [ $wk_result -eq 0 ]; then
-    pass "spectral: ai-worker-internal-api.yaml"
-  else
-    error_exit "spectral: ai-worker-internal-api.yaml has errors"
-  fi
-elif command -v spectral &>/dev/null; then
-  for f in "$OPENAPI_DIR"/*.yaml; do
-    fname=$(basename "$f")
-    case "$fname" in
-      public-api.yaml) ruleset="$CONTRACTS_DIR/.spectral-public.yaml" ;;
-      internal-callback-api.yaml) ruleset="$CONTRACTS_DIR/.spectral-callback.yaml" ;;
-      *) ruleset="$CONTRACTS_DIR/.spectral-public.yaml" ;;
-    esac
-    if spectral lint "$f" --ruleset "$ruleset" --fail-severity warn 2>&1; then
-      pass "spectral: $fname"
-    else
-      error_exit "spectral: $fname has errors"
-    fi
-  done
+pub_result=0
+"$SPECTRAL_BIN" lint "$OPENAPI_DIR/public-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || pub_result=1
+if [ $pub_result -eq 0 ]; then
+  pass "spectral: public-api.yaml"
 else
-  fail "spectral not installed — cannot verify OpenAPI contracts. Install: npm install -g @stoplight/spectral-cli"
+  error_exit "spectral: public-api.yaml has errors"
+fi
+
+cb_result=0
+"$SPECTRAL_BIN" lint "$OPENAPI_DIR/internal-callback-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-callback.yaml" --fail-severity warn 2>&1 || cb_result=1
+if [ $cb_result -eq 0 ]; then
+  pass "spectral: internal-callback-api.yaml"
+else
+  error_exit "spectral: internal-callback-api.yaml has errors"
+fi
+
+wk_result=0
+"$SPECTRAL_BIN" lint "$OPENAPI_DIR/ai-worker-internal-api.yaml" --ruleset "$CONTRACTS_DIR/.spectral-public.yaml" --fail-severity warn 2>&1 || wk_result=1
+if [ $wk_result -eq 0 ]; then
+  pass "spectral: ai-worker-internal-api.yaml"
+else
+  error_exit "spectral: ai-worker-internal-api.yaml has errors"
 fi
 
 # ── 2. JSON Schema 校验 ────────────────────────────────────────

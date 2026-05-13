@@ -11,6 +11,9 @@ export interface TaskSnapshot {
   retryable: boolean;
   steps: TaskStep[];
   completedSteps: string[];
+  progress?: number;
+  transcriptVersion?: number;
+  artifactManifestId?: string;
   leaseExpiresAt?: string;
 }
 
@@ -39,8 +42,11 @@ export function sseReducer(state: TaskSnapshot, event: TaskEvent): TaskSnapshot 
         currentStep: event.stepName ?? null,
         lastErrorCode: event.errorCode ?? null,
         retryable: event.retryable ?? false,
-        steps: (event as unknown as { steps?: TaskStep[] }).steps ?? state.steps,
+        steps: event.steps ?? state.steps,
         completedSteps: event.completedSteps ?? state.completedSteps,
+        progress: event.progress ?? state.progress,
+        transcriptVersion: event.transcriptVersion ?? state.transcriptVersion,
+        artifactManifestId: event.artifactManifestId ?? state.artifactManifestId,
         leaseExpiresAt: event.leaseExpiresAt ?? state.leaseExpiresAt,
       };
 
@@ -60,17 +66,16 @@ export function sseReducer(state: TaskSnapshot, event: TaskEvent): TaskSnapshot 
     case "TASK_HEARTBEAT":
       return {
         ...state,
-        progress: event.progress ?? undefined,
+        progress: event.progress ?? state.progress,
         leaseExpiresAt: event.leaseExpiresAt ?? state.leaseExpiresAt,
-      } as TaskSnapshot;
+      };
 
     case "TRANSCRIPT_READY":
       return {
         ...state,
         transcriptVersion: event.transcriptVersion
-          ? event.transcriptVersion
-          : undefined,
-      } as unknown as TaskSnapshot;
+          ?? state.transcriptVersion,
+      };
 
     case "TASK_FAILED":
       return {

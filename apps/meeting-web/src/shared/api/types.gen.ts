@@ -1212,6 +1212,7 @@ export interface components {
             transcriptVersion?: number | null;
             artifactManifestId?: string | null;
             completedSteps?: string[] | null;
+            steps?: components["schemas"]["ProcessingTaskStep"][] | null;
             /** Format: date-time */
             leaseExpiresAt?: string | null;
         };

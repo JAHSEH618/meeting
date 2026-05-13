@@ -4,6 +4,8 @@ Java 17 + Spring Boot + COLA-V5 模块化单体。
 
 详细工程规格见 [`SPEC.md`](SPEC.md)。
 
+> **本项目只支持 JDK 17（Maven enforcer 范围 `[17,18)`）。** 如果本机默认是 JDK 21，先设置 `JAVA_HOME`，例如 macOS：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`。
+
 Maven 模块：
 
 ```text
@@ -20,9 +22,9 @@ meeting-api-infrastructure
 ## 本地命令
 
 ```bash
-mvn clean package
-mvn -pl meeting-api-start -am compile
-mvn -pl meeting-api-start -am install -DskipTests
+./mvnw clean package
+./mvnw -pl meeting-api-start -am compile
+./mvnw -pl meeting-api-start -am install -DskipTests
 java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 ```
 

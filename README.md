@@ -241,6 +241,8 @@ meeting/
 
 ### 前置依赖
 
+> **Java 运行时必须是 JDK 17。** 后端 Maven enforcer 使用 `[17,18)`，默认 JDK 21 会失败；运行任何 `apps/meeting-api` 的 `./mvnw` 命令前先确认 `java -version`。macOS 可执行：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`。
+
 - **JDK 17（范围 `[17,18)`）** · 仓库自带 `./mvnw`（无需本机 Maven）。若本机默认 JDK 高于 17，请显式指定 `JAVA_HOME`，例如 macOS：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`
 - **Node 20+** · 用于前端与契约 codegen
 - **Python 3.11+** · 安装 [`uv`](https://docs.astral.sh/uv/)：`curl -LsSf https://astral.sh/uv/install.sh | sh`
@@ -291,11 +293,11 @@ npm run dev
 
 | 工作区 | 命令 | 门禁类型 | 是否需要 Docker |
 |---|---|---|---|
-| `apps/meeting-api` | `./mvnw test` | 单元 + ArchUnit 边界 | 否 |
-| `apps/meeting-api` | `./mvnw verify -q` | 全量（含 Testcontainers preflight 与集成基线） | **是** |
+| `apps/meeting-api` | `./mvnw test` | 单元 + ArchUnit 边界；必须 JDK 17，JDK 21 会失败 | 否 |
+| `apps/meeting-api` | `./mvnw verify -q` | 全量（含 Testcontainers preflight 与集成基线）；必须 JDK 17，JDK 21 会失败 | **是** |
 | `apps/ai-worker` | `uv run pytest tests/` · `uv run pyright ai_worker/` | 单元 + 类型 | 否 |
 | `apps/meeting-web` | `npm test` · `npx tsc --noEmit` · `npm run lint` | Vitest + 类型 + ESLint | 否 |
-| `packages/meeting-contracts` | `npm run check` · `npm run codegen:check-temp` | 契约一致性 + 无副作用 codegen drift 检查 | 否 |
+| `packages/meeting-contracts` | `npm run check` · `npm run codegen:check-temp` | 契约一致性 + 无副作用 codegen drift 检查；Java codegen 必须 JDK 17 | 否 |
 
 ---
 

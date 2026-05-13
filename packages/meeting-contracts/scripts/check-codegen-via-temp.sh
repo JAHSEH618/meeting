@@ -22,8 +22,34 @@ warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
 
 codegen_failures=0
 drift_found=0
+OPENAPI_TS_BIN="$CONTRACTS_DIR/node_modules/.bin/openapi-typescript"
+OPENAPI_GENERATOR_BIN="$CONTRACTS_DIR/node_modules/.bin/openapi-generator-cli"
 
 # ── Preflight ────────────────────────────────────────────────────────────────
+if [ ! -x "$OPENAPI_TS_BIN" ]; then
+  echo "  FAIL: local openapi-typescript not found. Run 'npm ci' in $CONTRACTS_DIR."
+  exit 1
+fi
+if [ ! -x "$OPENAPI_GENERATOR_BIN" ]; then
+  echo "  FAIL: local openapi-generator-cli not found. Run 'npm ci' in $CONTRACTS_DIR."
+  exit 1
+fi
+if ! command -v java >/dev/null 2>&1; then
+  echo "  FAIL: Java 17 is required for Java codegen."
+  exit 1
+fi
+java_version="$(java -version 2>&1 | awk -F '"' '/version/ {print $2; exit}')"
+case "$java_version" in
+  17.*) ;;
+  *)
+    echo "  FAIL: Java 17 is required for Java codegen; current java.version is $java_version."
+    echo "  Set JAVA_HOME to a JDK 17 installation before running contract checks."
+    exit 1
+    ;;
+esac
+
+cd "$CONTRACTS_DIR"
+
 if ! TEMP_DIR="$(mktemp -d "$TEMP_ROOT/meeting-contracts-codegen-check.XXXXXX")" 2>/dev/null; then
   echo "  FAIL: cannot create temp directory under $TEMP_ROOT"
   echo "  Check TMPDIR permissions."
@@ -103,7 +129,7 @@ _err=$(mktemp)
 trap "rm -f $_err; rm -rf $TEMP_DIR" EXIT
 
 # ── TS ───────────────────────────────────────────────────────────────────────
-if npx openapi-typescript "$CONTRACTS_DIR/openapi/public-api.yaml" \
+if "$OPENAPI_TS_BIN" "$CONTRACTS_DIR/openapi/public-api.yaml" \
     -o "$TEMP_DIR/types.gen.ts" >/dev/null 2>$_err; then
   pass "codegen:ts"
   diff_path "$TEMP_DIR/types.gen.ts" \
@@ -117,7 +143,7 @@ fi
 
 # ── Java: public-api ─────────────────────────────────────────────────────────
 JAVA_PUB_TEMP="$TEMP_DIR/java-public"
-if npx @openapitools/openapi-generator-cli generate -g java \
+if "$OPENAPI_GENERATOR_BIN" generate -g java \
     -i "$CONTRACTS_DIR/openapi/public-api.yaml" \
     -o "$JAVA_PUB_TEMP" \
     --additional-properties=apiPackage=com.meeting.api.client.publicapi,modelPackage=com.meeting.api.client.publicapi.model,hideGenerationTimestamp=true \
@@ -137,7 +163,7 @@ fi
 
 # ── Java: ai-worker-internal ─────────────────────────────────────────────────
 JAVA_WK_TEMP="$TEMP_DIR/java-worker-internal"
-if npx @openapitools/openapi-generator-cli generate -g java \
+if "$OPENAPI_GENERATOR_BIN" generate -g java \
     -i "$CONTRACTS_DIR/openapi/ai-worker-internal-api.yaml" \
     -o "$JAVA_WK_TEMP" \
     --additional-properties=apiPackage=com.meeting.api.client.workerinternal,modelPackage=com.meeting.api.client.workerinternal.model,hideGenerationTimestamp=true \
@@ -157,7 +183,7 @@ fi
 # ── Java: export-job ─────────────────────────────────────────────────────────
 if [ -f "$CONTRACTS_DIR/openapi/export-job-message.yaml" ]; then
   JAVA_EXP_TEMP="$TEMP_DIR/java-export-job"
-  if npx @openapitools/openapi-generator-cli generate -g java \
+  if "$OPENAPI_GENERATOR_BIN" generate -g java \
       -i "$CONTRACTS_DIR/openapi/export-job-message.yaml" \
       -o "$JAVA_EXP_TEMP" \
       --additional-properties=apiPackage=com.meeting.api.client.exportjob,modelPackage=com.meeting.api.client.exportjob.model,hideGenerationTimestamp=true \
