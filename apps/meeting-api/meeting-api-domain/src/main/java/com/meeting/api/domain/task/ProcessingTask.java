@@ -1,0 +1,384 @@
+package com.meeting.api.domain.task;
+
+import com.meeting.api.client.enums.ProcessingStep;
+import com.meeting.api.client.enums.ProcessingStepUpdateSource;
+import com.meeting.api.client.enums.ProcessingTaskPhase;
+import com.meeting.api.client.enums.ProcessingTaskStatus;
+import com.meeting.api.client.enums.StepStatus;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+public final class ProcessingTask {
+    private final String taskId;
+    private final String tenantId;
+    private final String meetingId;
+    private final String taskType;
+    private final Map<ProcessingStep, ProcessingTaskStep> steps;
+    private ProcessingTaskStatus status;
+    private ProcessingTaskPhase phase;
+    private int attemptNo;
+    private String currentStep;
+    private String lastErrorCode;
+    private boolean retryable;
+    private String leaseOwner;
+    private OffsetDateTime leaseExpiresAt;
+    private OffsetDateTime heartbeatAt;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
+
+    private ProcessingTask(
+        String taskId,
+        String tenantId,
+        String meetingId,
+        String taskType,
+        ProcessingTaskStatus status,
+        ProcessingTaskPhase phase,
+        int attemptNo,
+        List<ProcessingTaskStep> steps,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
+    ) {
+        this.taskId = requireText(taskId, "taskId");
+        this.tenantId = requireText(tenantId, "tenantId");
+        this.meetingId = meetingId;
+        this.taskType = requireText(taskType, "taskType");
+        this.status = Objects.requireNonNull(status, "status");
+        this.phase = Objects.requireNonNull(phase, "phase");
+        this.attemptNo = attemptNo;
+        this.steps = new EnumMap<>(ProcessingStep.class);
+        for (ProcessingTaskStep step : steps) {
+            this.steps.put(step.stepName(), step);
+        }
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
+        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+    }
+
+    public static ProcessingTask create(
+        String taskId,
+        String tenantId,
+        String meetingId,
+        String taskType,
+        List<ProcessingStep> stepNames,
+        OffsetDateTime now
+    ) {
+        requireText(taskType, "taskType");
+        Objects.requireNonNull(stepNames, "stepNames");
+        if (stepNames.isEmpty()) {
+            throw new IllegalArgumentException("stepNames must not be empty");
+        }
+        List<ProcessingTaskStep> steps = stepNames.stream()
+            .map(step -> ProcessingTaskStep.pending(step, defaultSourceFor(step)))
+            .toList();
+        return new ProcessingTask(
+            taskId,
+            tenantId,
+            meetingId,
+            taskType,
+            ProcessingTaskStatus.PENDING,
+            ProcessingTaskPhase.WORKER_DAG_RUNNING,
+            1,
+            steps,
+            now,
+            now
+        );
+    }
+
+    public void enqueue(OffsetDateTime now) {
+        requireStatus(ProcessingTaskStatus.PENDING);
+        requireNonTerminal();
+        status = ProcessingTaskStatus.QUEUED;
+        touch(now);
+    }
+
+    public void claimLease(String workerId, String leaseOwner, OffsetDateTime leaseExpiresAt, OffsetDateTime now) {
+        if (status != ProcessingTaskStatus.QUEUED && status != ProcessingTaskStatus.RUNNING) {
+            throw new IllegalStateException("task must be QUEUED or RUNNING to claim lease");
+        }
+        requireNonTerminal();
+        this.status = ProcessingTaskStatus.RUNNING;
+        this.leaseOwner = requireText(leaseOwner, "leaseOwner");
+        this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "leaseExpiresAt");
+        this.heartbeatAt = now;
+        currentWorkerStep().ifPresent(step -> {
+            currentStep = step.stepName().name();
+            step.markRunning(0, attemptNo, leaseOwner, workerId, now);
+        });
+        touch(now);
+    }
+
+    public void markJavaStepSucceeded(ProcessingStep stepName, OffsetDateTime now) {
+        requireNonTerminal();
+        ProcessingTaskStep step = step(stepName);
+        if (step.source() != ProcessingStepUpdateSource.JAVA_TASK_SERVICE) {
+            throw new IllegalArgumentException("step is not owned by Java task service: " + stepName);
+        }
+        step.markSucceeded(100, null, null, null, now);
+        currentStep = stepName.name();
+        touch(now);
+    }
+
+    public void updateWorkerStep(
+        ProcessingStep stepName,
+        StepStatus newStatus,
+        int progress,
+        int callbackAttemptNo,
+        String callbackLeaseOwner,
+        String workerId,
+        String errorCode,
+        OffsetDateTime now
+    ) {
+        validateCallback(callbackAttemptNo, callbackLeaseOwner);
+        requireNonTerminal();
+        ProcessingTaskStep step = step(stepName);
+        if (step.source() != ProcessingStepUpdateSource.AI_WORKER_CALLBACK) {
+            throw new IllegalArgumentException("step is not owned by ai-worker callback: " + stepName);
+        }
+        currentStep = stepName.name();
+        switch (newStatus) {
+            case RUNNING -> step.markRunning(progress, attemptNo, callbackLeaseOwner, workerId, now);
+            case SUCCEEDED -> step.markSucceeded(progress, attemptNo, callbackLeaseOwner, workerId, now);
+            case FAILED -> {
+                step.markFailed(progress, attemptNo, callbackLeaseOwner, workerId, errorCode, now);
+                lastErrorCode = errorCode;
+                retryable = true;
+            }
+            case SKIPPED -> step.markSkipped(progress, attemptNo, callbackLeaseOwner, workerId, errorCode, now);
+            default -> throw new IllegalArgumentException("unsupported callback step status: " + newStatus);
+        }
+        touch(now);
+    }
+
+    public void heartbeat(
+        ProcessingStep stepName,
+        int progress,
+        int callbackAttemptNo,
+        String callbackLeaseOwner,
+        OffsetDateTime heartbeatAt,
+        OffsetDateTime leaseExpiresAt
+    ) {
+        validateCallback(callbackAttemptNo, callbackLeaseOwner);
+        requireStatus(ProcessingTaskStatus.RUNNING);
+        requireNonTerminal();
+        ProcessingTaskStep step = step(stepName);
+        if (step.source() != ProcessingStepUpdateSource.AI_WORKER_CALLBACK) {
+            throw new IllegalArgumentException("heartbeat step is not owned by ai-worker callback: " + stepName);
+        }
+        if (progress <= 0) {
+            throw new IllegalArgumentException("heartbeat progress must be positive");
+        }
+        this.heartbeatAt = Objects.requireNonNull(heartbeatAt, "heartbeatAt");
+        this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "leaseExpiresAt");
+        currentStep = stepName.name();
+        step.heartbeat(progress, callbackAttemptNo, callbackLeaseOwner, heartbeatAt);
+        touch(heartbeatAt);
+    }
+
+    public void completeWorkerPhase(
+        ProcessingTaskStatus workerStatus,
+        List<ProcessingStep> completedSteps,
+        List<WorkerPhaseCompletedEvent.SkippedStep> skippedSteps,
+        int callbackAttemptNo,
+        String callbackLeaseOwner,
+        OffsetDateTime now
+    ) {
+        validateCallback(callbackAttemptNo, callbackLeaseOwner);
+        requireStatus(ProcessingTaskStatus.RUNNING);
+        if (phase != ProcessingTaskPhase.WORKER_DAG_RUNNING) {
+            throw new IllegalStateException("worker phase can only complete from WORKER_DAG_RUNNING");
+        }
+        if (workerStatus != ProcessingTaskStatus.SUCCEEDED && workerStatus != ProcessingTaskStatus.PARTIAL_SUCCEEDED) {
+            throw new IllegalArgumentException("workerStatus must be SUCCEEDED or PARTIAL_SUCCEEDED");
+        }
+        for (ProcessingStep completedStep : completedSteps == null ? List.<ProcessingStep>of() : completedSteps) {
+            step(completedStep).markSucceeded(100, callbackAttemptNo, callbackLeaseOwner, null, now);
+        }
+        for (WorkerPhaseCompletedEvent.SkippedStep skipped : skippedSteps == null ? List.<WorkerPhaseCompletedEvent.SkippedStep>of() : skippedSteps) {
+            step(skipped.stepName()).markSkipped(100, callbackAttemptNo, callbackLeaseOwner, null, skipped.reason(), now);
+        }
+        phase = ProcessingTaskPhase.WORKER_DAG_DONE;
+        status = ProcessingTaskStatus.RUNNING;
+        touch(now);
+    }
+
+    public void beginJavaLlm(OffsetDateTime now) {
+        requireStatus(ProcessingTaskStatus.RUNNING);
+        if (phase != ProcessingTaskPhase.WORKER_DAG_DONE) {
+            throw new IllegalStateException("Java LLM phase can only start after worker DAG is done");
+        }
+        phase = ProcessingTaskPhase.JAVA_LLM_RUNNING;
+        touch(now);
+    }
+
+    public void completeTerminal(ProcessingTaskStatus terminalStatus, String errorCode, OffsetDateTime now) {
+        if (!isTerminalStatus(terminalStatus)) {
+            throw new IllegalArgumentException("terminalStatus is not terminal: " + terminalStatus);
+        }
+        status = terminalStatus;
+        phase = ProcessingTaskPhase.TERMINAL;
+        lastErrorCode = errorCode;
+        retryable = terminalStatus == ProcessingTaskStatus.FAILED || terminalStatus == ProcessingTaskStatus.PARTIAL_SUCCEEDED;
+        leaseOwner = null;
+        leaseExpiresAt = null;
+        touch(now);
+    }
+
+    public boolean markOrphanedIfLeaseExpired(OffsetDateTime now) {
+        if (phase == ProcessingTaskPhase.TERMINAL || status != ProcessingTaskStatus.RUNNING || leaseExpiresAt == null) {
+            return false;
+        }
+        if (leaseExpiresAt.isAfter(now)) {
+            return false;
+        }
+        status = ProcessingTaskStatus.ORPHANED;
+        leaseOwner = null;
+        leaseExpiresAt = null;
+        touch(now);
+        return true;
+    }
+
+    public void requeueOrphaned(OffsetDateTime now) {
+        requireStatus(ProcessingTaskStatus.ORPHANED);
+        requireNonTerminal();
+        attemptNo += 1;
+        status = ProcessingTaskStatus.QUEUED;
+        retryable = false;
+        for (ProcessingTaskStep step : steps.values()) {
+            if (step.source() == ProcessingStepUpdateSource.AI_WORKER_CALLBACK) {
+                step.resetForAttempt();
+            }
+        }
+        touch(now);
+    }
+
+    public void requestCancel(OffsetDateTime now) {
+        if (phase == ProcessingTaskPhase.TERMINAL) {
+            throw new IllegalStateException("terminal task cannot be cancelled");
+        }
+        if (status != ProcessingTaskStatus.PENDING
+            && status != ProcessingTaskStatus.QUEUED
+            && status != ProcessingTaskStatus.RUNNING
+            && status != ProcessingTaskStatus.ORPHANED) {
+            throw new IllegalStateException("task cannot be cancelled from status " + status);
+        }
+        status = ProcessingTaskStatus.CANCEL_PENDING;
+        touch(now);
+    }
+
+    public void confirmCancelled(OffsetDateTime now) {
+        requireStatus(ProcessingTaskStatus.CANCEL_PENDING);
+        completeTerminal(ProcessingTaskStatus.CANCELLED, null, now);
+        for (ProcessingTaskStep step : steps.values()) {
+            if (!step.status().name().equals(StepStatus.SUCCEEDED.name())) {
+                step.markCancelled(now);
+            }
+        }
+    }
+
+    public void retry(OffsetDateTime now) {
+        if (phase != ProcessingTaskPhase.TERMINAL
+            || (status != ProcessingTaskStatus.FAILED && status != ProcessingTaskStatus.PARTIAL_SUCCEEDED)) {
+            throw new IllegalStateException("only failed or partial terminal tasks can be retried");
+        }
+        attemptNo += 1;
+        status = ProcessingTaskStatus.QUEUED;
+        phase = ProcessingTaskPhase.WORKER_DAG_RUNNING;
+        currentStep = null;
+        lastErrorCode = null;
+        retryable = false;
+        leaseOwner = null;
+        leaseExpiresAt = null;
+        heartbeatAt = null;
+        for (ProcessingTaskStep step : steps.values()) {
+            if (step.source() == ProcessingStepUpdateSource.AI_WORKER_CALLBACK) {
+                step.resetForAttempt();
+            }
+        }
+        touch(now);
+    }
+
+    public ProcessingTaskStep step(ProcessingStep stepName) {
+        ProcessingTaskStep step = steps.get(stepName);
+        if (step == null) {
+            throw new IllegalArgumentException("unknown task step: " + stepName);
+        }
+        return step;
+    }
+
+    public List<ProcessingTaskStep> steps() {
+        return Collections.unmodifiableList(new ArrayList<>(steps.values()));
+    }
+
+    public String taskId() { return taskId; }
+    public String tenantId() { return tenantId; }
+    public String meetingId() { return meetingId; }
+    public String taskType() { return taskType; }
+    public ProcessingTaskStatus status() { return status; }
+    public ProcessingTaskPhase phase() { return phase; }
+    public int attemptNo() { return attemptNo; }
+    public String currentStep() { return currentStep; }
+    public String lastErrorCode() { return lastErrorCode; }
+    public boolean retryable() { return retryable; }
+    public String leaseOwner() { return leaseOwner; }
+    public OffsetDateTime leaseExpiresAt() { return leaseExpiresAt; }
+    public OffsetDateTime heartbeatAt() { return heartbeatAt; }
+    public OffsetDateTime createdAt() { return createdAt; }
+    public OffsetDateTime updatedAt() { return updatedAt; }
+
+    private java.util.Optional<ProcessingTaskStep> currentWorkerStep() {
+        return steps.values().stream()
+            .filter(step -> step.source() == ProcessingStepUpdateSource.AI_WORKER_CALLBACK)
+            .filter(step -> step.status() == StepStatus.PENDING || step.status() == StepStatus.QUEUED)
+            .findFirst();
+    }
+
+    private void validateCallback(int callbackAttemptNo, String callbackLeaseOwner) {
+        if (callbackAttemptNo != attemptNo) {
+            throw new IllegalStateException("callback attempt does not match current attempt");
+        }
+        if (!Objects.equals(leaseOwner, callbackLeaseOwner)) {
+            throw new IllegalStateException("callback lease owner does not match current lease");
+        }
+    }
+
+    private void requireStatus(ProcessingTaskStatus expected) {
+        if (status != expected) {
+            throw new IllegalStateException("expected status " + expected + " but was " + status);
+        }
+    }
+
+    private void requireNonTerminal() {
+        if (phase == ProcessingTaskPhase.TERMINAL || isTerminalStatus(status)) {
+            throw new IllegalStateException("task is terminal");
+        }
+    }
+
+    private void touch(OffsetDateTime now) {
+        updatedAt = Objects.requireNonNull(now, "now");
+    }
+
+    private static boolean isTerminalStatus(ProcessingTaskStatus status) {
+        return status == ProcessingTaskStatus.SUCCEEDED
+            || status == ProcessingTaskStatus.PARTIAL_SUCCEEDED
+            || status == ProcessingTaskStatus.FAILED
+            || status == ProcessingTaskStatus.CANCELLED;
+    }
+
+    private static ProcessingStepUpdateSource defaultSourceFor(ProcessingStep step) {
+        return switch (step) {
+            case AUDIO_UPLOAD, SUMMARY, EXTRACTION, EXPORT -> ProcessingStepUpdateSource.JAVA_TASK_SERVICE;
+            default -> ProcessingStepUpdateSource.AI_WORKER_CALLBACK;
+        };
+    }
+
+    private static String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
+    }
+}

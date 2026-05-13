@@ -91,10 +91,10 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api-domain`
 
-- [ ] 实现 `ProcessingTask` / `ProcessingTaskStep` 聚合和值对象，覆盖 status + phase 双状态机。
-- [ ] 实现 task lease、attempt、heartbeat、cancel、retry、ORPHANED 领域规则。
-- [ ] 定义 `ProcessingTaskRepository`、`CallbackEventRepository`、`MessagePublisher`、`StorageGateway` 基础端口。
-- [ ] 定义 MVP-0 领域事件：`MeetingCreatedEvent`、`ProcessingTaskCreatedEvent`、`ProcessingTaskStepChangedEvent`、`WorkerPhaseCompletedEvent`。
+- [x] 实现 `ProcessingTask` / `ProcessingTaskStep` 聚合和值对象，覆盖 status + phase 双状态机。
+- [x] 实现 task lease、attempt、heartbeat、cancel、retry、ORPHANED 领域规则。
+- [x] 定义 `ProcessingTaskRepository`、`CallbackEventRepository`、`MessagePublisher`、`StorageGateway` 基础端口。
+- [x] 定义 MVP-0 领域事件：`MeetingCreatedEvent`、`ProcessingTaskCreatedEvent`、`ProcessingTaskStepChangedEvent`、`WorkerPhaseCompletedEvent`。
 
 ### 工程：`apps/meeting-api-app`
 
