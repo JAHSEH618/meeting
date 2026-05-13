@@ -1,6 +1,15 @@
 {
-  "description": "POST /internal/processing-tasks/{taskId}/complete 200 response",
+  "description": "POST /internal/processing-tasks/{taskId}/complete 200 — worker DAG done",
   "status": 200,
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "taskId": "task_01",
+    "attemptNo": 1,
+    "phase": "WORKER_DAG",
+    "status": "SUCCEEDED",
+    "completedSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+    "finishedAt": "2026-05-11T10:30:00Z"
+  },
   "response": {
     "success": true,
     "data": {

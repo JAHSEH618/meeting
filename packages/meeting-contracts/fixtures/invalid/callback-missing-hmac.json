@@ -1,8 +1,17 @@
 {
+  "description": "PATCH callback step-update with missing HMAC — 401 auth failure",
   "spec": "openapi/internal-callback-api.yaml",
   "method": "PATCH",
   "path": "/processing-tasks/task_fixture_err/steps/ASR",
   "status": 401,
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "taskId": "task_fixture_err",
+    "attemptNo": 1,
+    "stepName": "ASR",
+    "status": "SUCCEEDED",
+    "progress": 100
+  },
   "response": {
     "success": false,
     "data": null,

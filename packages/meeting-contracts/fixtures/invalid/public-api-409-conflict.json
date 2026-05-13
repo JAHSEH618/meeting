@@ -1,6 +1,14 @@
 {
   "description": "POST /meetings 409 conflict (duplicate idempotency key)",
   "status": 409,
+  "request": {
+    "title": "Q3 Planning Meeting",
+    "securityLevel": "INTERNAL",
+    "scheduledStartAt": "2026-06-15T09:00:00Z",
+    "participants": [
+      {"personId": "person_01", "displayName": "Alice", "role": "ORGANIZER"}
+    ]
+  },
   "response": {
     "success": false,
     "data": null,

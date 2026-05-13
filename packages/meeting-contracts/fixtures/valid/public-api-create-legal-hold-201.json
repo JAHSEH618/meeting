@@ -1,6 +1,13 @@
 {
   "description": "POST /legal-holds 201 response",
   "status": 201,
+  "request": {
+    "reason": "Q2 Audit compliance hold",
+    "scopes": [
+      {"entityType": "MEETING", "entityId": "mtg_audit_01"},
+      {"entityType": "DOCUMENT", "entityId": "doc_audit_01"}
+    ]
+  },
   "response": {
     "success": true,
     "data": {

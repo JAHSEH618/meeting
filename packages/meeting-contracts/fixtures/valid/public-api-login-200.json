@@ -1,8 +1,13 @@
 {
+  "description": "POST /auth/login 200 success response",
   "spec": "openapi/public-api.yaml",
   "method": "POST",
   "path": "/auth/login",
   "status": 200,
+  "request": {
+    "username": "fixture_user",
+    "password": "fixture_pass"
+  },
   "response": {
     "success": true,
     "data": {

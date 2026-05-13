@@ -1,8 +1,19 @@
 {
+  "description": "POST /internal/rerank 200 — rerank result",
   "spec": "openapi/ai-worker-internal-api.yaml",
   "method": "POST",
   "path": "/rerank",
   "status": 200,
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "query": "What decisions were made about the Q3 budget?",
+    "candidates": [
+      {"chunkId": "chunk_fixture_01", "sourceType": "PRIMARY_TRANSCRIPT", "text": "We decided to allocate $500K to the Q3 marketing campaign.", "rrfScore": 0.85},
+      {"chunkId": "chunk_fixture_02", "sourceType": "AI_SUMMARY", "text": "Budget allocation for Q3 was discussed but not finalized.", "rrfScore": 0.65}
+    ],
+    "topN": 8,
+    "modelVersion": "rerank-v1"
+  },
   "response": {
     "success": true,
     "data": {

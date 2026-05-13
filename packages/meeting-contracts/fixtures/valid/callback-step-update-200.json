@@ -1,8 +1,17 @@
 {
+  "description": "PATCH /internal/processing-tasks/{taskId}/steps/{stepName} 200 — step succeeded",
   "spec": "openapi/internal-callback-api.yaml",
   "method": "PATCH",
   "path": "/processing-tasks/task_fixture_01/steps/ASR",
   "status": 200,
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "taskId": "task_fixture_01",
+    "attemptNo": 1,
+    "stepName": "ASR",
+    "status": "SUCCEEDED",
+    "progress": 100
+  },
   "response": {
     "success": true,
     "data": {

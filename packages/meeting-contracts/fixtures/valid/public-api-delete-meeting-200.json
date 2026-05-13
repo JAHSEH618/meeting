@@ -1,6 +1,9 @@
 {
   "description": "DELETE /meetings/{meetingId} 200 response",
   "status": 200,
+  "request": {
+    "reason": "test deletion - no longer needed"
+  },
   "response": {
     "success": true,
     "data": null,

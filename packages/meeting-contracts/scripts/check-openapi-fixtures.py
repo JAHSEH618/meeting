@@ -36,6 +36,7 @@ FIXTURE_API_MAP = {
     "invalid/public-api-login-missing-username.json": {
         "spec": "public-api.yaml", "path": "/auth/login", "method": "post", "status": 400,
         "expect_error": True,
+        "expect_request_error": True,
     },
     "invalid/public-api-409-conflict.json": {
         "spec": "public-api.yaml", "path": "/meetings", "method": "post", "status": 409,
@@ -52,6 +53,7 @@ FIXTURE_API_MAP = {
     "invalid/ai-worker-rerank-empty-query.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/rerank", "method": "post", "status": 400,
         "expect_error": True,
+        "expect_request_error": True,
     },
 }
 
@@ -241,7 +243,7 @@ def main() -> int:
             else:
                 req_validator = jsonschema.Draft202012Validator(req_schema)
                 is_req_valid = req_validator.is_valid(request_body)
-                if meta.get("expect_error"):
+                if meta.get("expect_request_error"):
                     if is_req_valid:
                         print(f"  FAIL {fp}: invalid fixture request was accepted by OpenAPI requestBody schema (should be rejected)")
                         errors += 1
