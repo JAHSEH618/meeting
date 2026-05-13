@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -80,11 +81,11 @@ class JavaCallbackClient:
         idempotency_key: str,
         max_retries: int = 3,
     ) -> CallbackResponse:
-        body_str = json.dumps(body) if body else "{}"
+        body_str = json.dumps(body, separators=(",", ":"), sort_keys=True) if body else "{}"
         url = f"{self.base_url}{path}"
         last_error: str | None = None
 
-        for _ in range(max_retries):
+        for attempt_index in range(max_retries):
             headers = self._build_headers(
                 method, path, body_str,
                 task_id, attempt_no, trace_id, idempotency_key,
@@ -113,6 +114,8 @@ class JavaCallbackClient:
                     last_error = f"HTTP {response.status_code}"
             except Exception as e:
                 last_error = str(e)
+            if attempt_index < max_retries - 1:
+                await asyncio.sleep(0.05 * (2 ** attempt_index))
 
         return CallbackResponse(
             http_status=0,
@@ -168,6 +171,27 @@ class JavaCallbackClient:
             "segments": segments,
             "metadata": metadata or {},
         }
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
+    async def submit_artifacts(
+        self,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        artifacts: list[dict],
+        artifact_manifest_id: str | None = None,
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        path = f"/internal/processing-tasks/{task_id}/artifacts"
+        idempotency_key = f"{task_id}:artifacts:{attempt_no}:v1"
+        body = {
+            "tenantId": tenant_id,
+            "taskId": task_id,
+            "attemptNo": attempt_no,
+            "artifacts": artifacts,
+        }
+        if artifact_manifest_id:
+            body["artifactManifestId"] = artifact_manifest_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
     async def complete_worker_phase(

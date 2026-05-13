@@ -12,11 +12,13 @@ dependencies = [
   "pydantic-settings>=2.4,<3.0",
   "uvicorn[standard]>=0.30,<1.0",
   "jsonschema>=4.0,<5.0",
-  "prometheus-client>=0.20,<1.0"
+  "prometheus-client>=0.20,<1.0",
+  "pika>=1.3,<2.0",
 ]
 
 [project.scripts]
 ai-worker-api = "ai_worker.interfaces.api.main:run"
+ai-worker-consumer = "ai_worker.interfaces.workers.rabbitmq:run"
 
 [project.optional-dependencies]
 dev = [

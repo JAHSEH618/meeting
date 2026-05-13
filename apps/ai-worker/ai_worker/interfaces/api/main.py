@@ -2,6 +2,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
+from ai_worker.application.workflows.state import workflow_state_store
 from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
     RerankRequest,
@@ -58,11 +59,10 @@ def create_app() -> FastAPI:
 
     @app.get("/internal/workflows/{task_id}")
     def workflow(task_id: str) -> dict:
-        return {
-            "taskId": task_id,
-            "status": "UNKNOWN",
-            "steps": [],
-        }
+        snapshot = workflow_state_store.get(task_id)
+        if snapshot is None:
+            return {"taskId": task_id, "status": "UNKNOWN", "steps": []}
+        return snapshot.to_dict()
 
     @app.get("/metrics")
     def metrics() -> PlainTextResponse:

@@ -90,6 +90,12 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             );
             task.markJavaStepSucceeded(ProcessingStep.AUDIO_UPLOAD, now);
             task.enqueue(now);
+            task.claimLease(
+                "worker_dev_001",
+                "worker_dev_001:" + task.taskId() + ":" + task.attemptNo(),
+                now.plusMinutes(5),
+                now
+            );
             ProcessingTask saved = taskRepository.save(task);
             messagePublisher.publish(new ProcessingTaskCreatedEvent(
                 "evt_" + UUID.randomUUID().toString().replace("-", ""),

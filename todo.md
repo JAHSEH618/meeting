@@ -122,10 +122,10 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/ai-worker`
 
-- [ ] 实现 RabbitMQ consumer / WorkerRuntime MVP，消费 `MEETING_FULL_PIPELINE` task message。
-- [ ] 实现 fake / smoke workflow：按 registry step 顺序回写 step RUNNING / SUCCEEDED、transcript smoke payload、complete phase=`WORKER_DAG`。
-- [ ] 实现 callback retry：网络错误重试，409 停止重试并记录 `WRITEBACK_FAILED`。
-- [ ] 实现 `/internal/workflows/{task_id}` 返回 fake workflow 状态，便于联调排查。
+- [x] 实现 RabbitMQ consumer / WorkerRuntime MVP，消费 `MEETING_FULL_PIPELINE` task message。
+- [x] 实现 fake / smoke workflow：按 registry step 顺序回写 step RUNNING / SUCCEEDED、transcript smoke payload、complete phase=`WORKER_DAG`。
+- [x] 实现 callback retry：网络错误重试，409 停止重试并记录 `WRITEBACK_FAILED`。
+- [x] 实现 `/internal/workflows/{task_id}` 返回 fake workflow 状态，便于联调排查。
 
 ### 工程：`apps/meeting-web`
 

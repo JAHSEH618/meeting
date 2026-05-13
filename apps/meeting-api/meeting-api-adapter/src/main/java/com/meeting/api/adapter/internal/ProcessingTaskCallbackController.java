@@ -13,6 +13,8 @@ import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -30,20 +32,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/internal/processing-tasks/{taskId}")
 public class ProcessingTaskCallbackController {
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
     private final ProcessingTaskCallbackApplicationService callbackApplicationService;
+    private final ObjectMapper objectMapper;
 
-    public ProcessingTaskCallbackController(ProcessingTaskCallbackApplicationService callbackApplicationService) {
+    public ProcessingTaskCallbackController(ProcessingTaskCallbackApplicationService callbackApplicationService, ObjectMapper objectMapper) {
         this.callbackApplicationService = callbackApplicationService;
+        this.objectMapper = objectMapper;
     }
 
     @PatchMapping("/steps/{stepName}")
     public ApiResponse<ProcessingTaskDTO> updateStep(
         @PathVariable String taskId,
         @PathVariable String stepName,
-        @RequestBody Map<String, Object> payload,
+        @RequestBody String rawBody,
         HttpServletRequest request
     ) {
-        CallbackMetadata metadata = metadata(request, payload);
+        Map<String, Object> payload = parseBody(rawBody);
+        CallbackMetadata metadata = metadata(request, rawBody);
         StepStatus status = StepStatus.valueOf(requiredString(payload, "status"));
         int progress = optionalInt(payload, "progress", 0);
         ProcessingStep step = ProcessingStep.valueOf(stepName);
@@ -76,10 +83,11 @@ public class ProcessingTaskCallbackController {
     @PostMapping("/complete")
     public ApiResponse<ProcessingTaskDTO> completeWorkerPhase(
         @PathVariable String taskId,
-        @RequestBody Map<String, Object> payload,
+        @RequestBody String rawBody,
         HttpServletRequest request
     ) {
-        CallbackMetadata metadata = metadata(request, payload);
+        Map<String, Object> payload = parseBody(rawBody);
+        CallbackMetadata metadata = metadata(request, rawBody);
         return ApiResponse.ok(callbackApplicationService.completeWorkerPhase(new CompleteWorkerPhaseCommand(
             metadata,
             requiredString(payload, "tenantId"),
@@ -89,7 +97,7 @@ public class ProcessingTaskCallbackController {
             requiredString(payload, "phase"),
             ProcessingTaskStatus.valueOf(requiredString(payload, "status")),
             parseSteps(payload.get("completedSteps")),
-            List.of(),
+            parseSkippedSteps(payload.get("skippedSteps")),
             optionalString(payload, "artifactManifestId"),
             optionalDateTime(payload, "finishedAt", OffsetDateTime.now())
         )), metadata.requestId(), metadata.traceId());
@@ -98,10 +106,11 @@ public class ProcessingTaskCallbackController {
     @PostMapping("/fail")
     public ApiResponse<ProcessingTaskDTO> fail(
         @PathVariable String taskId,
-        @RequestBody Map<String, Object> payload,
+        @RequestBody String rawBody,
         HttpServletRequest request
     ) {
-        CallbackMetadata metadata = metadata(request, payload);
+        Map<String, Object> payload = parseBody(rawBody);
+        CallbackMetadata metadata = metadata(request, rawBody);
         @SuppressWarnings("unchecked")
         Map<String, Object> error = (Map<String, Object>) payload.get("error");
         ErrorCode code = ErrorCode.valueOf(String.valueOf(error.get("code")));
@@ -119,30 +128,38 @@ public class ProcessingTaskCallbackController {
     }
 
     @PostMapping("/artifacts")
-    public ApiResponse<Map<String, Object>> artifacts(@PathVariable String taskId, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
-        CallbackMetadata metadata = metadata(request, payload);
+    public ApiResponse<Map<String, Object>> artifacts(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        CallbackMetadata metadata = metadata(request, rawBody);
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "ARTIFACTS"), metadata.requestId(), metadata.traceId());
     }
 
     @PostMapping("/transcript")
-    public ApiResponse<Map<String, Object>> transcript(@PathVariable String taskId, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
-        CallbackMetadata metadata = metadata(request, payload);
+    public ApiResponse<Map<String, Object>> transcript(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        CallbackMetadata metadata = metadata(request, rawBody);
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "TRANSCRIPT"), metadata.requestId(), metadata.traceId());
     }
 
     @PostMapping("/speaker-candidates")
-    public ApiResponse<Map<String, Object>> speakerCandidates(@PathVariable String taskId, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
-        CallbackMetadata metadata = metadata(request, payload);
+    public ApiResponse<Map<String, Object>> speakerCandidates(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        CallbackMetadata metadata = metadata(request, rawBody);
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "SPEAKER_CANDIDATES"), metadata.requestId(), metadata.traceId());
     }
 
     @PostMapping("/embeddings")
-    public ApiResponse<Map<String, Object>> embeddings(@PathVariable String taskId, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
-        CallbackMetadata metadata = metadata(request, payload);
+    public ApiResponse<Map<String, Object>> embeddings(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        CallbackMetadata metadata = metadata(request, rawBody);
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "EMBEDDINGS"), metadata.requestId(), metadata.traceId());
     }
 
-    private static CallbackMetadata metadata(HttpServletRequest request, Map<String, Object> payload) {
+    private Map<String, Object> parseBody(String rawBody) {
+        try {
+            return objectMapper.readValue(rawBody, MAP_TYPE);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid callback body", e);
+        }
+    }
+
+    private static CallbackMetadata metadata(HttpServletRequest request, String rawBody) {
         return new CallbackMetadata(
             requiredHeader(request, "X-Worker-Id"),
             Integer.parseInt(requiredHeader(request, "X-Attempt-No")),
@@ -155,7 +172,7 @@ public class ProcessingTaskCallbackController {
             requiredHeader(request, "Idempotency-Key"),
             requiredHeader(request, "X-Signature"),
             requestUriWithQuery(request),
-            sha256(payload.toString())
+            sha256(rawBody)
         );
     }
 
@@ -200,6 +217,20 @@ public class ProcessingTaskCallbackController {
             return List.of();
         }
         return values.stream().map(value -> ProcessingStep.valueOf(String.valueOf(value))).toList();
+    }
+
+    private static List<CompleteWorkerPhaseCommand.SkippedStep> parseSkippedSteps(Object raw) {
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        return values.stream()
+            .filter(Map.class::isInstance)
+            .map(Map.class::cast)
+            .map(value -> new CompleteWorkerPhaseCommand.SkippedStep(
+                ProcessingStep.valueOf(String.valueOf(value.get("stepName"))),
+                String.valueOf(value.get("reason"))
+            ))
+            .toList();
     }
 
     private static String sha256(String value) {
