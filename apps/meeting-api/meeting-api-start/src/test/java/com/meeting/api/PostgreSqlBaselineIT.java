@@ -18,7 +18,7 @@ import java.sql.Statement;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class PostgreSqlBaselineTest {
+class PostgreSqlBaselineIT {
 
     private PostgreSQLContainer<?> postgres;
     private Connection conn;

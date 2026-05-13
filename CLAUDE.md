@@ -32,15 +32,18 @@ Individual codegen targets exist (`codegen:ts`, `codegen:py-callback`, `codegen:
 
 ### Java (`apps/meeting-api`)
 
+> **JDK 版本**：Maven Enforcer 要求 `[17,18)`。若本机默认 JDK 高于 17，请先显式设置 `JAVA_HOME`（例如 macOS：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`）。
+
 ```bash
-./mvnw verify -q                                       # full build + tests (CI command)
+./mvnw test                                            # unit + ArchUnit only — no Docker required
+./mvnw verify -q                                       # full build + integration tests (CI command, requires Docker)
 ./mvnw -pl meeting-api-start -am compile               # fast compile loop
 ./mvnw -pl meeting-api-start -am install -DskipTests   # package without tests
-./mvnw -pl meeting-api-domain test -Dtest=ClassName    # single test
+./mvnw -pl meeting-api-domain test -Dtest=ClassName    # single unit test
 java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar   # runs on :8080
 ```
 
-ArchUnit boundary test lives at `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java` and is an `ERROR`-level gate — don't skip it. Flyway migrations under `meeting-api-infrastructure/src/main/resources/db/migration/V{yyyyMMddHHmm}__*.sql` are the runtime schema source of truth; `docs/ddls/` is a review snapshot only.
+ArchUnit boundary test lives at `meeting-api-start/src/test/java/com/meeting/api/ArchitectureBoundaryTest.java` and is an `ERROR`-level gate — don't skip it. Testcontainers baselines (`*IT.java`) run via Failsafe during `verify` and require a Docker daemon. Flyway migrations under `meeting-api-infrastructure/src/main/resources/db/migration/V{yyyyMMddHHmm}__*.sql` are the runtime schema source of truth; `docs/ddls/` is a review snapshot only.
 
 ### Python (`apps/ai-worker`)
 

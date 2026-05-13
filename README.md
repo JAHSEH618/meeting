@@ -241,7 +241,7 @@ meeting/
 
 ### 前置依赖
 
-- **JDK 17+** · 仓库自带 `./mvnw`（无需本机 Maven）
+- **JDK 17（范围 `[17,18)`）** · 仓库自带 `./mvnw`（无需本机 Maven）。若本机默认 JDK 高于 17，请显式指定 `JAVA_HOME`，例如 macOS：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`
 - **Node 20+** · 用于前端与契约 codegen
 - **Python 3.11+** · 安装 [`uv`](https://docs.astral.sh/uv/)：`curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Docker** + Docker Compose（本地基础设施栈）
@@ -271,6 +271,7 @@ npm run codegen                      # 重新生成 TS / Python / Java 类型，
 ```bash
 # Java 业务层（:8080）
 cd apps/meeting-api
+# 若默认 JDK 不是 17，请先 export JAVA_HOME=...（见前置依赖）
 ./mvnw -pl meeting-api-start -am install -DskipTests
 java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 
@@ -287,12 +288,13 @@ npm run dev
 
 ### 4 测试与门禁
 
-| 工作区 | 命令 | 门禁类型 |
-|---|---|---|
-| `apps/meeting-api` | `./mvnw verify -q` | 单元 + ArchUnit 边界 + 集成 |
-| `apps/ai-worker` | `uv run pytest tests/` · `uv run pyright ai_worker/` | 单元 + 类型 |
-| `apps/meeting-web` | `npm test` · `npx tsc --noEmit` · `npm run lint` | Vitest + 类型 + ESLint |
-| `packages/meeting-contracts` | `npm run check` | 契约一致性 |
+| 工作区 | 命令 | 门禁类型 | 是否需要 Docker |
+|---|---|---|---|
+| `apps/meeting-api` | `./mvnw test` | 单元 + ArchUnit 边界 | 否 |
+| `apps/meeting-api` | `./mvnw verify -q` | 全量（含 Testcontainers 集成基线） | **是** |
+| `apps/ai-worker` | `uv run pytest tests/` · `uv run pyright ai_worker/` | 单元 + 类型 | 否 |
+| `apps/meeting-web` | `npm test` · `npx tsc --noEmit` · `npm run lint` | Vitest + 类型 + ESLint | 否 |
+| `packages/meeting-contracts` | `npm run check` | 契约一致性 | 否 |
 
 ---
 

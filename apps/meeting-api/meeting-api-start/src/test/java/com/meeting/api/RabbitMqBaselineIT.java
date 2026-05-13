@@ -23,7 +23,7 @@ import java.util.Base64;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class RabbitMqBaselineTest {
+class RabbitMqBaselineIT {
 
     private RabbitMQContainer rabbitmq;
 
