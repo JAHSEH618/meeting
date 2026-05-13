@@ -34,7 +34,7 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 
 ```bash
 # PostgreSQL 15 + pgvector
-docker compose -f docker/compose/docker-compose.yml exec postgres pg_isready
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml exec postgres pg_isready
 # 预期输出: /var/run/postgresql:5432 - accepting connections
 
 # RabbitMQ Management
@@ -78,10 +78,10 @@ curl -s -u meeting:meeting_dev http://localhost:15672/api/queues/%2f | jq '.[].n
 
 ```bash
 # 保留数据卷（下次启动数据仍在）
-docker compose -f docker/compose/docker-compose.yml down
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml down
 
 # 完全清理（删除数据卷）
-docker compose -f docker/compose/docker-compose.yml down -v
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml down -v
 ```
 
 ## 排障
@@ -113,7 +113,7 @@ docker compose -f docker/compose/docker-compose.yml down -v
 启动时加 `--profile observability` 以同时启动 Prometheus + Grafana：
 
 ```bash
-docker compose -f docker/compose/docker-compose.yml --profile observability up -d
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml --profile observability up -d
 ```
 
 Grafana 默认数据源已配置为 Prometheus；Loki 配置待补充。

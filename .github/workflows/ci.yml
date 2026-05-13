@@ -98,6 +98,9 @@ jobs:
           npm run codegen:java-worker-internal
           check_clean ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal "Java ai-worker-internal generated models"
 
+          npm run codegen:java-export-job
+          check_clean ../../apps/meeting-api/meeting-api-client/generated/export-job "Java export-job generated models"
+
   # ── Java 后端 ─────────────────────────────────────────────────
   meeting-api:
     name: Meeting API (Java 17)

@@ -52,10 +52,10 @@ management:
 meeting:
   security:
     callback:
-      hmac-secret: ${AI_WORKER_CALLBACK_HMAC_SECRET:change-me-in-production}
+      hmac-secret: ${AI_WORKER_CALLBACK_HMAC_SECRET:change-me-callback-fallback-secret}
       timestamp-skew-seconds: 300
     ai-worker:
-      hmac-secret: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:change-me-in-production}
+      hmac-secret: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:change-me-internal-fallback-secret}
       base-url: ${AI_WORKER_BASE_URL:http://localhost:8090}
       rerank-timeout-ms: 3000
   storage:

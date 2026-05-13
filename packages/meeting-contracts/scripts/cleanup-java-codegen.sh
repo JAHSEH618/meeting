@@ -51,10 +51,8 @@ for f in "$DIR/src/main/java/com/meeting/api/client"/*; do
               rm -rf "$sub"
             fi
           elif [ -f "$sub" ]; then
-            # Keep only *Api.java files
-            if [[ $(basename "$sub") != *Api.java ]]; then
-              rm -f "$sub"
-            fi
+            # Delete all *Api.java files; only models are compiled as DTOs
+            rm -f "$sub"
           fi
         done
         ;;
