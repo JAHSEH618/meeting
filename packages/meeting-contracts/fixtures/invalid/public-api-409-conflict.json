@@ -1,0 +1,15 @@
+{
+  "description": "POST /meetings 409 conflict (duplicate idempotency key)",
+  "status": 409,
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "IDEMPOTENCY_CONFLICT",
+      "message": "A request with the same Idempotency-Key is already in progress",
+      "retryable": false
+    },
+    "requestId": "req_409_01",
+    "traceId": "trace_409_01"
+  }
+}

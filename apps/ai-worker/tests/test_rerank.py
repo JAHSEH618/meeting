@@ -19,9 +19,16 @@ def _sign(method: str, path: str, body: bytes, timestamp: str, nonce: str) -> st
     return f"hmac-sha256={sig}"
 
 
+import secrets
+
+
+_nonce_counter = 0
+
 def _auth_headers(method: str, path: str, body: bytes) -> dict[str, str]:
+    global _nonce_counter
+    _nonce_counter += 1
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    nonce = "test_nonce_12345"
+    nonce = f"test_nonce_{_nonce_counter}_{secrets.token_hex(4)}"
     signature = _sign(method, path, body, timestamp, nonce)
     return {
         "X-Request-Id": "req_test",

@@ -8,11 +8,24 @@ rather than being silently dropped or retried indefinitely.
 
 import logging
 
+from ai_worker.application.workflows.registry import WORKFLOW_STEPS_BY_TASK_TYPE
 from ai_worker.domain.task import TaskMessage
 from ai_worker.infrastructure.java_callback.client import JavaCallbackClient
 from ai_worker.infrastructure.task_validator import validate_task_message, validate_pipeline_steps
 
 logger = logging.getLogger(__name__)
+
+
+def _first_step_for_task_type(task_type: str) -> str:
+    """Return the first expected pipeline step for a task type.
+
+    Used when failing a task due to invalid message, so the failedStep
+    accurately reflects what would have been the first worker step.
+    """
+    steps = WORKFLOW_STEPS_BY_TASK_TYPE.get(task_type, ())
+    if steps:
+        return steps[0]
+    return "AUDIO_PREPROCESS"
 
 
 def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | None, list[str]]:
@@ -85,11 +98,15 @@ async def consume_and_validate(
         errors,
     )
 
+    # Map task type to the first expected pipeline step for accurate failure reporting.
+    task_type = raw_message.get("taskType", "MEETING_FULL_PIPELINE")
+    first_step = _first_step_for_task_type(task_type)
+
     await callback_client.fail_task(
         task_id=task_id,
         tenant_id=raw_message.get("tenantId", "unknown"),
         attempt_no=attempt_no,
-        failed_step="AUDIO_PREPROCESS",
+        failed_step=first_step,
         error_code="INVALID_TASK_MESSAGE",
         error_message="; ".join(errors),
         retryable=False,

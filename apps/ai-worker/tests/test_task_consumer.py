@@ -44,6 +44,34 @@ class TestConsumeAndValidate:
         )
 
     @pytest.mark.asyncio
+    async def test_invalid_text_embedding_uses_rag_indexing_as_failed_step(self, callback_client: MagicMock) -> None:
+        raw_message = {
+            "taskId": "task_text",
+            "taskType": "TEXT_EMBEDDING",
+            "tenantId": "tenant_01",
+            "attemptNo": 1,
+            "traceId": "trace_text",
+        }
+
+        with patch(
+            "ai_worker.infrastructure.task_consumer.validate_and_parse_task_message",
+            return_value=(None, ["missing documentId"]),
+        ):
+            result = await consume_and_validate(raw_message, callback_client)
+
+        assert result is None
+        callback_client.fail_task.assert_awaited_once_with(
+            task_id="task_text",
+            tenant_id="tenant_01",
+            attempt_no=1,
+            failed_step="RAG_INDEXING",
+            error_code="INVALID_TASK_MESSAGE",
+            error_message="missing documentId",
+            retryable=False,
+            trace_id="trace_text",
+        )
+
+    @pytest.mark.asyncio
     async def test_invalid_message_uses_defaults(self, callback_client: MagicMock) -> None:
         raw_message = {
             "taskId": "task_02",
@@ -66,6 +94,32 @@ class TestConsumeAndValidate:
             error_message="bad message",
             retryable=False,
             trace_id="fail-fast-task_02",
+        )
+
+    @pytest.mark.asyncio
+    async def test_invalid_speaker_enrollment_uses_speaker_embedding_as_failed_step(self, callback_client: MagicMock) -> None:
+        raw_message = {
+            "taskId": "task_spk",
+            "taskType": "SPEAKER_ENROLLMENT",
+            "tenantId": "tenant_03",
+        }
+
+        with patch(
+            "ai_worker.infrastructure.task_consumer.validate_and_parse_task_message",
+            return_value=(None, ["missing speakerProfileId"]),
+        ):
+            result = await consume_and_validate(raw_message, callback_client)
+
+        assert result is None
+        callback_client.fail_task.assert_awaited_once_with(
+            task_id="task_spk",
+            tenant_id="tenant_03",
+            attempt_no=1,
+            failed_step="SPEAKER_EMBEDDING",
+            error_code="INVALID_TASK_MESSAGE",
+            error_message="missing speakerProfileId",
+            retryable=False,
+            trace_id="fail-fast-task_spk",
         )
 
     @pytest.mark.asyncio

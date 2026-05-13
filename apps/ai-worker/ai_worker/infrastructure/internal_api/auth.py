@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections import deque
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -38,6 +39,22 @@ class RerankResponse(BaseModel):
     items: list[RerankResultItem]
 
 
+# ── Nonce replay protection ──────────────────────────────────────────────────
+# In-memory LRU for recently-seen nonces. Sized for ~5min of traffic at
+# moderate throughput. In a multi-instance deployment this must be backed
+# by Redis or a distributed cache.
+_MAX_NONCE_CACHE = 10_000
+_seen_nonces: deque[str] = deque(maxlen=_MAX_NONCE_CACHE)
+
+
+def _is_nonce_replayed(nonce: str) -> bool:
+    """Return True if the nonce has been seen before."""
+    if nonce in _seen_nonces:
+        return True
+    _seen_nonces.append(nonce)
+    return False
+
+
 def verify_hmac_signature(
     method: str,
     path: str,
@@ -61,5 +78,8 @@ def verify_hmac_signature(
         if skew > max_skew_seconds:
             return False
     except (ValueError, TypeError):
+        return False
+    # Replay protection: nonce must be unique within the time-skew window.
+    if _is_nonce_replayed(nonce):
         return False
     return True

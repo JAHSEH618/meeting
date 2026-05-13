@@ -1,0 +1,15 @@
+{
+  "description": "GET /meetings 500 internal server error",
+  "status": 500,
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "INTERNAL_ERROR",
+      "message": "An unexpected error occurred",
+      "retryable": true
+    },
+    "requestId": "req_500_01",
+    "traceId": "trace_500_01"
+  }
+}

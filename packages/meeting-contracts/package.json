@@ -11,7 +11,8 @@
     "codegen:py-task-msg": "datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py --disable-timestamp",
     "codegen:java-public": "openapi-generator-cli generate -g java -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api --additional-properties=apiPackage=com.meeting.api.client.publicapi,modelPackage=com.meeting.api.client.publicapi.model,hideGenerationTimestamp=true && bash scripts/cleanup-java-codegen.sh ../../apps/meeting-api/meeting-api-client/generated/public-api",
     "codegen:java-worker-internal": "openapi-generator-cli generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal --additional-properties=apiPackage=com.meeting.api.client.workerinternal,modelPackage=com.meeting.api.client.workerinternal.model,hideGenerationTimestamp=true && bash scripts/cleanup-java-codegen.sh ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal",
-    "codegen": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal"
+    "codegen": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal",
+    "codegen:check": "npm run codegen && bash scripts/check-codegen-drift.sh"
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "^6.15.0",

@@ -1,0 +1,11 @@
+{
+  "description": "DELETE /meetings/{meetingId} 204 response (no body)",
+  "status": 204,
+  "response": {
+    "success": true,
+    "data": null,
+    "error": null,
+    "requestId": "req_del_01",
+    "traceId": "trace_del_01"
+  }
+}
