@@ -84,7 +84,6 @@ BEGIN
     'QUEUED',
     'RUNNING',
     'SUCCEEDED',
-    'PARTIAL_SUCCEEDED',
     'FAILED',
     'SKIPPED',
     'CANCELLED'

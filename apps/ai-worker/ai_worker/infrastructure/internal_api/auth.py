@@ -6,16 +6,27 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Annotated
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, StringConstraints
 
 from ai_worker.common.config import settings
 
+SourceType = Literal[
+    "PRIMARY_TRANSCRIPT",
+    "AI_SUMMARY",
+    "DECISION",
+    "ACTION_ITEM",
+    "RISK",
+    "DOCUMENT",
+]
+
 
 class RerankCandidate(BaseModel):
     chunkId: str
-    sourceType: str
+    sourceType: SourceType
     text: Annotated[str, StringConstraints(min_length=1)]
-    rrfScore: float
+    rrfScore: float = Field(ge=0)
     sourceVersion: int | None = None
     citationHint: dict | None = None
 

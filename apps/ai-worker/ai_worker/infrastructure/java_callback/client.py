@@ -77,19 +77,19 @@ class JavaCallbackClient:
         task_id: str,
         attempt_no: int,
         trace_id: str,
-        idempotency_key: str,
+        idempotency_key_base: str,
         max_retries: int = 3,
     ) -> CallbackResponse:
         body_str = json.dumps(body) if body else "{}"
-        headers = self._build_headers(
-            method, path, body_str,
-            task_id, attempt_no, trace_id, idempotency_key,
-        )
-
         url = f"{self.base_url}{path}"
         last_error: str | None = None
 
-        for _ in range(max_retries):
+        for retry_idx in range(max_retries):
+            idempotency_key = f"{idempotency_key_base}:r{retry_idx}"
+            headers = self._build_headers(
+                method, path, body_str,
+                task_id, attempt_no, trace_id, idempotency_key,
+            )
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     response = await client.request(method, url, content=body_str, headers=headers)
@@ -134,7 +134,7 @@ class JavaCallbackClient:
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
-        idempotency_key = f"{task_id}:{step_name}:{attempt_no}:v1"
+        idempotency_key_base = f"{task_id}:{step_name}:{attempt_no}:v1"
         body = {
             "tenantId": tenant_id,
             "taskId": task_id,
@@ -145,7 +145,7 @@ class JavaCallbackClient:
         }
         if error_code:
             body["errorCode"] = error_code
-        return await self._request("PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request("PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key_base)
 
     async def submit_transcript(
         self,
@@ -159,7 +159,7 @@ class JavaCallbackClient:
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/transcript"
-        idempotency_key = f"{task_id}:transcript:{attempt_no}:v1"
+        idempotency_key_base = f"{task_id}:transcript:{attempt_no}:v1"
         body = {
             "tenantId": tenant_id,
             "meetingId": meeting_id,
@@ -169,7 +169,7 @@ class JavaCallbackClient:
             "segments": segments,
             "metadata": metadata or {},
         }
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key_base)
 
     async def complete_worker_phase(
         self,
@@ -183,7 +183,7 @@ class JavaCallbackClient:
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/complete"
-        idempotency_key = f"{task_id}:complete:{attempt_no}:v1"
+        idempotency_key_base = f"{task_id}:complete:{attempt_no}:v1"
         body = {
             "tenantId": tenant_id,
             "meetingId": meeting_id,
@@ -195,7 +195,7 @@ class JavaCallbackClient:
             "skippedSteps": skipped_steps or [],
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key_base)
 
     async def fail_task(
         self,
@@ -209,7 +209,7 @@ class JavaCallbackClient:
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/fail"
-        idempotency_key = f"{task_id}:fail:{attempt_no}:v1"
+        idempotency_key_base = f"{task_id}:fail:{attempt_no}:v1"
         body = {
             "tenantId": tenant_id,
             "taskId": task_id,
@@ -222,4 +222,4 @@ class JavaCallbackClient:
             },
             "failedAt": datetime.now(timezone.utc).isoformat(),
         }
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key_base)
