@@ -44,25 +44,25 @@
 
 ### 阶段 0 验收清单
 
-> 状态：**实现项完成，验收条件：**
-> - `npm run check` ✅ 已通过（codegen 到临时目录 diff，不依赖目标路径可写）
-> - `npm run codegen` 需目标 generated 路径可写（使用 temp-dir + copy，EPERM 时报告并保留临时产物）
-> - `./mvnw test` ✅ 已通过（无需 Docker，8 unit tests）
-> - `./mvnw verify` 需 Docker daemon（Colima: `colima start` + `DOCKER_HOST`）
-> - Python pyright / Web test / tsc ✅ 已通过
+> **当前会话状态（2026-05-13）：全部验收命令已通过。**
+>
+> 已知间歇性问题（非代码缺陷，环境依赖）：
+> - `npm run codegen` apply 阶段可能因目标路径权限/锁失败（EPERM）；codegen-apply.sh 会报告并 exit 1。此时临时产物保留在 `.generated-apply/`，可手动复制。
+> - `./mvnw verify` 需要 Docker daemon；无 Docker 时 `./mvnw test` 仍可通过（8 unit tests）。
+> - `npm test` 偶尔出现 `--localstorage-file was provided without a valid path` 警告（Vite/Vitest 内部 issue），不影响测试结果。
 
-| 验收命令 | 工作目录 | 覆盖 |
-|----------|----------|------|
-| `npm run check` | `packages/meeting-contracts` | Spectral + JSON Schema + enum + HTTP fixtures (request/response/headers/path) + DTO consistency + codegen-to-temp drift |
-| `npm run codegen` | `packages/meeting-contracts` | 原地更新 TS / Java / Python 生成产物 |
-| `./mvnw test` | `apps/meeting-api` | ArchUnit (8 tests)，无需 Docker |
-| `./mvnw verify` | `apps/meeting-api` | ArchUnit + PostgreSQL IT (7) + RabbitMQ IT (5)；需 Docker daemon |
-| `uv run pytest` | `apps/ai-worker` | Python 单元测试 |
-| `uv run pyright ai_worker/` | `apps/ai-worker` | Python 类型检查 |
-| `npm test` | `apps/meeting-web` | Vitest (35 tests) |
-| `npx tsc --noEmit` | `apps/meeting-web` | TypeScript 类型检查 |
+| 验收命令 | 工作目录 | 测试数 | 环境前提 | 备注 |
+|----------|----------|--------|----------|------|
+| `npm run check` | `packages/meeting-contracts` | 8 steps | Node + Python3 | codegen 到 temp diff，不写目标路径 |
+| `npm run codegen` | `packages/meeting-contracts` | 7 targets | Node + Python3 | temp 生成→cleanup→copy；需目标路径可写 |
+| `./mvnw test` | `apps/meeting-api` | 8 unit | JDK 17 | 无需 Docker |
+| `./mvnw verify` | `apps/meeting-api` | 20 total | JDK 17 + Docker | 含 PostgreSQL IT (7) + RabbitMQ IT (5) |
+| `uv run pytest` | `apps/ai-worker` | ~39 | Python 3.11 | — |
+| `uv run pyright ai_worker/` | `apps/ai-worker` | — | Python 3.11 | 0 errors |
+| `npm test` | `apps/meeting-web` | 35 | Node 20 | localStorage warning 为 Vitest 已知噪音 |
+| `npx tsc --noEmit` | `apps/meeting-web` | — | Node 20 | — |
 
-**Docker 前提（仅 `./mvnw verify` 需要）：**
+**Docker 前提（仅 `./mvnw verify` 需要，Colima 用户）：**
 ```bash
 colima start
 export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
