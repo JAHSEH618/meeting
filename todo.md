@@ -98,12 +98,12 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api-app`
 
-- [ ] 将 `MeetingApplicationService` 从内存 demo 升级为真实应用用例：权限上下文、tenant context、idempotency、outbox 同事务。
-- [ ] 实现创建 processing task 用例：`AUDIO_UPLOAD` Java-owned step 标记 `SUCCEEDED`，worker `pipelineSteps` 只包含 worker-owned step。
-- [ ] 实现 outbox 写入与 `ProcessingTaskCreatedEvent`，消息 payload 符合 `processing-task-message.schema.json`。
-- [ ] 实现 callback 应用服务：HMAC、timestamp、nonce、attempt、lease、tenant / meeting 关系、幂等 body hash。
-- [ ] 实现 heartbeat 分支：`RUNNING && progress > 0` 不写 `callback_events`，latest-wins 更新 progress / heartbeat / lease。
-- [ ] 实现 `/complete phase=WORKER_DAG` 只推进 `phase=WORKER_DAG_DONE` 并写 `WORKER_PHASE_COMPLETED`，不直接把 task 置为 `SUCCEEDED`。
+- [x] 将 `MeetingApplicationService` 从内存 demo 升级为真实应用用例：权限上下文、tenant context、idempotency、outbox 同事务。
+- [x] 实现创建 processing task 用例：`AUDIO_UPLOAD` Java-owned step 标记 `SUCCEEDED`，worker `pipelineSteps` 只包含 worker-owned step。
+- [x] 实现 outbox 写入与 `ProcessingTaskCreatedEvent`，消息 payload 符合 `processing-task-message.schema.json`。
+- [x] 实现 callback 应用服务：HMAC、timestamp、nonce、attempt、lease、tenant / meeting 关系、幂等 body hash。
+- [x] 实现 heartbeat 分支：`RUNNING && progress > 0` 不写 `callback_events`，latest-wins 更新 progress / heartbeat / lease。
+- [x] 实现 `/complete phase=WORKER_DAG` 只推进 `phase=WORKER_DAG_DONE` 并写 `WORKER_PHASE_COMPLETED`，不直接把 task 置为 `SUCCEEDED`。
 
 ### 工程：`apps/meeting-api-infrastructure`
 

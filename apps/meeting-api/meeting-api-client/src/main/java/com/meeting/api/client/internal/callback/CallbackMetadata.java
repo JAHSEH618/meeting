@@ -6,6 +6,7 @@ public record CallbackMetadata(
     String workerId,
     int attemptNo,
     String leaseOwner,
+    String httpMethod,
     String requestId,
     String traceId,
     OffsetDateTime timestamp,

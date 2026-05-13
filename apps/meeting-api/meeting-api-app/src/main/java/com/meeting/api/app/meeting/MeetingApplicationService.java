@@ -3,8 +3,11 @@ package com.meeting.api.app.meeting;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.domain.meeting.Meeting;
+import com.meeting.api.domain.meeting.MeetingCreatedEvent;
 import com.meeting.api.domain.meeting.MeetingRepository;
+import com.meeting.api.domain.task.MessagePublisher;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,29 +30,39 @@ import org.springframework.transaction.annotation.Transactional;
 public class MeetingApplicationService implements MeetingFacade {
     private static final Logger log = LoggerFactory.getLogger(MeetingApplicationService.class);
     private final MeetingRepository meetingRepository;
+    private final MessagePublisher messagePublisher;
+    private final TenantScopedTransaction tenantScopedTransaction;
 
     public MeetingApplicationService(MeetingRepository meetingRepository) {
+        this(meetingRepository, null, TenantScopedTransaction.immediate());
+    }
+
+    public MeetingApplicationService(
+        MeetingRepository meetingRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction
+    ) {
         this.meetingRepository = meetingRepository;
+        this.messagePublisher = messagePublisher;
+        this.tenantScopedTransaction = tenantScopedTransaction;
     }
 
     @Override
-    @Transactional
     public MeetingDTO create(CreateMeetingCommand command) {
-        // TODO: verify idempotency-key not already used
-        // TODO: setTenantContext(command.tenantId())
-        // TODO: write MeetingCreated event to domain_events_outbox
-
-        Meeting meeting = Meeting.create(
-            "m_" + UUID.randomUUID().toString().replace("-", ""),
-            command.tenantId(),
-            command.title(),
-            command.securityLevel(),
-            command.language(),
-            command.participants(),
-            command.createdBy()
-        );
-        Meeting saved = meetingRepository.save(meeting);
-        return toDto(saved);
+        return tenantScopedTransaction.execute(command.tenantId(), command.createdBy(), null, () -> {
+            Meeting meeting = Meeting.create(
+                "m_" + UUID.randomUUID().toString().replace("-", ""),
+                command.tenantId(),
+                command.title(),
+                command.securityLevel(),
+                command.language(),
+                command.participants(),
+                command.createdBy()
+            );
+            Meeting saved = meetingRepository.save(meeting);
+            publishMeetingCreated(saved);
+            return toDto(saved);
+        });
     }
 
     @Override
@@ -74,5 +87,22 @@ public class MeetingApplicationService implements MeetingFacade {
             meeting.minutesVersion(),
             meeting.createdAt()
         );
+    }
+
+    private void publishMeetingCreated(Meeting meeting) {
+        if (messagePublisher == null) {
+            return;
+        }
+        messagePublisher.publish(new MeetingCreatedEvent(
+            "evt_" + UUID.randomUUID().toString().replace("-", ""),
+            meeting.tenantId(),
+            meeting.id(),
+            meeting.title(),
+            meeting.securityLevel(),
+            meeting.createdBy(),
+            0,
+            meeting.createdAt()
+        ));
+        log.debug("MeetingCreatedEvent queued for meeting {}", meeting.id());
     }
 }

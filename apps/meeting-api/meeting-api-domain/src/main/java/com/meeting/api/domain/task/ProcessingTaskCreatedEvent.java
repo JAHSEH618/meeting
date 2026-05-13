@@ -15,8 +15,40 @@ public record ProcessingTaskCreatedEvent(
     int attemptNo,
     List<ProcessingStep> pipelineSteps,
     long sequenceNo,
-    OffsetDateTime occurredAt
+    OffsetDateTime occurredAt,
+    Map<String, Object> payload
 ) implements DomainEvent {
+    public ProcessingTaskCreatedEvent(
+        String eventId,
+        String tenantId,
+        String taskId,
+        String meetingId,
+        String taskType,
+        int attemptNo,
+        List<ProcessingStep> pipelineSteps,
+        long sequenceNo,
+        OffsetDateTime occurredAt
+    ) {
+        this(
+            eventId,
+            tenantId,
+            taskId,
+            meetingId,
+            taskType,
+            attemptNo,
+            pipelineSteps,
+            sequenceNo,
+            occurredAt,
+            Map.of(
+                "taskId", taskId,
+                "meetingId", meetingId == null ? "" : meetingId,
+                "taskType", taskType,
+                "attemptNo", attemptNo,
+                "pipelineSteps", pipelineSteps.stream().map(Enum::name).toList()
+            )
+        );
+    }
+
     @Override
     public String eventType() {
         return "ProcessingTaskCreatedEvent";
@@ -37,14 +69,4 @@ public record ProcessingTaskCreatedEvent(
         return "v1";
     }
 
-    @Override
-    public Map<String, Object> payload() {
-        return Map.of(
-            "taskId", taskId,
-            "meetingId", meetingId == null ? "" : meetingId,
-            "taskType", taskType,
-            "attemptNo", attemptNo,
-            "pipelineSteps", pipelineSteps.stream().map(Enum::name).toList()
-        );
-    }
 }

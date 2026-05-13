@@ -23,6 +23,10 @@
       <artifactId>meeting-api-domain</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.meeting</groupId>
+      <artifactId>meeting-api-app</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-context</artifactId>
     </dependency>
