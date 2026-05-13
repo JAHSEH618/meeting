@@ -1,13 +1,13 @@
 package com.meeting.api;
 
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.sql.Connection;
@@ -17,22 +17,27 @@ import java.sql.Statement;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PostgreSqlBaselineTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
-        DockerImageName.parse("pgvector/pgvector:pg15")
-    )
-        .withDatabaseName("meeting_test")
-        .withUsername("meeting")
-        .withPassword("meeting_test");
-
+    private PostgreSQLContainer<?> postgres;
     private Connection conn;
 
     @BeforeAll
-    void migrate() throws Exception {
+    void startAndMigrate() throws Exception {
+        Assumptions.assumeTrue(
+            DockerClientFactory.instance().isDockerAvailable(),
+            "Docker daemon is not available — skipping Testcontainers baseline"
+        );
+
+        postgres = new PostgreSQLContainer<>(
+            DockerImageName.parse("pgvector/pgvector:pg15")
+        )
+            .withDatabaseName("meeting_test")
+            .withUsername("meeting")
+            .withPassword("meeting_test");
+        postgres.start();
+
         Flyway flyway = Flyway.configure()
             .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
             .locations("classpath:db/migration")
@@ -45,6 +50,7 @@ class PostgreSqlBaselineTest {
     @AfterAll
     void cleanup() throws Exception {
         if (conn != null) conn.close();
+        if (postgres != null) postgres.stop();
     }
 
     @Test

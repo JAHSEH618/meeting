@@ -1,13 +1,12 @@
 package com.meeting.api;
 
-import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.AfterAll;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.RabbitMQContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.BufferedReader;
@@ -23,15 +22,10 @@ import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RabbitMqBaselineTest {
 
-    @Container
-    static RabbitMQContainer rabbitmq = new RabbitMQContainer(
-        DockerImageName.parse("rabbitmq:3.13-management")
-    )
-        .withAdminPassword("meeting_test");
+    private RabbitMQContainer rabbitmq;
 
     private String getBaseUrl() {
         return "http://" + rabbitmq.getHost() + ":" + rabbitmq.getHttpPort();
@@ -75,7 +69,18 @@ class RabbitMqBaselineTest {
     }
 
     @BeforeAll
-    void importDefinitions() throws Exception {
+    void startAndImportDefinitions() throws Exception {
+        Assumptions.assumeTrue(
+            DockerClientFactory.instance().isDockerAvailable(),
+            "Docker daemon is not available — skipping Testcontainers baseline"
+        );
+
+        rabbitmq = new RabbitMQContainer(
+            DockerImageName.parse("rabbitmq:3.13-management")
+        )
+            .withAdminPassword("meeting_test");
+        rabbitmq.start();
+
         // Find definitions.json from the infra package (relative to project root)
         Path definitionsPath = Paths.get(
             System.getProperty("user.dir"),
@@ -98,6 +103,11 @@ class RabbitMqBaselineTest {
 
         String definitionsJson = Files.readString(definitionsPath);
         postJson("/api/definitions", definitionsJson);
+    }
+
+    @AfterAll
+    void cleanup() {
+        if (rabbitmq != null) rabbitmq.stop();
     }
 
     @Test

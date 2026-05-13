@@ -1,0 +1,6 @@
+# Code generation dependencies for meeting-contracts
+# Pin versions to ensure reproducible output across CI and local environments.
+
+datamodel-code-generator==0.26.1
+jsonschema>=4.0.0
+pyyaml>=6.0.0

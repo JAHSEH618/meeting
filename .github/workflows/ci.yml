@@ -33,7 +33,7 @@ jobs:
         run: npm install -g @stoplight/spectral-cli
 
       - name: Install Python deps
-        run: pip install jsonschema pyyaml
+        run: pip install -r requirements.txt
 
       - name: Spectral Lint (public-api)
         run: spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml --fail-severity warn
@@ -59,34 +59,44 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      - name: Install Python codegen deps
-        run: pip install datamodel-code-generator
+      - name: Set up Java for codegen
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
 
-      - name: Codegen Diff Check (TS)
+      - name: Codegen Diff Check (TS + Python + Java)
         run: |
+          set -euo pipefail
+
+          # Helper: detect both modified and newly-created (untracked) generated files
+          check_clean() {
+            local path="$1"
+            local name="$2"
+            git add -N "$path"
+            git diff --exit-code "$path" || {
+              echo "::error::$name is out of date or contains untracked files. Run 'npm run codegen' and commit the result."
+              exit 1
+            }
+          }
+
           npm run codegen:ts
-          git diff --exit-code ../../apps/meeting-web/src/shared/api/types.gen.ts || {
-            echo "::error::types.gen.ts is out of date. Run 'npm run codegen:ts' and commit the result."
-            exit 1
-          }
+          check_clean ../../apps/meeting-web/src/shared/api/types.gen.ts "TS types.gen.ts"
 
-      - name: Codegen Diff Check (Python)
-        run: |
           npm run codegen:py-callback
-          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py || {
-            echo "::error::internal_callback_types.py is out of date. Run 'npm run codegen:py-callback' and commit."
-            exit 1
-          }
+          check_clean ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py "Python internal_callback_types.py"
+
           npm run codegen:py-worker-internal
-          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py || {
-            echo "::error::ai_worker_internal_types.py is out of date. Run 'npm run codegen:py-worker-internal' and commit."
-            exit 1
-          }
+          check_clean ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py "Python ai_worker_internal_types.py"
+
           npm run codegen:py-task-msg
-          git diff --exit-code ../../apps/ai-worker/ai_worker/generated/processing_task_message.py || {
-            echo "::error::processing_task_message.py is out of date. Run 'npm run codegen:py-task-msg' and commit."
-            exit 1
-          }
+          check_clean ../../apps/ai-worker/ai_worker/generated/processing_task_message.py "Python processing_task_message.py"
+
+          npm run codegen:java-public
+          check_clean ../../apps/meeting-api/meeting-api-client/generated/public-api "Java public-api generated models"
+
+          npm run codegen:java-worker-internal
+          check_clean ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal "Java ai-worker-internal generated models"
 
   # ── Java 后端 ─────────────────────────────────────────────────
   meeting-api:

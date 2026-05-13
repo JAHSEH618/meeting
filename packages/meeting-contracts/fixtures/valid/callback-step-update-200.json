@@ -5,7 +5,11 @@
   "status": 200,
   "response": {
     "success": true,
-    "data": null,
+    "data": {
+      "stepName": "ASR",
+      "status": "SUCCEEDED",
+      "progress": 100
+    },
     "error": null,
     "requestId": "req_cb_fixture_01",
     "traceId": "trace_cb_fixture_01"
