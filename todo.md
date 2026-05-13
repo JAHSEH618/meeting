@@ -114,11 +114,11 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api-adapter`
 
-- [ ] 实现 `/api/auth/login`、`/api/auth/logout`、`/api/auth/me` 的内置账号 MVP。
-- [ ] 实现 `/api/meetings` 创建 / 列表 / 详情，去掉 tenant header 伪上下文，改由登录态设置 tenant context。
-- [ ] 实现 `/api/meetings/{meetingId}/processing-tasks`、`GET /api/processing-tasks/{taskId}`、retry、cancel。
-- [ ] 实现 `/api/processing-tasks/{taskId}/events` SSE：建连先发 snapshot，支持 `Last-Event-Id`，不可续接时回退当前 snapshot。
-- [ ] 将 `ProcessingTaskCallbackController` 从 accepted stub 改为读取完整 headers、原始 URI、body 并调用 app command。
+- [x] 实现 `/api/auth/login`、`/api/auth/logout`、`/api/auth/me` 的内置账号 MVP。
+- [x] 实现 `/api/meetings` 创建 / 列表 / 详情，去掉 tenant header 伪上下文，改由登录态设置 tenant context。
+- [x] 实现 `/api/meetings/{meetingId}/processing-tasks`、`GET /api/processing-tasks/{taskId}`、retry、cancel。
+- [x] 实现 `/api/processing-tasks/{taskId}/events` SSE：建连先发 snapshot，支持 `Last-Event-Id`，不可续接时回退当前 snapshot。
+- [x] 将 `ProcessingTaskCallbackController` 从 accepted stub 改为读取完整 headers、原始 URI、body 并调用 app command。
 
 ### 工程：`apps/ai-worker`
 

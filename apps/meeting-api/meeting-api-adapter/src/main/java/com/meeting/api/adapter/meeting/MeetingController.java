@@ -38,10 +38,17 @@ public class MeetingController {
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader("Idempotency-Key") String idempotencyKey,
-        @RequestBody CreateMeetingCommand command
+        @RequestBody CreateMeetingRequest request
     ) {
-        // tenantId is injected by TenantContextFilter from JWT, not read from header.
-        // This command carries tenantId set by a @RequestAttribute interceptor.
+        CreateMeetingCommand command = new CreateMeetingCommand(
+            TenantContextHolder.currentTenantId(),
+            request.title(),
+            request.scheduledStartAt(),
+            request.securityLevel(),
+            request.language(),
+            request.participants(),
+            TenantContextHolder.currentUserId()
+        );
         MeetingDTO meeting = meetingFacade.create(command);
         return ApiResponse.ok(meeting, requestId, traceId);
     }
@@ -65,5 +72,14 @@ public class MeetingController {
         return meetingFacade.get(tenantId, meetingId)
             .map(meeting -> ResponseEntity.ok(ApiResponse.ok(meeting, requestId, traceId)))
             .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    public record CreateMeetingRequest(
+        String title,
+        java.time.OffsetDateTime scheduledStartAt,
+        SecurityLevel securityLevel,
+        String language,
+        List<CreateMeetingCommand.ParticipantCommand> participants
+    ) {
     }
 }
