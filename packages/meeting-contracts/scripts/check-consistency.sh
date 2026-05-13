@@ -328,26 +328,10 @@ python3 "$(dirname "$0")/check-export-job-dto.py" || HAS_ERRORS=1
 
 # ── 8. Codegen Drift ────────────────────────────────────────────
 echo "--- Codegen Drift ---"
-# Regenerate TS + Java + Python before drift check so that contract changes are reflected.
-# All codegen failures are hard errors (error_exit) when the required tools are available.
-# Python codegen warns and continues only when datamodel-codegen is not installed.
-echo "  Regenerating codegen..."
-cd "$CONTRACTS_DIR"
-# Run each codegen target; capture stderr to a temp file so failures are diagnosable.
-_codegen_err=$(mktemp)
-trap "rm -f $_codegen_err" EXIT
-npm run codegen:ts >/dev/null 2>$_codegen_err && pass "  codegen:ts" || { cat $_codegen_err; error_exit "codegen:ts failed"; }
-npm run codegen:java-public >/dev/null 2>$_codegen_err && pass "  codegen:java-public" || { cat $_codegen_err; error_exit "codegen:java-public failed"; }
-npm run codegen:java-worker-internal >/dev/null 2>$_codegen_err && pass "  codegen:java-worker-internal" || { cat $_codegen_err; error_exit "codegen:java-worker-internal failed"; }
-npm run codegen:java-export-job >/dev/null 2>$_codegen_err && pass "  codegen:java-export-job" || { cat $_codegen_err; error_exit "codegen:java-export-job failed"; }
-if command -v datamodel-codegen &>/dev/null || python3 -c "import datamodel_code_generator" 2>/dev/null; then
-  npm run codegen:py-callback >/dev/null 2>$_codegen_err && pass "  codegen:py-callback" || { cat $_codegen_err; error_exit "codegen:py-callback failed"; }
-  npm run codegen:py-worker-internal >/dev/null 2>$_codegen_err && pass "  codegen:py-worker-internal" || { cat $_codegen_err; error_exit "codegen:py-worker-internal failed"; }
-  npm run codegen:py-task-msg >/dev/null 2>$_codegen_err && pass "  codegen:py-task-msg" || { cat $_codegen_err; error_exit "codegen:py-task-msg failed"; }
-else
-  warn "  Python codegen skipped (datamodel-codegen not available)"
-fi
-bash "$(dirname "$0")/check-codegen-drift.sh" || HAS_ERRORS=1
+# Generate to a temp directory (.generated-check/) and diff against committed
+# files. This avoids EPERM issues on read-only generated directories and keeps
+# the working tree untouched.
+bash "$(dirname "$0")/check-codegen-via-temp.sh" || HAS_ERRORS=1
 
 echo ""
 if [ "$HAS_ERRORS" -ne 0 ]; then

@@ -42,6 +42,30 @@
 - [x] 实现 HMAC signing / nonce / timestamp 的 callback client 基础能力，而不仅保留 Protocol。
 - [x] 增加 `POST /internal/rerank` 占位实现与契约测试，至少能按输入候选返回稳定 rank，后续再接入真实模型。
 
+### 阶段 0 验收清单
+
+> 状态：**实现项完成，验收可通过（需 Docker 环境）**
+>
+> 所有 [x] 项对应的代码/配置/脚本已就位。以下验收命令在满足环境前提时应全绿。
+
+| 验收命令 | 工作目录 | 覆盖 |
+|----------|----------|------|
+| `npm run check` | `packages/meeting-contracts` | Spectral + JSON Schema + enum + HTTP fixtures (request/response/headers/path) + DTO consistency + codegen-to-temp drift |
+| `npm run codegen` | `packages/meeting-contracts` | 原地更新 TS / Java / Python 生成产物 |
+| `./mvnw test` | `apps/meeting-api` | ArchUnit (8 tests)，无需 Docker |
+| `./mvnw verify` | `apps/meeting-api` | ArchUnit + PostgreSQL IT (7) + RabbitMQ IT (5)；需 Docker daemon |
+| `uv run pytest` | `apps/ai-worker` | Python 单元测试 |
+| `uv run pyright ai_worker/` | `apps/ai-worker` | Python 类型检查 |
+| `npm test` | `apps/meeting-web` | Vitest (35 tests) |
+| `npx tsc --noEmit` | `apps/meeting-web` | TypeScript 类型检查 |
+
+**Docker 前提（仅 `./mvnw verify` 需要）：**
+```bash
+colima start
+export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+export TESTCONTAINERS_RYUK_DISABLED=true
+```
+
 ## 阶段 1：MVP-0 纵向闭环
 
 目标闭环：`meeting-web 登录/会议入口 -> meeting-api 创建会议和 processing task -> outbox / RabbitMQ -> ai-worker fake pipeline callback -> meeting-api 幂等接收 callback -> meeting-web 展示 task snapshot / SSE 或轮询`。
