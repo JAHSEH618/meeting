@@ -43,7 +43,7 @@ for f in "$DIR/src/main/java/com/meeting/api/client"/*; do
     # Keep model/ and *Api.java; delete everything else at this level
     base=$(basename "$f")
     case "$base" in
-      publicapi|workerinternal)
+      publicapi|workerinternal|exportjob)
         for sub in "$f"/*; do
           if [ -d "$sub" ]; then
             subbase=$(basename "$sub")

@@ -26,6 +26,7 @@ check_path "apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py" "Pyt
 check_path "apps/ai-worker/ai_worker/generated/processing_task_message.py"  "Python processing_task_message.py"
 check_path "apps/meeting-api/meeting-api-client/generated/public-api"       "Java public-api generated models"
 check_path "apps/meeting-api/meeting-api-client/generated/ai-worker-internal" "Java ai-worker-internal generated models"
+check_path "apps/meeting-api/meeting-api-client/generated/export-job"         "Java export-job generated models"
 
 if [ "$drift_found" -ne 0 ]; then
   echo ""

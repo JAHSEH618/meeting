@@ -56,7 +56,7 @@ meeting:
       timestamp-skew-seconds: 300
     ai-worker:
       hmac-secret: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:change-me-in-production}
-      base-url: ${AI_WORKER_BASE_URL:http://localhost:8000}
+      base-url: ${AI_WORKER_BASE_URL:http://localhost:8090}
       rerank-timeout-ms: 3000
   storage:
     type: ${STORAGE_TYPE:minio}

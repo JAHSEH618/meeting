@@ -25,8 +25,9 @@ observability/          # Prometheus / Grafana / Loki 看板
 ### 1. 启动全栈
 
 ```bash
+# 从仓库根目录执行（.env.example 在根目录）
 cp .env.example .env                    # 按需修改
-docker compose -f docker/compose/docker-compose.yml up -d
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
 ### 2. 验证各服务健康状态
@@ -37,7 +38,7 @@ docker compose -f docker/compose/docker-compose.yml exec postgres pg_isready
 # 预期输出: /var/run/postgresql:5432 - accepting connections
 
 # RabbitMQ Management
-curl -s -u guest:guest http://localhost:15672/api/overview | jq -r '.rabbitmq_version'
+curl -s -u meeting:meeting_dev http://localhost:15672/api/overview | jq -r '.rabbitmq_version'
 # 预期输出: 3.13.x
 
 # MinIO
@@ -52,10 +53,10 @@ curl -s http://localhost:8200/v1/sys/health | jq -r '.sealed'
 ### 3. 验证 RabbitMQ Schema（队列 / 交换机 / 绑定）
 
 ```bash
-curl -s -u guest:guest http://localhost:15672/api/exchanges/%2f | jq '.[].name'
+curl -s -u meeting:meeting_dev http://localhost:15672/api/exchanges/%2f | jq '.[].name'
 # 应包含 meeting.task.exchange、meeting.task.dlx
 
-curl -s -u guest:guest http://localhost:15672/api/queues/%2f | jq '.[].name'
+curl -s -u meeting:meeting_dev http://localhost:15672/api/queues/%2f | jq '.[].name'
 # 应包含 audio-cpu-queue、gpu-asr-queue、gpu-diar-queue、gpu-speaker-queue、embed-queue、llm-queue、export-queue
 # 以及对应死信队列 *.dlq
 ```
@@ -65,8 +66,8 @@ curl -s -u guest:guest http://localhost:15672/api/queues/%2f | jq '.[].name'
 | 服务 | 地址 | 凭证（默认） |
 |---|---|---|
 | PostgreSQL | `localhost:5432` | `meeting` / `meeting_dev` |
-| RabbitMQ AMQP | `localhost:5672` | `guest` / `guest` |
-| RabbitMQ Management | http://localhost:15672 | `guest` / `guest` |
+| RabbitMQ AMQP | `localhost:5672` | `meeting` / `meeting_dev` |
+| RabbitMQ Management | http://localhost:15672 | `meeting` / `meeting_dev` |
 | MinIO Console | http://localhost:9001 | `minioadmin` / `minioadmin` |
 | MinIO S3 API | `localhost:9000` | `minioadmin` / `minioadmin` |
 | Vault | http://localhost:8200 | `root` (dev mode) |

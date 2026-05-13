@@ -401,30 +401,52 @@ api_response_schema = {
     },
 }
 
-# Fixture → (spec_name, path, method, status)
-fixture_api_map = {
-    'valid/public-api-login-200.json': {
-        'spec': 'public-api.yaml', 'path': '/auth/login', 'method': 'post', 'status': 200,
-    },
-    'valid/callback-step-update-200.json': {
-        'spec': 'internal-callback-api.yaml', 'path': '/processing-tasks/{taskId}/steps/{stepName}', 'method': 'patch', 'status': 200,
-    },
-    'valid/ai-worker-rerank-200.json': {
-        'spec': 'ai-worker-internal-api.yaml', 'path': '/rerank', 'method': 'post', 'status': 200,
-    },
-    'invalid/public-api-login-missing-username.json': {
-        'spec': 'public-api.yaml', 'path': '/auth/login', 'method': 'post', 'status': 400,
-        'expect_error': True,
-    },
-    'invalid/callback-missing-hmac.json': {
-        'spec': 'internal-callback-api.yaml', 'path': '/processing-tasks/{taskId}/steps/{stepName}', 'method': 'patch', 'status': 401,
-        'expect_error': True,
-    },
-    'invalid/ai-worker-rerank-empty-query.json': {
-        'spec': 'ai-worker-internal-api.yaml', 'path': '/rerank', 'method': 'post', 'status': 400,
-        'expect_error': True,
-    },
-}
+# Auto-discover HTTP API fixtures under valid/ and invalid/.
+# Only files with a top-level "response" key are HTTP API fixtures;
+# RabbitMQ message fixtures (processing-task-*, export-job-*) are skipped.
+fixture_api_map = {}
+for subdir in ['valid', 'invalid']:
+    d = Path('$FIXTURES_DIR') / subdir
+    if not d.exists():
+        continue
+    for f in d.iterdir():
+        if f.suffix != '.json':
+            continue
+        # Peek: skip RabbitMQ message fixtures
+        with open(f) as peek:
+            data = json.load(peek)
+        if 'response' not in data:
+            continue
+        key = f'{subdir}/{f.name}'
+        name = f.stem
+        if name.startswith('public-api-'):
+            spec = 'public-api.yaml'
+        elif name.startswith('callback-'):
+            spec = 'internal-callback-api.yaml'
+        elif name.startswith('ai-worker-'):
+            spec = 'ai-worker-internal-api.yaml'
+        else:
+            spec = None
+        method = 'post'
+        if '-delete-' in name:
+            method = 'delete'
+        elif '-get-' in name:
+            method = 'get'
+        status = 200
+        if '-200' in name or '-201' in name:
+            status = 200
+        elif '-204' in name:
+            status = 204
+        elif '-400' in name or '-409' in name or '-422' in name:
+            status = 400
+        elif '-401' in name:
+            status = 401
+        elif '-500' in name:
+            status = 500
+        entry = {'spec': spec, 'path': '/', 'method': method, 'status': status}
+        if subdir == 'invalid':
+            entry['expect_error'] = True
+        fixture_api_map[key] = entry
 
 envelope_validator = jsonschema.Draft202012Validator(api_response_schema)
 

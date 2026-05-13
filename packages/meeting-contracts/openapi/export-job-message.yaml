@@ -1,0 +1,9 @@
+openapi: 3.1.0
+info:
+  title: Export Job Message (JSON Schema wrapper for Java codegen)
+  version: 0.1.0
+paths: {}
+components:
+  schemas:
+    ExportJobMessage:
+      $ref: ../schemas/rabbitmq/export-job-message.schema.json

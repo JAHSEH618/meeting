@@ -6,8 +6,11 @@ import java.time.OffsetDateTime;
  * RabbitMQ export-queue message payload.
  * <p>
  * Source of truth: {@code schemas/rabbitmq/export-job-message.schema.json}
- * in {@code packages/meeting-contracts}. Hand-written in phase 0; future
- * phases may switch to jsonschema2pojo generation.
+ * in {@code packages/meeting-contracts}.
+ * <p>
+ * This record is hand-written to leverage Java 17 {@code record} semantics.
+ * Structural consistency with the schema is verified in CI via
+ * {@code npm run codegen:java-export-job} + drift check.
  *
  * @see <a href="https://github.com/meeting-local/meeting/blob/main/packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json">export-job-message.schema.json</a>
  */

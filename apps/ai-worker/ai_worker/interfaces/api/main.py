@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
@@ -62,6 +63,13 @@ def create_app() -> FastAPI:
             "status": "UNKNOWN",
             "steps": [],
         }
+
+    @app.get("/metrics")
+    def metrics() -> PlainTextResponse:
+        return PlainTextResponse(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST,
+        )
 
     @app.post("/internal/rerank")
     async def rerank(
