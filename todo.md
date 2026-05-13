@@ -85,9 +85,9 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api-client`
 
-- [ ] 补齐 `PageResult`、`ProcessingTaskDTO`、`ProcessingTaskStepDTO`、`TaskEventDTO`、`CreateProcessingTaskCommand`、`RetryTaskCommand`、`CancelTaskCommand`。
-- [ ] 补齐 internal callback command 包：`StepCallbackCommand`、`StepProgressHeartbeatCommand`、`CompleteWorkerPhaseCommand`、`FailTaskCommand`。
-- [ ] 将 Java enum 与 `schemas/common/enums.yaml` 建立一致性测试，包含 `ProcessingTaskPhase`、`ProcessingStepUpdateSource`、`RagAnswerCoverage`、`StaleStatus`。
+- [x] 补齐 `PageResult`、`ProcessingTaskDTO`、`ProcessingTaskStepDTO`、`TaskEventDTO`、`CreateProcessingTaskCommand`、`RetryTaskCommand`、`CancelTaskCommand`。
+- [x] 补齐 internal callback command 包：`StepCallbackCommand`、`StepProgressHeartbeatCommand`、`CompleteWorkerPhaseCommand`、`FailTaskCommand`。
+- [x] 将 Java enum 与 `schemas/common/enums.yaml` 建立一致性测试，包含 `ProcessingTaskPhase`、`ProcessingStepUpdateSource`、`RagAnswerCoverage`、`StaleStatus`。
 
 ### 工程：`apps/meeting-api-domain`
 
