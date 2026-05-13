@@ -10,19 +10,44 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
+let currentUser: AuthUser | null = null;
+let initialized = false;
+const subscribers = new Set<() => void>();
+
+function emit() {
+  subscribers.forEach((subscriber) => subscriber());
+}
+
+function setCurrentUser(user: AuthUser | null) {
+  currentUser = user;
+  emit();
+}
+
 export function useAuth(): AuthState {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUserState] = useState<AuthUser | null>(currentUser);
+  const [isLoading, setIsLoading] = useState(!initialized);
 
   useEffect(() => {
+    const sync = () => {
+      setUserState(currentUser);
+    };
+    subscribers.add(sync);
+    return () => {
+      subscribers.delete(sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (initialized) return;
     api.getCurrentUser()
       .then((u) => {
-        setUser(u);
+        setCurrentUser(u);
       })
       .catch(() => {
-        setUser(null);
+        setCurrentUser(null);
       })
       .finally(() => {
+        initialized = true;
         setIsLoading(false);
       });
   }, []);
@@ -30,7 +55,9 @@ export function useAuth(): AuthState {
   const login = useCallback(async (username: string, password: string) => {
     const result = await api.login(username, password);
     api.setAuthToken(result.accessToken);
-    setUser(result.user);
+    initialized = true;
+    setCurrentUser(result.user);
+    setIsLoading(false);
   }, []);
 
   const logout = useCallback(async () => {
@@ -38,7 +65,9 @@ export function useAuth(): AuthState {
       await api.logout();
     } finally {
       api.setAuthToken(null);
-      setUser(null);
+      initialized = true;
+      setCurrentUser(null);
+      setIsLoading(false);
     }
   }, []);
 
@@ -49,4 +78,11 @@ export function useAuth(): AuthState {
     login,
     logout,
   };
+}
+
+export function resetAuthForTests() {
+  api.setAuthToken(null);
+  currentUser = null;
+  initialized = false;
+  emit();
 }

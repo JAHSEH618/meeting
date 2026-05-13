@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { ApiResponse, Meeting, AuthUser } from "../types";
+import type { ApiResponse, Meeting, AuthUser, ProcessingTask } from "../types";
 
 const meetingList: Meeting[] = [
   {
@@ -63,9 +63,9 @@ export const handlers = [
   }),
 
   http.get("/api/meetings", () => {
-    return HttpResponse.json<ApiResponse<{ items: Meeting[] }>>({
+    return HttpResponse.json<ApiResponse<Meeting[]>>({
       success: true,
-      data: { items: meetingList },
+      data: meetingList,
       error: null,
       requestId: "req_04",
       traceId: "trace_04",
@@ -81,4 +81,53 @@ export const handlers = [
       traceId: "trace_05",
     });
   }),
+
+  http.get("/api/meetings/:meetingId", ({ params }) => {
+    const meeting = meetingList.find((item) => item.meetingId === params.meetingId) ?? meetingList[0]!;
+    return HttpResponse.json<ApiResponse<Meeting>>({
+      success: true,
+      data: meeting,
+      error: null,
+      requestId: "req_06",
+      traceId: "trace_06",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/processing-tasks", ({ params }) => {
+    return HttpResponse.json<ApiResponse<ProcessingTask>>({
+      success: true,
+      data: mockTask(String(params.meetingId)),
+      error: null,
+      requestId: "req_07",
+      traceId: "trace_07",
+    });
+  }),
+
+  http.get("/api/processing-tasks/:taskId", () => {
+    return HttpResponse.json<ApiResponse<ProcessingTask>>({
+      success: true,
+      data: mockTask("mtg_01"),
+      error: null,
+      requestId: "req_08",
+      traceId: "trace_08",
+    });
+  }),
 ];
+
+function mockTask(meetingId: string): ProcessingTask {
+  return {
+    taskId: "task_01",
+    meetingId,
+    status: "RUNNING",
+    phase: "WORKER_DAG_RUNNING",
+    attemptNo: 1,
+    currentStep: "ASR",
+    lastErrorCode: null,
+    retryable: false,
+    steps: [
+      { stepName: "AUDIO_UPLOAD", status: "SUCCEEDED", progress: 100, source: "JAVA_TASK_SERVICE" },
+      { stepName: "AUDIO_PREPROCESS", status: "SUCCEEDED", progress: 100, source: "AI_WORKER_CALLBACK", attemptNo: 1 },
+      { stepName: "ASR", status: "RUNNING", progress: 50, source: "AI_WORKER_CALLBACK", attemptNo: 1 },
+    ],
+  };
+}

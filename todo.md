@@ -129,11 +129,11 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 实现 LoginPage，接入 `/api/auth/login`，处理 AUTH_REQUIRED、账号锁定、密码错误和服务不可用。
-- [ ] 实现 MeetingListPage 和 MeetingCreatePage，支持创建会议并跳转详情。
-- [ ] 增加任务进度页面路由 `/meetings/:meetingId/tasks/:taskId`，展示 task status、phase、step、progress、errorCode、retryable。
-- [ ] 实现 SSE client：支持 `Last-Event-Id`，重连失败后轮询 `GET /api/processing-tasks/{taskId}`。
-- [ ] 修正路由命名与 spec：声纹档案使用 `/speaker-profiles`，导出入口使用 `/meetings/:meetingId/exports`。
+- [x] 实现 LoginPage，接入 `/api/auth/login`，处理 AUTH_REQUIRED、账号锁定、密码错误和服务不可用。
+- [x] 实现 MeetingListPage 和 MeetingCreatePage，支持创建会议并跳转详情。
+- [x] 增加任务进度页面路由 `/meetings/:meetingId/tasks/:taskId`，展示 task status、phase、step、progress、errorCode、retryable。
+- [x] 实现 SSE client：支持 `Last-Event-Id`，重连失败后轮询 `GET /api/processing-tasks/{taskId}`。
+- [x] 修正路由命名与 spec：声纹档案使用 `/speaker-profiles`，导出入口使用 `/meetings/:meetingId/exports`。
 
 ## 阶段 2：音频上传与真实 Worker Pipeline
 

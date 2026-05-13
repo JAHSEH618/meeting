@@ -6,7 +6,7 @@ export function AuthGuard() {
   const location = useLocation();
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <main className="page">加载中</main>;
   }
 
   if (!isAuthenticated) {
