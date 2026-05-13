@@ -4,6 +4,14 @@
   "method": "POST",
   "path": "/rerank",
   "status": 200,
+  "headers": {
+    "X-Request-Id": "req_worker_fixture_01",
+    "X-Trace-Id": "trace_worker_fixture_01",
+    "X-Tenant-Id": "tenant_fixture_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_rerank_01",
+    "X-Signature": "hmac-sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
   "request": {
     "tenantId": "tenant_fixture_01",
     "query": "What decisions were made about the Q3 budget?",

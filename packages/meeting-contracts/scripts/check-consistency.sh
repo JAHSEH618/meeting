@@ -328,6 +328,22 @@ python3 "$(dirname "$0")/check-export-job-dto.py" || HAS_ERRORS=1
 
 # ── 8. Codegen Drift ────────────────────────────────────────────
 echo "--- Codegen Drift ---"
+# Regenerate TS + Java before drift check so that contract changes are reflected.
+# Python codegen requires datamodel-codegen (not always available); skip gracefully.
+echo -n "  Regenerating codegen... "
+cd "$CONTRACTS_DIR"
+npm run codegen:ts >/dev/null 2>&1 && echo -n "TS " || echo -n "(TS skipped) "
+npm run codegen:java-public >/dev/null 2>&1 && echo -n "Java-public " || echo -n "(Java-public skipped) "
+npm run codegen:java-worker-internal >/dev/null 2>&1 && echo -n "Java-worker " || echo -n "(Java-worker skipped) "
+npm run codegen:java-export-job >/dev/null 2>&1 && echo -n "Java-export " || echo -n "(Java-export skipped) "
+if command -v datamodel-codegen &>/dev/null || python3 -c "import datamodel_code_generator" 2>/dev/null; then
+  npm run codegen:py-callback >/dev/null 2>&1 && echo -n "Py-cb " || echo -n "(Py-cb skipped) "
+  npm run codegen:py-worker-internal >/dev/null 2>&1 && echo -n "Py-worker " || echo -n "(Py-worker skipped) "
+  npm run codegen:py-task-msg >/dev/null 2>&1 && echo -n "Py-task " || echo -n "(Py-task skipped) "
+else
+  echo -n "(Python codegen skipped: datamodel-codegen not available) "
+fi
+echo ""
 bash "$(dirname "$0")/check-codegen-drift.sh" || HAS_ERRORS=1
 
 echo ""

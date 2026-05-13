@@ -1,6 +1,10 @@
 {
   "description": "GET /meetings 500 internal server error",
   "status": 500,
+  "headers": {
+    "X-Request-Id": "req_500_01",
+    "X-Trace-Id": "trace_500_01"
+  },
   "response": {
     "success": false,
     "data": null,

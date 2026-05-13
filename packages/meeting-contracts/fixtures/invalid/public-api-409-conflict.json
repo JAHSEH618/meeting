@@ -1,6 +1,11 @@
 {
   "description": "POST /meetings 409 conflict (duplicate idempotency key)",
   "status": 409,
+  "headers": {
+    "X-Request-Id": "req_409_01",
+    "X-Trace-Id": "trace_409_01",
+    "Idempotency-Key": "idem_409_conflict"
+  },
   "request": {
     "title": "Q3 Planning Meeting",
     "securityLevel": "INTERNAL",

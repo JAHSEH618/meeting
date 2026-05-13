@@ -1,6 +1,11 @@
 {
   "description": "POST /legal-holds 201 response",
   "status": 201,
+  "headers": {
+    "X-Request-Id": "req_lh_create",
+    "X-Trace-Id": "trace_lh_create",
+    "Idempotency-Key": "idem_lh_create_01"
+  },
   "request": {
     "reason": "Q2 Audit compliance hold",
     "scopes": [

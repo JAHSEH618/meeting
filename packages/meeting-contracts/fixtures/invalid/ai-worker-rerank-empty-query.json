@@ -4,6 +4,14 @@
   "method": "POST",
   "path": "/rerank",
   "status": 400,
+  "headers": {
+    "X-Request-Id": "req_worker_err_01",
+    "X-Trace-Id": "trace_worker_err_01",
+    "X-Tenant-Id": "tenant_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_rerank_err",
+    "X-Signature": "hmac-sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
   "request": {
     "tenantId": "tenant_01",
     "query": "",

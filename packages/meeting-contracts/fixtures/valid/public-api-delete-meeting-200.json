@@ -1,6 +1,14 @@
 {
   "description": "DELETE /meetings/{meetingId} 200 response",
   "status": 200,
+  "headers": {
+    "X-Request-Id": "req_del_meeting",
+    "X-Trace-Id": "trace_del_meeting",
+    "Idempotency-Key": "idem_del_meeting_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_del"
+  },
   "request": {
     "reason": "test deletion - no longer needed"
   },

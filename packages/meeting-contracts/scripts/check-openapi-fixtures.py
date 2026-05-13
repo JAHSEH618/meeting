@@ -92,6 +92,12 @@ def resolve_ref(spec, ref, cache):
     elif ref.startswith("#/components/responses/"):
         name = ref.split("/")[-1]
         obj = spec.get("components", {}).get("responses", {}).get(name, {})
+    elif ref.startswith("#/components/parameters/"):
+        name = ref.split("/")[-1]
+        obj = spec.get("components", {}).get("parameters", {}).get(name, {})
+    elif ref.startswith("#/components/requestBodies/"):
+        name = ref.split("/")[-1]
+        obj = spec.get("components", {}).get("requestBodies", {}).get(name, {})
     else:
         return None
     cache[ref] = resolve_schema(spec, obj, cache)
@@ -127,6 +133,35 @@ def get_response_schema(spec, path, method, status):
     schema = ct.get("schema", {})
     cache = {}
     return resolve_schema(spec, schema, cache)
+
+
+def get_operation_parameters(spec, path, method):
+    """Return {param_name: {in, required, schema, ...}} for an operation."""
+    paths = spec.get("paths", {})
+    path_item = paths.get(path)
+    if not path_item:
+        return {}
+    op = path_item.get(method.lower())
+    if not op:
+        return {}
+    # Merge path-level parameters with operation-level parameters
+    all_params = list(path_item.get("parameters", [])) + list(op.get("parameters", []))
+    result = {}
+    cache = {}
+    for p in all_params:
+        if isinstance(p, dict) and "$ref" in p and len(p) == 1:
+            p = resolve_ref(spec, p["$ref"], cache)
+            if p is None:
+                continue
+        if isinstance(p, dict):
+            name = p.get("name")
+            if name:
+                result[name] = {
+                    "in": p.get("in"),
+                    "required": p.get("required", False),
+                    "schema": resolve_schema(spec, p.get("schema", {}), {}),
+                }
+    return result
 
 
 def get_request_body_schema(spec, path, method):
@@ -256,6 +291,56 @@ def main() -> int:
                             print(f"       {e.json_path}: {e.message}")
                         errors += 1
                         continue
+
+        # ── Header / path parameter validation ─────────────────────
+        op_params = get_operation_parameters(spec, meta["path"], meta["method"])
+        header_params = {n: p for n, p in op_params.items() if p["in"] == "header"}
+        path_params = {n: p for n, p in op_params.items() if p["in"] == "path"}
+
+        # Validate fixture headers against OpenAPI header parameters
+        fixture_headers = fixture.get("headers")
+        if fixture_headers is not None:
+            for name, pdef in header_params.items():
+                is_present = name in fixture_headers
+                if meta.get("expect_error"):
+                    # Error fixtures may intentionally omit required headers
+                    if pdef["required"] and not is_present:
+                        print(f"       {fp}: intentionally missing required header '{name}' (expect_error)")
+                    continue
+                if pdef["required"] and not is_present:
+                    print(f"  FAIL {fp}: required header '{name}' missing in fixture")
+                    errors += 1
+                    continue
+                if is_present and pdef["schema"]:
+                    try:
+                        jsonschema.Draft202012Validator(pdef["schema"]).validate(fixture_headers[name])
+                    except jsonschema.ValidationError as e:
+                        print(f"  FAIL {fp}: header '{name}' value does not match OpenAPI schema: {e.message}")
+                        errors += 1
+        else:
+            # No headers in fixture; check if OpenAPI requires any
+            missing = [n for n, p in header_params.items() if p["required"]]
+            if missing and not meta.get("expect_error"):
+                print(f"  FAIL {fp}: fixture missing headers field but OpenAPI requires: {missing}")
+                errors += 1
+            elif missing and meta.get("expect_error"):
+                print(f"       {fp}: intentionally missing required headers: {missing}")
+
+        # Validate fixture pathParams against OpenAPI path parameters
+        fixture_path_params = fixture.get("pathParams")
+        if fixture_path_params is not None:
+            for name, pdef in path_params.items():
+                is_present = name in fixture_path_params
+                if pdef["required"] and not is_present:
+                    print(f"  FAIL {fp}: required path param '{name}' missing in fixture pathParams")
+                    errors += 1
+                    continue
+                if is_present and pdef["schema"]:
+                    try:
+                        jsonschema.Draft202012Validator(pdef["schema"]).validate(fixture_path_params[name])
+                    except jsonschema.ValidationError as e:
+                        print(f"  FAIL {fp}: path param '{name}' value does not match OpenAPI schema: {e.message}")
+                        errors += 1
 
         print(f"  OK   {fp}: status={status}, envelope+schema valid")
 

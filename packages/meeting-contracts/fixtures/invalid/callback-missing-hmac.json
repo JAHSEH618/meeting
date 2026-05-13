@@ -1,9 +1,23 @@
 {
-  "description": "PATCH callback step-update with missing HMAC — 401 auth failure",
+  "description": "PATCH callback step-update with missing HMAC — 401 auth failure (X-Signature intentionally omitted)",
   "spec": "openapi/internal-callback-api.yaml",
   "method": "PATCH",
   "path": "/processing-tasks/task_fixture_err/steps/ASR",
   "status": 401,
+  "headers": {
+    "X-Worker-Id": "worker_fixture_01",
+    "X-Attempt-No": 1,
+    "X-Lease-Owner": "worker_fixture_01:task_fixture_err:1",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_cb_err_01",
+    "X-Trace-Id": "trace_cb_err_01",
+    "X-Request-Id": "req_cb_err_01",
+    "Idempotency-Key": "task_fixture_err:ASR:1:v1"
+  },
+  "pathParams": {
+    "taskId": "task_fixture_err",
+    "stepName": "ASR"
+  },
   "request": {
     "tenantId": "tenant_fixture_01",
     "taskId": "task_fixture_err",
