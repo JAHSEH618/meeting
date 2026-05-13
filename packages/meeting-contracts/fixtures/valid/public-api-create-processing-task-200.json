@@ -1,0 +1,72 @@
+{
+  "description": "POST /meetings/{meetingId}/processing-tasks 200 success response",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/mtg_fixture_01/processing-tasks",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_task_create_01",
+    "X-Trace-Id": "trace_task_create_01",
+    "Idempotency-Key": "idem_task_create_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01"
+  },
+  "request": {
+    "taskType": "MEETING_FULL_PIPELINE",
+    "options": {
+      "enableAsr": true,
+      "enableDiarization": true,
+      "enableSpeakerRecognition": true,
+      "enableRagIndexing": true
+    },
+    "expectedInputVersion": {
+      "chunkStrategyVersion": "v1"
+    }
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "taskId": "task_fixture_01",
+      "meetingId": "mtg_fixture_01",
+      "status": "RUNNING",
+      "phase": "WORKER_DAG_RUNNING",
+      "attemptNo": 1,
+      "currentStep": "AUDIO_PREPROCESS",
+      "lastErrorCode": null,
+      "retryable": false,
+      "estimatedWaitSeconds": 30,
+      "steps": [
+        {
+          "stepName": "AUDIO_UPLOAD",
+          "status": "SUCCEEDED",
+          "progress": 100,
+          "startedAt": "2026-05-13T02:00:02Z",
+          "finishedAt": "2026-05-13T02:00:02Z",
+          "heartbeatAt": null,
+          "attemptNo": null,
+          "leaseOwner": null,
+          "workerId": null,
+          "retryable": null,
+          "source": "JAVA_TASK_SERVICE"
+        },
+        {
+          "stepName": "AUDIO_PREPROCESS",
+          "status": "RUNNING",
+          "progress": 20,
+          "startedAt": "2026-05-13T02:00:05Z",
+          "finishedAt": null,
+          "heartbeatAt": "2026-05-13T02:00:10Z",
+          "attemptNo": 1,
+          "leaseOwner": "worker_fixture_01:task_fixture_01:1",
+          "workerId": "worker_fixture_01",
+          "retryable": null,
+          "source": "AI_WORKER_CALLBACK"
+        }
+      ]
+    },
+    "error": null,
+    "requestId": "req_task_create_01",
+    "traceId": "trace_task_create_01"
+  }
+}

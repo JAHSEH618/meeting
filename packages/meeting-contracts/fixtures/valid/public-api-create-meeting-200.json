@@ -1,0 +1,43 @@
+{
+  "description": "POST /meetings 200 success response",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_meeting_create_01",
+    "X-Trace-Id": "trace_meeting_create_01",
+    "Idempotency-Key": "idem_meeting_create_01"
+  },
+  "request": {
+    "title": "MVP-0 planning meeting",
+    "scheduledStartAt": "2026-05-13T02:00:00Z",
+    "securityLevel": "INTERNAL",
+    "language": "zh",
+    "participants": [
+      {
+        "personId": "person_fixture_01",
+        "displayName": "Fixture Owner",
+        "role": "HOST"
+      }
+    ]
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "meetingId": "mtg_fixture_01",
+      "tenantId": "tenant_fixture_01",
+      "title": "MVP-0 planning meeting",
+      "scheduledStartAt": "2026-05-13T02:00:00Z",
+      "securityLevel": "INTERNAL",
+      "status": "CREATED",
+      "language": "zh",
+      "transcriptVersion": 0,
+      "minutesVersion": 0,
+      "createdAt": "2026-05-13T02:00:01Z"
+    },
+    "error": null,
+    "requestId": "req_meeting_create_01",
+    "traceId": "trace_meeting_create_01"
+  }
+}

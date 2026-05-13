@@ -1,0 +1,57 @@
+{
+  "description": "GET /processing-tasks/{taskId}/events 200 SSE snapshot event",
+  "spec": "openapi/public-api.yaml",
+  "method": "GET",
+  "path": "/processing-tasks/task_fixture_01/events",
+  "status": 200,
+  "pathParams": {
+    "taskId": "task_fixture_01"
+  },
+  "response": {
+    "eventId": "evt_task_snapshot_01",
+    "sequenceNo": 1,
+    "eventType": "TASK_SNAPSHOT",
+    "taskId": "task_fixture_01",
+    "meetingId": "mtg_fixture_01",
+    "stepName": null,
+    "status": "RUNNING",
+    "phase": "WORKER_DAG_RUNNING",
+    "progress": 10,
+    "retryable": false,
+    "errorCode": null,
+    "emittedAt": "2026-05-13T02:00:10Z",
+    "attemptNo": 1,
+    "transcriptVersion": null,
+    "artifactManifestId": null,
+    "completedSteps": ["AUDIO_UPLOAD"],
+    "steps": [
+      {
+        "stepName": "AUDIO_UPLOAD",
+        "status": "SUCCEEDED",
+        "progress": 100,
+        "startedAt": "2026-05-13T02:00:02Z",
+        "finishedAt": "2026-05-13T02:00:02Z",
+        "heartbeatAt": null,
+        "attemptNo": null,
+        "leaseOwner": null,
+        "workerId": null,
+        "retryable": null,
+        "source": "JAVA_TASK_SERVICE"
+      },
+      {
+        "stepName": "AUDIO_PREPROCESS",
+        "status": "RUNNING",
+        "progress": 10,
+        "startedAt": "2026-05-13T02:00:05Z",
+        "finishedAt": null,
+        "heartbeatAt": "2026-05-13T02:00:10Z",
+        "attemptNo": 1,
+        "leaseOwner": "worker_fixture_01:task_fixture_01:1",
+        "workerId": "worker_fixture_01",
+        "retryable": null,
+        "source": "AI_WORKER_CALLBACK"
+      }
+    ],
+    "leaseExpiresAt": "2026-05-13T02:05:10Z"
+  }
+}

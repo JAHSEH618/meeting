@@ -1,0 +1,45 @@
+{
+  "description": "PATCH /internal/processing-tasks/{taskId}/steps/{stepName} 200 - running heartbeat",
+  "spec": "openapi/internal-callback-api.yaml",
+  "method": "PATCH",
+  "path": "/processing-tasks/task_fixture_01/steps/AUDIO_PREPROCESS",
+  "status": 200,
+  "headers": {
+    "X-Worker-Id": "worker_fixture_01",
+    "X-Attempt-No": 1,
+    "X-Lease-Owner": "worker_fixture_01:task_fixture_01:1",
+    "X-Timestamp": "2026-05-13T02:00:10Z",
+    "X-Nonce": "nonce_fixture_cb_heartbeat_01",
+    "X-Signature": "hmac-sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "X-Trace-Id": "trace_cb_heartbeat_01",
+    "X-Request-Id": "req_cb_heartbeat_01",
+    "Idempotency-Key": "task_fixture_01:AUDIO_PREPROCESS:1:heartbeat-20260513T020010Z"
+  },
+  "pathParams": {
+    "taskId": "task_fixture_01",
+    "stepName": "AUDIO_PREPROCESS"
+  },
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "meetingId": "mtg_fixture_01",
+    "taskId": "task_fixture_01",
+    "attemptNo": 1,
+    "stepName": "AUDIO_PREPROCESS",
+    "status": "RUNNING",
+    "progress": 35,
+    "heartbeatAt": "2026-05-13T02:00:10Z"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "taskId": "task_fixture_01",
+      "stepName": "AUDIO_PREPROCESS",
+      "status": "RUNNING",
+      "progress": 35,
+      "heartbeatAt": "2026-05-13T02:00:10Z"
+    },
+    "error": null,
+    "requestId": "req_cb_heartbeat_01",
+    "traceId": "trace_cb_heartbeat_01"
+  }
+}

@@ -18,6 +18,17 @@ FIXTURE_API_MAP = {
     "valid/public-api-login-200.json": {
         "spec": "public-api.yaml", "path": "/auth/login", "method": "post", "status": 200,
     },
+    "valid/public-api-create-meeting-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings", "method": "post", "status": 200,
+    },
+    "valid/public-api-create-processing-task-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/processing-tasks", "method": "post", "status": 200,
+    },
+    "valid/public-api-task-event-snapshot-200.json": {
+        "spec": "public-api.yaml", "path": "/processing-tasks/{taskId}/events", "method": "get", "status": 200,
+        "content_type": "text/event-stream",
+        "envelope": False,
+    },
     "valid/public-api-create-legal-hold-201.json": {
         "spec": "public-api.yaml", "path": "/legal-holds", "method": "post", "status": 201,
     },
@@ -27,8 +38,14 @@ FIXTURE_API_MAP = {
     "valid/callback-step-update-200.json": {
         "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/steps/{stepName}", "method": "patch", "status": 200,
     },
+    "valid/callback-heartbeat-update-200.json": {
+        "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/steps/{stepName}", "method": "patch", "status": 200,
+    },
     "valid/callback-complete-worker-phase-200.json": {
         "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/complete", "method": "post", "status": 200,
+    },
+    "valid/callback-fail-task-200.json": {
+        "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/fail", "method": "post", "status": 200,
     },
     "valid/ai-worker-rerank-200.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/rerank", "method": "post", "status": 200,
@@ -114,7 +131,7 @@ def resolve_schema(spec, schema, cache):
     return schema
 
 
-def get_response_schema(spec, path, method, status):
+def get_response_schema(spec, path, method, status, content_type="application/json"):
     paths = spec.get("paths", {})
     path_item = paths.get(path)
     if not path_item:
@@ -129,7 +146,7 @@ def get_response_schema(spec, path, method, status):
         if resp is None:
             return None
     content = resp.get("content", {})
-    ct = content.get("application/json", {})
+    ct = content.get(content_type, {})
     schema = ct.get("schema", {})
     cache = {}
     return resolve_schema(spec, schema, cache)
@@ -227,12 +244,13 @@ def main() -> int:
         response = fixture.get("response", fixture)
         status = fixture.get("status")
 
-        try:
-            envelope_validator.validate(response)
-        except jsonschema.ValidationError as e:
-            print(f"  FAIL {fp}: envelope validation failed: {e.message}")
-            errors += 1
-            continue
+        if meta.get("envelope", True):
+            try:
+                envelope_validator.validate(response)
+            except jsonschema.ValidationError as e:
+                print(f"  FAIL {fp}: envelope validation failed: {e.message}")
+                errors += 1
+                continue
 
         spec_name = meta["spec"]
         spec = openapi_specs.get(spec_name)
@@ -241,7 +259,13 @@ def main() -> int:
             errors += 1
             continue
 
-        real_schema = get_response_schema(spec, meta["path"], meta["method"], meta["status"])
+        real_schema = get_response_schema(
+            spec,
+            meta["path"],
+            meta["method"],
+            meta["status"],
+            meta.get("content_type", "application/json"),
+        )
         if real_schema:
             try:
                 jsonschema.Draft202012Validator(real_schema).validate(response)
@@ -253,7 +277,9 @@ def main() -> int:
             print(f'  FAIL {fp}: no response schema found in OpenAPI for {meta["method"].upper()} {meta["path"]} {meta["status"]}')
             errors += 1
 
-        if meta.get("expect_error"):
+        if not meta.get("envelope", True):
+            pass
+        elif meta.get("expect_error"):
             data = response.get("data")
             error_obj = response.get("error")
             if data is not None:

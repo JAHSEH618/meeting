@@ -5,7 +5,7 @@
   "meetingId": "mtg_01",
   "securityLevel": "INTERNAL",
   "attemptNo": 1,
-  "pipelineSteps": ["AUDIO_UPLOAD", "SUMMARY", "EXPORT"],
+  "pipelineSteps": ["AUDIO_UPLOAD", "SUMMARY", "EXTRACTION", "EXPORT"],
   "expectedInputVersion": {
     "chunkStrategyVersion": "v1"
   },

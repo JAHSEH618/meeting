@@ -79,9 +79,9 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`packages/meeting-contracts`
 
-- [ ] 为 MVP-0 固定最小 DTO：auth、meeting、processing task、task step、SSE event、internal step callback、worker complete / fail。
-- [ ] 为 MVP-0 提供 processing task valid / invalid fixture，覆盖禁止 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` / `EXPORT` 进入 worker `pipelineSteps`。
-- [ ] 提供 internal callback 回放 fixture，覆盖普通 step update、heartbeat update、complete phase=`WORKER_DAG`、fail。
+- [x] 为 MVP-0 固定最小 DTO：auth、meeting、processing task、task step、SSE event、internal step callback、worker complete / fail。
+- [x] 为 MVP-0 提供 processing task valid / invalid fixture，覆盖禁止 `AUDIO_UPLOAD` / `SUMMARY` / `EXTRACTION` / `EXPORT` 进入 worker `pipelineSteps`。
+- [x] 提供 internal callback 回放 fixture，覆盖普通 step update、heartbeat update、complete phase=`WORKER_DAG`、fail。
 
 ### 工程：`apps/meeting-api-client`
 

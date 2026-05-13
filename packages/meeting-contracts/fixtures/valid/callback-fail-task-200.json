@@ -1,0 +1,48 @@
+{
+  "description": "POST /internal/processing-tasks/{taskId}/fail 200 - task failed",
+  "spec": "openapi/internal-callback-api.yaml",
+  "method": "POST",
+  "path": "/processing-tasks/task_fixture_01/fail",
+  "status": 200,
+  "headers": {
+    "X-Worker-Id": "worker_fixture_01",
+    "X-Attempt-No": 1,
+    "X-Lease-Owner": "worker_fixture_01:task_fixture_01:1",
+    "X-Timestamp": "2026-05-13T02:10:00Z",
+    "X-Nonce": "nonce_fixture_cb_fail_01",
+    "X-Signature": "hmac-sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "X-Trace-Id": "trace_cb_fail_01",
+    "X-Request-Id": "req_cb_fail_01",
+    "Idempotency-Key": "task_fixture_01:fail:1:v1"
+  },
+  "pathParams": {
+    "taskId": "task_fixture_01"
+  },
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "meetingId": "mtg_fixture_01",
+    "taskId": "task_fixture_01",
+    "attemptNo": 1,
+    "failedStep": "ASR",
+    "error": {
+      "code": "ASR_RUNTIME_ERROR",
+      "message": "ASR runtime failed during smoke execution",
+      "retryable": true
+    },
+    "artifactManifestId": "artifact_manifest_fixture_01",
+    "failedAt": "2026-05-13T02:10:00Z"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "taskId": "task_fixture_01",
+      "status": "FAILED",
+      "failedStep": "ASR",
+      "errorCode": "ASR_RUNTIME_ERROR",
+      "retryable": true
+    },
+    "error": null,
+    "requestId": "req_cb_fail_01",
+    "traceId": "trace_cb_fail_01"
+  }
+}
