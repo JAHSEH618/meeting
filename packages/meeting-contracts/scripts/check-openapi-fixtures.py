@@ -18,11 +18,11 @@ FIXTURE_API_MAP = {
     "valid/public-api-login-200.json": {
         "spec": "public-api.yaml", "path": "/auth/login", "method": "post", "status": 200,
     },
-    "valid/public-api-create-legal-hold-200.json": {
+    "valid/public-api-create-legal-hold-201.json": {
         "spec": "public-api.yaml", "path": "/legal-holds", "method": "post", "status": 201,
     },
-    "valid/public-api-delete-meeting-204.json": {
-        "spec": "public-api.yaml", "path": "/meetings/{meetingId}", "method": "delete", "status": 204,
+    "valid/public-api-delete-meeting-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}", "method": "delete", "status": 200,
     },
     "valid/callback-step-update-200.json": {
         "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/steps/{stepName}", "method": "patch", "status": 200,
@@ -159,7 +159,8 @@ def main() -> int:
     for fp, meta in FIXTURE_API_MAP.items():
         fixture_path = FIXTURES_DIR / fp
         if not fixture_path.exists():
-            print(f"  WARN fixture registered but not found: {fp}")
+            print(f"  FAIL fixture registered but not found: {fp}")
+            errors += 1
             continue
         with open(fixture_path) as f:
             fixture = json.load(f)
@@ -190,7 +191,8 @@ def main() -> int:
                 errors += 1
                 continue
         else:
-            print(f'  WARN {fp}: no response schema found in OpenAPI for {meta["method"].upper()} {meta["path"]} {meta["status"]}')
+            print(f'  FAIL {fp}: no response schema found in OpenAPI for {meta["method"].upper()} {meta["path"]} {meta["status"]}')
+            errors += 1
 
         if meta.get("expect_error"):
             data = response.get("data")

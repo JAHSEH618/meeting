@@ -1,6 +1,6 @@
 {
-  "description": "DELETE /meetings/{meetingId} 204 response (no body)",
-  "status": 204,
+  "description": "DELETE /meetings/{meetingId} 200 response",
+  "status": 200,
   "response": {
     "success": true,
     "data": null,

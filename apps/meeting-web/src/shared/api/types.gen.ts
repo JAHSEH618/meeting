@@ -1463,6 +1463,28 @@ export interface components {
         RejectBreakGlassRequest: {
             reason: string;
         };
+        LegalHoldResponse: {
+            success: boolean;
+            data: components["schemas"]["LegalHold"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        LegalHold: {
+            legalHoldId: string;
+            tenantId: string;
+            name: string;
+            scope: string;
+            status: string;
+            reason?: string | null;
+            createdBy?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: date-time */
+            releasedAt?: string | null;
+        };
         ComplianceScope: {
             /** @enum {string} */
             entityType: "MEETING" | "MEETING_FILE" | "DOCUMENT" | "EXPORT" | "ARTIFACT" | "SPEAKER_PROFILE" | "AUDIT_EVENT";
@@ -1808,6 +1830,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            500: components["responses"]["ServerError"];
         };
     };
     createMeeting: {
@@ -1839,6 +1862,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -2961,7 +2985,17 @@ export interface operations {
             };
         };
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Legal hold created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalHoldResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
         };
     };
     getLegalHold: {
