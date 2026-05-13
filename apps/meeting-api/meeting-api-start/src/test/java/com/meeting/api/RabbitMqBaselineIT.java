@@ -1,6 +1,6 @@
 package com.meeting.api;
 
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -70,9 +70,9 @@ class RabbitMqBaselineIT {
 
     @BeforeAll
     void startAndImportDefinitions() throws Exception {
-        Assumptions.assumeTrue(
+        Assertions.assertTrue(
             DockerClientFactory.instance().isDockerAvailable(),
-            "Docker daemon is not available — Testcontainers baseline skipped"
+            "Docker daemon is not available — Testcontainers baseline requires Docker. Run 'mvnw test' for unit tests only."
         );
 
         rabbitmq = new RabbitMQContainer(

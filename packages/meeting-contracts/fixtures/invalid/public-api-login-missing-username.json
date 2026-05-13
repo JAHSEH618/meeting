@@ -1,8 +1,12 @@
 {
+  "description": "POST /auth/login with missing username (invalid request body)",
   "spec": "openapi/public-api.yaml",
   "method": "POST",
   "path": "/auth/login",
   "status": 400,
+  "request": {
+    "password": "somepassword"
+  },
   "response": {
     "success": false,
     "data": null,

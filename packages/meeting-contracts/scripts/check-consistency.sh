@@ -326,6 +326,10 @@ fi
 echo "--- Hand-written / Generated DTO Consistency ---"
 python3 "$(dirname "$0")/check-export-job-dto.py" || HAS_ERRORS=1
 
+# ── 8. Codegen Drift ────────────────────────────────────────────
+echo "--- Codegen Drift ---"
+bash "$(dirname "$0")/check-codegen-drift.sh" || HAS_ERRORS=1
+
 echo ""
 if [ "$HAS_ERRORS" -ne 0 ]; then
   echo -e "${RED}=== Consistency check FAILED ===${NC}"

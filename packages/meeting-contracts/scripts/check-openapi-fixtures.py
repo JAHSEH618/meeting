@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate HTTP API fixtures against OpenAPI response schemas."""
+"""Validate HTTP API fixtures against OpenAPI response and request schemas."""
 import json
 import jsonschema
 import sys
@@ -127,6 +127,28 @@ def get_response_schema(spec, path, method, status):
     return resolve_schema(spec, schema, cache)
 
 
+def get_request_body_schema(spec, path, method):
+    """Extract application/json request body schema from an OpenAPI operation."""
+    paths = spec.get("paths", {})
+    path_item = paths.get(path)
+    if not path_item:
+        return None
+    op = path_item.get(method.lower())
+    if not op:
+        return None
+    request_body = op.get("requestBody", {})
+    if isinstance(request_body, dict) and "$ref" in request_body and len(request_body) == 1:
+        cache = {}
+        request_body = resolve_ref(spec, request_body["$ref"], cache)
+        if request_body is None:
+            return None
+    content = request_body.get("content", {})
+    ct = content.get("application/json", {})
+    schema = ct.get("schema", {})
+    cache = {}
+    return resolve_schema(spec, schema, cache)
+
+
 def main() -> int:
     errors = 0
 
@@ -209,6 +231,29 @@ def main() -> int:
             data = response.get("data")
             if data is None:
                 print(f"  WARN {fp}: success response data is null")
+
+        # ── Request body validation ────────────────────────────────────
+        request_body = fixture.get("request")
+        if request_body is not None:
+            req_schema = get_request_body_schema(spec, meta["path"], meta["method"])
+            if req_schema is None:
+                print(f"  WARN {fp}: fixture has request field but no requestBody schema in OpenAPI ({spec_name} {meta['method'].upper()} {meta['path']})")
+            else:
+                req_validator = jsonschema.Draft202012Validator(req_schema)
+                is_req_valid = req_validator.is_valid(request_body)
+                if meta.get("expect_error"):
+                    if is_req_valid:
+                        print(f"  FAIL {fp}: invalid fixture request was accepted by OpenAPI requestBody schema (should be rejected)")
+                        errors += 1
+                        continue
+                else:
+                    if not is_req_valid:
+                        errs = list(req_validator.iter_errors(request_body))
+                        print(f"  FAIL {fp}: valid fixture request does not match OpenAPI requestBody schema")
+                        for e in errs[:3]:
+                            print(f"       {e.json_path}: {e.message}")
+                        errors += 1
+                        continue
 
         print(f"  OK   {fp}: status={status}, envelope+schema valid")
 

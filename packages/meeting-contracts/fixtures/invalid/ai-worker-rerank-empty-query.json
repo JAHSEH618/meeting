@@ -1,8 +1,23 @@
 {
+  "description": "POST /rerank with empty query (invalid request body)",
   "spec": "openapi/ai-worker-internal-api.yaml",
   "method": "POST",
   "path": "/rerank",
   "status": 400,
+  "request": {
+    "tenantId": "tenant_01",
+    "query": "",
+    "candidates": [
+      {
+        "chunkId": "chunk_01",
+        "sourceType": "PRIMARY_TRANSCRIPT",
+        "text": "some text",
+        "rrfScore": 0.5
+      }
+    ],
+    "topN": 8,
+    "modelVersion": "rerank-v1"
+  },
   "response": {
     "success": false,
     "data": null,
