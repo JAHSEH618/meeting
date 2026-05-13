@@ -44,9 +44,12 @@
 
 ### 阶段 0 验收清单
 
-> 状态：**实现项完成，验收可通过（需 Docker 环境）**
->
-> 所有 [x] 项对应的代码/配置/脚本已就位。以下验收命令在满足环境前提时应全绿。
+> 状态：**实现项完成，验收条件：**
+> - `npm run check` ✅ 已通过（codegen 到临时目录 diff，不依赖目标路径可写）
+> - `npm run codegen` 需目标 generated 路径可写（使用 temp-dir + copy，EPERM 时报告并保留临时产物）
+> - `./mvnw test` ✅ 已通过（无需 Docker，8 unit tests）
+> - `./mvnw verify` 需 Docker daemon（Colima: `colima start` + `DOCKER_HOST`）
+> - Python pyright / Web test / tsc ✅ 已通过
 
 | 验收命令 | 工作目录 | 覆盖 |
 |----------|----------|------|
