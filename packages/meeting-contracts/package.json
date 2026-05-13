@@ -11,14 +11,12 @@
     "codegen:py-task-msg": "datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py",
     "codegen:java-public": "openapi-generator-cli generate -g spring -i openapi/public-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/public-api --additional-properties=apiPackage=com.meeting.api.client.publicapi,modelPackage=com.meeting.api.client.publicapi.model",
     "codegen:java-worker-internal": "openapi-generator-cli generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal --additional-properties=apiPackage=com.meeting.api.client.workerinternal,modelPackage=com.meeting.api.client.workerinternal.model",
-    "codegen:java-export-job": "jsonschema2pojo --source schemas/rabbitmq/export-job-message.schema.json --target ../../apps/meeting-api/meeting-api-client/generated/export-job-message --package com.meeting.api.client.exportjob",
-    "codegen": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal && npm run codegen:java-export-job"
+    "codegen": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal"
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "^6.15.0",
     "ajv-cli": "^5.0.0",
     "openapi-typescript": "^7.0.0",
-    "@openapitools/openapi-generator-cli": "^2.13.0",
-    "jsonschema2pojo-cli": "^1.2.0"
+    "@openapitools/openapi-generator-cli": "^2.13.0"
   }
 }

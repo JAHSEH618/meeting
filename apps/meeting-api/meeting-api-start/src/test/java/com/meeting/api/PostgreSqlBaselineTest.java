@@ -135,8 +135,11 @@ class PostgreSqlBaselineTest {
                 assertThat(rlsTableCount).isGreaterThan(0);
             }
 
-            // Insert tenant rows required by FK before inserting meetings
+            // Insert tenant rows — tenants also has FORCE RLS, so we must set
+            // app.tenant_id to match the tenant being inserted.
+            stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('tenant_isolation_a', 'Tenant Isolation A') ON CONFLICT DO NOTHING");
+            stmt.execute("SET app.tenant_id = 'tenant_isolation_b'");
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('tenant_isolation_b', 'Tenant Isolation B') ON CONFLICT DO NOTHING");
 
             // Set tenant context using the DDL's convention: app.tenant_id
@@ -158,11 +161,13 @@ class PostgreSqlBaselineTest {
             }
         }
 
-        // Clean up
+        // Clean up — must match tenant_id to each tenant row because of FORCE RLS
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
             stmt.execute("DELETE FROM meetings WHERE id = 'mtg_rls_test_a'");
-            stmt.execute("DELETE FROM tenants WHERE id IN ('tenant_isolation_a', 'tenant_isolation_b')");
+            stmt.execute("DELETE FROM tenants WHERE id = 'tenant_isolation_a'");
+            stmt.execute("SET app.tenant_id = 'tenant_isolation_b'");
+            stmt.execute("DELETE FROM tenants WHERE id = 'tenant_isolation_b'");
         }
     }
 }

@@ -331,16 +331,20 @@ for fname in ['public-api.yaml', 'internal-callback-api.yaml', 'ai-worker-intern
         with open(fpath) as f:
             openapi_specs[fname] = yaml.safe_load(f)
 
-# Resolve \$ref (only handles #/components/schemas/xxx)
+# Resolve \$ref (handles #/components/schemas/xxx and #/components/responses/xxx)
 resolved_cache = {}
 def resolve_ref(spec, ref):
     if ref in resolved_cache:
         return resolved_cache[ref]
-    if not ref.startswith('#/components/schemas/'):
+    if ref.startswith('#/components/schemas/'):
+        name = ref.split('/')[-1]
+        obj = spec.get('components', {}).get('schemas', {}).get(name, {})
+    elif ref.startswith('#/components/responses/'):
+        name = ref.split('/')[-1]
+        obj = spec.get('components', {}).get('responses', {}).get(name, {})
+    else:
         return None
-    name = ref.split('/')[-1]
-    schema = spec.get('components', {}).get('schemas', {}).get(name, {})
-    resolved_cache[ref] = resolve_schema(spec, schema)
+    resolved_cache[ref] = resolve_schema(spec, obj)
     return resolved_cache[ref]
 
 def resolve_schema(spec, schema):
@@ -362,6 +366,11 @@ def get_response_schema(spec, path, method, status):
     if not op:
         return None
     resp = op.get('responses', {}).get(str(status), {})
+    # If response is a \$ref to #/components/responses/XXX, resolve it first
+    if isinstance(resp, dict) and '\$ref' in resp and len(resp) == 1:
+        resp = resolve_ref(spec, resp['\$ref'])
+        if resp is None:
+            return None
     content = resp.get('content', {})
     ct = content.get('application/json', {})
     schema = ct.get('schema', {})
