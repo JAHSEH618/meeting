@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
 # Check that generated code is in sync with contracts.
-# Generates to a temp directory (.generated-check/) and diffs against committed
+# Generates to a unique temp directory and diffs against committed
 # files. Does NOT modify the working tree — safe for read-only environments.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONTRACTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$CONTRACTS_DIR/../.." && pwd)"
-TEMP_DIR="$CONTRACTS_DIR/.generated-check"
+TEMP_ROOT="${TMPDIR:-/tmp}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,10 +24,9 @@ codegen_failures=0
 drift_found=0
 
 # ── Preflight ────────────────────────────────────────────────────────────────
-rm -rf "$TEMP_DIR"
-if ! mkdir -p "$TEMP_DIR" 2>/dev/null; then
-  echo "  FAIL: cannot create temp directory $TEMP_DIR"
-  echo "  Check permissions on packages/meeting-contracts/"
+if ! TEMP_DIR="$(mktemp -d "$TEMP_ROOT/meeting-contracts-codegen-check.XXXXXX")" 2>/dev/null; then
+  echo "  FAIL: cannot create temp directory under $TEMP_ROOT"
+  echo "  Check TMPDIR permissions."
   exit 1
 fi
 
@@ -220,7 +219,9 @@ if command -v datamodel-codegen &>/dev/null || python3 -c "import datamodel_code
     codegen_failures=1
   fi
 else
-  warn "Python codegen skipped (datamodel-codegen not available)"
+  fail "Python codegen unavailable (datamodel-codegen not installed)"
+  echo "  Install it with: pip install datamodel-code-generator"
+  codegen_failures=1
 fi
 
 # ── Final verdict ────────────────────────────────────────────────────────────

@@ -263,7 +263,8 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 cd packages/meeting-contracts
 npm install                          # 一次性
 npm run check                        # Spectral + JSON Schema + 枚举一致性 + fixtures（CI 门禁）
-npm run codegen                      # 重新生成 TS / Python / Java 类型，git diff 须保持干净
+npm run codegen:check-temp           # 纯检查：生成到临时目录并 diff，不写目标路径
+npm run codegen                      # 维护命令：原地重新生成 TS / Python / Java 类型，git diff 须保持干净
 ```
 
 ### 3 启动三个应用
@@ -291,10 +292,10 @@ npm run dev
 | 工作区 | 命令 | 门禁类型 | 是否需要 Docker |
 |---|---|---|---|
 | `apps/meeting-api` | `./mvnw test` | 单元 + ArchUnit 边界 | 否 |
-| `apps/meeting-api` | `./mvnw verify -q` | 全量（含 Testcontainers 集成基线） | **是** |
+| `apps/meeting-api` | `./mvnw verify -q` | 全量（含 Testcontainers preflight 与集成基线） | **是** |
 | `apps/ai-worker` | `uv run pytest tests/` · `uv run pyright ai_worker/` | 单元 + 类型 | 否 |
 | `apps/meeting-web` | `npm test` · `npx tsc --noEmit` · `npm run lint` | Vitest + 类型 + ESLint | 否 |
-| `packages/meeting-contracts` | `npm run check` | 契约一致性 | 否 |
+| `packages/meeting-contracts` | `npm run check` · `npm run codegen:check-temp` | 契约一致性 + 无副作用 codegen drift 检查 | 否 |
 
 ---
 

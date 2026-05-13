@@ -13,8 +13,9 @@
     "codegen:java-worker-internal": "openapi-generator-cli generate -g java -i openapi/ai-worker-internal-api.yaml -o ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal --additional-properties=apiPackage=com.meeting.api.client.workerinternal,modelPackage=com.meeting.api.client.workerinternal.model,hideGenerationTimestamp=true && bash scripts/cleanup-java-codegen.sh ../../apps/meeting-api/meeting-api-client/generated/ai-worker-internal",
     "codegen:java-export-job": "openapi-generator-cli generate -g java -i openapi/export-job-message.yaml -o ../../apps/meeting-api/meeting-api-client/generated/export-job --additional-properties=apiPackage=com.meeting.api.client.exportjob,modelPackage=com.meeting.api.client.exportjob.model,hideGenerationTimestamp=true && bash scripts/cleanup-java-codegen.sh ../../apps/meeting-api/meeting-api-client/generated/export-job",
     "codegen": "bash scripts/codegen-apply.sh",
+    "codegen:check-temp": "bash scripts/check-codegen-via-temp.sh",
     "codegen:direct": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal && npm run codegen:java-export-job",
-    "codegen:check": "npm run codegen && bash scripts/check-codegen-drift.sh"
+    "codegen:check": "npm run codegen:check-temp"
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "^6.15.0",

@@ -1,16 +1,15 @@
 package com.meeting.api;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.AfterAll;
-import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +20,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RabbitMqBaselineIT {
 
+    private static final String ADMIN_USER = "meeting";
+    private static final String ADMIN_PASSWORD = "meeting_dev";
+    private static final Path DEFINITIONS_PATH = Path.of(
+        "..",
+        "..",
+        "..",
+        "infra",
+        "meeting-infra",
+        "docker",
+        "compose",
+        "rabbitmq",
+        "definitions.json"
+    ).normalize();
+    private static final Path CONFIG_PATH = Path.of(
+        "..",
+        "..",
+        "..",
+        "infra",
+        "meeting-infra",
+        "docker",
+        "compose",
+        "rabbitmq",
+        "rabbitmq.conf"
+    ).normalize();
+
     private RabbitMQContainer rabbitmq;
 
     private String getBaseUrl() {
@@ -29,7 +53,7 @@ class RabbitMqBaselineIT {
 
     private String authHeader() {
         return "Basic " + Base64.getEncoder().encodeToString(
-            ("guest:" + rabbitmq.getAdminPassword()).getBytes(StandardCharsets.UTF_8)
+            (ADMIN_USER + ":" + ADMIN_PASSWORD).getBytes(StandardCharsets.UTF_8)
         );
     }
 
@@ -52,15 +76,21 @@ class RabbitMqBaselineIT {
 
     @BeforeAll
     void startRabbitMq() {
-        Assertions.assertTrue(
-            DockerClientFactory.instance().isDockerAvailable(),
-            "Docker daemon is not available — Testcontainers baseline requires Docker. Run 'mvnw test' for unit tests only."
-        );
+        TestcontainersDockerPreflight.assumeDockerAvailable();
+        assertThat(DEFINITIONS_PATH).exists();
+        assertThat(CONFIG_PATH).exists();
 
         rabbitmq = new RabbitMQContainer(
             DockerImageName.parse("rabbitmq:3.13-management")
         )
-            .withAdminPassword("meeting_test");
+            .withCopyFileToContainer(
+                org.testcontainers.utility.MountableFile.forHostPath(DEFINITIONS_PATH),
+                "/etc/rabbitmq/definitions.json"
+            )
+            .withCopyFileToContainer(
+                org.testcontainers.utility.MountableFile.forHostPath(CONFIG_PATH),
+                "/etc/rabbitmq/rabbitmq.conf"
+            );
         rabbitmq.start();
     }
 
@@ -95,5 +125,56 @@ class RabbitMqBaselineIT {
     void defaultVhostShouldExist() throws Exception {
         String vhosts = getJson("/api/vhosts");
         assertThat(vhosts).contains("/");
+    }
+
+    @Test
+    void taskExchangesShouldBeLoadedFromDefinitions() throws Exception {
+        String exchanges = getJson("/api/exchanges/%2F");
+        assertThat(exchanges)
+            .contains("meeting.task.exchange")
+            .contains("meeting.task.dlx");
+    }
+
+    @Test
+    void taskQueuesShouldBeLoadedFromDefinitions() throws Exception {
+        String queues = getJson("/api/queues/%2F");
+        assertThat(queues)
+            .contains("audio-cpu-queue")
+            .contains("gpu-asr-queue")
+            .contains("gpu-diar-queue")
+            .contains("gpu-speaker-queue")
+            .contains("embed-queue")
+            .contains("llm-queue")
+            .contains("export-queue");
+    }
+
+    @Test
+    void taskBindingsShouldBeLoadedFromDefinitions() throws Exception {
+        String bindings = getJson("/api/bindings/%2F");
+        assertThat(bindings)
+            .contains("meeting.task.exchange")
+            .contains("task.audio-cpu")
+            .contains("task.gpu-asr")
+            .contains("task.gpu-diar")
+            .contains("task.gpu-speaker")
+            .contains("task.embed")
+            .contains("task.llm")
+            .contains("task.export")
+            .contains("meeting.task.dlx")
+            .contains("audio-cpu-queue.dlq")
+            .contains("gpu-asr-queue.dlq")
+            .contains("gpu-diar-queue.dlq")
+            .contains("gpu-speaker-queue.dlq")
+            .contains("embed-queue.dlq")
+            .contains("llm-queue.dlq")
+            .contains("export-queue.dlq");
+    }
+
+    @Test
+    void taskPoliciesShouldBeLoadedFromDefinitions() throws Exception {
+        String policies = getJson("/api/policies/%2F");
+        assertThat(policies)
+            .contains("dlq-ttl-policy")
+            .contains("task-queue-ttl-policy");
     }
 }

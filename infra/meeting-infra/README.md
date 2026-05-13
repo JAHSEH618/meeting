@@ -74,6 +74,9 @@ curl -s -u meeting:meeting_dev http://localhost:15672/api/queues/%2f | jq '.[].n
 | Prometheus | http://localhost:9090 | 无 |
 | Grafana | http://localhost:3000 | `admin` / `admin` |
 
+RabbitMQ local 用户由 `docker/compose/rabbitmq/definitions.json` seed；如果修改 `.env`
+里的 `RABBITMQ_USER` / `RABBITMQ_PASS`，需要同步更新 definitions 里的用户、权限和密码 hash。
+
 ### 5. 关闭与清理
 
 ```bash

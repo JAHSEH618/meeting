@@ -1,12 +1,10 @@
 package com.meeting.api;
 
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -25,10 +23,7 @@ class PostgreSqlBaselineIT {
 
     @BeforeAll
     void startAndMigrate() throws Exception {
-        Assertions.assertTrue(
-            DockerClientFactory.instance().isDockerAvailable(),
-            "Docker daemon is not available — Testcontainers baseline requires Docker. Run 'mvnw test' for unit tests only."
-        );
+        TestcontainersDockerPreflight.assumeDockerAvailable();
 
         postgres = new PostgreSQLContainer<>(
             DockerImageName.parse("pgvector/pgvector:pg15")
