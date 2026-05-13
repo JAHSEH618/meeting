@@ -31,6 +31,32 @@ public final class ProcessingTaskStep {
         return new ProcessingTaskStep(stepName, StepStatus.PENDING, 0, source);
     }
 
+    public static ProcessingTaskStep restore(
+        ProcessingStep stepName,
+        StepStatus status,
+        int progress,
+        OffsetDateTime startedAt,
+        OffsetDateTime finishedAt,
+        OffsetDateTime heartbeatAt,
+        Integer attemptNo,
+        String leaseOwner,
+        String workerId,
+        Boolean retryable,
+        String errorCode,
+        ProcessingStepUpdateSource source
+    ) {
+        ProcessingTaskStep step = new ProcessingTaskStep(stepName, status, progress, source);
+        step.startedAt = startedAt;
+        step.finishedAt = finishedAt;
+        step.heartbeatAt = heartbeatAt;
+        step.attemptNo = attemptNo;
+        step.leaseOwner = leaseOwner;
+        step.workerId = workerId;
+        step.retryable = retryable;
+        step.errorCode = errorCode;
+        return step;
+    }
+
     void markRunning(int progress, int attemptNo, String leaseOwner, String workerId, OffsetDateTime now) {
         requireProgress(progress);
         if (status == StepStatus.SUCCEEDED || status == StepStatus.FAILED || status == StepStatus.SKIPPED || status == StepStatus.CANCELLED) {

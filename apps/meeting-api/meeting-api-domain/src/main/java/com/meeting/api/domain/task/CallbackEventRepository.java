@@ -11,10 +11,15 @@ public interface CallbackEventRepository {
     record CallbackEventRecord(
         String tenantId,
         String taskId,
+        String workerId,
         String idempotencyKey,
         String bodySha256,
         int attemptNo,
+        String leaseOwner,
         String responseSha256,
+        int httpStatus,
+        String errorCode,
+        String traceId,
         OffsetDateTime receivedAt
     ) {
     }

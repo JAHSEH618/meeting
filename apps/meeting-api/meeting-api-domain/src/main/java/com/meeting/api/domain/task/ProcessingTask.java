@@ -88,6 +88,45 @@ public final class ProcessingTask {
         );
     }
 
+    public static ProcessingTask restore(
+        String taskId,
+        String tenantId,
+        String meetingId,
+        String taskType,
+        ProcessingTaskStatus status,
+        ProcessingTaskPhase phase,
+        int attemptNo,
+        String currentStep,
+        String lastErrorCode,
+        boolean retryable,
+        String leaseOwner,
+        OffsetDateTime leaseExpiresAt,
+        OffsetDateTime heartbeatAt,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt,
+        List<ProcessingTaskStep> steps
+    ) {
+        ProcessingTask task = new ProcessingTask(
+            taskId,
+            tenantId,
+            meetingId,
+            taskType,
+            status,
+            phase,
+            attemptNo,
+            steps,
+            createdAt,
+            updatedAt
+        );
+        task.currentStep = currentStep;
+        task.lastErrorCode = lastErrorCode;
+        task.retryable = retryable;
+        task.leaseOwner = leaseOwner;
+        task.leaseExpiresAt = leaseExpiresAt;
+        task.heartbeatAt = heartbeatAt;
+        return task;
+    }
+
     public void enqueue(OffsetDateTime now) {
         requireStatus(ProcessingTaskStatus.PENDING);
         requireNonTerminal();

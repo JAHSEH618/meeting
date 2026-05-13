@@ -107,10 +107,10 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api-infrastructure`
 
-- [ ] 替换 `InMemoryMeetingRepository` 为 PostgreSQL repository，至少覆盖 meetings、meeting_participants、processing_tasks、processing_task_steps、callback_events、domain_events_outbox。
-- [ ] 实现事务开始设置 `app.tenant_id` / `app.user_id` / `app.request_id`，事务结束 reset tenant context。
-- [ ] 实现 outbox publisher：`FOR UPDATE SKIP LOCKED`、批量 100、失败重试、单聚合 `sequence_no` 顺序。
-- [ ] 实现 RabbitMQ publisher，投递 task message 到一期队列并携带 `taskId`、`tenantId`、`traceId`。
+- [x] 替换 `InMemoryMeetingRepository` 为 PostgreSQL repository，至少覆盖 meetings、meeting_participants、processing_tasks、processing_task_steps、callback_events、domain_events_outbox。
+- [x] 实现事务开始设置 `app.tenant_id` / `app.user_id` / `app.request_id`，事务结束 reset tenant context。
+- [x] 实现 outbox publisher：`FOR UPDATE SKIP LOCKED`、批量 100、失败重试、单聚合 `sequence_no` 顺序。
+- [x] 实现 RabbitMQ publisher，投递 task message 到一期队列并携带 `taskId`、`tenantId`、`traceId`。
 
 ### 工程：`apps/meeting-api-adapter`
 

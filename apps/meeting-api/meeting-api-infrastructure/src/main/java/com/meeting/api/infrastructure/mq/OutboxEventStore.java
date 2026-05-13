@@ -1,0 +1,149 @@
+package com.meeting.api.infrastructure.mq;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.meeting.api.domain.common.DomainEvent;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class OutboxEventStore {
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public OutboxEventStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    public OutboxEventRecord append(DomainEvent event) {
+        long sequenceNo = nextSequenceNo(event.tenantId(), event.aggregateType(), event.aggregateId());
+        String id = event.eventId() == null || event.eventId().isBlank()
+            ? "evt_" + UUID.randomUUID().toString().replace("-", "")
+            : event.eventId();
+        String payloadJson = toJson(event.payload());
+        String dedupeKey = event.tenantId() + ":" + event.aggregateType() + ":" + event.aggregateId() + ":" + sequenceNo + ":" + event.eventType();
+        jdbcTemplate.update(
+            """
+            INSERT INTO domain_events_outbox (
+              id, tenant_id, aggregate_type, aggregate_id, sequence_no,
+              event_type, event_version, payload_json, dedupe_key, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?::jsonb, ?, 'PENDING', ?)
+            """,
+            id,
+            event.tenantId(),
+            event.aggregateType(),
+            event.aggregateId(),
+            sequenceNo,
+            event.eventType(),
+            payloadJson,
+            dedupeKey,
+            Timestamp.from(event.occurredAt().toInstant())
+        );
+        return new OutboxEventRecord(
+            id,
+            event.tenantId(),
+            event.aggregateType(),
+            event.aggregateId(),
+            sequenceNo,
+            event.eventType(),
+            payloadJson,
+            dedupeKey,
+            0,
+            event.occurredAt()
+        );
+    }
+
+    public List<OutboxEventRecord> lockPendingBatch(int batchSize) {
+        return jdbcTemplate.query(
+            """
+            SELECT id, tenant_id, aggregate_type, aggregate_id, sequence_no,
+                   event_type, payload_json::text, dedupe_key, retry_count, created_at
+              FROM domain_events_outbox
+             WHERE status = 'PENDING'
+             ORDER BY aggregate_type, aggregate_id, sequence_no
+             LIMIT ?
+             FOR UPDATE SKIP LOCKED
+            """,
+            this::mapRecord,
+            batchSize
+        );
+    }
+
+    public void markPublished(String id) {
+        jdbcTemplate.update(
+            "UPDATE domain_events_outbox SET status = 'PUBLISHED', published_at = now() WHERE id = ?",
+            id
+        );
+    }
+
+    public void markFailed(String id, String errorCode, String errorMessage, int maxRetries) {
+        jdbcTemplate.update(
+            """
+            UPDATE domain_events_outbox
+               SET retry_count = retry_count + 1,
+                   last_error_code = ?,
+                   last_error_message = ?,
+                   status = CASE WHEN retry_count + 1 >= ? THEN 'DLQ' ELSE 'PENDING' END
+             WHERE id = ?
+            """,
+            errorCode,
+            errorMessage,
+            maxRetries,
+            id
+        );
+    }
+
+    private long nextSequenceNo(String tenantId, String aggregateType, String aggregateId) {
+        Long current = jdbcTemplate.query(
+            """
+            SELECT sequence_no
+              FROM domain_events_outbox
+             WHERE tenant_id = ? AND aggregate_type = ? AND aggregate_id = ?
+             ORDER BY sequence_no DESC
+             LIMIT 1
+             FOR UPDATE
+            """,
+            rs -> rs.next() ? rs.getLong("sequence_no") : null,
+            tenantId,
+            aggregateType,
+            aggregateId
+        );
+        return current == null ? 1L : current + 1L;
+    }
+
+    private OutboxEventRecord mapRecord(ResultSet rs, int rowNum) throws SQLException {
+        return new OutboxEventRecord(
+            rs.getString("id"),
+            rs.getString("tenant_id"),
+            rs.getString("aggregate_type"),
+            rs.getString("aggregate_id"),
+            rs.getLong("sequence_no"),
+            rs.getString("event_type"),
+            rs.getString("payload_json"),
+            rs.getString("dedupe_key"),
+            rs.getInt("retry_count"),
+            toOffsetDateTime(rs.getTimestamp("created_at"))
+        );
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("domain event payload is not serializable", e);
+        }
+    }
+
+    private static OffsetDateTime toOffsetDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : OffsetDateTime.ofInstant(timestamp.toInstant(), ZoneOffset.UTC);
+    }
+}

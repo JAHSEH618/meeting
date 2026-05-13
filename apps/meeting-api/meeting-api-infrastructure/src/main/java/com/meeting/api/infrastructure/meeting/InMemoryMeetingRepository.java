@@ -6,13 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.stereotype.Repository;
 
 /**
- * In-memory repository for development / testing.
- * Replace with MyBatis-Plus + PostgreSQL implementation in production.
+ * Test helper repository. Runtime wiring uses JdbcMeetingRepository.
  */
-@Repository
 public class InMemoryMeetingRepository implements MeetingRepository {
     private final Map<String, Meeting> store = new ConcurrentHashMap<>();
 
