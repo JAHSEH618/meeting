@@ -51,7 +51,7 @@ import com.meeting.api.client.JSON;
 /**
  * RerankResponse
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:30.771243+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class RerankResponse {
   public static final String SERIALIZED_NAME_MODEL_VERSION = "modelVersion";
   @SerializedName(SERIALIZED_NAME_MODEL_VERSION)

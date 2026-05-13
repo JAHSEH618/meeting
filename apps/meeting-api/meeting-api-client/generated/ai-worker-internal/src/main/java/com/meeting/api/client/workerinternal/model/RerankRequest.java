@@ -51,7 +51,7 @@ import com.meeting.api.client.JSON;
 /**
  * RerankRequest
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:30.771243+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class RerankRequest {
   public static final String SERIALIZED_NAME_TENANT_ID = "tenantId";
   @SerializedName(SERIALIZED_NAME_TENANT_ID)

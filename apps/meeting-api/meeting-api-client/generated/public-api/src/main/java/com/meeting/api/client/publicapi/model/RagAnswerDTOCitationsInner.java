@@ -59,7 +59,7 @@ import com.google.gson.JsonParseException;
 
 import com.meeting.api.client.JSON;
 
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:21.460832+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class RagAnswerDTOCitationsInner extends AbstractOpenApiSchema {
     private static final Logger log = Logger.getLogger(RagAnswerDTOCitationsInner.class.getName());
 

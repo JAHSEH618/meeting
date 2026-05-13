@@ -50,7 +50,7 @@ import com.meeting.api.client.JSON;
 /**
  * TranscriptSegment
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:21.460832+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class TranscriptSegment {
   public static final String SERIALIZED_NAME_SEGMENT_ID = "segmentId";
   @SerializedName(SERIALIZED_NAME_SEGMENT_ID)

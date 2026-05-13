@@ -51,7 +51,7 @@ import com.meeting.api.client.JSON;
 /**
  * MeetingSpeakerListResponseData
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:21.460832+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class MeetingSpeakerListResponseData {
   public static final String SERIALIZED_NAME_MEETING_ID = "meetingId";
   @SerializedName(SERIALIZED_NAME_MEETING_ID)

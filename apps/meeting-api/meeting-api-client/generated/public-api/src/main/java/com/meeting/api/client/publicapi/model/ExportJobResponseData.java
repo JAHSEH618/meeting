@@ -50,7 +50,7 @@ import com.meeting.api.client.JSON;
 /**
  * ExportJobResponseData
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-05-13T09:58:21.460832+08:00[Asia/Shanghai]", comments = "Generator version: 7.22.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class ExportJobResponseData {
   public static final String SERIALIZED_NAME_EXPORT_ID = "exportId";
   @SerializedName(SERIALIZED_NAME_EXPORT_ID)
