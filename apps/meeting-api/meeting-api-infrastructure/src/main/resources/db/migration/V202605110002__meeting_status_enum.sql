@@ -9,6 +9,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 ALTER TABLE meetings
+  ALTER COLUMN status DROP DEFAULT,
   ALTER COLUMN status TYPE meeting_status USING status::meeting_status,
   ALTER COLUMN status SET DEFAULT 'CREATED'::meeting_status;
 

@@ -45,6 +45,14 @@ class PostgreSqlBaselineIT {
         flyway.migrate();
         conn = DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+
+        // Create a non-superuser role for RLS enforcement testing.
+        // The default Testcontainers user is a superuser, which bypasses RLS.
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE ROLE rls_test_user WITH LOGIN PASSWORD 'rls_test_pass'");
+        } catch (Exception ignored) {
+            // Role may already exist from a previous run
+        }
     }
 
     @AfterAll
@@ -157,14 +165,21 @@ class PostgreSqlBaselineIT {
                 "ON CONFLICT DO NOTHING");
         }
 
-        // Switch to tenant B and verify tenant A's data is not visible
+        // RLS enforcement: switch to a non-superuser role so RLS applies.
+        // The default Testcontainers user is a superuser, which bypasses RLS.
         try (Statement stmt = conn.createStatement()) {
+            stmt.execute("GRANT SELECT ON meetings TO rls_test_user");
+            stmt.execute("SET ROLE rls_test_user");
             stmt.execute("SET app.tenant_id = 'tenant_isolation_b'");
 
             try (ResultSet rs = stmt.executeQuery(
                 "SELECT id FROM meetings WHERE tenant_id = 'tenant_isolation_a'")) {
-                assertThat(rs.next()).isFalse();
+                assertThat(rs.next())
+                    .as("RLS should hide tenant A data when context is tenant B")
+                    .isFalse();
             }
+
+            stmt.execute("RESET ROLE");
         }
 
         // Clean up — must match tenant_id to each tenant row because of FORCE RLS
