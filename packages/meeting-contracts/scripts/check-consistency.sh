@@ -338,9 +338,9 @@ npm run codegen:java-public >/dev/null 2>&1 && { java_pub_ok=1; pass "  codegen:
 npm run codegen:java-worker-internal >/dev/null 2>&1 && { java_wk_ok=1; pass "  codegen:java-worker-internal"; } || error_exit "codegen:java-worker-internal failed"
 npm run codegen:java-export-job >/dev/null 2>&1 && { java_exp_ok=1; pass "  codegen:java-export-job"; } || error_exit "codegen:java-export-job failed"
 if command -v datamodel-codegen &>/dev/null || python3 -c "import datamodel_code_generator" 2>/dev/null; then
-  npm run codegen:py-callback >/dev/null 2>&1 && pass "  codegen:py-callback" || warn "  codegen:py-callback skipped"
-  npm run codegen:py-worker-internal >/dev/null 2>&1 && pass "  codegen:py-worker-internal" || warn "  codegen:py-worker-internal skipped"
-  npm run codegen:py-task-msg >/dev/null 2>&1 && pass "  codegen:py-task-msg" || warn "  codegen:py-task-msg skipped"
+  npm run codegen:py-callback >/dev/null 2>&1 && pass "  codegen:py-callback" || error_exit "codegen:py-callback failed"
+  npm run codegen:py-worker-internal >/dev/null 2>&1 && pass "  codegen:py-worker-internal" || error_exit "codegen:py-worker-internal failed"
+  npm run codegen:py-task-msg >/dev/null 2>&1 && pass "  codegen:py-task-msg" || error_exit "codegen:py-task-msg failed"
 else
   warn "  Python codegen skipped (datamodel-codegen not available)"
 fi
