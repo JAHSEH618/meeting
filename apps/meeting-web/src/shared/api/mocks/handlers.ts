@@ -249,6 +249,27 @@ export const handlers = [
       traceId: "trace_transcript",
     });
   }),
+
+  http.patch("/api/meetings/:meetingId/transcript/segments/:segmentId", async ({ request, params }) => {
+    const body = (await request.json()) as { editedText: string; expectedTranscriptVersion: number };
+    return HttpResponse.json<ApiResponse<{
+      segmentId: string;
+      transcriptVersion: number;
+      editStatus: string;
+      downstreamStaleMarked: boolean;
+    }>>({
+      success: true,
+      data: {
+        segmentId: String(params.segmentId),
+        transcriptVersion: body.expectedTranscriptVersion,
+        editStatus: "EDITED",
+        downstreamStaleMarked: true,
+      },
+      error: null,
+      requestId: "req_edit_segment",
+      traceId: "trace_edit_segment",
+    });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {

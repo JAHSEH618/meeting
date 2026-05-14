@@ -338,11 +338,17 @@ export async function updateSegment(
   segmentId: string,
   editedText: string,
   expectedTranscriptVersion: number,
+  editReason?: string | null,
 ) {
-  return request<unknown>(
+  return request<{
+    segmentId: string;
+    transcriptVersion: number;
+    editStatus: string;
+    downstreamStaleMarked: boolean;
+  }>(
     "PATCH",
     `/meetings/${meetingId}/transcript/segments/${segmentId}`,
-    { expectedTranscriptVersion, editedText },
+    { expectedTranscriptVersion, editedText, editReason: editReason ?? null },
     generateId("edit-segment"),
   );
 }
