@@ -19,8 +19,11 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.meeting.api.client.publicapi.model.AudioUploadStatus;
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -46,10 +49,10 @@ import java.util.Set;
 import com.meeting.api.client.JSON;
 
 /**
- * CompleteAudioUploadRequestPartsInner
+ * AudioUploadPart
  */
 @javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
-public class CompleteAudioUploadRequestPartsInner {
+public class AudioUploadPart {
   public static final String SERIALIZED_NAME_PART_NUMBER = "partNumber";
   @SerializedName(SERIALIZED_NAME_PART_NUMBER)
   @javax.annotation.Nonnull
@@ -62,13 +65,28 @@ public class CompleteAudioUploadRequestPartsInner {
 
   public static final String SERIALIZED_NAME_ETAG = "etag";
   @SerializedName(SERIALIZED_NAME_ETAG)
-  @javax.annotation.Nonnull
+  @javax.annotation.Nullable
   private String etag;
 
-  public CompleteAudioUploadRequestPartsInner() {
+  public static final String SERIALIZED_NAME_SIZE_BYTES = "sizeBytes";
+  @SerializedName(SERIALIZED_NAME_SIZE_BYTES)
+  @javax.annotation.Nonnull
+  private Integer sizeBytes;
+
+  public static final String SERIALIZED_NAME_UPLOAD_STATUS = "uploadStatus";
+  @SerializedName(SERIALIZED_NAME_UPLOAD_STATUS)
+  @javax.annotation.Nonnull
+  private AudioUploadStatus uploadStatus;
+
+  public static final String SERIALIZED_NAME_UPLOADED_AT = "uploadedAt";
+  @SerializedName(SERIALIZED_NAME_UPLOADED_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime uploadedAt;
+
+  public AudioUploadPart() {
   }
 
-  public CompleteAudioUploadRequestPartsInner partNumber(@javax.annotation.Nonnull Integer partNumber) {
+  public AudioUploadPart partNumber(@javax.annotation.Nonnull Integer partNumber) {
     this.partNumber = partNumber;
     return this;
   }
@@ -89,7 +107,7 @@ public class CompleteAudioUploadRequestPartsInner {
   }
 
 
-  public CompleteAudioUploadRequestPartsInner partSha256(@javax.annotation.Nonnull String partSha256) {
+  public AudioUploadPart partSha256(@javax.annotation.Nonnull String partSha256) {
     this.partSha256 = partSha256;
     return this;
   }
@@ -108,7 +126,7 @@ public class CompleteAudioUploadRequestPartsInner {
   }
 
 
-  public CompleteAudioUploadRequestPartsInner etag(@javax.annotation.Nonnull String etag) {
+  public AudioUploadPart etag(@javax.annotation.Nullable String etag) {
     this.etag = etag;
     return this;
   }
@@ -117,13 +135,71 @@ public class CompleteAudioUploadRequestPartsInner {
    * Get etag
    * @return etag
    */
-  @javax.annotation.Nonnull
+  @javax.annotation.Nullable
   public String getEtag() {
     return etag;
   }
 
-  public void setEtag(@javax.annotation.Nonnull String etag) {
+  public void setEtag(@javax.annotation.Nullable String etag) {
     this.etag = etag;
+  }
+
+
+  public AudioUploadPart sizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
+    this.sizeBytes = sizeBytes;
+    return this;
+  }
+
+  /**
+   * Get sizeBytes
+   * minimum: 1
+   * @return sizeBytes
+   */
+  @javax.annotation.Nonnull
+  public Integer getSizeBytes() {
+    return sizeBytes;
+  }
+
+  public void setSizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
+    this.sizeBytes = sizeBytes;
+  }
+
+
+  public AudioUploadPart uploadStatus(@javax.annotation.Nonnull AudioUploadStatus uploadStatus) {
+    this.uploadStatus = uploadStatus;
+    return this;
+  }
+
+  /**
+   * Get uploadStatus
+   * @return uploadStatus
+   */
+  @javax.annotation.Nonnull
+  public AudioUploadStatus getUploadStatus() {
+    return uploadStatus;
+  }
+
+  public void setUploadStatus(@javax.annotation.Nonnull AudioUploadStatus uploadStatus) {
+    this.uploadStatus = uploadStatus;
+  }
+
+
+  public AudioUploadPart uploadedAt(@javax.annotation.Nullable OffsetDateTime uploadedAt) {
+    this.uploadedAt = uploadedAt;
+    return this;
+  }
+
+  /**
+   * Get uploadedAt
+   * @return uploadedAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getUploadedAt() {
+    return uploadedAt;
+  }
+
+  public void setUploadedAt(@javax.annotation.Nullable OffsetDateTime uploadedAt) {
+    this.uploadedAt = uploadedAt;
   }
 
 
@@ -136,24 +212,41 @@ public class CompleteAudioUploadRequestPartsInner {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    CompleteAudioUploadRequestPartsInner completeAudioUploadRequestPartsInner = (CompleteAudioUploadRequestPartsInner) o;
-    return Objects.equals(this.partNumber, completeAudioUploadRequestPartsInner.partNumber) &&
-        Objects.equals(this.partSha256, completeAudioUploadRequestPartsInner.partSha256) &&
-        Objects.equals(this.etag, completeAudioUploadRequestPartsInner.etag);
+    AudioUploadPart audioUploadPart = (AudioUploadPart) o;
+    return Objects.equals(this.partNumber, audioUploadPart.partNumber) &&
+        Objects.equals(this.partSha256, audioUploadPart.partSha256) &&
+        Objects.equals(this.etag, audioUploadPart.etag) &&
+        Objects.equals(this.sizeBytes, audioUploadPart.sizeBytes) &&
+        Objects.equals(this.uploadStatus, audioUploadPart.uploadStatus) &&
+        Objects.equals(this.uploadedAt, audioUploadPart.uploadedAt);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(partNumber, partSha256, etag);
+    return Objects.hash(partNumber, partSha256, etag, sizeBytes, uploadStatus, uploadedAt);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class CompleteAudioUploadRequestPartsInner {\n");
+    sb.append("class AudioUploadPart {\n");
     sb.append("    partNumber: ").append(toIndentedString(partNumber)).append("\n");
     sb.append("    partSha256: ").append(toIndentedString(partSha256)).append("\n");
     sb.append("    etag: ").append(toIndentedString(etag)).append("\n");
+    sb.append("    sizeBytes: ").append(toIndentedString(sizeBytes)).append("\n");
+    sb.append("    uploadStatus: ").append(toIndentedString(uploadStatus)).append("\n");
+    sb.append("    uploadedAt: ").append(toIndentedString(uploadedAt)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -172,35 +265,35 @@ public class CompleteAudioUploadRequestPartsInner {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("partNumber", "partSha256", "etag"));
+    openapiFields = new HashSet<String>(Arrays.asList("partNumber", "partSha256", "etag", "sizeBytes", "uploadStatus", "uploadedAt"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("partNumber", "partSha256", "etag"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("partNumber", "partSha256", "sizeBytes", "uploadStatus"));
   }
 
   /**
    * Validates the JSON Element and throws an exception if issues found
    *
    * @param jsonElement JSON Element
-   * @throws IOException if the JSON Element is invalid with respect to CompleteAudioUploadRequestPartsInner
+   * @throws IOException if the JSON Element is invalid with respect to AudioUploadPart
    */
   public static void validateJsonElement(JsonElement jsonElement) throws IOException {
       if (jsonElement == null) {
-        if (!CompleteAudioUploadRequestPartsInner.openapiRequiredFields.isEmpty()) { // has required fields but JSON element is null
-          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The required field(s) %s in CompleteAudioUploadRequestPartsInner is not found in the empty JSON string", CompleteAudioUploadRequestPartsInner.openapiRequiredFields.toString()));
+        if (!AudioUploadPart.openapiRequiredFields.isEmpty()) { // has required fields but JSON element is null
+          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The required field(s) %s in AudioUploadPart is not found in the empty JSON string", AudioUploadPart.openapiRequiredFields.toString()));
         }
       }
 
       Set<Map.Entry<String, JsonElement>> entries = jsonElement.getAsJsonObject().entrySet();
       // check to see if the JSON string contains additional fields
       for (Map.Entry<String, JsonElement> entry : entries) {
-        if (!CompleteAudioUploadRequestPartsInner.openapiFields.contains(entry.getKey())) {
-          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The field `%s` in the JSON string is not defined in the `CompleteAudioUploadRequestPartsInner` properties. JSON: %s", entry.getKey(), jsonElement.toString()));
+        if (!AudioUploadPart.openapiFields.contains(entry.getKey())) {
+          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The field `%s` in the JSON string is not defined in the `AudioUploadPart` properties. JSON: %s", entry.getKey(), jsonElement.toString()));
         }
       }
 
       // check to make sure all required properties/fields are present in the JSON string
-      for (String requiredField : CompleteAudioUploadRequestPartsInner.openapiRequiredFields) {
+      for (String requiredField : AudioUploadPart.openapiRequiredFields) {
         if (jsonElement.getAsJsonObject().get(requiredField) == null) {
           throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The required field `%s` is not found in the JSON string: %s", requiredField, jsonElement.toString()));
         }
@@ -209,31 +302,33 @@ public class CompleteAudioUploadRequestPartsInner {
       if (!jsonObj.get("partSha256").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `partSha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("partSha256").toString()));
       }
-      if (!jsonObj.get("etag").isJsonPrimitive()) {
+      if ((jsonObj.get("etag") != null && !jsonObj.get("etag").isJsonNull()) && !jsonObj.get("etag").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `etag` to be a primitive type in the JSON string but got `%s`", jsonObj.get("etag").toString()));
       }
+      // validate the required field `uploadStatus`
+      AudioUploadStatus.validateJsonElement(jsonObj.get("uploadStatus"));
   }
 
   public static class CustomTypeAdapterFactory implements TypeAdapterFactory {
     @SuppressWarnings("unchecked")
     @Override
     public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
-       if (!CompleteAudioUploadRequestPartsInner.class.isAssignableFrom(type.getRawType())) {
-         return null; // this class only serializes 'CompleteAudioUploadRequestPartsInner' and its subtypes
+       if (!AudioUploadPart.class.isAssignableFrom(type.getRawType())) {
+         return null; // this class only serializes 'AudioUploadPart' and its subtypes
        }
        final TypeAdapter<JsonElement> elementAdapter = gson.getAdapter(JsonElement.class);
-       final TypeAdapter<CompleteAudioUploadRequestPartsInner> thisAdapter
-                        = gson.getDelegateAdapter(this, TypeToken.get(CompleteAudioUploadRequestPartsInner.class));
+       final TypeAdapter<AudioUploadPart> thisAdapter
+                        = gson.getDelegateAdapter(this, TypeToken.get(AudioUploadPart.class));
 
-       return (TypeAdapter<T>) new TypeAdapter<CompleteAudioUploadRequestPartsInner>() {
+       return (TypeAdapter<T>) new TypeAdapter<AudioUploadPart>() {
            @Override
-           public void write(JsonWriter out, CompleteAudioUploadRequestPartsInner value) throws IOException {
+           public void write(JsonWriter out, AudioUploadPart value) throws IOException {
              JsonObject obj = thisAdapter.toJsonTree(value).getAsJsonObject();
              elementAdapter.write(out, obj);
            }
 
            @Override
-           public CompleteAudioUploadRequestPartsInner read(JsonReader in) throws IOException {
+           public AudioUploadPart read(JsonReader in) throws IOException {
              JsonElement jsonElement = elementAdapter.read(in);
              validateJsonElement(jsonElement);
              return thisAdapter.fromJsonTree(jsonElement);
@@ -244,18 +339,18 @@ public class CompleteAudioUploadRequestPartsInner {
   }
 
   /**
-   * Create an instance of CompleteAudioUploadRequestPartsInner given an JSON string
+   * Create an instance of AudioUploadPart given an JSON string
    *
    * @param jsonString JSON string
-   * @return An instance of CompleteAudioUploadRequestPartsInner
-   * @throws IOException if the JSON string is invalid with respect to CompleteAudioUploadRequestPartsInner
+   * @return An instance of AudioUploadPart
+   * @throws IOException if the JSON string is invalid with respect to AudioUploadPart
    */
-  public static CompleteAudioUploadRequestPartsInner fromJson(String jsonString) throws IOException {
-    return JSON.getGson().fromJson(jsonString, CompleteAudioUploadRequestPartsInner.class);
+  public static AudioUploadPart fromJson(String jsonString) throws IOException {
+    return JSON.getGson().fromJson(jsonString, AudioUploadPart.class);
   }
 
   /**
-   * Convert an instance of CompleteAudioUploadRequestPartsInner to an JSON string
+   * Convert an instance of AudioUploadPart to an JSON string
    *
    * @return JSON string
    */

@@ -92,6 +92,48 @@ errorCodes:
     userMessage: 存储写入失败
     i18nKey: errors.TOS_WRITE_FAILED
     opsTags: [tos, storage, io]
+  - code: UPLOAD_SESSION_EXPIRED
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 上传会话已过期
+    i18nKey: errors.UPLOAD_SESSION_EXPIRED
+    opsTags: [upload, storage]
+  - code: UPLOAD_ALREADY_ABORTED
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 上传会话已取消
+    i18nKey: errors.UPLOAD_ALREADY_ABORTED
+    opsTags: [upload, state]
+  - code: UPLOAD_ALREADY_COMPLETED
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 上传已完成
+    i18nKey: errors.UPLOAD_ALREADY_COMPLETED
+    opsTags: [upload, state]
+  - code: UPLOAD_PART_HASH_MISMATCH
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 分片校验失败
+    i18nKey: errors.UPLOAD_PART_HASH_MISMATCH
+    opsTags: [upload, checksum]
+  - code: UPLOAD_FILE_HASH_MISMATCH
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 文件校验失败
+    i18nKey: errors.UPLOAD_FILE_HASH_MISMATCH
+    opsTags: [upload, checksum]
+  - code: UPLOAD_TOO_MANY_PARTS
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 上传分片数量超过上限
+    i18nKey: errors.UPLOAD_TOO_MANY_PARTS
+    opsTags: [upload, validation]
+  - code: UPLOAD_INCOMPLETE_PARTS
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 上传分片不完整
+    i18nKey: errors.UPLOAD_INCOMPLETE_PARTS
+    opsTags: [upload, validation]
 
   # ── Audio Pipeline ────────────────────────────────────────────
   - code: AUDIO_UNSUPPORTED_FORMAT

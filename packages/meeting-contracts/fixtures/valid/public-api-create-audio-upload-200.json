@@ -1,0 +1,43 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads 200 success response",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/mtg_fixture_01/files/audio/uploads",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_create_01",
+    "X-Trace-Id": "trace_audio_upload_create_01",
+    "Idempotency-Key": "idem_audio_upload_create_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01"
+  },
+  "request": {
+    "fileName": "weekly-sync.wav",
+    "contentType": "audio/wav",
+    "fileSizeBytes": 16777216,
+    "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "uploadId": "upl_fixture_01",
+      "meetingId": "mtg_fixture_01",
+      "uploadStatus": "INITIATED",
+      "expiresAt": "2026-05-14T04:00:00Z",
+      "partSizeBytes": 8388608,
+      "maxPartCount": 10000,
+      "objectKey": "meeting-audio/tenant_fixture_01/mtg_fixture_01/upl_fixture_01/raw",
+      "bucket": "meeting-audio",
+      "contentType": "audio/wav",
+      "fileName": "weekly-sync.wav",
+      "fileSizeBytes": 16777216,
+      "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fileId": null,
+      "parts": []
+    },
+    "error": null,
+    "requestId": "req_audio_upload_create_01",
+    "traceId": "trace_audio_upload_create_01"
+  }
+}

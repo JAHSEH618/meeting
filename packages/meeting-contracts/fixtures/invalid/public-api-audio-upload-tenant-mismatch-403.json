@@ -1,0 +1,23 @@
+{
+  "description": "GET /meetings/{meetingId}/files/audio/uploads/{uploadId} 403 tenant mismatch",
+  "status": 403,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_tenant_mismatch_01",
+    "X-Trace-Id": "trace_audio_upload_tenant_mismatch_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_other_tenant_01",
+    "uploadId": "upl_fixture_01"
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "PERMISSION_DENIED",
+      "message": "Upload session is not accessible in current tenant",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_tenant_mismatch_01",
+    "traceId": "trace_audio_upload_tenant_mismatch_01"
+  }
+}

@@ -1098,22 +1098,23 @@ export interface components {
         CreateAudioUploadRequest: {
             fileName: string;
             contentType: string;
-            sizeBytes: number;
-            sha256: string;
-            partSizeBytes?: number;
+            fileSizeBytes: number;
+            fileSha256: string;
+            /** @default 8388608 */
+            partSizeBytes: number;
         };
         CreateAudioUploadPartRequest: {
             partNumber: number;
             sizeBytes: number;
-            sha256?: string | null;
+            partSha256: string;
         };
         CompleteAudioUploadRequest: {
             fileSha256: string;
             durationMs?: number | null;
             parts: {
                 partNumber: number;
+                partSha256: string;
                 etag: string;
-                sha256?: string | null;
             }[];
         };
         AudioUploadSessionResponse: {
@@ -1126,27 +1127,48 @@ export interface components {
         AudioUploadSession: {
             uploadId: string;
             meetingId: string;
-            status: string;
-            objectUri?: string | null;
+            uploadStatus: components["schemas"]["AudioUploadStatus"];
             /** Format: date-time */
             expiresAt: string;
-            partSizeBytes?: number | null;
+            /** @default 8388608 */
+            partSizeBytes: number;
+            /** @default 10000 */
+            maxPartCount: number;
+            objectKey?: string | null;
+            bucket?: string | null;
+            contentType: string;
+            fileName: string;
+            fileSizeBytes: number;
+            fileSha256: string;
+            fileId?: string | null;
+            parts: components["schemas"]["AudioUploadPart"][];
         };
         AudioUploadPartResponse: {
             success: boolean;
             data: {
                 uploadId: string;
                 partNumber: number;
+                partSha256: string;
+                etag?: string | null;
                 uploadUrl: string;
                 /** Format: date-time */
                 expiresAt: string;
-                headers?: {
+                headers: {
                     [key: string]: string;
                 };
             };
             error: components["schemas"]["ErrorInfo"] | null;
             requestId: string;
             traceId: string;
+        };
+        AudioUploadPart: {
+            partNumber: number;
+            partSha256: string;
+            etag?: string | null;
+            sizeBytes: number;
+            uploadStatus: components["schemas"]["AudioUploadStatus"];
+            /** Format: date-time */
+            uploadedAt?: string | null;
         };
         CreateProcessingTaskRequest: {
             /** @enum {string} */
@@ -1510,6 +1532,8 @@ export interface components {
         ProcessingTaskPhase: "WORKER_DAG_RUNNING" | "WORKER_DAG_DONE" | "JAVA_LLM_RUNNING" | "TERMINAL";
         /** @enum {string} */
         StepStatus: "PENDING" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "CANCELLED";
+        /** @enum {string} */
+        AudioUploadStatus: "INITIATED" | "UPLOADING" | "COMPLETED" | "ABORTED" | "EXPIRED";
         /** @enum {string} */
         ProcessingStep: "AUDIO_UPLOAD" | "AUDIO_PREPROCESS" | "ASR" | "ALIGNMENT" | "DIARIZATION" | "SPEAKER_EMBEDDING" | "SPEAKER_MATCHING" | "TRANSCRIPT_MERGE" | "SUMMARY" | "EXTRACTION" | "RAG_INDEXING" | "EXPORT";
         /** @enum {string} */
@@ -1968,12 +1992,22 @@ export interface operations {
             };
         };
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Audio upload session created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioUploadSessionResponse"];
+                };
+            };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     createAudioUploadPart: {
@@ -2005,6 +2039,13 @@ export interface operations {
                     "application/json": components["schemas"]["AudioUploadPartResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     completeAudioUpload: {
@@ -2036,6 +2077,13 @@ export interface operations {
                     "application/json": components["schemas"]["AudioUploadSessionResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     abortAudioUpload: {
@@ -2055,6 +2103,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["OkEmpty"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     getAudioUpload: {
@@ -2072,7 +2125,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Audio upload session status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioUploadSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

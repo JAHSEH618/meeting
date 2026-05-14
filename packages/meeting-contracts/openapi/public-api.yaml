@@ -338,7 +338,11 @@ paths:
               $ref: '#/components/schemas/CreateAudioUploadRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Audio upload session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUploadSessionResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -347,8 +351,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts:
     post:
@@ -374,6 +382,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AudioUploadPartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete:
     post:
@@ -399,6 +421,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AudioUploadSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}/abort:
     post:
@@ -414,6 +450,16 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/OkEmpty'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /meetings/{meetingId}/files/audio/uploads/{uploadId}:
     get:
@@ -427,7 +473,15 @@ paths:
         - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Audio upload session status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUploadSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1794,38 +1848,57 @@ components:
     # ── Audio Upload ──────────────────────────────────────────
     CreateAudioUploadRequest:
       type: object
-      required: [fileName, contentType, sizeBytes, sha256]
+      required: [fileName, contentType, fileSizeBytes, fileSha256]
+      additionalProperties: false
       properties:
         fileName: {type: string, minLength: 1}
         contentType: {type: string, minLength: 1}
-        sizeBytes: {type: integer, minimum: 1}
-        sha256: {type: string, minLength: 1}
-        partSizeBytes: {type: integer, minimum: 5242880}
+        fileSizeBytes: {type: integer, minimum: 1}
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        partSizeBytes:
+          type: integer
+          minimum: 5242880
+          default: 8388608
 
     CreateAudioUploadPartRequest:
       type: object
-      required: [partNumber, sizeBytes]
+      required: [partNumber, sizeBytes, partSha256]
+      additionalProperties: false
       properties:
-        partNumber: {type: integer, minimum: 1}
-        sizeBytes: {type: integer, minimum: 1}
-        sha256: {type: [string, 'null']}
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 8388608
+        partSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
 
     CompleteAudioUploadRequest:
       type: object
       required: [fileSha256, parts]
+      additionalProperties: false
       properties:
-        fileSha256: {type: string, minLength: 1}
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
         durationMs: {type: [integer, 'null'], minimum: 1}
         parts:
           type: array
           minItems: 1
+          maxItems: 10000
           items:
             type: object
-            required: [partNumber, etag]
+            required: [partNumber, partSha256, etag]
+            additionalProperties: false
             properties:
-              partNumber: {type: integer, minimum: 1}
+              partNumber: {type: integer, minimum: 1, maximum: 10000}
+              partSha256:
+                type: string
+                pattern: '^[0-9a-f]{64}$'
               etag: {type: string, minLength: 1}
-              sha256: {type: [string, 'null']}
 
     AudioUploadSessionResponse:
       type: object
@@ -1843,14 +1916,29 @@ components:
 
     AudioUploadSession:
       type: object
-      required: [uploadId, meetingId, status, expiresAt]
+      required: [uploadId, meetingId, uploadStatus, expiresAt, partSizeBytes, maxPartCount, contentType, fileName, fileSizeBytes, fileSha256, parts]
+      additionalProperties: false
       properties:
         uploadId: {type: string}
         meetingId: {type: string}
-        status: {type: string}
-        objectUri: {type: [string, 'null']}
+        uploadStatus:
+          $ref: '#/components/schemas/AudioUploadStatus'
         expiresAt: {type: string, format: date-time}
-        partSizeBytes: {type: [integer, 'null']}
+        partSizeBytes: {type: integer, minimum: 5242880, default: 8388608}
+        maxPartCount: {type: integer, minimum: 1, maximum: 10000, default: 10000}
+        objectKey: {type: [string, 'null']}
+        bucket: {type: [string, 'null']}
+        contentType: {type: string}
+        fileName: {type: string}
+        fileSizeBytes: {type: integer, minimum: 1}
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        fileId: {type: [string, 'null']}
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AudioUploadPart'
 
     AudioUploadPartResponse:
       type: object
@@ -1859,10 +1947,15 @@ components:
         success: {type: boolean}
         data:
           type: object
-          required: [uploadId, partNumber, uploadUrl, expiresAt]
+          required: [uploadId, partNumber, partSha256, uploadUrl, expiresAt, headers]
+          additionalProperties: false
           properties:
             uploadId: {type: string}
-            partNumber: {type: integer}
+            partNumber: {type: integer, minimum: 1, maximum: 10000}
+            partSha256:
+              type: string
+              pattern: '^[0-9a-f]{64}$'
+            etag: {type: [string, 'null']}
             uploadUrl: {type: string}
             expiresAt: {type: string, format: date-time}
             headers:
@@ -1874,6 +1967,21 @@ components:
             - type: 'null'
         requestId: {type: string}
         traceId: {type: string}
+
+    AudioUploadPart:
+      type: object
+      required: [partNumber, partSha256, sizeBytes, uploadStatus]
+      additionalProperties: false
+      properties:
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        partSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        etag: {type: [string, 'null']}
+        sizeBytes: {type: integer, minimum: 1}
+        uploadStatus:
+          $ref: '#/components/schemas/AudioUploadStatus'
+        uploadedAt: {type: [string, 'null'], format: date-time}
 
     # ── Processing Task ────────────────────────────────────────
     CreateProcessingTaskRequest:
@@ -2480,6 +2588,10 @@ components:
     StepStatus:
       type: string
       enum: [PENDING, QUEUED, RUNNING, SUCCEEDED, FAILED, SKIPPED, CANCELLED]
+
+    AudioUploadStatus:
+      type: string
+      enum: [INITIATED, UPLOADING, COMPLETED, ABORTED, EXPIRED]
 
     ProcessingStep:
       type: string

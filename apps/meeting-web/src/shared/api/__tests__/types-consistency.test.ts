@@ -63,6 +63,11 @@ describe("types consistency with contracts enums.yaml", () => {
     expect(["JAVA_TASK_SERVICE", "AI_WORKER_CALLBACK"]).toEqual(expected);
   });
 
+  it("audioUploadStatus must match contracts", () => {
+    const expected = enumFromYaml("audioUploadStatus");
+    expect(["INITIATED", "UPLOADING", "COMPLETED", "ABORTED", "EXPIRED"]).toEqual(expected);
+  });
+
   it("taskEventType must match contracts", () => {
     const expected = enumFromYaml("taskEventType");
     expect(["TASK_SNAPSHOT", "TASK_STARTED", "TASK_STEP_UPDATED", "TASK_HEARTBEAT", "TRANSCRIPT_READY", "TASK_FAILED", "TASK_COMPLETED", "TASK_CANCELLED"]).toEqual(expected);
@@ -129,6 +134,21 @@ describe("DTO shape consistency with public-api.yaml", () => {
     expect(schema.properties.status).toBeDefined();
     expect(schema.properties.source?.$ref).toBe("#/components/schemas/ProcessingStepUpdateSource");
     expect(schema.properties.progress?.type).toBe("integer");
+  });
+
+  it("AudioUploadSession must expose phase 2 upload fields", () => {
+    const schema = getSchema("AudioUploadSession");
+    const required = (schema.required as string[]) ?? [];
+    expect(required).toContain("uploadId");
+    expect(required).toContain("meetingId");
+    expect(required).toContain("uploadStatus");
+    expect(required).toContain("partSizeBytes");
+    expect(required).toContain("maxPartCount");
+    expect(required).toContain("fileSha256");
+    expect(required).toContain("parts");
+    expect(schema.properties.uploadStatus?.$ref).toBe("#/components/schemas/AudioUploadStatus");
+    expect(schema.properties.partSizeBytes?.default).toBe(8388608);
+    expect(schema.properties.maxPartCount?.default).toBe(10000);
   });
 
   it("MeetingSegmentCitation must have correct property types", () => {

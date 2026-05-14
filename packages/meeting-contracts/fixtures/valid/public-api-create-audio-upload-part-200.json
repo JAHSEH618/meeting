@@ -1,0 +1,38 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts 200 success response",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/mtg_fixture_01/files/audio/uploads/upl_fixture_01/parts",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_part_01",
+    "X-Trace-Id": "trace_audio_upload_part_01",
+    "Idempotency-Key": "idem_audio_upload_part_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01",
+    "uploadId": "upl_fixture_01"
+  },
+  "request": {
+    "partNumber": 1,
+    "sizeBytes": 8388608,
+    "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "uploadId": "upl_fixture_01",
+      "partNumber": 1,
+      "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "etag": null,
+      "uploadUrl": "https://minio.local/meeting-audio/tenant_fixture_01/mtg_fixture_01/upl_fixture_01/raw?partNumber=1&signature=fixture",
+      "expiresAt": "2026-05-14T03:15:00Z",
+      "headers": {
+        "x-amz-meta-part-sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "error": null,
+    "requestId": "req_audio_upload_part_01",
+    "traceId": "trace_audio_upload_part_01"
+  }
+}

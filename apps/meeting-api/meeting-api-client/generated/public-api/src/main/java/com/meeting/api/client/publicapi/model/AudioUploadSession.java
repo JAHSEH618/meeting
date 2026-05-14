@@ -19,9 +19,13 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.meeting.api.client.publicapi.model.AudioUploadPart;
+import com.meeting.api.client.publicapi.model.AudioUploadStatus;
 import java.io.IOException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
@@ -62,15 +66,10 @@ public class AudioUploadSession {
   @javax.annotation.Nonnull
   private String meetingId;
 
-  public static final String SERIALIZED_NAME_STATUS = "status";
-  @SerializedName(SERIALIZED_NAME_STATUS)
+  public static final String SERIALIZED_NAME_UPLOAD_STATUS = "uploadStatus";
+  @SerializedName(SERIALIZED_NAME_UPLOAD_STATUS)
   @javax.annotation.Nonnull
-  private String status;
-
-  public static final String SERIALIZED_NAME_OBJECT_URI = "objectUri";
-  @SerializedName(SERIALIZED_NAME_OBJECT_URI)
-  @javax.annotation.Nullable
-  private String objectUri;
+  private AudioUploadStatus uploadStatus;
 
   public static final String SERIALIZED_NAME_EXPIRES_AT = "expiresAt";
   @SerializedName(SERIALIZED_NAME_EXPIRES_AT)
@@ -79,8 +78,53 @@ public class AudioUploadSession {
 
   public static final String SERIALIZED_NAME_PART_SIZE_BYTES = "partSizeBytes";
   @SerializedName(SERIALIZED_NAME_PART_SIZE_BYTES)
+  @javax.annotation.Nonnull
+  private Integer partSizeBytes = 8388608;
+
+  public static final String SERIALIZED_NAME_MAX_PART_COUNT = "maxPartCount";
+  @SerializedName(SERIALIZED_NAME_MAX_PART_COUNT)
+  @javax.annotation.Nonnull
+  private Integer maxPartCount = 10000;
+
+  public static final String SERIALIZED_NAME_OBJECT_KEY = "objectKey";
+  @SerializedName(SERIALIZED_NAME_OBJECT_KEY)
   @javax.annotation.Nullable
-  private Integer partSizeBytes;
+  private String objectKey;
+
+  public static final String SERIALIZED_NAME_BUCKET = "bucket";
+  @SerializedName(SERIALIZED_NAME_BUCKET)
+  @javax.annotation.Nullable
+  private String bucket;
+
+  public static final String SERIALIZED_NAME_CONTENT_TYPE = "contentType";
+  @SerializedName(SERIALIZED_NAME_CONTENT_TYPE)
+  @javax.annotation.Nonnull
+  private String contentType;
+
+  public static final String SERIALIZED_NAME_FILE_NAME = "fileName";
+  @SerializedName(SERIALIZED_NAME_FILE_NAME)
+  @javax.annotation.Nonnull
+  private String fileName;
+
+  public static final String SERIALIZED_NAME_FILE_SIZE_BYTES = "fileSizeBytes";
+  @SerializedName(SERIALIZED_NAME_FILE_SIZE_BYTES)
+  @javax.annotation.Nonnull
+  private Integer fileSizeBytes;
+
+  public static final String SERIALIZED_NAME_FILE_SHA256 = "fileSha256";
+  @SerializedName(SERIALIZED_NAME_FILE_SHA256)
+  @javax.annotation.Nonnull
+  private String fileSha256;
+
+  public static final String SERIALIZED_NAME_FILE_ID = "fileId";
+  @SerializedName(SERIALIZED_NAME_FILE_ID)
+  @javax.annotation.Nullable
+  private String fileId;
+
+  public static final String SERIALIZED_NAME_PARTS = "parts";
+  @SerializedName(SERIALIZED_NAME_PARTS)
+  @javax.annotation.Nonnull
+  private List<AudioUploadPart> parts = new ArrayList<>();
 
   public AudioUploadSession() {
   }
@@ -123,41 +167,22 @@ public class AudioUploadSession {
   }
 
 
-  public AudioUploadSession status(@javax.annotation.Nonnull String status) {
-    this.status = status;
+  public AudioUploadSession uploadStatus(@javax.annotation.Nonnull AudioUploadStatus uploadStatus) {
+    this.uploadStatus = uploadStatus;
     return this;
   }
 
   /**
-   * Get status
-   * @return status
+   * Get uploadStatus
+   * @return uploadStatus
    */
   @javax.annotation.Nonnull
-  public String getStatus() {
-    return status;
+  public AudioUploadStatus getUploadStatus() {
+    return uploadStatus;
   }
 
-  public void setStatus(@javax.annotation.Nonnull String status) {
-    this.status = status;
-  }
-
-
-  public AudioUploadSession objectUri(@javax.annotation.Nullable String objectUri) {
-    this.objectUri = objectUri;
-    return this;
-  }
-
-  /**
-   * Get objectUri
-   * @return objectUri
-   */
-  @javax.annotation.Nullable
-  public String getObjectUri() {
-    return objectUri;
-  }
-
-  public void setObjectUri(@javax.annotation.Nullable String objectUri) {
-    this.objectUri = objectUri;
+  public void setUploadStatus(@javax.annotation.Nonnull AudioUploadStatus uploadStatus) {
+    this.uploadStatus = uploadStatus;
   }
 
 
@@ -180,22 +205,205 @@ public class AudioUploadSession {
   }
 
 
-  public AudioUploadSession partSizeBytes(@javax.annotation.Nullable Integer partSizeBytes) {
+  public AudioUploadSession partSizeBytes(@javax.annotation.Nonnull Integer partSizeBytes) {
     this.partSizeBytes = partSizeBytes;
     return this;
   }
 
   /**
    * Get partSizeBytes
+   * minimum: 5242880
    * @return partSizeBytes
    */
-  @javax.annotation.Nullable
+  @javax.annotation.Nonnull
   public Integer getPartSizeBytes() {
     return partSizeBytes;
   }
 
-  public void setPartSizeBytes(@javax.annotation.Nullable Integer partSizeBytes) {
+  public void setPartSizeBytes(@javax.annotation.Nonnull Integer partSizeBytes) {
     this.partSizeBytes = partSizeBytes;
+  }
+
+
+  public AudioUploadSession maxPartCount(@javax.annotation.Nonnull Integer maxPartCount) {
+    this.maxPartCount = maxPartCount;
+    return this;
+  }
+
+  /**
+   * Get maxPartCount
+   * minimum: 1
+   * maximum: 10000
+   * @return maxPartCount
+   */
+  @javax.annotation.Nonnull
+  public Integer getMaxPartCount() {
+    return maxPartCount;
+  }
+
+  public void setMaxPartCount(@javax.annotation.Nonnull Integer maxPartCount) {
+    this.maxPartCount = maxPartCount;
+  }
+
+
+  public AudioUploadSession objectKey(@javax.annotation.Nullable String objectKey) {
+    this.objectKey = objectKey;
+    return this;
+  }
+
+  /**
+   * Get objectKey
+   * @return objectKey
+   */
+  @javax.annotation.Nullable
+  public String getObjectKey() {
+    return objectKey;
+  }
+
+  public void setObjectKey(@javax.annotation.Nullable String objectKey) {
+    this.objectKey = objectKey;
+  }
+
+
+  public AudioUploadSession bucket(@javax.annotation.Nullable String bucket) {
+    this.bucket = bucket;
+    return this;
+  }
+
+  /**
+   * Get bucket
+   * @return bucket
+   */
+  @javax.annotation.Nullable
+  public String getBucket() {
+    return bucket;
+  }
+
+  public void setBucket(@javax.annotation.Nullable String bucket) {
+    this.bucket = bucket;
+  }
+
+
+  public AudioUploadSession contentType(@javax.annotation.Nonnull String contentType) {
+    this.contentType = contentType;
+    return this;
+  }
+
+  /**
+   * Get contentType
+   * @return contentType
+   */
+  @javax.annotation.Nonnull
+  public String getContentType() {
+    return contentType;
+  }
+
+  public void setContentType(@javax.annotation.Nonnull String contentType) {
+    this.contentType = contentType;
+  }
+
+
+  public AudioUploadSession fileName(@javax.annotation.Nonnull String fileName) {
+    this.fileName = fileName;
+    return this;
+  }
+
+  /**
+   * Get fileName
+   * @return fileName
+   */
+  @javax.annotation.Nonnull
+  public String getFileName() {
+    return fileName;
+  }
+
+  public void setFileName(@javax.annotation.Nonnull String fileName) {
+    this.fileName = fileName;
+  }
+
+
+  public AudioUploadSession fileSizeBytes(@javax.annotation.Nonnull Integer fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
+    return this;
+  }
+
+  /**
+   * Get fileSizeBytes
+   * minimum: 1
+   * @return fileSizeBytes
+   */
+  @javax.annotation.Nonnull
+  public Integer getFileSizeBytes() {
+    return fileSizeBytes;
+  }
+
+  public void setFileSizeBytes(@javax.annotation.Nonnull Integer fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
+  }
+
+
+  public AudioUploadSession fileSha256(@javax.annotation.Nonnull String fileSha256) {
+    this.fileSha256 = fileSha256;
+    return this;
+  }
+
+  /**
+   * Get fileSha256
+   * @return fileSha256
+   */
+  @javax.annotation.Nonnull
+  public String getFileSha256() {
+    return fileSha256;
+  }
+
+  public void setFileSha256(@javax.annotation.Nonnull String fileSha256) {
+    this.fileSha256 = fileSha256;
+  }
+
+
+  public AudioUploadSession fileId(@javax.annotation.Nullable String fileId) {
+    this.fileId = fileId;
+    return this;
+  }
+
+  /**
+   * Get fileId
+   * @return fileId
+   */
+  @javax.annotation.Nullable
+  public String getFileId() {
+    return fileId;
+  }
+
+  public void setFileId(@javax.annotation.Nullable String fileId) {
+    this.fileId = fileId;
+  }
+
+
+  public AudioUploadSession parts(@javax.annotation.Nonnull List<AudioUploadPart> parts) {
+    this.parts = parts;
+    return this;
+  }
+
+  public AudioUploadSession addPartsItem(AudioUploadPart partsItem) {
+    if (this.parts == null) {
+      this.parts = new ArrayList<>();
+    }
+    this.parts.add(partsItem);
+    return this;
+  }
+
+  /**
+   * Get parts
+   * @return parts
+   */
+  @javax.annotation.Nonnull
+  public List<AudioUploadPart> getParts() {
+    return parts;
+  }
+
+  public void setParts(@javax.annotation.Nonnull List<AudioUploadPart> parts) {
+    this.parts = parts;
   }
 
 
@@ -211,10 +419,18 @@ public class AudioUploadSession {
     AudioUploadSession audioUploadSession = (AudioUploadSession) o;
     return Objects.equals(this.uploadId, audioUploadSession.uploadId) &&
         Objects.equals(this.meetingId, audioUploadSession.meetingId) &&
-        Objects.equals(this.status, audioUploadSession.status) &&
-        Objects.equals(this.objectUri, audioUploadSession.objectUri) &&
+        Objects.equals(this.uploadStatus, audioUploadSession.uploadStatus) &&
         Objects.equals(this.expiresAt, audioUploadSession.expiresAt) &&
-        Objects.equals(this.partSizeBytes, audioUploadSession.partSizeBytes);
+        Objects.equals(this.partSizeBytes, audioUploadSession.partSizeBytes) &&
+        Objects.equals(this.maxPartCount, audioUploadSession.maxPartCount) &&
+        Objects.equals(this.objectKey, audioUploadSession.objectKey) &&
+        Objects.equals(this.bucket, audioUploadSession.bucket) &&
+        Objects.equals(this.contentType, audioUploadSession.contentType) &&
+        Objects.equals(this.fileName, audioUploadSession.fileName) &&
+        Objects.equals(this.fileSizeBytes, audioUploadSession.fileSizeBytes) &&
+        Objects.equals(this.fileSha256, audioUploadSession.fileSha256) &&
+        Objects.equals(this.fileId, audioUploadSession.fileId) &&
+        Objects.equals(this.parts, audioUploadSession.parts);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -223,7 +439,7 @@ public class AudioUploadSession {
 
   @Override
   public int hashCode() {
-    return Objects.hash(uploadId, meetingId, status, objectUri, expiresAt, partSizeBytes);
+    return Objects.hash(uploadId, meetingId, uploadStatus, expiresAt, partSizeBytes, maxPartCount, objectKey, bucket, contentType, fileName, fileSizeBytes, fileSha256, fileId, parts);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -239,10 +455,18 @@ public class AudioUploadSession {
     sb.append("class AudioUploadSession {\n");
     sb.append("    uploadId: ").append(toIndentedString(uploadId)).append("\n");
     sb.append("    meetingId: ").append(toIndentedString(meetingId)).append("\n");
-    sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    sb.append("    objectUri: ").append(toIndentedString(objectUri)).append("\n");
+    sb.append("    uploadStatus: ").append(toIndentedString(uploadStatus)).append("\n");
     sb.append("    expiresAt: ").append(toIndentedString(expiresAt)).append("\n");
     sb.append("    partSizeBytes: ").append(toIndentedString(partSizeBytes)).append("\n");
+    sb.append("    maxPartCount: ").append(toIndentedString(maxPartCount)).append("\n");
+    sb.append("    objectKey: ").append(toIndentedString(objectKey)).append("\n");
+    sb.append("    bucket: ").append(toIndentedString(bucket)).append("\n");
+    sb.append("    contentType: ").append(toIndentedString(contentType)).append("\n");
+    sb.append("    fileName: ").append(toIndentedString(fileName)).append("\n");
+    sb.append("    fileSizeBytes: ").append(toIndentedString(fileSizeBytes)).append("\n");
+    sb.append("    fileSha256: ").append(toIndentedString(fileSha256)).append("\n");
+    sb.append("    fileId: ").append(toIndentedString(fileId)).append("\n");
+    sb.append("    parts: ").append(toIndentedString(parts)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -261,10 +485,10 @@ public class AudioUploadSession {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("uploadId", "meetingId", "status", "objectUri", "expiresAt", "partSizeBytes"));
+    openapiFields = new HashSet<String>(Arrays.asList("uploadId", "meetingId", "uploadStatus", "expiresAt", "partSizeBytes", "maxPartCount", "objectKey", "bucket", "contentType", "fileName", "fileSizeBytes", "fileSha256", "fileId", "parts"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("uploadId", "meetingId", "status", "expiresAt"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("uploadId", "meetingId", "uploadStatus", "expiresAt", "partSizeBytes", "maxPartCount", "contentType", "fileName", "fileSizeBytes", "fileSha256", "parts"));
   }
 
   /**
@@ -301,11 +525,35 @@ public class AudioUploadSession {
       if (!jsonObj.get("meetingId").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `meetingId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("meetingId").toString()));
       }
-      if (!jsonObj.get("status").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `status` to be a primitive type in the JSON string but got `%s`", jsonObj.get("status").toString()));
+      // validate the required field `uploadStatus`
+      AudioUploadStatus.validateJsonElement(jsonObj.get("uploadStatus"));
+      if ((jsonObj.get("objectKey") != null && !jsonObj.get("objectKey").isJsonNull()) && !jsonObj.get("objectKey").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `objectKey` to be a primitive type in the JSON string but got `%s`", jsonObj.get("objectKey").toString()));
       }
-      if ((jsonObj.get("objectUri") != null && !jsonObj.get("objectUri").isJsonNull()) && !jsonObj.get("objectUri").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `objectUri` to be a primitive type in the JSON string but got `%s`", jsonObj.get("objectUri").toString()));
+      if ((jsonObj.get("bucket") != null && !jsonObj.get("bucket").isJsonNull()) && !jsonObj.get("bucket").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `bucket` to be a primitive type in the JSON string but got `%s`", jsonObj.get("bucket").toString()));
+      }
+      if (!jsonObj.get("contentType").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `contentType` to be a primitive type in the JSON string but got `%s`", jsonObj.get("contentType").toString()));
+      }
+      if (!jsonObj.get("fileName").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileName` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileName").toString()));
+      }
+      if (!jsonObj.get("fileSha256").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileSha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileSha256").toString()));
+      }
+      if ((jsonObj.get("fileId") != null && !jsonObj.get("fileId").isJsonNull()) && !jsonObj.get("fileId").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileId").toString()));
+      }
+      if (jsonObj.get("parts") != null) {
+        if (!jsonObj.get("parts").isJsonArray()) {
+          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `parts` to be an array in the JSON string but got `%s`", jsonObj.get("parts").toString()));
+        }
+        JsonArray jsonArrayparts = jsonObj.getAsJsonArray("parts");
+        // validate the required field `parts` (array)
+        for (int i = 0; i < jsonArrayparts.size(); i++) {
+          AudioUploadPart.validateJsonElement(jsonArrayparts.get(i));
+        }
       }
   }
 

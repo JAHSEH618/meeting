@@ -24,6 +24,7 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -63,6 +64,16 @@ public class AudioUploadPartResponseData {
   @javax.annotation.Nonnull
   private Integer partNumber;
 
+  public static final String SERIALIZED_NAME_PART_SHA256 = "partSha256";
+  @SerializedName(SERIALIZED_NAME_PART_SHA256)
+  @javax.annotation.Nonnull
+  private String partSha256;
+
+  public static final String SERIALIZED_NAME_ETAG = "etag";
+  @SerializedName(SERIALIZED_NAME_ETAG)
+  @javax.annotation.Nullable
+  private String etag;
+
   public static final String SERIALIZED_NAME_UPLOAD_URL = "uploadUrl";
   @SerializedName(SERIALIZED_NAME_UPLOAD_URL)
   @javax.annotation.Nonnull
@@ -75,7 +86,7 @@ public class AudioUploadPartResponseData {
 
   public static final String SERIALIZED_NAME_HEADERS = "headers";
   @SerializedName(SERIALIZED_NAME_HEADERS)
-  @javax.annotation.Nullable
+  @javax.annotation.Nonnull
   private Map<String, String> headers = new HashMap<>();
 
   public AudioUploadPartResponseData() {
@@ -107,6 +118,8 @@ public class AudioUploadPartResponseData {
 
   /**
    * Get partNumber
+   * minimum: 1
+   * maximum: 10000
    * @return partNumber
    */
   @javax.annotation.Nonnull
@@ -116,6 +129,44 @@ public class AudioUploadPartResponseData {
 
   public void setPartNumber(@javax.annotation.Nonnull Integer partNumber) {
     this.partNumber = partNumber;
+  }
+
+
+  public AudioUploadPartResponseData partSha256(@javax.annotation.Nonnull String partSha256) {
+    this.partSha256 = partSha256;
+    return this;
+  }
+
+  /**
+   * Get partSha256
+   * @return partSha256
+   */
+  @javax.annotation.Nonnull
+  public String getPartSha256() {
+    return partSha256;
+  }
+
+  public void setPartSha256(@javax.annotation.Nonnull String partSha256) {
+    this.partSha256 = partSha256;
+  }
+
+
+  public AudioUploadPartResponseData etag(@javax.annotation.Nullable String etag) {
+    this.etag = etag;
+    return this;
+  }
+
+  /**
+   * Get etag
+   * @return etag
+   */
+  @javax.annotation.Nullable
+  public String getEtag() {
+    return etag;
+  }
+
+  public void setEtag(@javax.annotation.Nullable String etag) {
+    this.etag = etag;
   }
 
 
@@ -157,7 +208,7 @@ public class AudioUploadPartResponseData {
   }
 
 
-  public AudioUploadPartResponseData headers(@javax.annotation.Nullable Map<String, String> headers) {
+  public AudioUploadPartResponseData headers(@javax.annotation.Nonnull Map<String, String> headers) {
     this.headers = headers;
     return this;
   }
@@ -174,12 +225,12 @@ public class AudioUploadPartResponseData {
    * Get headers
    * @return headers
    */
-  @javax.annotation.Nullable
+  @javax.annotation.Nonnull
   public Map<String, String> getHeaders() {
     return headers;
   }
 
-  public void setHeaders(@javax.annotation.Nullable Map<String, String> headers) {
+  public void setHeaders(@javax.annotation.Nonnull Map<String, String> headers) {
     this.headers = headers;
   }
 
@@ -196,14 +247,27 @@ public class AudioUploadPartResponseData {
     AudioUploadPartResponseData audioUploadPartResponseData = (AudioUploadPartResponseData) o;
     return Objects.equals(this.uploadId, audioUploadPartResponseData.uploadId) &&
         Objects.equals(this.partNumber, audioUploadPartResponseData.partNumber) &&
+        Objects.equals(this.partSha256, audioUploadPartResponseData.partSha256) &&
+        Objects.equals(this.etag, audioUploadPartResponseData.etag) &&
         Objects.equals(this.uploadUrl, audioUploadPartResponseData.uploadUrl) &&
         Objects.equals(this.expiresAt, audioUploadPartResponseData.expiresAt) &&
         Objects.equals(this.headers, audioUploadPartResponseData.headers);
   }
 
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(uploadId, partNumber, uploadUrl, expiresAt, headers);
+    return Objects.hash(uploadId, partNumber, partSha256, etag, uploadUrl, expiresAt, headers);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -212,6 +276,8 @@ public class AudioUploadPartResponseData {
     sb.append("class AudioUploadPartResponseData {\n");
     sb.append("    uploadId: ").append(toIndentedString(uploadId)).append("\n");
     sb.append("    partNumber: ").append(toIndentedString(partNumber)).append("\n");
+    sb.append("    partSha256: ").append(toIndentedString(partSha256)).append("\n");
+    sb.append("    etag: ").append(toIndentedString(etag)).append("\n");
     sb.append("    uploadUrl: ").append(toIndentedString(uploadUrl)).append("\n");
     sb.append("    expiresAt: ").append(toIndentedString(expiresAt)).append("\n");
     sb.append("    headers: ").append(toIndentedString(headers)).append("\n");
@@ -233,10 +299,10 @@ public class AudioUploadPartResponseData {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("uploadId", "partNumber", "uploadUrl", "expiresAt", "headers"));
+    openapiFields = new HashSet<String>(Arrays.asList("uploadId", "partNumber", "partSha256", "etag", "uploadUrl", "expiresAt", "headers"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("uploadId", "partNumber", "uploadUrl", "expiresAt"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("uploadId", "partNumber", "partSha256", "uploadUrl", "expiresAt", "headers"));
   }
 
   /**
@@ -269,6 +335,12 @@ public class AudioUploadPartResponseData {
         JsonObject jsonObj = jsonElement.getAsJsonObject();
       if (!jsonObj.get("uploadId").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `uploadId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("uploadId").toString()));
+      }
+      if (!jsonObj.get("partSha256").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `partSha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("partSha256").toString()));
+      }
+      if ((jsonObj.get("etag") != null && !jsonObj.get("etag").isJsonNull()) && !jsonObj.get("etag").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `etag` to be a primitive type in the JSON string but got `%s`", jsonObj.get("etag").toString()));
       }
       if (!jsonObj.get("uploadUrl").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `uploadUrl` to be a primitive type in the JSON string but got `%s`", jsonObj.get("uploadUrl").toString()));

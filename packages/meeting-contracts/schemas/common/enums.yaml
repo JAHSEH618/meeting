@@ -42,6 +42,13 @@ stepStatus:
   - SKIPPED
   - CANCELLED
 
+audioUploadStatus:
+  - INITIATED
+  - UPLOADING
+  - COMPLETED
+  - ABORTED
+  - EXPIRED
+
 processingStep:
   - AUDIO_UPLOAD
   - AUDIO_PREPROCESS

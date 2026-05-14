@@ -1,0 +1,29 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads 404 meeting not found",
+  "status": 404,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_meeting_missing_01",
+    "X-Trace-Id": "trace_audio_upload_meeting_missing_01",
+    "Idempotency-Key": "idem_audio_upload_meeting_missing_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_missing_01"
+  },
+  "request": {
+    "fileName": "weekly-sync.wav",
+    "contentType": "audio/wav",
+    "fileSizeBytes": 16777216,
+    "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "Meeting not found",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_meeting_missing_01",
+    "traceId": "trace_audio_upload_meeting_missing_01"
+  }
+}

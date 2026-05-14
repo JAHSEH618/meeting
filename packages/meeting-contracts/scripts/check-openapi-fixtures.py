@@ -24,6 +24,15 @@ FIXTURE_API_MAP = {
     "valid/public-api-create-processing-task-200.json": {
         "spec": "public-api.yaml", "path": "/meetings/{meetingId}/processing-tasks", "method": "post", "status": 200,
     },
+    "valid/public-api-create-audio-upload-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads", "method": "post", "status": 200,
+    },
+    "valid/public-api-create-audio-upload-part-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/parts", "method": "post", "status": 200,
+    },
+    "valid/public-api-complete-audio-upload-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/complete", "method": "post", "status": 200,
+    },
     "valid/public-api-task-event-snapshot-200.json": {
         "spec": "public-api.yaml", "path": "/processing-tasks/{taskId}/events", "method": "get", "status": 200,
         "content_type": "text/event-stream",
@@ -57,6 +66,31 @@ FIXTURE_API_MAP = {
     },
     "invalid/public-api-409-conflict.json": {
         "spec": "public-api.yaml", "path": "/meetings", "method": "post", "status": 409,
+        "expect_error": True,
+    },
+    "invalid/public-api-audio-upload-expired-410.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/complete", "method": "post", "status": 410,
+        "expect_error": True,
+    },
+    "invalid/public-api-audio-upload-part-hash-mismatch-409.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/parts", "method": "post", "status": 409,
+        "expect_error": True,
+    },
+    "invalid/public-api-audio-upload-too-many-parts.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/parts", "method": "post", "status": 422,
+        "expect_error": True,
+        "expect_request_error": True,
+    },
+    "invalid/public-api-audio-upload-tenant-mismatch-403.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}", "method": "get", "status": 403,
+        "expect_error": True,
+    },
+    "invalid/public-api-audio-upload-meeting-not-found-404.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads", "method": "post", "status": 404,
+        "expect_error": True,
+    },
+    "invalid/public-api-audio-upload-already-aborted-409.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/files/audio/uploads/{uploadId}/complete", "method": "post", "status": 409,
         "expect_error": True,
     },
     "invalid/public-api-500-error.json": {

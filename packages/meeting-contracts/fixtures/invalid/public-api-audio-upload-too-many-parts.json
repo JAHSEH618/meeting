@@ -1,0 +1,29 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts 422 too many parts",
+  "status": 422,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_too_many_parts_01",
+    "X-Trace-Id": "trace_audio_upload_too_many_parts_01",
+    "Idempotency-Key": "idem_audio_upload_too_many_parts_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01",
+    "uploadId": "upl_fixture_01"
+  },
+  "request": {
+    "partNumber": 10001,
+    "sizeBytes": 8388608,
+    "partSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "UPLOAD_TOO_MANY_PARTS",
+      "message": "Upload part count exceeds 10000",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_too_many_parts_01",
+    "traceId": "trace_audio_upload_too_many_parts_01"
+  }
+}

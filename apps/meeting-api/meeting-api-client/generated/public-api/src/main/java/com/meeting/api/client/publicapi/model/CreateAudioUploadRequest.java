@@ -60,20 +60,20 @@ public class CreateAudioUploadRequest {
   @javax.annotation.Nonnull
   private String contentType;
 
-  public static final String SERIALIZED_NAME_SIZE_BYTES = "sizeBytes";
-  @SerializedName(SERIALIZED_NAME_SIZE_BYTES)
+  public static final String SERIALIZED_NAME_FILE_SIZE_BYTES = "fileSizeBytes";
+  @SerializedName(SERIALIZED_NAME_FILE_SIZE_BYTES)
   @javax.annotation.Nonnull
-  private Integer sizeBytes;
+  private Integer fileSizeBytes;
 
-  public static final String SERIALIZED_NAME_SHA256 = "sha256";
-  @SerializedName(SERIALIZED_NAME_SHA256)
+  public static final String SERIALIZED_NAME_FILE_SHA256 = "fileSha256";
+  @SerializedName(SERIALIZED_NAME_FILE_SHA256)
   @javax.annotation.Nonnull
-  private String sha256;
+  private String fileSha256;
 
   public static final String SERIALIZED_NAME_PART_SIZE_BYTES = "partSizeBytes";
   @SerializedName(SERIALIZED_NAME_PART_SIZE_BYTES)
   @javax.annotation.Nullable
-  private Integer partSizeBytes;
+  private Integer partSizeBytes = 8388608;
 
   public CreateAudioUploadRequest() {
   }
@@ -116,42 +116,42 @@ public class CreateAudioUploadRequest {
   }
 
 
-  public CreateAudioUploadRequest sizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
-    this.sizeBytes = sizeBytes;
+  public CreateAudioUploadRequest fileSizeBytes(@javax.annotation.Nonnull Integer fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
     return this;
   }
 
   /**
-   * Get sizeBytes
+   * Get fileSizeBytes
    * minimum: 1
-   * @return sizeBytes
+   * @return fileSizeBytes
    */
   @javax.annotation.Nonnull
-  public Integer getSizeBytes() {
-    return sizeBytes;
+  public Integer getFileSizeBytes() {
+    return fileSizeBytes;
   }
 
-  public void setSizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
-    this.sizeBytes = sizeBytes;
+  public void setFileSizeBytes(@javax.annotation.Nonnull Integer fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
   }
 
 
-  public CreateAudioUploadRequest sha256(@javax.annotation.Nonnull String sha256) {
-    this.sha256 = sha256;
+  public CreateAudioUploadRequest fileSha256(@javax.annotation.Nonnull String fileSha256) {
+    this.fileSha256 = fileSha256;
     return this;
   }
 
   /**
-   * Get sha256
-   * @return sha256
+   * Get fileSha256
+   * @return fileSha256
    */
   @javax.annotation.Nonnull
-  public String getSha256() {
-    return sha256;
+  public String getFileSha256() {
+    return fileSha256;
   }
 
-  public void setSha256(@javax.annotation.Nonnull String sha256) {
-    this.sha256 = sha256;
+  public void setFileSha256(@javax.annotation.Nonnull String fileSha256) {
+    this.fileSha256 = fileSha256;
   }
 
 
@@ -187,14 +187,14 @@ public class CreateAudioUploadRequest {
     CreateAudioUploadRequest createAudioUploadRequest = (CreateAudioUploadRequest) o;
     return Objects.equals(this.fileName, createAudioUploadRequest.fileName) &&
         Objects.equals(this.contentType, createAudioUploadRequest.contentType) &&
-        Objects.equals(this.sizeBytes, createAudioUploadRequest.sizeBytes) &&
-        Objects.equals(this.sha256, createAudioUploadRequest.sha256) &&
+        Objects.equals(this.fileSizeBytes, createAudioUploadRequest.fileSizeBytes) &&
+        Objects.equals(this.fileSha256, createAudioUploadRequest.fileSha256) &&
         Objects.equals(this.partSizeBytes, createAudioUploadRequest.partSizeBytes);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(fileName, contentType, sizeBytes, sha256, partSizeBytes);
+    return Objects.hash(fileName, contentType, fileSizeBytes, fileSha256, partSizeBytes);
   }
 
   @Override
@@ -203,8 +203,8 @@ public class CreateAudioUploadRequest {
     sb.append("class CreateAudioUploadRequest {\n");
     sb.append("    fileName: ").append(toIndentedString(fileName)).append("\n");
     sb.append("    contentType: ").append(toIndentedString(contentType)).append("\n");
-    sb.append("    sizeBytes: ").append(toIndentedString(sizeBytes)).append("\n");
-    sb.append("    sha256: ").append(toIndentedString(sha256)).append("\n");
+    sb.append("    fileSizeBytes: ").append(toIndentedString(fileSizeBytes)).append("\n");
+    sb.append("    fileSha256: ").append(toIndentedString(fileSha256)).append("\n");
     sb.append("    partSizeBytes: ").append(toIndentedString(partSizeBytes)).append("\n");
     sb.append("}");
     return sb.toString();
@@ -224,10 +224,10 @@ public class CreateAudioUploadRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "sizeBytes", "sha256", "partSizeBytes"));
+    openapiFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "fileSizeBytes", "fileSha256", "partSizeBytes"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "sizeBytes", "sha256"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "fileSizeBytes", "fileSha256"));
   }
 
   /**
@@ -264,8 +264,8 @@ public class CreateAudioUploadRequest {
       if (!jsonObj.get("contentType").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `contentType` to be a primitive type in the JSON string but got `%s`", jsonObj.get("contentType").toString()));
       }
-      if (!jsonObj.get("sha256").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `sha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("sha256").toString()));
+      if (!jsonObj.get("fileSha256").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileSha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileSha256").toString()));
       }
   }
 

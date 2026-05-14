@@ -1,0 +1,34 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete 409 already aborted",
+  "status": 409,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_aborted_01",
+    "X-Trace-Id": "trace_audio_upload_aborted_01",
+    "Idempotency-Key": "idem_audio_upload_aborted_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01",
+    "uploadId": "upl_aborted_01"
+  },
+  "request": {
+    "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "parts": [
+      {
+        "partNumber": 1,
+        "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "etag": "\"etag-part-1\""
+      }
+    ]
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "UPLOAD_ALREADY_ABORTED",
+      "message": "Upload session is already aborted",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_aborted_01",
+    "traceId": "trace_audio_upload_aborted_01"
+  }
+}

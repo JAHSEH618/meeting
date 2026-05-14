@@ -25,6 +25,14 @@ export type MeetingStatus = components["schemas"]["MeetingStatus"];
 export type Meeting = components["schemas"]["Meeting"];
 export type CreateMeetingRequest = components["schemas"]["CreateMeetingRequest"];
 
+// ── Audio Upload ─────────────────────────────────────────────────
+export type AudioUploadStatus = components["schemas"]["AudioUploadStatus"];
+export type AudioUploadSession = components["schemas"]["AudioUploadSession"];
+export type AudioUploadPart = components["schemas"]["AudioUploadPart"];
+export type CreateAudioUploadRequest = components["schemas"]["CreateAudioUploadRequest"];
+export type CreateAudioUploadPartRequest = components["schemas"]["CreateAudioUploadPartRequest"];
+export type CompleteAudioUploadRequest = components["schemas"]["CompleteAudioUploadRequest"];
+
 // ── Task ────────────────────────────────────────────────────────────
 export type ProcessingTaskStatus = components["schemas"]["ProcessingTaskStatus"];
 export type ProcessingTaskPhase = components["schemas"]["ProcessingTaskPhase"];

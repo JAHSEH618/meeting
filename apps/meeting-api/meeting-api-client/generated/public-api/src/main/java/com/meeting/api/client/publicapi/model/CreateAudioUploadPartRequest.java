@@ -21,7 +21,6 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
 import java.util.Arrays;
-import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -61,10 +60,10 @@ public class CreateAudioUploadPartRequest {
   @javax.annotation.Nonnull
   private Integer sizeBytes;
 
-  public static final String SERIALIZED_NAME_SHA256 = "sha256";
-  @SerializedName(SERIALIZED_NAME_SHA256)
-  @javax.annotation.Nullable
-  private String sha256;
+  public static final String SERIALIZED_NAME_PART_SHA256 = "partSha256";
+  @SerializedName(SERIALIZED_NAME_PART_SHA256)
+  @javax.annotation.Nonnull
+  private String partSha256;
 
   public CreateAudioUploadPartRequest() {
   }
@@ -77,6 +76,7 @@ public class CreateAudioUploadPartRequest {
   /**
    * Get partNumber
    * minimum: 1
+   * maximum: 10000
    * @return partNumber
    */
   @javax.annotation.Nonnull
@@ -97,6 +97,7 @@ public class CreateAudioUploadPartRequest {
   /**
    * Get sizeBytes
    * minimum: 1
+   * maximum: 8388608
    * @return sizeBytes
    */
   @javax.annotation.Nonnull
@@ -109,22 +110,22 @@ public class CreateAudioUploadPartRequest {
   }
 
 
-  public CreateAudioUploadPartRequest sha256(@javax.annotation.Nullable String sha256) {
-    this.sha256 = sha256;
+  public CreateAudioUploadPartRequest partSha256(@javax.annotation.Nonnull String partSha256) {
+    this.partSha256 = partSha256;
     return this;
   }
 
   /**
-   * Get sha256
-   * @return sha256
+   * Get partSha256
+   * @return partSha256
    */
-  @javax.annotation.Nullable
-  public String getSha256() {
-    return sha256;
+  @javax.annotation.Nonnull
+  public String getPartSha256() {
+    return partSha256;
   }
 
-  public void setSha256(@javax.annotation.Nullable String sha256) {
-    this.sha256 = sha256;
+  public void setPartSha256(@javax.annotation.Nonnull String partSha256) {
+    this.partSha256 = partSha256;
   }
 
 
@@ -140,23 +141,12 @@ public class CreateAudioUploadPartRequest {
     CreateAudioUploadPartRequest createAudioUploadPartRequest = (CreateAudioUploadPartRequest) o;
     return Objects.equals(this.partNumber, createAudioUploadPartRequest.partNumber) &&
         Objects.equals(this.sizeBytes, createAudioUploadPartRequest.sizeBytes) &&
-        Objects.equals(this.sha256, createAudioUploadPartRequest.sha256);
-  }
-
-  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
-    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+        Objects.equals(this.partSha256, createAudioUploadPartRequest.partSha256);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(partNumber, sizeBytes, sha256);
-  }
-
-  private static <T> int hashCodeNullable(JsonNullable<T> a) {
-    if (a == null) {
-      return 1;
-    }
-    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
+    return Objects.hash(partNumber, sizeBytes, partSha256);
   }
 
   @Override
@@ -165,7 +155,7 @@ public class CreateAudioUploadPartRequest {
     sb.append("class CreateAudioUploadPartRequest {\n");
     sb.append("    partNumber: ").append(toIndentedString(partNumber)).append("\n");
     sb.append("    sizeBytes: ").append(toIndentedString(sizeBytes)).append("\n");
-    sb.append("    sha256: ").append(toIndentedString(sha256)).append("\n");
+    sb.append("    partSha256: ").append(toIndentedString(partSha256)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -184,10 +174,10 @@ public class CreateAudioUploadPartRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("partNumber", "sizeBytes", "sha256"));
+    openapiFields = new HashSet<String>(Arrays.asList("partNumber", "sizeBytes", "partSha256"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("partNumber", "sizeBytes"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("partNumber", "sizeBytes", "partSha256"));
   }
 
   /**
@@ -218,8 +208,8 @@ public class CreateAudioUploadPartRequest {
         }
       }
         JsonObject jsonObj = jsonElement.getAsJsonObject();
-      if ((jsonObj.get("sha256") != null && !jsonObj.get("sha256").isJsonNull()) && !jsonObj.get("sha256").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `sha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("sha256").toString()));
+      if (!jsonObj.get("partSha256").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `partSha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("partSha256").toString()));
       }
   }
 

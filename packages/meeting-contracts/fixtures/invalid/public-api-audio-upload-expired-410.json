@@ -1,0 +1,34 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads/{uploadId}/complete 410 expired upload",
+  "status": 410,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_expired_01",
+    "X-Trace-Id": "trace_audio_upload_expired_01",
+    "Idempotency-Key": "idem_audio_upload_expired_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01",
+    "uploadId": "upl_expired_01"
+  },
+  "request": {
+    "fileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "parts": [
+      {
+        "partNumber": 1,
+        "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "etag": "\"etag-part-1\""
+      }
+    ]
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "UPLOAD_SESSION_EXPIRED",
+      "message": "Upload session expired",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_expired_01",
+    "traceId": "trace_audio_upload_expired_01"
+  }
+}

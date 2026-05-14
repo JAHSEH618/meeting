@@ -1,0 +1,29 @@
+{
+  "description": "POST /meetings/{meetingId}/files/audio/uploads/{uploadId}/parts 409 part hash mismatch",
+  "status": 409,
+  "headers": {
+    "X-Request-Id": "req_audio_upload_part_conflict_01",
+    "X-Trace-Id": "trace_audio_upload_part_conflict_01",
+    "Idempotency-Key": "idem_audio_upload_part_conflict_01"
+  },
+  "pathParams": {
+    "meetingId": "mtg_fixture_01",
+    "uploadId": "upl_fixture_01"
+  },
+  "request": {
+    "partNumber": 1,
+    "sizeBytes": 8388608,
+    "partSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "UPLOAD_PART_HASH_MISMATCH",
+      "message": "Part sha256 differs from existing part",
+      "retryable": false
+    },
+    "requestId": "req_audio_upload_part_conflict_01",
+    "traceId": "trace_audio_upload_part_conflict_01"
+  }
+}
