@@ -21,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,6 +32,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final CallbackSecurityVerifier securityVerifier;
     private final TranscriptRepository transcriptRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final Clock clock;
 
     public ProcessingTaskCallbackApplicationService(
@@ -39,9 +41,10 @@ public class ProcessingTaskCallbackApplicationService {
         MessagePublisher messagePublisher,
         TenantScopedTransaction tenantScopedTransaction,
         CallbackSecurityVerifier securityVerifier,
-        TranscriptRepository transcriptRepository
+        TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, Clock.systemUTC());
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, Clock.systemUTC());
     }
 
     public ProcessingTaskCallbackApplicationService(
@@ -51,6 +54,7 @@ public class ProcessingTaskCallbackApplicationService {
         TenantScopedTransaction tenantScopedTransaction,
         CallbackSecurityVerifier securityVerifier,
         TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher,
         Clock clock
     ) {
         this.taskRepository = taskRepository;
@@ -59,6 +63,7 @@ public class ProcessingTaskCallbackApplicationService {
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.securityVerifier = securityVerifier;
         this.transcriptRepository = transcriptRepository;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.clock = clock;
     }
 
@@ -133,7 +138,7 @@ public class ProcessingTaskCallbackApplicationService {
                 command.finishedAt()
             );
             ProcessingTask saved = taskRepository.save(task);
-            messagePublisher.publish(new WorkerPhaseCompletedEvent(
+            WorkerPhaseCompletedEvent workerPhaseEvent = new WorkerPhaseCompletedEvent(
                 "evt_" + UUID.randomUUID().toString().replace("-", ""),
                 saved.tenantId(),
                 saved.taskId(),
@@ -145,7 +150,9 @@ public class ProcessingTaskCallbackApplicationService {
                 command.artifactManifestId(),
                 0,
                 command.finishedAt()
-            ));
+            );
+            messagePublisher.publish(workerPhaseEvent);
+            applicationEventPublisher.publishEvent(workerPhaseEvent);
             return ProcessingTaskAssembler.toDto(saved);
         });
     }

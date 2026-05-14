@@ -173,6 +173,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             TenantScopedTransaction.immediate(),
             new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
             transcripts,
+            event -> {},
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
