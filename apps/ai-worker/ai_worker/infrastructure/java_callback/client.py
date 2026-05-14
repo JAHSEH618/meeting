@@ -158,6 +158,7 @@ class JavaCallbackClient:
         transcript_version: int,
         segments: list[dict],
         metadata: dict | None = None,
+        artifact_manifest_id: str | None = None,
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/transcript"
@@ -171,6 +172,8 @@ class JavaCallbackClient:
             "segments": segments,
             "metadata": metadata or {},
         }
+        if artifact_manifest_id:
+            body["artifactManifestId"] = artifact_manifest_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
     async def submit_artifacts(

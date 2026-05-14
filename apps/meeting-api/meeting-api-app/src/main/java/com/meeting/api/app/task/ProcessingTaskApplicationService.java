@@ -7,6 +7,7 @@ import com.meeting.api.client.task.CreateProcessingTaskCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.client.task.ProcessingTaskFacade;
 import com.meeting.api.client.task.RetryTaskCommand;
+import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -182,10 +183,9 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             now,
             phase2TaskMessagePayload(
                 saved,
+                meeting,
                 fileId,
                 audioUri,
-                bucket,
-                objectKey,
                 fileSha256,
                 fileSizeBytes,
                 traceId
@@ -231,10 +231,9 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
 
     private Map<String, Object> phase2TaskMessagePayload(
         ProcessingTask task,
+        Meeting meeting,
         String fileId,
         String audioUri,
-        String bucket,
-        String objectKey,
         String fileSha256,
         long fileSizeBytes,
         String traceId
@@ -248,16 +247,35 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             Map.entry("attemptNo", task.attemptNo()),
             Map.entry("pipelineSteps", PHASE2_WORKER_STEPS.stream().map(Enum::name).toList()),
             Map.entry("expectedInputVersion", Map.of("chunkStrategyVersion", "v1")),
-            Map.entry("audio", Map.of(
-                "fileId", fileId,
-                "uri", audioUri,
-                "bucket", bucket,
-                "objectKey", objectKey,
-                "sha256", fileSha256,
-                "sizeBytes", fileSizeBytes
+            Map.entry("language", meeting.language()),
+            Map.entry("channelMap", Map.of("channelCount", 1, "layout", "mono")),
+            Map.entry("knownParticipants", knownParticipantIds(meeting)),
+            Map.entry("minSpeakers", 1),
+            Map.entry("maxSpeakers", 4),
+            Map.entry("audioFileId", fileId),
+            Map.entry("audioUri", audioUri),
+            Map.entry("options", Map.of(
+                "enableAsr", true,
+                "enableDiarization", true,
+                "enableSpeakerRecognition", false,
+                "enableRagIndexing", false,
+                "enableAlignment", false,
+                "inputAudioSha256", fileSha256,
+                "inputAudioSizeBytes", fileSizeBytes
             )),
-            Map.entry("options", Map.of()),
-            Map.entry("traceId", traceId == null ? "" : traceId)
+            Map.entry("traceId", traceId == null || traceId.isBlank() ? "trace_" + task.taskId() : traceId)
         );
+    }
+
+    private static List<String> knownParticipantIds(Meeting meeting) {
+        return meeting.participants().stream()
+            .map(participant -> {
+                if (participant.personId() != null && !participant.personId().isBlank()) {
+                    return participant.personId();
+                }
+                return participant.displayName();
+            })
+            .filter(value -> value != null && !value.isBlank())
+            .toList();
     }
 }

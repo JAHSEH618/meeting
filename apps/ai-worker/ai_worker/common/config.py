@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     rabbitmq_virtual_host: str = "/"
     rabbitmq_task_queues: str = "audio-cpu-queue,gpu-asr-queue,gpu-diar-queue,gpu-speaker-queue,embed-queue"
     callback_max_retries: int = 3
+    artifact_store_root: str = ".artifacts"
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")
 
 

@@ -67,8 +67,4 @@ def validate_pipeline_steps(task_type: str, pipeline_steps: list[str]) -> Valida
     if unexpected:
         errors.append(f"pipelineSteps contains unexpected steps for taskType={task_type}: {sorted(unexpected)}")
 
-    missing = expected - actual
-    if missing:
-        errors.append(f"pipelineSteps missing expected steps for taskType={task_type}: {sorted(missing)}")
-
     return ValidationResult(valid=len(errors) == 0, errors=errors)

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
+from ai_worker.domain.task import PipelineArtifact
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
@@ -22,12 +23,8 @@ def _valid_message() -> dict:
         "pipelineSteps": [
             "AUDIO_PREPROCESS",
             "ASR",
-            "ALIGNMENT",
             "DIARIZATION",
-            "SPEAKER_EMBEDDING",
-            "SPEAKER_MATCHING",
             "TRANSCRIPT_MERGE",
-            "RAG_INDEXING",
         ],
         "expectedInputVersion": {"chunkStrategyVersion": "v1"},
         "language": "zh",
@@ -50,10 +47,52 @@ def callback_client():
     return client
 
 
+class StubWorkflowEngine:
+    def __init__(self, state_store: InMemoryWorkflowStateStore) -> None:
+        self.state_store = state_store
+        self.ran_steps: list[str] = []
+
+    def start_pipeline(self, task):
+        self.state_store.start(
+            task_id=task.task_id,
+            task_type=task.task_type,
+            tenant_id=task.tenant_id,
+            attempt_no=task.attempt_no,
+            trace_id=task.trace_id,
+            steps=list(task.pipeline_steps),
+        )
+        return {"task": task}
+
+    async def run_step(self, context, step_name: str) -> None:
+        self.ran_steps.append(step_name)
+
+    async def complete_pipeline(self, context) -> PipelineArtifact:
+        task = context["task"]
+        return PipelineArtifact(
+            task_id=task.task_id,
+            transcript_segments=[
+                {
+                    "segmentId": f"{task.task_id}_seg_0001",
+                    "startMs": 0,
+                    "endMs": 1200,
+                    "speakerLabel": "SPEAKER_00",
+                    "text": f"Local transcript for {task.meeting_id}.",
+                    "asrConfidence": 0.99,
+                    "diarizationConfidence": 0.98,
+                    "speakerConfidence": 0.0,
+                    "timestampPrecision": "SEGMENT",
+                }
+            ],
+            artifact_manifest_id="tos://meeting-artifacts/manifest.json",
+            terminal_status="SUCCEEDED",
+        )
+
+
 @pytest.mark.asyncio
-async def test_consume_message_runs_fake_pipeline_and_records_workflow(callback_client) -> None:
+async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
-    runtime = MvpWorkerRuntime(callback_client=callback_client, state_store=state_store)
+    engine = StubWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
 
     task = await runtime.consume_message(_valid_message())
 
@@ -61,8 +100,9 @@ async def test_consume_message_runs_fake_pipeline_and_records_workflow(callback_
     snapshot = state_store.get("task_runtime_01")
     assert snapshot is not None
     assert snapshot.status == "SUCCEEDED"
-    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * 8
-    assert callback_client.update_step.await_count == 24
+    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * 4
+    assert engine.ran_steps == _valid_message()["pipelineSteps"]
+    assert callback_client.update_step.await_count == 12
     callback_client.submit_transcript.assert_awaited_once()
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]
@@ -72,7 +112,11 @@ async def test_consume_message_runs_fake_pipeline_and_records_workflow(callback_
 @pytest.mark.asyncio
 async def test_step_callback_failure_records_writeback_failed(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
-    runtime = MvpWorkerRuntime(callback_client=callback_client, state_store=state_store)
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=StubWorkflowEngine(state_store),
+        state_store=state_store,
+    )
     callback_client.update_step.side_effect = [
         CallbackResponse(http_status=409, accepted=False, error_code="CALLBACK_IDEMPOTENCY_CONFLICT"),
     ]

@@ -1,11 +1,11 @@
-"""WorkerRuntime port and MVP fake runtime implementation."""
+"""WorkerRuntime port and local phase 2 runtime implementation."""
 
 import logging
 from typing import Any, Protocol, runtime_checkable
 
-from ai_worker.application.workflows.fake_engine import FakeSmokeWorkflowEngine
+from ai_worker.application.workflows.audio_pipeline import LocalAudioPipelineEngine, WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore, workflow_state_store
-from ai_worker.domain.task import PipelineArtifact, StepResult, TaskMessage
+from ai_worker.domain.task import StepResult, TaskMessage
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
 from ai_worker.infrastructure.task_consumer import consume_and_validate
 
@@ -46,23 +46,17 @@ class WorkerRuntime(Protocol):
 
 
 class MvpWorkerRuntime:
-    """Executes validated task messages with a fake smoke workflow.
-
-    The runtime is intentionally small: RabbitMQ adapters hand raw JSON messages
-    to ``consume_message``; this class owns validation, callback ordering, and
-    workflow status tracking. Java creates the MVP task with a matching default
-    lease owner until a dedicated claim endpoint lands.
-    """
+    """Executes validated phase 2 task messages with a local audio pipeline."""
 
     def __init__(
         self,
         callback_client: Any | None = None,
-        workflow_engine: FakeSmokeWorkflowEngine | None = None,
+        workflow_engine: Any | None = None,
         state_store: InMemoryWorkflowStateStore = workflow_state_store,
     ) -> None:
         self.callback_client = callback_client or JavaCallbackClient()
         self.state_store = state_store
-        self.workflow_engine = workflow_engine or FakeSmokeWorkflowEngine(state_store)
+        self.workflow_engine = workflow_engine or LocalAudioPipelineEngine(state_store)
         self._running = False
 
     async def start(self) -> None:
@@ -76,12 +70,17 @@ class MvpWorkerRuntime:
         if task is None:
             return None
 
-        artifact = await self.workflow_engine.run_pipeline(task)
+        context = self.workflow_engine.start_pipeline(task)
         for step_name in task.pipeline_steps:
-            result = await self.execute_step(task, step_name)
+            result = await self.execute_step(task, step_name, context)
             if result.status == "FAILED":
-                await self._fail_for_writeback(task, result.step_name, result.error_message or "callback writeback failed")
+                if result.error_code == "WRITEBACK_FAILED":
+                    await self._fail_for_writeback(task, result.step_name, result.error_message or "callback writeback failed")
+                else:
+                    await self._fail_for_pipeline_result(task, result)
                 return task
+
+        artifact = await self.workflow_engine.complete_pipeline(context)
 
         if task.meeting_id and "TRANSCRIPT_MERGE" in task.pipeline_steps:
             transcript_response = await self.callback_client.submit_transcript(
@@ -93,8 +92,10 @@ class MvpWorkerRuntime:
                 segments=artifact.transcript_segments,
                 metadata={
                     "workflowId": f"wf_{task.task_id}_{task.attempt_no}",
-                    "mode": "fake-smoke",
+                    "mode": "phase2-local",
+                    "artifactManifestUri": artifact.artifact_manifest_id,
                 },
+                artifact_manifest_id=None,
                 trace_id=task.trace_id,
             )
             if not transcript_response.accepted:
@@ -118,13 +119,26 @@ class MvpWorkerRuntime:
         self.state_store.complete(task.task_id, artifact.terminal_status)
         return task
 
-    async def execute_step(self, task: TaskMessage, step_name: str) -> StepResult:
+    async def execute_step(self, task: TaskMessage, step_name: str, context: Any | None = None) -> StepResult:
         started = await self._update_step(task, step_name, "RUNNING", 0)
         if not started.accepted:
             return self._writeback_failed(step_name, "step start callback failed")
 
         if await self._heartbeat(task, step_name, 50) is False:
             return self._writeback_failed(step_name, "step heartbeat callback failed")
+
+        try:
+            if context is not None and hasattr(self.workflow_engine, "run_step"):
+                await self.workflow_engine.run_step(context, step_name)
+        except WorkerPipelineError as exc:
+            self.state_store.update_step(task.task_id, step_name, "FAILED", 100, exc.error_code)
+            return StepResult(
+                step_name=exc.step_name,
+                status="FAILED",
+                progress=100,
+                error_code=exc.error_code,
+                error_message=str(exc),
+            )
 
         succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
         if not succeeded.accepted:
@@ -176,6 +190,28 @@ class MvpWorkerRuntime:
             attempt_no=task.attempt_no,
             failed_step=failed_step,
             error_code="WRITEBACK_FAILED",
+            error_message=message,
+            retryable=True,
+            trace_id=task.trace_id,
+        )
+
+    async def _fail_for_pipeline_result(self, task: TaskMessage, result: StepResult) -> None:
+        error_code = result.error_code or "PIPELINE_STEP_FAILED"
+        message = result.error_message or error_code
+        logger.error(
+            "PIPELINE_FAILED: task_id=%s step=%s error_code=%s message=%s",
+            task.task_id,
+            result.step_name,
+            error_code,
+            message,
+        )
+        self.state_store.fail(task.task_id, error_code, message)
+        await self.callback_client.fail_task(
+            task_id=task.task_id,
+            tenant_id=task.tenant_id,
+            attempt_no=task.attempt_no,
+            failed_step=result.step_name,
+            error_code=error_code,
             error_message=message,
             retryable=True,
             trace_id=task.trace_id,

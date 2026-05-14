@@ -49,3 +49,11 @@ def test_validate_pipeline_steps_accepts_valid() -> None:
         ["AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
     )
     assert result.valid, f"Expected valid, got errors: {result.errors}"
+
+
+def test_validate_pipeline_steps_accepts_phase2_worker_subset() -> None:
+    result = validate_pipeline_steps(
+        "MEETING_FULL_PIPELINE",
+        ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE"],
+    )
+    assert result.valid, f"Expected valid, got errors: {result.errors}"

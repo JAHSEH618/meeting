@@ -39,6 +39,20 @@ class TaskMessage:
     options: dict[str, Any] = field(default_factory=dict)
     created_at: str | None = None
 
+    @property
+    def input_audio_sha256(self) -> str | None:
+        value = self.options.get("inputAudioSha256")
+        return str(value) if value else None
+
+    @property
+    def input_audio_size_bytes(self) -> int | None:
+        value = self.options.get("inputAudioSizeBytes")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None
+
 
 @dataclass(frozen=True)
 class StepResult:

@@ -148,9 +148,14 @@ class AudioUploadApplicationServiceTest {
         assertThat(event.pipelineSteps())
             .extracting(Enum::name)
             .containsExactly("AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE");
+        assertThat(event.payload().get("audioFileId")).isEqualTo(completed.fileId());
+        assertThat(event.payload().get("audioUri")).asString().startsWith("tos://meeting-local/");
+        assertThat(event.payload().get("language")).isEqualTo("zh");
+        assertThat(event.payload().get("minSpeakers")).isEqualTo(1);
+        assertThat(event.payload().get("maxSpeakers")).isEqualTo(4);
         @SuppressWarnings("unchecked")
-        Map<String, Object> audio = (Map<String, Object>) event.payload().get("audio");
-        assertThat(audio.get("objectKey")).isEqualTo(completed.objectKey());
+        Map<String, Object> options = (Map<String, Object>) event.payload().get("options");
+        assertThat(options.get("inputAudioSha256")).isEqualTo(completed.fileSha256());
     }
 
     @Test
