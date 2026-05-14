@@ -218,7 +218,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] 实现会议纪要生成，保存 `meeting_minutes`、evidence segment、`evidence_text_snapshot`、artifact manifest。
 - [x] 实现待办、决策、风险抽取；AI 建议与用户确认后的业务事实分离。
 - [x] 实现转录编辑：版本冲突校验，保留 `original_text`，更新 `edited_text` / `current_text`，将纪要、事项、RAG chunk、导出标记 STALE。
-- [ ] 实现 `CONFIDENTIAL` / `SECRET` 自动 LLM 返回 `SECURITY_LEVEL_BLOCKED`。
+- [x] 实现 `CONFIDENTIAL` / `SECRET` 自动 LLM 返回 `SECURITY_LEVEL_BLOCKED`。
 
 ### 工程：`apps/meeting-web`
 

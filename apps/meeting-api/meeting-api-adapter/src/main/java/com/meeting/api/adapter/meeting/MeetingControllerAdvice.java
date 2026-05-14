@@ -1,9 +1,15 @@
 package com.meeting.api.adapter.meeting;
 
 import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.minutes.MinutesApplicationService;
+import com.meeting.api.app.transcript.TranscriptApplicationService;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.common.ErrorInfo;
+import com.meeting.api.domain.llm.LlmProviderException;
+import com.meeting.api.domain.llm.SecurityLevelBlockedException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -18,38 +24,68 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class MeetingControllerAdvice {
     private static final Logger log = LoggerFactory.getLogger(MeetingControllerAdvice.class);
+    private static final String SECURITY_LEVEL_BLOCKED_MESSAGE = "一期不支持该安全等级的自动 LLM 处理";
 
     @ExceptionHandler(TenantContextMissingException.class)
     public ResponseEntity<ApiResponse<Void>> handleTenantContextMissing(TenantContextMissingException ex) {
-        return error(HttpStatus.FORBIDDEN, ex.errorCode(), ex.getMessage(), false);
+        return error(HttpStatus.FORBIDDEN, ex.errorCode(), ex.getMessage(), false, Map.of());
+    }
+
+    @ExceptionHandler(SecurityLevelBlockedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleSecurityLevelBlocked(SecurityLevelBlockedException ex) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("securityLevel", ex.securityLevel().name());
+        details.put("blockedCapability", ex.blockedCapability());
+        return error(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.SECURITY_LEVEL_BLOCKED, SECURITY_LEVEL_BLOCKED_MESSAGE, false, details);
+    }
+
+    @ExceptionHandler(LlmProviderException.class)
+    public ResponseEntity<ApiResponse<Void>> handleLlmProvider(LlmProviderException ex) {
+        ErrorCode code = ex.errorCode();
+        boolean retryable = code == ErrorCode.LLM_PROVIDER_TIMEOUT || code == ErrorCode.LLM_RATE_LIMIT;
+        HttpStatus status = code == ErrorCode.LLM_RATE_LIMIT ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.SERVICE_UNAVAILABLE;
+        return error(status, code, ex.getMessage(), retryable, Map.of());
+    }
+
+    @ExceptionHandler(MinutesApplicationService.VersionConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMinutesVersionConflict(MinutesApplicationService.VersionConflictException ex) {
+        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), false, Map.of());
+    }
+
+    @ExceptionHandler(TranscriptApplicationService.TranscriptVersionConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTranscriptVersionConflict(TranscriptApplicationService.TranscriptVersionConflictException ex) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("expectedVersion", ex.expectedVersion());
+        details.put("actualVersion", ex.actualVersion());
+        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), false, details);
     }
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<ApiResponse<Void>> handleApplication(ApplicationException ex) {
-        return error(HttpStatus.valueOf(ex.httpStatus()), ex.errorCode(), ex.getMessage(), ex.retryable());
+        return error(HttpStatus.valueOf(ex.httpStatus()), ex.errorCode(), ex.getMessage(), ex.retryable(), Map.of());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(IllegalArgumentException ex) {
-        return error(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.VALIDATION_FAILED, ex.getMessage(), false);
+        return error(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.VALIDATION_FAILED, ex.getMessage(), false, Map.of());
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiResponse<Void>> handleConflict(IllegalStateException ex) {
-        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), false);
+        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), false, Map.of());
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
         log.error("Unhandled exception", ex);
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, "服务内部错误", false);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, "服务内部错误", false, Map.of());
     }
 
-    private ResponseEntity<ApiResponse<Void>> error(HttpStatus status, ErrorCode code, String message, boolean retryable) {
+    private ResponseEntity<ApiResponse<Void>> error(HttpStatus status, ErrorCode code, String message, boolean retryable, Map<String, Object> details) {
         ApiResponse<Void> body = new ApiResponse<>(
             false,
             null,
-            new ErrorInfo(code, message, retryable, java.util.Map.of()),
+            new ErrorInfo(code, message, retryable, details),
             null,
             null
         );
