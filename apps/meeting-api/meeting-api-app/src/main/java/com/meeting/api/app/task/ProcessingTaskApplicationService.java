@@ -41,6 +41,21 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         ProcessingStep.RAG_INDEXING
     );
 
+    private static final List<ProcessingStep> PHASE2_AUDIO_UPLOAD_STEPS = List.of(
+        ProcessingStep.AUDIO_UPLOAD,
+        ProcessingStep.AUDIO_PREPROCESS,
+        ProcessingStep.ASR,
+        ProcessingStep.DIARIZATION,
+        ProcessingStep.TRANSCRIPT_MERGE
+    );
+
+    private static final List<ProcessingStep> PHASE2_WORKER_STEPS = List.of(
+        ProcessingStep.AUDIO_PREPROCESS,
+        ProcessingStep.ASR,
+        ProcessingStep.DIARIZATION,
+        ProcessingStep.TRANSCRIPT_MERGE
+    );
+
     private final ProcessingTaskRepository taskRepository;
     private final MeetingRepository meetingRepository;
     private final MessagePublisher messagePublisher;
@@ -118,6 +133,67 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return taskRepository.findById(tenantId, taskId).map(ProcessingTaskAssembler::toDto);
     }
 
+    public ProcessingTaskDTO createForCompletedAudioUpload(
+        String tenantId,
+        String meetingId,
+        String fileId,
+        String audioUri,
+        String bucket,
+        String objectKey,
+        String fileSha256,
+        long fileSizeBytes,
+        String requestedBy,
+        String idempotencyKey,
+        String requestId,
+        String traceId
+    ) {
+        var meeting = meetingRepository.findById(tenantId, meetingId)
+            .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + meetingId));
+        if (meeting.status() == com.meeting.api.client.enums.MeetingStatus.CREATED) {
+            meetingRepository.updateStatus(tenantId, meetingId, com.meeting.api.client.enums.MeetingStatus.PROCESSING);
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        ProcessingTask task = ProcessingTask.create(
+            "task_" + UUID.randomUUID().toString().replace("-", ""),
+            tenantId,
+            meetingId,
+            MEETING_FULL_PIPELINE,
+            PHASE2_AUDIO_UPLOAD_STEPS,
+            now
+        );
+        task.markJavaStepSucceeded(ProcessingStep.AUDIO_UPLOAD, now);
+        task.enqueue(now);
+        task.claimLease(
+            "worker_dev_001",
+            "worker_dev_001:" + task.taskId() + ":" + task.attemptNo(),
+            now.plusMinutes(5),
+            now
+        );
+        ProcessingTask saved = taskRepository.save(task);
+        messagePublisher.publish(new ProcessingTaskCreatedEvent(
+            "evt_" + UUID.randomUUID().toString().replace("-", ""),
+            saved.tenantId(),
+            saved.taskId(),
+            saved.meetingId(),
+            saved.taskType(),
+            saved.attemptNo(),
+            PHASE2_WORKER_STEPS,
+            0,
+            now,
+            phase2TaskMessagePayload(
+                saved,
+                fileId,
+                audioUri,
+                bucket,
+                objectKey,
+                fileSha256,
+                fileSizeBytes,
+                traceId
+            )
+        ));
+        return ProcessingTaskAssembler.toDto(saved);
+    }
+
     @Override
     public ProcessingTaskDTO retry(RetryTaskCommand command) {
         return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
@@ -150,6 +226,38 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             "expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion(),
             "options", command.options() == null ? Map.of() : command.options(),
             "traceId", command.traceId() == null ? "" : command.traceId()
+        );
+    }
+
+    private Map<String, Object> phase2TaskMessagePayload(
+        ProcessingTask task,
+        String fileId,
+        String audioUri,
+        String bucket,
+        String objectKey,
+        String fileSha256,
+        long fileSizeBytes,
+        String traceId
+    ) {
+        return Map.ofEntries(
+            Map.entry("taskId", task.taskId()),
+            Map.entry("taskType", task.taskType()),
+            Map.entry("tenantId", task.tenantId()),
+            Map.entry("meetingId", task.meetingId()),
+            Map.entry("securityLevel", "INTERNAL"),
+            Map.entry("attemptNo", task.attemptNo()),
+            Map.entry("pipelineSteps", PHASE2_WORKER_STEPS.stream().map(Enum::name).toList()),
+            Map.entry("expectedInputVersion", Map.of("chunkStrategyVersion", "v1")),
+            Map.entry("audio", Map.of(
+                "fileId", fileId,
+                "uri", audioUri,
+                "bucket", bucket,
+                "objectKey", objectKey,
+                "sha256", fileSha256,
+                "sizeBytes", fileSizeBytes
+            )),
+            Map.entry("options", Map.of()),
+            Map.entry("traceId", traceId == null ? "" : traceId)
         );
     }
 }

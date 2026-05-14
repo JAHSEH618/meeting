@@ -73,6 +73,32 @@ public final class Meeting {
         return value;
     }
 
+    public Meeting markProcessing() {
+        if (status == MeetingStatus.PROCESSING) {
+            return this;
+        }
+        if (status != MeetingStatus.CREATED) {
+            throw new IllegalStateException("meeting can only start processing from CREATED");
+        }
+        return copyWithStatus(MeetingStatus.PROCESSING);
+    }
+
+    private Meeting copyWithStatus(MeetingStatus nextStatus) {
+        return new Builder()
+            .id(id)
+            .tenantId(tenantId)
+            .title(title)
+            .securityLevel(securityLevel)
+            .status(nextStatus)
+            .language(language)
+            .transcriptVersion(transcriptVersion)
+            .minutesVersion(minutesVersion)
+            .createdAt(createdAt)
+            .createdBy(createdBy)
+            .participants(participants)
+            .build();
+    }
+
     // ── Accessors ─────────────────────────────────────────────
 
     public String id() { return id; }

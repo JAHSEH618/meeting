@@ -1,5 +1,6 @@
 package com.meeting.api.adapter.meeting;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.common.ErrorInfo;
@@ -21,6 +22,11 @@ public class MeetingControllerAdvice {
     @ExceptionHandler(TenantContextMissingException.class)
     public ResponseEntity<ApiResponse<Void>> handleTenantContextMissing(TenantContextMissingException ex) {
         return error(HttpStatus.FORBIDDEN, ex.errorCode(), ex.getMessage(), false);
+    }
+
+    @ExceptionHandler(ApplicationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleApplication(ApplicationException ex) {
+        return error(HttpStatus.valueOf(ex.httpStatus()), ex.errorCode(), ex.getMessage(), ex.retryable());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -1,5 +1,6 @@
 package com.meeting.api.infrastructure.meeting;
 
+import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import java.util.List;
@@ -33,5 +34,27 @@ public class InMemoryMeetingRepository implements MeetingRepository {
         return store.values().stream()
             .filter(m -> m.tenantId().equals(tenantId))
             .toList();
+    }
+
+    @Override
+    public void updateStatus(String tenantId, String meetingId, MeetingStatus status) {
+        store.computeIfPresent(meetingId, (id, meeting) -> {
+            if (!meeting.tenantId().equals(tenantId)) {
+                return meeting;
+            }
+            return new Meeting.Builder()
+                .id(meeting.id())
+                .tenantId(meeting.tenantId())
+                .title(meeting.title())
+                .securityLevel(meeting.securityLevel())
+                .status(status)
+                .language(meeting.language())
+                .transcriptVersion(meeting.transcriptVersion())
+                .minutesVersion(meeting.minutesVersion())
+                .createdAt(meeting.createdAt())
+                .createdBy(meeting.createdBy())
+                .participants(meeting.participants())
+                .build();
+        });
     }
 }

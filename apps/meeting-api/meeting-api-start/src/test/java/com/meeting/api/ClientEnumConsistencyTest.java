@@ -1,5 +1,6 @@
 package com.meeting.api;
 
+import com.meeting.api.client.enums.AudioUploadStatus;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingStepUpdateSource;
@@ -38,6 +39,7 @@ class ClientEnumConsistencyTest {
         assertThat(names(RagAnswerCoverage.class)).containsExactlyElementsOf(enums.get("ragAnswerCoverage"));
         assertThat(names(StaleStatus.class)).containsExactlyElementsOf(enums.get("staleStatus"));
         assertThat(names(TaskEventType.class)).containsExactlyElementsOf(enums.get("taskEventType"));
+        assertThat(names(AudioUploadStatus.class)).containsExactlyElementsOf(enums.get("audioUploadStatus"));
     }
 
     private static List<String> names(Class<? extends Enum<?>> enumType) {
