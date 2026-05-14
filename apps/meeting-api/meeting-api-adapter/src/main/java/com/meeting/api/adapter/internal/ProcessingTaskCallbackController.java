@@ -12,13 +12,16 @@ import com.meeting.api.client.internal.callback.CompleteWorkerPhaseCommand;
 import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
+import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -134,9 +137,20 @@ public class ProcessingTaskCallbackController {
     }
 
     @PostMapping("/transcript")
-    public ApiResponse<Map<String, Object>> transcript(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+    public ApiResponse<ProcessingTaskDTO> transcript(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
-        return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "TRANSCRIPT"), metadata.requestId(), metadata.traceId());
+        return ApiResponse.ok(callbackApplicationService.writeTranscript(new TranscriptCallbackCommand(
+            metadata,
+            requiredString(payload, "tenantId"),
+            requiredString(payload, "meetingId"),
+            taskId,
+            metadata.attemptNo(),
+            optionalInt(payload, "transcriptVersion", 0),
+            parseTranscriptSegments(payload.get("segments")),
+            parseObject(payload.get("metadata")),
+            optionalString(payload, "artifactManifestId")
+        )), metadata.requestId(), metadata.traceId());
     }
 
     @PostMapping("/speaker-candidates")
@@ -231,6 +245,54 @@ public class ProcessingTaskCallbackController {
                 String.valueOf(value.get("reason"))
             ))
             .toList();
+    }
+
+    private static List<TranscriptCallbackCommand.Segment> parseTranscriptSegments(Object raw) {
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        if (values.isEmpty()) {
+            throw new IllegalArgumentException("segments must not be empty");
+        }
+        return values.stream()
+            .filter(Map.class::isInstance)
+            .map(Map.class::cast)
+            .map(value -> new TranscriptCallbackCommand.Segment(
+                requiredString(value, "segmentId"),
+                requiredLong(value, "startMs"),
+                requiredLong(value, "endMs"),
+                requiredString(value, "speakerLabel"),
+                requiredString(value, "text"),
+                optionalDecimal(value, "asrConfidence"),
+                optionalDecimal(value, "diarizationConfidence"),
+                optionalDecimal(value, "speakerConfidence"),
+                optionalString(value, "timestampPrecision")
+            ))
+            .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseObject(Object raw) {
+        return raw instanceof Map<?, ?> map ? (Map<String, Object>) map : Collections.emptyMap();
+    }
+
+    private static long requiredLong(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            return Long.parseLong(String.valueOf(value));
+        }
+        throw new IllegalArgumentException("missing required field: " + key);
+    }
+
+    private static BigDecimal optionalDecimal(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        if (value == null) {
+            return null;
+        }
+        return new BigDecimal(String.valueOf(value));
     }
 
     private static String sha256(String value) {

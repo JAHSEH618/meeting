@@ -13,14 +13,17 @@ import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.CompleteWorkerPhaseCommand;
 import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
+import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.domain.common.DomainEvent;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
+import com.meeting.api.domain.transcript.TranscriptRepository;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -30,6 +33,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.crypto.Mac;
@@ -115,10 +119,52 @@ class ProcessingTaskCallbackApplicationServiceTest {
         assertThat(dto.lastErrorCode()).isEqualTo("ASR_RUNTIME_ERROR");
     }
 
+    @Test
+    void transcriptCallbackPersistsSegmentsAndBumpsVersion() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        ProcessingTaskCallbackApplicationService service = service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher(), transcripts);
+
+        var dto = service.writeTranscript(transcriptCommand(metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}")));
+
+        assertThat(dto.currentStep()).isEqualTo("TRANSCRIPT_MERGE");
+        assertThat(transcripts.version).isEqualTo(1);
+        assertThat(transcripts.segments).singleElement().satisfies(segment -> {
+            assertThat(segment.originalText()).isEqualTo("hello world");
+            assertThat(segment.currentText()).isEqualTo("hello world");
+            assertThat(segment.segmentIndex()).isEqualTo(0);
+        });
+    }
+
+    @Test
+    void transcriptCallbackReplayWithSameBodyHashIsIdempotent() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
+        CallbackMetadata metadata = metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}");
+
+        service.writeTranscript(transcriptCommand(metadata));
+        service.writeTranscript(transcriptCommand(metadata));
+
+        assertThat(transcripts.version).isEqualTo(1);
+        assertThat(transcripts.replaceCount).isEqualTo(1);
+        assertThat(callbacks.records).hasSize(1);
+    }
+
     private static ProcessingTaskCallbackApplicationService service(
         InMemoryTaskRepository tasks,
         InMemoryCallbackEvents callbacks,
         CapturingPublisher publisher
+    ) {
+        return service(tasks, callbacks, publisher, new InMemoryTranscriptRepository());
+    }
+
+    private static ProcessingTaskCallbackApplicationService service(
+        InMemoryTaskRepository tasks,
+        InMemoryCallbackEvents callbacks,
+        CapturingPublisher publisher,
+        InMemoryTranscriptRepository transcripts
     ) {
         return new ProcessingTaskCallbackApplicationService(
             tasks,
@@ -126,6 +172,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             publisher,
             TenantScopedTransaction.immediate(),
             new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
+            transcripts,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -183,6 +230,30 @@ class ProcessingTaskCallbackApplicationServiceTest {
         }
     }
 
+    private static TranscriptCallbackCommand transcriptCommand(CallbackMetadata metadata) {
+        return new TranscriptCallbackCommand(
+            metadata,
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            1,
+            List.of(new TranscriptCallbackCommand.Segment(
+                "seg_01",
+                0,
+                1200,
+                "SPEAKER_00",
+                "hello world",
+                BigDecimal.valueOf(0.98),
+                BigDecimal.valueOf(0.97),
+                BigDecimal.ZERO,
+                "SEGMENT"
+            )),
+            Map.of(),
+            null
+        );
+    }
+
     private static final class CapturingPublisher implements MessagePublisher {
         private final List<DomainEvent> events = new ArrayList<>();
 
@@ -231,6 +302,33 @@ class ProcessingTaskCallbackApplicationServiceTest {
         public CallbackEventRecord save(CallbackEventRecord record) {
             records.add(record);
             return record;
+        }
+    }
+
+    private static final class InMemoryTranscriptRepository implements TranscriptRepository {
+        private int version;
+        private int replaceCount;
+        private List<TranscriptSegmentRecord> segments = List.of();
+
+        @Override
+        public int currentTranscriptVersion(String tenantId, String meetingId) {
+            return version;
+        }
+
+        @Override
+        public List<TranscriptSegmentRecord> findByMeeting(String tenantId, String meetingId, int transcriptVersion) {
+            return transcriptVersion == version ? segments : List.of();
+        }
+
+        @Override
+        public void replaceTranscript(String tenantId, String meetingId, int transcriptVersion, String artifactManifestId, List<TranscriptSegmentRecord> segments) {
+            this.segments = List.copyOf(segments);
+            replaceCount++;
+        }
+
+        @Override
+        public void updateMeetingTranscriptVersion(String tenantId, String meetingId, int transcriptVersion) {
+            this.version = transcriptVersion;
         }
     }
 }
