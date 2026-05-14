@@ -438,6 +438,59 @@ export const handlers = [
   http.post("/api/meetings/:meetingId/risks/:itemId/reject", () => {
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
   }),
+
+  http.get("/api/speaker-profiles", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          speakerProfileId: "spk_alice",
+          tenantId: "tenant_01",
+          personId: "alice",
+          displayName: "Alice 张",
+          consentStatus: "ACTIVE",
+          consentSource: "MEETING_INVITE",
+          consentVersion: "v1",
+          revokedAt: null,
+          deletedAt: null,
+          createdAt: "2026-05-11T09:00:00Z",
+          updatedAt: "2026-05-11T09:00:00Z",
+        },
+      ],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/speakers", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          speakerLabel: "SPEAKER_00",
+          displayName: null,
+          personId: null,
+          speakerProfileId: null,
+          confirmationStatus: "CANDIDATE",
+          autoMatchScore: 0.78,
+          confirmedAt: null,
+          candidatePersonIds: ["alice"],
+        },
+      ],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/speakers/:speakerLabel/confirm", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/meetings/:meetingId/speakers/:speakerLabel/reject", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {

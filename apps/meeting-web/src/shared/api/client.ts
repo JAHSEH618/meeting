@@ -443,6 +443,131 @@ export async function rejectItem(meetingId: string, kind: ItemKind, itemId: stri
   return request<void>("POST", `/meetings/${meetingId}/${kind}/${itemId}/reject`, {}, generateId(`reject-${kind}`));
 }
 
+// ── Speaker profiles ───────────────────────────────────────────────
+
+export interface SpeakerProfile {
+  speakerProfileId: string;
+  tenantId: string;
+  personId: string;
+  displayName: string | null;
+  consentStatus: string;
+  consentSource?: string | null;
+  consentVersion?: string | null;
+  revokedAt?: string | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SpeakerEnrollment {
+  enrollmentId: string;
+  speakerProfileId: string;
+  tenantId: string;
+  sourceAudioFileId: string;
+  enrollmentStatus: string;
+  qualityScore?: number | null;
+  modelVersion?: string | null;
+  errorCode?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingSpeaker {
+  speakerLabel: string;
+  displayName: string | null;
+  personId: string | null;
+  speakerProfileId: string | null;
+  confirmationStatus: string;
+  autoMatchScore?: number | null;
+  confirmedAt?: string | null;
+  candidatePersonIds: string[];
+}
+
+export async function listSpeakerProfiles() {
+  return request<{ items: SpeakerProfile[] }>("GET", `/speaker-profiles`);
+}
+
+export async function getSpeakerProfile(profileId: string) {
+  return request<SpeakerProfile>("GET", `/speaker-profiles/${profileId}`);
+}
+
+export async function createSpeakerProfile(input: {
+  personId: string;
+  displayName: string;
+  consentSource?: string;
+  consentVersion?: string;
+}) {
+  return request<SpeakerProfile>(
+    "POST",
+    "/speaker-profiles",
+    {
+      personId: input.personId,
+      displayName: input.displayName,
+      consentSource: input.consentSource ?? "USER_ENROLLMENT",
+      consentVersion: input.consentVersion ?? "v1",
+    },
+    generateId("create-speaker-profile"),
+  );
+}
+
+export async function revokeSpeakerProfile(profileId: string, reason?: string) {
+  return request<void>(
+    "POST",
+    `/speaker-profiles/${profileId}/revoke`,
+    { reason: reason ?? "user_request" },
+    generateId("revoke-speaker-profile"),
+  );
+}
+
+export async function deleteSpeakerProfile(profileId: string) {
+  return request<void>("DELETE", `/speaker-profiles/${profileId}`);
+}
+
+export async function listSpeakerEnrollments(profileId: string) {
+  return request<{ items: SpeakerEnrollment[] }>("GET", `/speaker-profiles/${profileId}/enrollments`);
+}
+
+export async function createSpeakerEnrollment(profileId: string, sourceAudioFileId: string) {
+  return request<SpeakerEnrollment>(
+    "POST",
+    `/speaker-profiles/${profileId}/enrollments`,
+    { sourceAudioFileId },
+    generateId("create-speaker-enrollment"),
+  );
+}
+
+// ── Meeting speakers (per-meeting label confirmation) ──────────────
+
+export async function listMeetingSpeakers(meetingId: string) {
+  return request<{ items: MeetingSpeaker[] }>("GET", `/meetings/${meetingId}/speakers`);
+}
+
+export async function confirmMeetingSpeaker(
+  meetingId: string,
+  speakerLabel: string,
+  body: { personId: string; speakerProfileId?: string | null; expectedTranscriptVersion?: number | null },
+) {
+  return request<void>(
+    "POST",
+    `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/confirm`,
+    {
+      personId: body.personId,
+      speakerProfileId: body.speakerProfileId ?? null,
+      expectedTranscriptVersion: body.expectedTranscriptVersion ?? null,
+    },
+    generateId("confirm-meeting-speaker"),
+  );
+}
+
+export async function rejectMeetingSpeaker(meetingId: string, speakerLabel: string) {
+  return request<void>(
+    "POST",
+    `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/reject`,
+    {},
+    generateId("reject-meeting-speaker"),
+  );
+}
+
 // ── RAG ────────────────────────────────────────────────────────────
 
 export async function ragQuery(data: import("@shared/api/types").RagQueryRequest) {
