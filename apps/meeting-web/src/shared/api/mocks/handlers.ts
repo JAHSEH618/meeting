@@ -491,6 +491,80 @@ export const handlers = [
   http.post("/api/meetings/:meetingId/speakers/:speakerLabel/reject", () => {
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
   }),
+
+  http.post("/api/speaker-profiles", () => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        speakerProfileId: "spk_new",
+        tenantId: "tenant_01",
+        personId: "bob",
+        displayName: "Bob 李",
+        consentStatus: "ACTIVE",
+        consentSource: "USER_ENROLLMENT",
+        consentVersion: "v1",
+        revokedAt: null,
+        deletedAt: null,
+        createdAt: "2026-05-12T09:00:00Z",
+        updatedAt: "2026-05-12T09:00:00Z",
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/speaker-profiles/:profileId/revoke", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.delete("/api/speaker-profiles/:profileId", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.get("/api/speaker-profiles/:profileId/enrollments", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          enrollmentId: "spe_01",
+          speakerProfileId: "spk_alice",
+          tenantId: "tenant_01",
+          sourceAudioFileId: "file_01",
+          enrollmentStatus: "SUCCEEDED",
+          qualityScore: 0.92,
+          modelVersion: "deterministic-speaker-v0",
+          errorCode: null,
+          createdAt: "2026-05-11T10:00:00Z",
+          updatedAt: "2026-05-11T10:05:00Z",
+        },
+      ],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/speaker-profiles/:profileId/enrollments", () => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        enrollmentId: "spe_new",
+        speakerProfileId: "spk_alice",
+        tenantId: "tenant_01",
+        sourceAudioFileId: "file_new",
+        enrollmentStatus: "PENDING",
+        qualityScore: null,
+        modelVersion: null,
+        errorCode: null,
+        createdAt: "2026-05-12T11:00:00Z",
+        updatedAt: "2026-05-12T11:00:00Z",
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {
