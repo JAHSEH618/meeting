@@ -220,6 +220,24 @@ public class JdbcTranscriptRepository implements TranscriptRepository {
         );
     }
 
+    @Override
+    public int updateSpeakerForLabel(String tenantId, String meetingId, String speakerLabel,
+                                     String personId, String displayName, OffsetDateTime now) {
+        return jdbcTemplate.update(
+            """
+            UPDATE transcript_segments
+               SET person_id = ?, speaker_name = ?, speaker_match_status = 'CONFIRMED', updated_at = ?
+             WHERE tenant_id = ? AND meeting_id = ? AND speaker_label = ?
+            """,
+            personId,
+            displayName,
+            java.sql.Timestamp.from(now.toInstant()),
+            tenantId,
+            meetingId,
+            speakerLabel
+        );
+    }
+
     private static BigDecimal scale(BigDecimal value) {
         return value == null ? null : value.setScale(4, java.math.RoundingMode.HALF_UP);
     }

@@ -17,6 +17,17 @@ public interface TranscriptRepository {
     void updateMeetingTranscriptVersion(String tenantId, String meetingId, int transcriptVersion);
 
     /**
+     * Bulk-update the speaker name and personId for every segment of a meeting that
+     * carries the given speaker label. Used by the speaker confirm endpoint after the
+     * meeting_speakers row is marked CONFIRMED. Returns the affected row count.
+     * Default impl is a no-op for in-memory test repositories.
+     */
+    default int updateSpeakerForLabel(String tenantId, String meetingId, String speakerLabel,
+                                       String personId, String displayName, OffsetDateTime now) {
+        return 0;
+    }
+
+    /**
      * Apply a user edit to a single segment.
      * <p>
      * Preserves {@code original_text}; sets {@code edited_text} and {@code text} (current view);
