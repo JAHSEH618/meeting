@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, confloat, conint, constr
 
@@ -23,8 +23,8 @@ class RerankCandidate(BaseModel):
     sourceType: SourceType
     text: constr(min_length=1)
     rrfScore: confloat(ge=0.0)
-    sourceVersion: conint(ge=1) | None = None
-    citationHint: dict[str, Any] | None = None
+    sourceVersion: Optional[conint(ge=1)] = None
+    citationHint: Optional[Dict[str, Any]] = None
 
 
 class RerankResultItem(BaseModel):
@@ -37,7 +37,7 @@ class ErrorInfo(BaseModel):
     code: str
     message: str
     retryable: bool
-    details: dict[str, Any] | None = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class RerankRequest(BaseModel):
@@ -45,17 +45,17 @@ class RerankRequest(BaseModel):
     query: constr(min_length=1)
     topN: conint(ge=1, le=20)
     modelVersion: str
-    candidates: list[RerankCandidate] = Field(..., max_length=50, min_length=1)
+    candidates: List[RerankCandidate] = Field(..., max_items=50, min_items=1)
 
 
 class RerankResponse(BaseModel):
     modelVersion: str
-    items: list[RerankResultItem]
+    items: List[RerankResultItem]
 
 
 class ApiResponse(BaseModel):
     success: bool
-    data: RerankResponse | None
-    error: ErrorInfo | None
+    data: Optional[RerankResponse]
+    error: Optional[ErrorInfo]
     requestId: str
     traceId: str

@@ -115,3 +115,81 @@ sourceType:
   - ACTION_ITEM
   - RISK
   - DOCUMENT
+
+# ── Phase 3 业务对象状态 ──────────────────────────────────────────
+# AI 抽取产物的"用户确认"独立通道。DRAFT = AI 建议未确认；ACCEPTED / REJECTED
+# = 用户已表态；NEEDS_REVIEW = AI 标记需复核但用户未表态。重新生成不得覆盖已表态项。
+acceptanceStatus:
+  - DRAFT
+  - ACCEPTED
+  - REJECTED
+  - NEEDS_REVIEW
+
+# meeting_minutes.status — 业务可见性
+minutesStatus:
+  - DRAFT
+  - PUBLISHED
+  - REVISED
+
+# meeting_action_items.status — 业务推进状态
+actionItemStatus:
+  - OPEN
+  - IN_PROGRESS
+  - COMPLETED
+  - CANCELLED
+  - BLOCKED
+
+# meeting_decisions.status
+decisionStatus:
+  - PROPOSED
+  - APPROVED
+  - IMPLEMENTED
+  - REJECTED
+
+# meeting_risks.severity
+riskSeverity:
+  - LOW
+  - MEDIUM
+  - HIGH
+  - CRITICAL
+
+# meeting_risks.status
+riskStatus:
+  - OPEN
+  - MITIGATED
+  - CLOSED
+  - ESCALATED
+
+# ── Phase 4 声纹状态 ─────────────────────────────────────────────
+# speaker_profiles.consent_status — 撤销级联在 ACTIVE -> REVOKED -> DELETED
+# 之间单向流转；DELETED 不可恢复。
+speakerProfileConsentStatus:
+  - ACTIVE
+  - REVOKED
+  - DELETED
+
+# speaker_enrollments.enrollment_status — worker 回写驱动 PENDING -> SUCCEEDED|FAILED
+speakerEnrollmentStatus:
+  - PENDING
+  - SUCCEEDED
+  - FAILED
+
+# meeting_speakers.verification_status — 每个匿名 speaker label 的人工确认状态
+meetingSpeakerVerificationStatus:
+  - CANDIDATE
+  - CONFIRMED
+  - REJECTED
+  - MANUAL
+
+# transcript_segments.edit_status — 区分原始 ASR 输出与用户编辑后的版本
+transcriptSegmentEditStatus:
+  - ORIGINAL
+  - EDITED
+
+# transcript_segments.speaker_match_status — 该 segment 是否已落人工确认结果
+transcriptSegmentSpeakerMatchStatus:
+  - UNMATCHED
+  - CANDIDATE
+  - CONFIRMED
+  - REJECTED
+
