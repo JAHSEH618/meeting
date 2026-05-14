@@ -372,6 +372,77 @@ export async function regenerateMinutes(
   );
 }
 
+// ── Items: action items / decisions / risks ────────────────────────
+
+export interface ItemEvidence {
+  segmentId?: string | null;
+  startMs?: number | null;
+  endMs?: number | null;
+  evidenceTextSnapshot?: string | null;
+}
+
+export interface ActionItem {
+  id: string;
+  meetingId: string;
+  title: string;
+  description?: string | null;
+  ownerPersonId?: string | null;
+  ownerRawText?: string | null;
+  priority?: string | null;
+  status: string;
+  acceptanceStatus: string;
+  sourceTranscriptVersion?: number | null;
+  staleStatus: string;
+  evidence: ItemEvidence[];
+}
+
+export interface Decision {
+  id: string;
+  meetingId: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  acceptanceStatus: string;
+  sourceTranscriptVersion?: number | null;
+  staleStatus: string;
+  evidence: ItemEvidence[];
+}
+
+export interface Risk {
+  id: string;
+  meetingId: string;
+  title: string;
+  description?: string | null;
+  severity?: string | null;
+  status: string;
+  acceptanceStatus: string;
+  sourceTranscriptVersion?: number | null;
+  staleStatus: string;
+  evidence: ItemEvidence[];
+}
+
+export async function listActionItems(meetingId: string) {
+  return request<{ items: ActionItem[] }>("GET", `/meetings/${meetingId}/action-items`);
+}
+
+export async function listDecisions(meetingId: string) {
+  return request<{ items: Decision[] }>("GET", `/meetings/${meetingId}/decisions`);
+}
+
+export async function listRisks(meetingId: string) {
+  return request<{ items: Risk[] }>("GET", `/meetings/${meetingId}/risks`);
+}
+
+export type ItemKind = "action-items" | "decisions" | "risks";
+
+export async function acceptItem(meetingId: string, kind: ItemKind, itemId: string) {
+  return request<void>("POST", `/meetings/${meetingId}/${kind}/${itemId}/accept`, {}, generateId(`accept-${kind}`));
+}
+
+export async function rejectItem(meetingId: string, kind: ItemKind, itemId: string) {
+  return request<void>("POST", `/meetings/${meetingId}/${kind}/${itemId}/reject`, {}, generateId(`reject-${kind}`));
+}
+
 // ── RAG ────────────────────────────────────────────────────────────
 
 export async function ragQuery(data: import("@shared/api/types").RagQueryRequest) {

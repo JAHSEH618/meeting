@@ -329,6 +329,115 @@ export const handlers = [
       traceId: "trace_regen_minutes",
     });
   }),
+
+  http.get("/api/meetings/:meetingId/action-items", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          id: "item_01",
+          meetingId: "mtg_01",
+          origin: "AI_EXTRACTED",
+          title: "切换到 GA 后做小流量验证",
+          description: "Alice 下周确认 GA 流程",
+          ownerPersonId: null,
+          ownerRawText: "Alice",
+          priority: "P2",
+          status: "OPEN",
+          acceptanceStatus: "DRAFT",
+          sourceTranscriptVersion: 1,
+          staleStatus: "ACTIVE",
+          evidence: [
+            { segmentId: "seg_01", startMs: 0, endMs: 1800, evidenceTextSnapshot: "今天先确认阶段二验收范围。" },
+          ],
+        },
+      ],
+      error: null,
+      requestId: "req_actions",
+      traceId: "trace_actions",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/decisions", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          id: "dec_01",
+          meetingId: "mtg_01",
+          title: "GA 流程沿用现网验收口径",
+          description: "保留现网灰度策略",
+          status: "PROPOSED",
+          acceptanceStatus: "DRAFT",
+          sourceTranscriptVersion: 1,
+          staleStatus: "ACTIVE",
+          evidence: [],
+        },
+      ],
+      error: null,
+      requestId: "req_decisions",
+      traceId: "trace_decisions",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/risks", () => {
+    return HttpResponse.json<ApiResponse<unknown[]>>({
+      success: true,
+      data: [
+        {
+          id: "risk_01",
+          meetingId: "mtg_01",
+          title: "采购侧供应延迟",
+          description: "上游供货商交期不稳",
+          severity: "HIGH",
+          status: "OPEN",
+          acceptanceStatus: "DRAFT",
+          sourceTranscriptVersion: 1,
+          staleStatus: "ACTIVE",
+          evidence: [],
+        },
+      ],
+      error: null,
+      requestId: "req_risks",
+      traceId: "trace_risks",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/action-items/:itemId/accept", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: null,
+      error: null,
+      requestId: "req_accept",
+      traceId: "trace_accept",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/action-items/:itemId/reject", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: null,
+      error: null,
+      requestId: "req_reject",
+      traceId: "trace_reject",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/decisions/:itemId/accept", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/meetings/:meetingId/decisions/:itemId/reject", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/meetings/:meetingId/risks/:itemId/accept", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/meetings/:meetingId/risks/:itemId/reject", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {

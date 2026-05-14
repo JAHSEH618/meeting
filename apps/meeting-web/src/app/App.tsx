@@ -8,6 +8,7 @@ import { MeetingCreatePage } from "@features/meetings/MeetingCreatePage";
 import { MeetingDetailPage } from "@features/meetings/MeetingDetailPage";
 import { TranscriptPage } from "@features/transcript/TranscriptPage";
 import { MinutesPage } from "@features/minutes/MinutesPage";
+import { ItemsPage } from "@features/items/ItemsPage";
 import { RagPage } from "@features/rag/RagPage";
 import { SpeakerProfilesPage } from "@features/speakers/SpeakerProfilesPage";
 import { DocumentsPage } from "@features/documents/DocumentsPage";
@@ -29,6 +30,7 @@ export function App() {
           <Route path="/meetings/:meetingId/tasks/:taskId" element={<TaskProgressPage />} />
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />
+          <Route path="/meetings/:meetingId/items" element={<ItemsPage />} />
           <Route path="/meetings/:meetingId/exports" element={<ExportsPage />} />
           <Route path="/rag" element={<RagPage />} />
           <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />

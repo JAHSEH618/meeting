@@ -224,7 +224,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [x] 实现转录编辑、版本冲突提示和下游 STALE 提示。
 - [x] 实现纪要页：章节、evidence、重生成、LLM 阻断提示。
-- [ ] 实现待办 / 决策 / 风险页面，支持接受、拒绝、编辑、evidence 展示。
+- [x] 实现待办 / 决策 / 风险页面，支持接受、拒绝、编辑、evidence 展示。
 - [ ] 实现 `SECURITY_LEVEL_BLOCKED` 固定业务提示：`一期不支持该安全等级的自动 LLM 处理`。
 
 ## 阶段 4：声纹注册、匹配与人工确认
