@@ -1,5 +1,11 @@
 // API client — base fetch wrapper with auth token, envelope unwrap, error handling.
 // Attaches X-Request-Id, X-Trace-Id, and Idempotency-Key on mutating requests.
+//
+// SECURITY NOTE (phase 4): None of the response DTOs in this file carry plaintext
+// speaker embeddings, KMS-wrapped data keys, or artifactManifestId. If a future
+// endpoint accidentally returns one of these, the safety net in
+// shared/utils/sensitive-fields.ts redacts the field before any logging path
+// can surface it — but keep API responses clean first.
 
 import type { ApiResponse, ApiError, TaskEvent } from "@shared/api/types";
 

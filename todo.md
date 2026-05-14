@@ -249,7 +249,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [x] 实现 speaker 确认页面：匿名 label、候选人、置信度、确认、拒绝、候选过期提示。
 - [x] 实现声纹档案页面：档案、授权、参考音频 enrollment、撤销、删除。
-- [ ] 确保声纹 embedding、模型原始输出和内部 artifact 不出现在页面、日志、监控 breadcrumb。
+- [x] 确保声纹 embedding、模型原始输出和内部 artifact 不出现在页面、日志、监控 breadcrumb。
 
 ## 阶段 5：文档知识库与 RAG
 
