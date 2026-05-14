@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { ApiResponse, Meeting, AuthUser, ProcessingTask } from "../types";
+import type { ApiResponse, Meeting, AuthUser, ProcessingTask, AudioUploadSession, TranscriptData } from "../types";
 
 const meetingList: Meeting[] = [
   {
@@ -14,6 +14,43 @@ const meetingList: Meeting[] = [
     createdAt: "2026-05-11T09:00:00Z",
   },
 ];
+
+const uploadSession: AudioUploadSession = {
+  uploadId: "upl_01",
+  meetingId: "mtg_01",
+  uploadStatus: "UPLOADING",
+  expiresAt: "2026-05-15T09:00:00Z",
+  partSizeBytes: 8 * 1024 * 1024,
+  maxPartCount: 10000,
+  objectKey: "meeting-audio/tenant_01/mtg_01/upl_01/raw",
+  bucket: "meeting-audio",
+  contentType: "audio/wav",
+  fileName: "standup.wav",
+  fileSizeBytes: 128,
+  fileSha256: "a".repeat(64),
+  parts: [],
+};
+
+const transcript: TranscriptData = {
+  meetingId: "mtg_01",
+  transcriptVersion: 1,
+  staleStatus: "CURRENT",
+  segments: [
+    {
+      segmentId: "seg_01",
+      speakerLabel: "SPEAKER_00",
+      speakerDisplayName: null,
+      startMs: 0,
+      endMs: 1800,
+      originalText: "今天先确认阶段二验收范围。",
+      editedText: null,
+      currentText: "今天先确认阶段二验收范围。",
+      asrConfidence: 0.93,
+      diarizationConfidence: 0.88,
+      timestampPrecision: "SEGMENT",
+    },
+  ],
+};
 
 export const handlers = [
   http.post("/api/auth/login", () => {
@@ -103,6 +140,16 @@ export const handlers = [
     });
   }),
 
+  http.get("/api/meetings/:meetingId/processing-tasks/latest", ({ params }) => {
+    return HttpResponse.json<ApiResponse<ProcessingTask>>({
+      success: true,
+      data: mockTask(String(params.meetingId)),
+      error: null,
+      requestId: "req_latest",
+      traceId: "trace_latest",
+    });
+  }),
+
   http.get("/api/processing-tasks/:taskId", () => {
     return HttpResponse.json<ApiResponse<ProcessingTask>>({
       success: true,
@@ -110,6 +157,96 @@ export const handlers = [
       error: null,
       requestId: "req_08",
       traceId: "trace_08",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/files/audio/uploads", ({ params }) => {
+    return HttpResponse.json<ApiResponse<AudioUploadSession>>({
+      success: true,
+      data: { ...uploadSession, meetingId: String(params.meetingId) },
+      error: null,
+      requestId: "req_upload_01",
+      traceId: "trace_upload_01",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/files/audio/uploads/:uploadId/parts", async ({ request }) => {
+    const body = await request.json() as { partNumber: number; partSha256: string };
+    return HttpResponse.json<ApiResponse<{
+      uploadId: string;
+      partNumber: number;
+      partSha256: string;
+      etag?: string | null;
+      uploadUrl: string;
+      expiresAt: string;
+      headers: Record<string, string>;
+    }>>({
+      success: true,
+      data: {
+        uploadId: "upl_01",
+        partNumber: body.partNumber,
+        partSha256: body.partSha256,
+        etag: `etag_${body.partNumber}`,
+        uploadUrl: `http://localhost/upload/part/${body.partNumber}`,
+        expiresAt: "2026-05-14T10:15:00Z",
+        headers: { "Content-Type": "audio/wav" },
+      },
+      error: null,
+      requestId: "req_upload_part",
+      traceId: "trace_upload_part",
+    });
+  }),
+
+  http.put("http://localhost/upload/part/:partNumber", ({ params }) => {
+    return new HttpResponse(null, {
+      status: 200,
+      headers: { ETag: `etag_${String(params.partNumber)}` },
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/files/audio/uploads/:uploadId/complete", ({ params }) => {
+    return HttpResponse.json<ApiResponse<AudioUploadSession>>({
+      success: true,
+      data: {
+        ...uploadSession,
+        meetingId: String(params.meetingId),
+        uploadId: String(params.uploadId),
+        uploadStatus: "COMPLETED",
+        fileId: "file_01",
+      },
+      error: null,
+      requestId: "req_upload_complete",
+      traceId: "trace_upload_complete",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/files/audio/uploads/:uploadId/abort", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: null,
+      error: null,
+      requestId: "req_upload_abort",
+      traceId: "trace_upload_abort",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/files/audio/uploads/:uploadId", ({ params }) => {
+    return HttpResponse.json<ApiResponse<AudioUploadSession>>({
+      success: true,
+      data: { ...uploadSession, meetingId: String(params.meetingId), uploadId: String(params.uploadId) },
+      error: null,
+      requestId: "req_upload_get",
+      traceId: "trace_upload_get",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/transcript", ({ params }) => {
+    return HttpResponse.json<ApiResponse<TranscriptData>>({
+      success: true,
+      data: { ...transcript, meetingId: String(params.meetingId) },
+      error: null,
+      requestId: "req_transcript",
+      traceId: "trace_transcript",
     });
   }),
 ];

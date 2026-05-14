@@ -7,6 +7,8 @@ public interface ProcessingTaskFacade {
 
     Optional<ProcessingTaskDTO> get(String tenantId, String taskId);
 
+    Optional<ProcessingTaskDTO> getLatestForMeeting(String tenantId, String meetingId);
+
     ProcessingTaskDTO retry(RetryTaskCommand command);
 
     ProcessingTaskDTO cancel(CancelTaskCommand command);

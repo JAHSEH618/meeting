@@ -221,6 +221,63 @@ button.primary {
   padding: 12px;
 }
 
+.upload-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.upload-summary > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.part-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.part-tile {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.transcript-list {
+  display: grid;
+  gap: 12px;
+  max-height: 68vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.transcript-row {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid #edf1f5;
+  padding: 4px 0 14px;
+}
+
+.transcript-row p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.transcript-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 720px) {
   .topbar,
   .page-header,

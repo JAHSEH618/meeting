@@ -47,6 +47,19 @@ class ProcessingTaskControllerTest {
         assertThat(facade.lastCreate.idempotencyKey()).isEqualTo("idem_01");
     }
 
+    @Test
+    void latestTaskUsesTenantContextAndMeetingPath() {
+        CapturingProcessingTaskFacade facade = new CapturingProcessingTaskFacade();
+        ProcessingTaskController controller = new ProcessingTaskController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        var response = controller.getLatestForMeeting("meeting_01", "req_02", "trace_02");
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(facade.lastLatestTenantId).isEqualTo("tenant_01");
+        assertThat(facade.lastLatestMeetingId).isEqualTo("meeting_01");
+    }
+
     private static final class CapturingProcessingTaskFacade implements ProcessingTaskFacade {
         private final ProcessingTaskDTO task = new ProcessingTaskDTO(
             "task_01",
@@ -66,6 +79,8 @@ class ProcessingTaskControllerTest {
             List.of()
         );
         private CreateProcessingTaskCommand lastCreate;
+        private String lastLatestTenantId;
+        private String lastLatestMeetingId;
 
         @Override
         public ProcessingTaskDTO create(CreateProcessingTaskCommand command) {
@@ -75,6 +90,13 @@ class ProcessingTaskControllerTest {
 
         @Override
         public Optional<ProcessingTaskDTO> get(String tenantId, String taskId) {
+            return Optional.of(task);
+        }
+
+        @Override
+        public Optional<ProcessingTaskDTO> getLatestForMeeting(String tenantId, String meetingId) {
+            lastLatestTenantId = tenantId;
+            lastLatestMeetingId = meetingId;
             return Optional.of(task);
         }
 

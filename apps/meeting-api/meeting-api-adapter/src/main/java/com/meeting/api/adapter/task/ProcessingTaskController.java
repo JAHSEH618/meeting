@@ -58,6 +58,17 @@ public class ProcessingTaskController {
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/api/meetings/{meetingId}/processing-tasks/latest")
+    public ResponseEntity<ApiResponse<ProcessingTaskDTO>> getLatestForMeeting(
+        @PathVariable String meetingId,
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId
+    ) {
+        return processingTaskFacade.getLatestForMeeting(TenantContextHolder.currentTenantId(), meetingId)
+            .map(task -> ResponseEntity.ok(ApiResponse.ok(task, requestId, traceId)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @PostMapping("/api/processing-tasks/{taskId}/retry")
     public ApiResponse<ProcessingTaskDTO> retry(
         @PathVariable String taskId,

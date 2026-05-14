@@ -88,6 +88,37 @@ async function request<T>(
   return normalizeData<T>(json.data);
 }
 
+async function uploadBinary(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+): Promise<{ etag: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "PUT",
+      headers,
+      body,
+    });
+  } catch (cause) {
+    const error = new Error("网络连接失败") as ApiClientError;
+    error.code = "DEPENDENCY_UNAVAILABLE";
+    error.retryable = true;
+    error.details = { cause: String(cause) };
+    throw error;
+  }
+
+  if (!res.ok) {
+    const error = new Error(`上传分片失败: ${res.status}`) as ApiClientError;
+    error.code = "TOS_WRITE_FAILED";
+    error.retryable = res.status >= 500;
+    error.status = res.status;
+    throw error;
+  }
+
+  return { etag: res.headers.get("ETag")?.replaceAll('"', "") || `etag_${Date.now()}` };
+}
+
 // ── Auth ───────────────────────────────────────────────────────────
 
 export async function login(username: string, password: string) {
@@ -120,6 +151,74 @@ export async function getMeeting(meetingId: string) {
   return request<import("@shared/api/types").Meeting>("GET", `/meetings/${meetingId}`);
 }
 
+// ── Audio Upload ──────────────────────────────────────────────────
+
+export async function createAudioUpload(
+  meetingId: string,
+  data: import("@shared/api/types").CreateAudioUploadRequest,
+) {
+  return request<import("@shared/api/types").AudioUploadSession>(
+    "POST",
+    `/meetings/${meetingId}/files/audio/uploads`,
+    data,
+    generateId("create-upload"),
+  );
+}
+
+export async function createAudioUploadPart(
+  meetingId: string,
+  uploadId: string,
+  data: import("@shared/api/types").CreateAudioUploadPartRequest,
+) {
+  return request<{
+    uploadId: string;
+    partNumber: number;
+    partSha256: string;
+    etag?: string | null;
+    uploadUrl: string;
+    expiresAt: string;
+    headers: Record<string, string>;
+  }>(
+    "POST",
+    `/meetings/${meetingId}/files/audio/uploads/${uploadId}/parts`,
+    data,
+    generateId(`upload-part-${data.partNumber}`),
+  );
+}
+
+export async function putAudioUploadPart(uploadUrl: string, part: Blob, headers: Record<string, string>) {
+  return uploadBinary(uploadUrl, part, headers);
+}
+
+export async function completeAudioUpload(
+  meetingId: string,
+  uploadId: string,
+  data: import("@shared/api/types").CompleteAudioUploadRequest,
+) {
+  return request<import("@shared/api/types").AudioUploadSession>(
+    "POST",
+    `/meetings/${meetingId}/files/audio/uploads/${uploadId}/complete`,
+    data,
+    generateId("complete-upload"),
+  );
+}
+
+export async function abortAudioUpload(meetingId: string, uploadId: string) {
+  return request<void>(
+    "POST",
+    `/meetings/${meetingId}/files/audio/uploads/${uploadId}/abort`,
+    undefined,
+    generateId("abort-upload"),
+  );
+}
+
+export async function getAudioUpload(meetingId: string, uploadId: string) {
+  return request<import("@shared/api/types").AudioUploadSession>(
+    "GET",
+    `/meetings/${meetingId}/files/audio/uploads/${uploadId}`,
+  );
+}
+
 // ── Tasks ──────────────────────────────────────────────────────────
 
 export async function createProcessingTask(meetingId: string, audioFileId: string) {
@@ -138,6 +237,10 @@ export async function createProcessingTask(meetingId: string, audioFileId: strin
 
 export async function getTask(taskId: string) {
   return request<import("@shared/api/types").ProcessingTask>("GET", `/processing-tasks/${taskId}`);
+}
+
+export async function getLatestMeetingTask(meetingId: string) {
+  return request<import("@shared/api/types").ProcessingTask>("GET", `/meetings/${meetingId}/processing-tasks/latest`);
 }
 
 export async function retryTask(taskId: string, reason = "user_retry") {

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, NavLink, Outlet } from "react-router-dom";
 import { AuthGuard } from "./AuthGuard";
 import "./app.css";
 import { LoginPage } from "@features/auth/LoginPage";
+import { AudioUploadPage } from "@features/audio/AudioUploadPage";
 import { MeetingListPage } from "@features/meetings/MeetingListPage";
 import { MeetingCreatePage } from "@features/meetings/MeetingCreatePage";
 import { MeetingDetailPage } from "@features/meetings/MeetingDetailPage";
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/meetings" element={<MeetingListPage />} />
           <Route path="/meetings/new" element={<MeetingCreatePage />} />
           <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
+          <Route path="/meetings/:meetingId/audio" element={<AudioUploadPage />} />
           <Route path="/meetings/:meetingId/tasks/:taskId" element={<TaskProgressPage />} />
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />

@@ -51,7 +51,11 @@ export function MeetingDetailPage() {
               <h1 className="page-title">{meeting.title}</h1>
               <p className="muted">{meeting.meetingId}</p>
             </div>
-            <Link className="button" to="/meetings">返回列表</Link>
+            <div className="toolbar">
+              <Link className="button primary" to={`/meetings/${meeting.meetingId}/audio`}>上传音频</Link>
+              <Link className="button" to={`/meetings/${meeting.meetingId}/transcript`}>转录</Link>
+              <Link className="button" to="/meetings">返回列表</Link>
+            </div>
           </div>
 
           <section className="grid">

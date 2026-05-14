@@ -134,6 +134,11 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return taskRepository.findById(tenantId, taskId).map(ProcessingTaskAssembler::toDto);
     }
 
+    @Override
+    public Optional<ProcessingTaskDTO> getLatestForMeeting(String tenantId, String meetingId) {
+        return taskRepository.findLatestByMeetingId(tenantId, meetingId).map(ProcessingTaskAssembler::toDto);
+    }
+
     public ProcessingTaskDTO createForCompletedAudioUpload(
         String tenantId,
         String meetingId,
