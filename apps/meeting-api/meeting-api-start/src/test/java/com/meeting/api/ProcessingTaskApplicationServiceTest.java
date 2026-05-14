@@ -77,6 +77,41 @@ class ProcessingTaskApplicationServiceTest {
             .containsExactly("AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE", "RAG_INDEXING");
     }
 
+    @Test
+    void createSpeakerEnrollmentTaskAllowsNullMeetingIdAndCarriesProfileMetadata() {
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository();
+        CapturingPublisher publisher = new CapturingPublisher();
+        ProcessingTaskApplicationService service = new ProcessingTaskApplicationService(
+            tasks,
+            new OneMeetingRepository(),
+            publisher,
+            TenantScopedTransaction.immediate(),
+            fixedClock()
+        );
+
+        var dto = service.createForSpeakerEnrollment(
+            "tenant_01",
+            "spk_01",
+            "spe_01",
+            "file_01",
+            "minio://meeting-audio/tenant_01/spe_01.wav",
+            "zh",
+            "user_01",
+            "trace_speaker"
+        );
+
+        assertThat(dto.taskType()).isEqualTo("SPEAKER_ENROLLMENT");
+        assertThat(dto.meetingId()).isNull();
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(dto.steps()).extracting("stepName")
+            .containsExactly(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING);
+
+        ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) publisher.events.get(0);
+        assertThat(event.meetingId()).isNull();
+        assertThat(event.taskType()).isEqualTo("SPEAKER_ENROLLMENT");
+        assertThat(event.pipelineSteps()).containsExactly(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING);
+    }
+
     private static Clock fixedClock() {
         return Clock.fixed(Instant.parse("2026-05-13T02:00:00Z"), ZoneOffset.UTC);
     }

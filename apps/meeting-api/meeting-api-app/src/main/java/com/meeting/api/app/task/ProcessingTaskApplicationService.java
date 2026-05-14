@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     public static final String MEETING_FULL_PIPELINE = "MEETING_FULL_PIPELINE";
+    public static final String SPEAKER_ENROLLMENT = "SPEAKER_ENROLLMENT";
 
     private static final List<ProcessingStep> MVP0_STEPS = List.of(
         ProcessingStep.AUDIO_UPLOAD,
@@ -55,6 +56,11 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         ProcessingStep.ASR,
         ProcessingStep.DIARIZATION,
         ProcessingStep.TRANSCRIPT_MERGE
+    );
+
+    private static final List<ProcessingStep> SPEAKER_ENROLLMENT_STEPS = List.of(
+        ProcessingStep.SPEAKER_EMBEDDING,
+        ProcessingStep.SPEAKER_MATCHING
     );
 
     private final ProcessingTaskRepository taskRepository;
@@ -199,6 +205,54 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return ProcessingTaskAssembler.toDto(saved);
     }
 
+    /**
+     * Create a SPEAKER_ENROLLMENT task for a given speaker profile + enrollment + audio file.
+     * meetingId is intentionally null — speaker enrollments are tenant-scoped, not meeting-scoped.
+     * Callback handlers must verify {speakerProfileId, speakerEnrollmentId} belong to the current tenant
+     * before persisting any embedding or candidate.
+     */
+    public ProcessingTaskDTO createForSpeakerEnrollment(
+        String tenantId,
+        String speakerProfileId,
+        String speakerEnrollmentId,
+        String audioFileId,
+        String audioUri,
+        String language,
+        String requestedBy,
+        String traceId
+    ) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        ProcessingTask task = ProcessingTask.create(
+            "task_" + UUID.randomUUID().toString().replace("-", ""),
+            tenantId,
+            null,
+            SPEAKER_ENROLLMENT,
+            SPEAKER_ENROLLMENT_STEPS,
+            now
+        );
+        task.enqueue(now);
+        task.claimLease(
+            "worker_dev_001",
+            "worker_dev_001:" + task.taskId() + ":" + task.attemptNo(),
+            now.plusMinutes(5),
+            now
+        );
+        ProcessingTask saved = taskRepository.save(task);
+        messagePublisher.publish(new ProcessingTaskCreatedEvent(
+            "evt_" + UUID.randomUUID().toString().replace("-", ""),
+            saved.tenantId(),
+            saved.taskId(),
+            null,
+            saved.taskType(),
+            saved.attemptNo(),
+            SPEAKER_ENROLLMENT_STEPS,
+            0,
+            now,
+            speakerEnrollmentMessagePayload(saved, speakerProfileId, speakerEnrollmentId, audioFileId, audioUri, language, traceId)
+        ));
+        return ProcessingTaskAssembler.toDto(saved);
+    }
+
     @Override
     public ProcessingTaskDTO retry(RetryTaskCommand command) {
         return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
@@ -268,6 +322,33 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
                 "inputAudioSha256", fileSha256,
                 "inputAudioSizeBytes", fileSizeBytes
             )),
+            Map.entry("traceId", traceId == null || traceId.isBlank() ? "trace_" + task.taskId() : traceId)
+        );
+    }
+
+    private Map<String, Object> speakerEnrollmentMessagePayload(
+        ProcessingTask task,
+        String speakerProfileId,
+        String speakerEnrollmentId,
+        String audioFileId,
+        String audioUri,
+        String language,
+        String traceId
+    ) {
+        return Map.ofEntries(
+            Map.entry("taskId", task.taskId()),
+            Map.entry("taskType", task.taskType()),
+            Map.entry("tenantId", task.tenantId()),
+            Map.entry("securityLevel", "INTERNAL"),
+            Map.entry("attemptNo", task.attemptNo()),
+            Map.entry("pipelineSteps", SPEAKER_ENROLLMENT_STEPS.stream().map(Enum::name).toList()),
+            Map.entry("expectedInputVersion", Map.of("modelVersion", "v1")),
+            Map.entry("speakerProfileId", speakerProfileId),
+            Map.entry("speakerEnrollmentId", speakerEnrollmentId),
+            Map.entry("audioFileId", audioFileId),
+            Map.entry("audioUri", audioUri),
+            Map.entry("language", language == null || language.isBlank() ? "zh" : language),
+            Map.entry("options", Map.of()),
             Map.entry("traceId", traceId == null || traceId.isBlank() ? "trace_" + task.taskId() : traceId)
         );
     }
