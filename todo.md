@@ -231,7 +231,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现 speaker profile、enrollment、授权、撤销、删除和 audit 领域模型。
+- [x] 实现 speaker profile、enrollment、授权、撤销、删除和 audit 领域模型。
 - [ ] 实现 `SPEAKER_ENROLLMENT` task 创建与 callback 校验，允许 `meetingId=null` 但必须校验 profile / enrollment 归属。
 - [ ] 实现 speaker embedding KMS 信封加密：AES-256-GCM、12 bytes nonce、16 bytes tag、wrapped DEK、checksum、key version。
 - [ ] 实现 speaker candidates callback 落库：明文 embedding 只在 internal callback 内短暂存在，成功后不写日志、不进入 public DTO。
