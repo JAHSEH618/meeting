@@ -6,6 +6,9 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.domain.rag.KnowledgeChunkRepository;
+import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
+import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
@@ -24,27 +27,52 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
 
     private final SpeakerProfileRepository profileRepository;
     private final SpeakerEnrollmentRepository enrollmentRepository;
+    private final SpeakerEmbeddingRepository embeddingRepository;
+    private final MeetingSpeakerRepository meetingSpeakerRepository;
+    private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
     public SpeakerProfileApplicationService(
         SpeakerProfileRepository profileRepository,
         SpeakerEnrollmentRepository enrollmentRepository,
+        SpeakerEmbeddingRepository embeddingRepository,
+        MeetingSpeakerRepository meetingSpeakerRepository,
+        KnowledgeChunkRepository knowledgeChunkRepository,
         TenantScopedTransaction tenantScopedTransaction
     ) {
-        this(profileRepository, enrollmentRepository, tenantScopedTransaction, Clock.systemUTC());
+        this(profileRepository, enrollmentRepository, embeddingRepository,
+            meetingSpeakerRepository, knowledgeChunkRepository, tenantScopedTransaction, Clock.systemUTC());
     }
 
+    public SpeakerProfileApplicationService(
+        SpeakerProfileRepository profileRepository,
+        SpeakerEnrollmentRepository enrollmentRepository,
+        SpeakerEmbeddingRepository embeddingRepository,
+        MeetingSpeakerRepository meetingSpeakerRepository,
+        KnowledgeChunkRepository knowledgeChunkRepository,
+        TenantScopedTransaction tenantScopedTransaction,
+        Clock clock
+    ) {
+        this.profileRepository = profileRepository;
+        this.enrollmentRepository = enrollmentRepository;
+        this.embeddingRepository = embeddingRepository;
+        this.meetingSpeakerRepository = meetingSpeakerRepository;
+        this.knowledgeChunkRepository = knowledgeChunkRepository;
+        this.tenantScopedTransaction = tenantScopedTransaction;
+        this.clock = clock;
+    }
+
+    /** Legacy constructor used by older tests; cascade dependencies default to no-op. */
     public SpeakerProfileApplicationService(
         SpeakerProfileRepository profileRepository,
         SpeakerEnrollmentRepository enrollmentRepository,
         TenantScopedTransaction tenantScopedTransaction,
         Clock clock
     ) {
-        this.profileRepository = profileRepository;
-        this.enrollmentRepository = enrollmentRepository;
-        this.tenantScopedTransaction = tenantScopedTransaction;
-        this.clock = clock;
+        this(profileRepository, enrollmentRepository,
+            new NoOpEmbeddingRepo(), new NoOpMeetingSpeakerRepo(), new NoOpKnowledgeChunkRepo(),
+            tenantScopedTransaction, clock);
     }
 
     @Override
@@ -88,6 +116,7 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
             profile.revoke(now);
             profileRepository.updateConsentStatus(tenantId, profileId, profile.consentStatus(),
                 profile.revokedAt(), profile.deletedAt(), profile.updatedAt());
+            cascadeOnRevocation(tenantId, profile, now, false);
             log.info("speaker_profile_revoked tenant={} profile={} by={} reason={}", tenantId, profileId, revokedBy, reason);
             return null;
         });
@@ -102,9 +131,24 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
             profile.delete(now);
             profileRepository.updateConsentStatus(tenantId, profileId, profile.consentStatus(),
                 profile.revokedAt(), profile.deletedAt(), profile.updatedAt());
+            cascadeOnRevocation(tenantId, profile, now, true);
             log.info("speaker_profile_deleted tenant={} profile={} by={} reason={}", tenantId, profileId, deletedBy, reason);
             return null;
         });
+    }
+
+    private void cascadeOnRevocation(String tenantId, SpeakerProfile profile, OffsetDateTime now, boolean isDelete) {
+        int embeddingsAffected = isDelete
+            ? embeddingRepository.deleteForProfile(tenantId, profile.id(), now)
+            : embeddingRepository.revokeForProfile(tenantId, profile.id(), now);
+        List<String> meetingIds = meetingSpeakerRepository.findMeetingIdsByConfirmedPerson(tenantId, profile.personId());
+        int meetingsStaled = 0;
+        for (String meetingId : meetingIds) {
+            knowledgeChunkRepository.markStaleForMeeting(tenantId, meetingId);
+            meetingsStaled++;
+        }
+        log.info("speaker_revoke_cascade tenant={} profile={} delete={} embeddings={} meetingsStaled={}",
+            tenantId, profile.id(), isDelete, embeddingsAffected, meetingsStaled);
     }
 
     @Override
@@ -157,5 +201,25 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
             r.enrollmentStatus(), r.qualityScore(), r.modelVersion(), r.errorCode(),
             r.createdAt(), r.updatedAt()
         );
+    }
+
+    private static final class NoOpEmbeddingRepo implements SpeakerEmbeddingRepository {
+        @Override public void save(SpeakerEmbeddingRecord record) { }
+        @Override public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) { return List.of(); }
+        @Override public int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
+        @Override public int deleteForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
+    }
+
+    private static final class NoOpMeetingSpeakerRepo implements MeetingSpeakerRepository {
+        @Override public Optional<MeetingSpeakerRecord> find(String tenantId, String meetingId, String speakerLabel) { return Optional.empty(); }
+        @Override public List<MeetingSpeakerRecord> findByMeeting(String tenantId, String meetingId) { return List.of(); }
+        @Override public List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId) { return List.of(); }
+        @Override public void saveCandidates(String tenantId, String meetingId, String speakerLabel, List<String> candidatePersonIds, Double autoMatchScore, String matchSource, OffsetDateTime now) { }
+        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedBy, OffsetDateTime now) { }
+        @Override public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy, OffsetDateTime now) { }
+    }
+
+    private static final class NoOpKnowledgeChunkRepo implements KnowledgeChunkRepository {
+        @Override public int markStaleForMeeting(String tenantId, String meetingId) { return 0; }
     }
 }

@@ -14,6 +14,9 @@ public interface MeetingSpeakerRepository {
 
     List<MeetingSpeakerRecord> findByMeeting(String tenantId, String meetingId);
 
+    /** Lookup meetings that have a confirmed person. Used by revoke cascade. */
+    List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId);
+
     /** Upsert per (tenant, meeting, speakerLabel). */
     void saveCandidates(String tenantId, String meetingId, String speakerLabel,
                          List<String> candidatePersonIds, Double autoMatchScore, String matchSource,

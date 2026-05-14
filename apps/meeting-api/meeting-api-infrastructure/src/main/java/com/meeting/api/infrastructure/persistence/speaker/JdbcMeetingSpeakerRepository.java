@@ -59,6 +59,17 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
     }
 
     @Override
+    public List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId) {
+        return jdbcTemplate.query(
+            "SELECT DISTINCT meeting_id FROM meeting_speakers"
+                + " WHERE tenant_id = ? AND confirmed_person_id = ? AND verification_status = 'CONFIRMED'",
+            (rs, n) -> rs.getString("meeting_id"),
+            tenantId,
+            personId
+        );
+    }
+
+    @Override
     public void saveCandidates(String tenantId, String meetingId, String speakerLabel,
                                 List<String> candidatePersonIds, Double autoMatchScore, String matchSource,
                                 OffsetDateTime now) {
