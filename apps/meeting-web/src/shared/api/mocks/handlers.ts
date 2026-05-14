@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { ApiResponse, Meeting, AuthUser, ProcessingTask, AudioUploadSession, TranscriptData } from "../types";
+import type { ApiResponse, Meeting, AuthUser, ProcessingTask, AudioUploadSession, TranscriptData, MinutesData } from "../types";
 
 const meetingList: Meeting[] = [
   {
@@ -268,6 +268,65 @@ export const handlers = [
       error: null,
       requestId: "req_edit_segment",
       traceId: "trace_edit_segment",
+    });
+  }),
+
+  http.get("/api/meetings/:meetingId/minutes", ({ params }) => {
+    return HttpResponse.json<ApiResponse<MinutesData>>({
+      success: true,
+      data: {
+        meetingId: String(params.meetingId),
+        minutesId: "min_01",
+        minutesVersion: 1,
+        sourceTranscriptVersion: 1,
+        title: "周会纪要",
+        markdown: "## 总结\n- 阶段二验收闭环\n",
+        staleStatus: "ACTIVE",
+        sections: [
+          {
+            type: "SUMMARY",
+            title: "总结",
+            items: [
+              {
+                text: "阶段二上线",
+                evidence: [
+                  {
+                    segmentId: "seg_01",
+                    startMs: 0,
+                    endMs: 1800,
+                    evidenceTextSnapshot: "今天先确认阶段二验收范围。",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      } as MinutesData,
+      error: null,
+      requestId: "req_minutes",
+      traceId: "trace_minutes",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/minutes/regenerate", async ({ request, params }) => {
+    const body = (await request.json()) as { expectedTranscriptVersion: number };
+    return HttpResponse.json<ApiResponse<MinutesData>>({
+      success: true,
+      data: {
+        meetingId: String(params.meetingId),
+        minutesId: "min_02",
+        minutesVersion: 2,
+        sourceTranscriptVersion: body.expectedTranscriptVersion,
+        title: "周会纪要（重生成）",
+        markdown: "## 总结\n- 已重新生成",
+        staleStatus: "ACTIVE",
+        sections: [
+          { type: "SUMMARY", title: "总结", items: [{ text: "纪要已重生成", evidence: [] }] },
+        ],
+      } as MinutesData,
+      error: null,
+      requestId: "req_regen_minutes",
+      traceId: "trace_regen_minutes",
     });
   }),
 ];

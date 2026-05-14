@@ -359,6 +359,19 @@ export async function getMinutes(meetingId: string) {
   return request<import("@shared/api/types").MinutesData>("GET", `/meetings/${meetingId}/minutes`);
 }
 
+export async function regenerateMinutes(
+  meetingId: string,
+  expectedTranscriptVersion: number,
+  expectedMinutesVersion?: number | null,
+) {
+  return request<import("@shared/api/types").MinutesData>(
+    "POST",
+    `/meetings/${meetingId}/minutes/regenerate`,
+    { expectedTranscriptVersion, expectedMinutesVersion: expectedMinutesVersion ?? null },
+    generateId("regen-minutes"),
+  );
+}
+
 // ── RAG ────────────────────────────────────────────────────────────
 
 export async function ragQuery(data: import("@shared/api/types").RagQueryRequest) {
