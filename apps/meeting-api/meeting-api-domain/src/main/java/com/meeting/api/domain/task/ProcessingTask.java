@@ -152,13 +152,76 @@ public final class ProcessingTask {
 
     public void markJavaStepSucceeded(ProcessingStep stepName, OffsetDateTime now) {
         requireNonTerminal();
+        ProcessingTaskStep step = requireJavaStep(stepName);
+        step.markSucceeded(100, null, null, null, now);
+        currentStep = stepName.name();
+        touch(now);
+    }
+
+    public void markJavaStepRunning(ProcessingStep stepName, int progress, OffsetDateTime now) {
+        requireNonTerminal();
+        ProcessingTaskStep step = requireJavaStep(stepName);
+        step.markRunning(progress, attemptNo, null, null, now);
+        currentStep = stepName.name();
+        touch(now);
+    }
+
+    public void markJavaStepFailed(ProcessingStep stepName, String errorCode, OffsetDateTime now) {
+        requireNonTerminal();
+        ProcessingTaskStep step = requireJavaStep(stepName);
+        step.markFailed(100, null, null, null, errorCode, now);
+        currentStep = stepName.name();
+        lastErrorCode = errorCode;
+        retryable = true;
+        touch(now);
+    }
+
+    public void completeJavaPhase(OffsetDateTime now) {
+        requireStatus(ProcessingTaskStatus.RUNNING);
+        if (phase != ProcessingTaskPhase.JAVA_LLM_RUNNING) {
+            throw new IllegalStateException("Java phase can only complete from JAVA_LLM_RUNNING");
+        }
+        for (ProcessingTaskStep step : steps.values()) {
+            if (step.source() == ProcessingStepUpdateSource.JAVA_TASK_SERVICE) {
+                StepStatus s = step.status();
+                if (s == StepStatus.PENDING || s == StepStatus.QUEUED || s == StepStatus.RUNNING) {
+                    throw new IllegalStateException("Java step still in progress: " + step.stepName());
+                }
+            }
+        }
+        boolean anyFailed = steps.values().stream().anyMatch(s -> s.status() == StepStatus.FAILED);
+        boolean anySkipped = steps.values().stream().anyMatch(s -> s.status() == StepStatus.SKIPPED);
+        ProcessingTaskStatus terminalStatus;
+        String terminalErrorCode = null;
+        if (anyFailed) {
+            terminalStatus = ProcessingTaskStatus.FAILED;
+            terminalErrorCode = steps.values().stream()
+                .filter(s -> s.status() == StepStatus.FAILED)
+                .map(ProcessingTaskStep::errorCode)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(lastErrorCode);
+        } else if (anySkipped) {
+            terminalStatus = ProcessingTaskStatus.PARTIAL_SUCCEEDED;
+        } else {
+            terminalStatus = ProcessingTaskStatus.SUCCEEDED;
+        }
+        completeTerminal(terminalStatus, terminalErrorCode, now);
+    }
+
+    public boolean hasPendingJavaSteps() {
+        return steps.values().stream().anyMatch(step ->
+            step.source() == ProcessingStepUpdateSource.JAVA_TASK_SERVICE
+                && (step.status() == StepStatus.PENDING || step.status() == StepStatus.QUEUED || step.status() == StepStatus.RUNNING)
+        );
+    }
+
+    private ProcessingTaskStep requireJavaStep(ProcessingStep stepName) {
         ProcessingTaskStep step = step(stepName);
         if (step.source() != ProcessingStepUpdateSource.JAVA_TASK_SERVICE) {
             throw new IllegalArgumentException("step is not owned by Java task service: " + stepName);
         }
-        step.markSucceeded(100, null, null, null, now);
-        currentStep = stepName.name();
-        touch(now);
+        return step;
     }
 
     public void updateWorkerStep(

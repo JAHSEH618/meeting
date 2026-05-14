@@ -212,7 +212,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现 `TaskStepProgressService`，由 Java 推进 `SUMMARY` / `EXTRACTION`，source 固定 `JAVA_TASK_SERVICE`。
+- [x] 实现 `TaskStepProgressService`，由 Java 推进 `SUMMARY` / `EXTRACTION`，source 固定 `JAVA_TASK_SERVICE`。
 - [ ] 实现 `WORKER_PHASE_COMPLETED` listener：`MEETING_FULL_PIPELINE` 进入 `JAVA_LLM_RUNNING`，非 LLM worker task 直接进入 `TERMINAL`。
 - [ ] 实现 DashScope `LlmGateway`：OpenAI-compatible、security level fail closed、prompt template、input/output hash、token、latency、schema 校验和审计。
 - [ ] 实现会议纪要生成，保存 `meeting_minutes`、evidence segment、`evidence_text_snapshot`、artifact manifest。
