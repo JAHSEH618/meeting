@@ -4,8 +4,7 @@ import { getMeeting, getMinutes, regenerateMinutes } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
 import type { Meeting, MinutesData, MinutesSection } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
-
-const SECURITY_BLOCKED_MESSAGE = "一期不支持该安全等级的自动 LLM 处理";
+import { SecurityLevelBlockedNotice } from "@shared/components/SecurityLevelBlockedNotice";
 
 export function MinutesPage() {
   const { meetingId = "" } = useParams();
@@ -104,13 +103,10 @@ export function MinutesPage() {
       {error ? <div className="error" role="alert">{error}</div> : null}
 
       {blocked ? (
-        <section className="card stack" role="status" aria-live="polite">
-          <strong>LLM 已被安全策略阻断</strong>
-          <span className="muted">{SECURITY_BLOCKED_MESSAGE}</span>
-          {meeting ? (
-            <span className="badge">{meeting.securityLevel}</span>
-          ) : null}
-        </section>
+        <SecurityLevelBlockedNotice
+          securityLevel={meeting?.securityLevel}
+          blockedCapability="MINUTES_SUMMARY"
+        />
       ) : null}
 
       {isStale ? (
