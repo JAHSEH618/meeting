@@ -242,7 +242,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [x] 接入 speaker embedding model runtime，支持参考音频和会议 speaker label embedding。
 - [x] 实现仅在 Java 授权的 knownParticipants / profile 范围内候选匹配，不做全公司搜索。
-- [ ] speaker-candidates callback 始终携带 `embedding.values`，禁止改为 TOS 明文 artifact。
+- [x] speaker-candidates callback 始终携带 `embedding.values`，禁止改为 TOS 明文 artifact。
 - [ ] callback 成功或重试耗尽后清理进程内 embedding 明文引用。
 
 ### 工程：`apps/meeting-web`

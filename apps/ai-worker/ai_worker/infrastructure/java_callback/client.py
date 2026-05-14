@@ -176,6 +176,37 @@ class JavaCallbackClient:
             body["artifactManifestId"] = artifact_manifest_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
+    async def submit_speaker_candidates(
+        self,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        speaker_candidates: list[dict],
+        meeting_id: str | None = None,
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        """Send a speaker-candidates callback carrying plaintext embedding.values.
+
+        IMPORTANT: callers must NOT serialize the embedding payload to a TOS / object
+        store artifact. Plaintext embeddings only ever travel on this in-process
+        callback path under internal TLS + HMAC, and Java envelope-encrypts on receipt.
+
+        The caller is responsible for clearing the `values` list (overwrite with 0.0
+        per element) immediately after this method returns — see worker.runtime caller.
+        """
+
+        path = f"/internal/processing-tasks/{task_id}/speaker-candidates"
+        idempotency_key = f"{task_id}:speaker-candidates:{attempt_no}:v1"
+        body: dict = {
+            "tenantId": tenant_id,
+            "taskId": task_id,
+            "attemptNo": attempt_no,
+            "speakerCandidates": speaker_candidates,
+        }
+        if meeting_id:
+            body["meetingId"] = meeting_id
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
     async def submit_artifacts(
         self,
         task_id: str,
