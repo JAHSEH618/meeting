@@ -1,6 +1,7 @@
 package com.meeting.api.adapter.internal;
 
 import com.meeting.api.app.observability.MeetingApiMetrics;
+import com.meeting.api.app.speaker.SpeakerCandidatesCallbackApplicationService;
 import com.meeting.api.app.task.ProcessingTaskCallbackApplicationService;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
@@ -11,6 +12,7 @@ import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.CompleteWorkerPhaseCommand;
 import com.meeting.api.client.internal.callback.FailTaskCommand;
+import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
@@ -39,15 +41,18 @@ public class ProcessingTaskCallbackController {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private final ProcessingTaskCallbackApplicationService callbackApplicationService;
+    private final SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService;
     private final ObjectMapper objectMapper;
     private final MeetingApiMetrics metrics;
 
     public ProcessingTaskCallbackController(
         ProcessingTaskCallbackApplicationService callbackApplicationService,
+        SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService,
         ObjectMapper objectMapper,
         MeetingApiMetrics metrics
     ) {
         this.callbackApplicationService = callbackApplicationService;
+        this.speakerCallbackApplicationService = speakerCallbackApplicationService;
         this.objectMapper = objectMapper;
         this.metrics = metrics;
     }
@@ -168,6 +173,18 @@ public class ProcessingTaskCallbackController {
     @PostMapping("/speaker-candidates")
     public ApiResponse<Map<String, Object>> speakerCandidates(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
+        Map<String, Object> payload = parseBody(rawBody);
+        String tenantId = optionalString(payload, "tenantId");
+        String meetingId = optionalString(payload, "meetingId");
+        int attemptNo = optionalInt(payload, "attemptNo", metadata.attemptNo());
+        speakerCallbackApplicationService.writeCandidates(new SpeakerCandidatesCallbackCommand(
+            metadata,
+            tenantId,
+            meetingId,
+            taskId,
+            attemptNo,
+            parseSpeakerCandidates(payload.get("speakerCandidates"))
+        ));
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "SPEAKER_CANDIDATES"), metadata.requestId(), metadata.traceId());
     }
 
@@ -286,6 +303,52 @@ public class ProcessingTaskCallbackController {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseObject(Object raw) {
         return raw instanceof Map<?, ?> map ? (Map<String, Object>) map : Collections.emptyMap();
+    }
+
+    private static List<SpeakerCandidatesCallbackCommand.SpeakerEntry> parseSpeakerCandidates(Object raw) {
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        java.util.List<SpeakerCandidatesCallbackCommand.SpeakerEntry> result = new java.util.ArrayList<>();
+        for (Object item : values) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            String speakerLabel = String.valueOf(map.get("speakerLabel"));
+            java.util.List<SpeakerCandidatesCallbackCommand.Candidate> candidates = new java.util.ArrayList<>();
+            Object candidatesRaw = map.get("candidates");
+            if (candidatesRaw instanceof List<?> list) {
+                for (Object c : list) {
+                    if (!(c instanceof Map<?, ?> cm)) continue;
+                    candidates.add(new SpeakerCandidatesCallbackCommand.Candidate(
+                        cm.get("personId") == null ? null : String.valueOf(cm.get("personId")),
+                        cm.get("speakerProfileId") == null ? null : String.valueOf(cm.get("speakerProfileId")),
+                        cm.get("confidence") instanceof Number n ? n.doubleValue() : 0.0,
+                        cm.get("matchStatus") == null ? null : String.valueOf(cm.get("matchStatus"))
+                    ));
+                }
+            }
+            SpeakerCandidatesCallbackCommand.PlainEmbedding embedding = null;
+            Object embeddingRaw = map.get("embedding");
+            if (embeddingRaw instanceof Map<?, ?> em) {
+                Object valuesRaw = em.get("values");
+                float[] floatValues = null;
+                if (valuesRaw instanceof List<?> floats) {
+                    floatValues = new float[floats.size()];
+                    for (int i = 0; i < floats.size(); i++) {
+                        Object v = floats.get(i);
+                        floatValues[i] = v instanceof Number number ? number.floatValue() : 0f;
+                    }
+                }
+                embedding = new SpeakerCandidatesCallbackCommand.PlainEmbedding(
+                    em.get("format") == null ? null : String.valueOf(em.get("format")),
+                    em.get("dimension") instanceof Number dn ? dn.intValue() : (floatValues == null ? 0 : floatValues.length),
+                    floatValues,
+                    em.get("checksum") == null ? null : String.valueOf(em.get("checksum")),
+                    em.get("modelVersion") == null ? null : String.valueOf(em.get("modelVersion"))
+                );
+            }
+            result.add(new SpeakerCandidatesCallbackCommand.SpeakerEntry(speakerLabel, candidates, embedding));
+        }
+        return result;
     }
 
     private static long requiredLong(Map<String, Object> payload, String key) {

@@ -1,6 +1,7 @@
 package com.meeting.api.infrastructure.gateway.kms;
 
 import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
 import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.kms.KmsGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Component;
  * without ever persisting plaintext.</p>
  */
 @Component
-public class EmbeddingEnvelopeService {
+public class EmbeddingEnvelopeService implements EmbeddingEnvelopeGateway {
     private static final String ALGORITHM = "AES-256-GCM";
     private static final int NONCE_BYTES = 12;
     private static final int TAG_BITS = 128;
