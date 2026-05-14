@@ -1,0 +1,303 @@
+package com.meeting.api.infrastructure.gateway.llm;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.client.enums.SecurityLevel;
+import com.meeting.api.domain.llm.LlmCallLogRepository;
+import com.meeting.api.domain.llm.LlmGateway;
+import com.meeting.api.domain.llm.LlmProviderException;
+import com.meeting.api.domain.llm.PromptTemplateRepository;
+import com.meeting.api.domain.llm.SecurityLevelBlockedException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/**
+ * DashScope-flavored {@link LlmGateway} implementation.
+ *
+ * Responsibilities:
+ * <ol>
+ *   <li>Fail closed when security level is {@code CONFIDENTIAL} or {@code SECRET} (configured set).</li>
+ *   <li>Load active {@link PromptTemplateRepository.PromptTemplate} by task name.</li>
+ *   <li>Render template by substituting {@code {{var}}} placeholders.</li>
+ *   <li>Call the LLM via {@link OpenAiCompatibleChatClient}.</li>
+ *   <li>Validate the response against the template's JSON schema (top-level required keys check).</li>
+ *   <li>Persist an {@link LlmCallLogRepository.LlmCallLogRecord} entry with input/output hashes.</li>
+ * </ol>
+ */
+@Component
+public class DashScopeLlmGateway implements LlmGateway {
+    private static final Logger log = LoggerFactory.getLogger(DashScopeLlmGateway.class);
+    private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*(\\w+)\\s*\\}\\}");
+    private static final String PROVIDER = "dashscope";
+
+    private final OpenAiCompatibleChatClient client;
+    private final PromptTemplateRepository promptTemplateRepository;
+    private final LlmCallLogRepository llmCallLogRepository;
+    private final ObjectMapper objectMapper;
+    private final String defaultModel;
+    private final Set<SecurityLevel> blockedSecurityLevels;
+    private final Clock clock;
+
+    public DashScopeLlmGateway(
+        OpenAiCompatibleChatClient client,
+        PromptTemplateRepository promptTemplateRepository,
+        LlmCallLogRepository llmCallLogRepository,
+        ObjectMapper objectMapper,
+        @Value("${meeting.llm.dashscope.default-model:qwen-plus}") String defaultModel,
+        @Value("${meeting.llm.security-level-blocked:CONFIDENTIAL,SECRET}") String blockedLevelsCsv,
+        Clock clock
+    ) {
+        this.client = client;
+        this.promptTemplateRepository = promptTemplateRepository;
+        this.llmCallLogRepository = llmCallLogRepository;
+        this.objectMapper = objectMapper;
+        this.defaultModel = defaultModel;
+        this.blockedSecurityLevels = parseLevels(blockedLevelsCsv);
+        this.clock = clock;
+    }
+
+    public DashScopeLlmGateway(
+        OpenAiCompatibleChatClient client,
+        PromptTemplateRepository promptTemplateRepository,
+        LlmCallLogRepository llmCallLogRepository,
+        ObjectMapper objectMapper,
+        String defaultModel,
+        Set<SecurityLevel> blockedSecurityLevels,
+        Clock clock
+    ) {
+        this.client = client;
+        this.promptTemplateRepository = promptTemplateRepository;
+        this.llmCallLogRepository = llmCallLogRepository;
+        this.objectMapper = objectMapper;
+        this.defaultModel = defaultModel;
+        this.blockedSecurityLevels = blockedSecurityLevels;
+        this.clock = clock;
+    }
+
+    @Override
+    public LlmResponse complete(LlmRequest request) {
+        if (blockedSecurityLevels.contains(request.securityLevel())) {
+            throw new SecurityLevelBlockedException(request.securityLevel(), request.capability());
+        }
+        PromptTemplateRepository.PromptTemplate template = promptTemplateRepository
+            .findActiveByTaskName(request.tenantId(), request.taskName())
+            .or(() -> promptTemplateRepository.findActiveByTaskName(null, request.taskName()))
+            .orElseThrow(() -> new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID,
+                "active prompt template not found for task " + request.taskName()));
+        String rendered = renderTemplate(template.templateBody(), request.variables());
+        String inputHash = sha256(rendered);
+        OffsetDateTime startedAt = OffsetDateTime.now(clock);
+
+        OpenAiCompatibleChatClient.ChatCompletion completion;
+        String errorCode = null;
+        String status = "SUCCEEDED";
+        try {
+            completion = client.chatComplete(new OpenAiCompatibleChatClient.ChatCompletionRequest(
+                defaultModel,
+                java.util.List.of(OpenAiCompatibleChatClient.ChatMessage.user(rendered)),
+                0.2,
+                null,
+                request.expectedJsonSchema() != null && !request.expectedJsonSchema().isBlank()
+                    ? request.expectedJsonSchema()
+                    : template.jsonSchema()
+            ));
+        } catch (LlmProviderException ex) {
+            recordFailedCall(request, template, inputHash, ex.errorCode().name(), 0, startedAt);
+            throw ex;
+        }
+        String structuredJson = extractStructuredJson(completion.content(), template.jsonSchema());
+        if (structuredJson != null) {
+            validateAgainstSchema(structuredJson, template.jsonSchema());
+        }
+        String outputHash = sha256(completion.content());
+        String callLogId = recordSuccessfulCall(
+            request,
+            template,
+            inputHash,
+            outputHash,
+            completion,
+            startedAt
+        );
+        return new LlmResponse(
+            completion.content(),
+            structuredJson,
+            completion.promptTokens(),
+            completion.completionTokens(),
+            completion.latencyMs(),
+            completion.modelVersion(),
+            callLogId
+        );
+    }
+
+    static String renderTemplate(String template, Map<String, Object> variables) {
+        Matcher matcher = VARIABLE_PATTERN.matcher(template);
+        StringBuilder sb = new StringBuilder();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            Object value = variables == null ? null : variables.get(key);
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(value == null ? "" : value.toString()));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
+    }
+
+    static String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static Set<SecurityLevel> parseLevels(String csv) {
+        Set<SecurityLevel> levels = new LinkedHashSet<>();
+        if (csv == null || csv.isBlank()) {
+            return levels;
+        }
+        for (String token : csv.split(",")) {
+            String trimmed = token.trim();
+            if (!trimmed.isEmpty()) {
+                levels.add(SecurityLevel.valueOf(trimmed));
+            }
+        }
+        return levels;
+    }
+
+    private String extractStructuredJson(String content, String jsonSchema) {
+        if (jsonSchema == null || jsonSchema.isBlank() || jsonSchema.equals("{}")) {
+            return null;
+        }
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return trimmed;
+        }
+        // tolerant: extract first {...} block
+        int firstBrace = trimmed.indexOf('{');
+        int lastBrace = trimmed.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            return trimmed.substring(firstBrace, lastBrace + 1);
+        }
+        return null;
+    }
+
+    private void validateAgainstSchema(String json, String jsonSchema) {
+        if (jsonSchema == null || jsonSchema.isBlank() || jsonSchema.equals("{}")) {
+            return;
+        }
+        try {
+            JsonNode parsed = objectMapper.readTree(json);
+            JsonNode schema = objectMapper.readTree(jsonSchema);
+            JsonNode required = schema.get("required");
+            if (required == null || !required.isArray()) {
+                return;
+            }
+            for (JsonNode field : required) {
+                if (!parsed.has(field.asText())) {
+                    throw new LlmProviderException(
+                        ErrorCode.LLM_SCHEMA_INVALID,
+                        "LLM response missing required field: " + field.asText()
+                    );
+                }
+            }
+        } catch (LlmProviderException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID, "LLM response is not valid JSON: " + ex.getMessage(), ex);
+        }
+    }
+
+    private String recordSuccessfulCall(
+        LlmRequest request,
+        PromptTemplateRepository.PromptTemplate template,
+        String inputHash,
+        String outputHash,
+        OpenAiCompatibleChatClient.ChatCompletion completion,
+        OffsetDateTime startedAt
+    ) {
+        int latencyMs = (int) completion.latencyMs();
+        int tokenTotal = completion.promptTokens() + completion.completionTokens();
+        String id = "llmlog_" + UUID.randomUUID().toString().replace("-", "");
+        try {
+            llmCallLogRepository.record(new LlmCallLogRepository.LlmCallLogRecord(
+                id,
+                request.tenantId(),
+                request.meetingId(),
+                request.taskId(),
+                request.capability(),
+                PROVIDER,
+                defaultModel,
+                completion.modelVersion(),
+                template.id(),
+                template.version(),
+                request.securityLevel(),
+                inputHash,
+                outputHash,
+                completion.promptTokens(),
+                completion.completionTokens(),
+                tokenTotal,
+                latencyMs,
+                "SUCCEEDED",
+                null,
+                startedAt
+            ));
+        } catch (RuntimeException ex) {
+            log.warn("llm_call_log_persist_failed task={} reason={}", request.taskName(), ex.getMessage());
+        }
+        return id;
+    }
+
+    private void recordFailedCall(
+        LlmRequest request,
+        PromptTemplateRepository.PromptTemplate template,
+        String inputHash,
+        String errorCode,
+        int latencyMs,
+        OffsetDateTime startedAt
+    ) {
+        String id = "llmlog_" + UUID.randomUUID().toString().replace("-", "");
+        try {
+            llmCallLogRepository.record(new LlmCallLogRepository.LlmCallLogRecord(
+                id,
+                request.tenantId(),
+                request.meetingId(),
+                request.taskId(),
+                request.capability(),
+                PROVIDER,
+                defaultModel,
+                null,
+                template.id(),
+                template.version(),
+                request.securityLevel(),
+                inputHash,
+                null,
+                null,
+                null,
+                null,
+                latencyMs,
+                "FAILED",
+                errorCode,
+                startedAt
+            ));
+        } catch (RuntimeException ex) {
+            log.warn("llm_call_log_persist_failed_on_error task={} reason={}", request.taskName(), ex.getMessage());
+        }
+    }
+}
