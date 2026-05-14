@@ -327,6 +327,15 @@ class ProcessingTaskCallbackApplicationServiceTest {
         }
 
         @Override
+        public java.util.Optional<TranscriptSegmentRecord> findSegment(String tenantId, String meetingId, String segmentId, int transcriptVersion) {
+            return segments.stream().filter(s -> s.segmentId().equals(segmentId)).findFirst();
+        }
+
+        @Override
+        public void applySegmentEdit(String tenantId, String meetingId, String segmentId, int expectedTranscriptVersion, String editedText, String changedBy, String editReason, java.time.OffsetDateTime now) {
+        }
+
+        @Override
         public void replaceTranscript(String tenantId, String meetingId, int transcriptVersion, String artifactManifestId, List<TranscriptSegmentRecord> segments) {
             this.segments = List.copyOf(segments);
             replaceCount++;

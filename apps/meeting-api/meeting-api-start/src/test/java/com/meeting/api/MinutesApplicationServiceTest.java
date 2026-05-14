@@ -287,6 +287,15 @@ class MinutesApplicationServiceTest {
         }
 
         @Override
+        public Optional<TranscriptSegmentRecord> findSegment(String tenantId, String meetingId, String segmentId, int transcriptVersion) {
+            return segments.stream().filter(s -> s.segmentId().equals(segmentId)).findFirst();
+        }
+
+        @Override
+        public void applySegmentEdit(String tenantId, String meetingId, String segmentId, int expectedTranscriptVersion, String editedText, String changedBy, String editReason, OffsetDateTime now) {
+        }
+
+        @Override
         public void replaceTranscript(String tenantId, String meetingId, int transcriptVersion, String artifactManifestId, List<TranscriptSegmentRecord> segments) {
         }
 
