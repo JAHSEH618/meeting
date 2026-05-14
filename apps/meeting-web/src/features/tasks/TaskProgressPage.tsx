@@ -2,9 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cancelTask, getTask, retryTask, subscribeTaskEvents } from "@shared/api/client";
 import type { ApiClientError, TaskEventSubscription } from "@shared/api/client";
-import type { ProcessingTask } from "@shared/api/types";
+import type { ProcessingTask, ProcessingTaskStatus } from "@shared/api/types";
 import { createInitialSnapshot, sseReducer, type TaskSnapshot } from "@shared/utils/sse-reducer";
 import { getUserMessage } from "@shared/utils/error-mapper";
+
+const TERMINAL_STATUSES: ProcessingTaskStatus[] = [
+  "SUCCEEDED",
+  "PARTIAL_SUCCEEDED",
+  "FAILED",
+  "CANCELLED",
+];
+
+const POLL_INTERVAL_MS = 3000;
 
 function snapshotFromTask(task: ProcessingTask): TaskSnapshot {
   return {
@@ -21,6 +30,11 @@ function snapshotFromTask(task: ProcessingTask): TaskSnapshot {
     completedSteps: task.steps.filter((step) => step.status === "SUCCEEDED").map((step) => step.stepName),
     leaseExpiresAt: "leaseExpiresAt" in task ? String(task.leaseExpiresAt ?? "") : undefined,
   };
+}
+
+function isTerminal(status: ProcessingTaskStatus | string | null): boolean {
+  if (status === null) return false;
+  return TERMINAL_STATUSES.some((terminal) => terminal === status);
 }
 
 export function TaskProgressPage() {
@@ -61,6 +75,7 @@ export function TaskProgressPage() {
 
   useEffect(() => {
     if (!taskId || loading) return;
+    if (isTerminal(snapshot.status)) return;
     setConnectionMode("SSE");
     subscription.current = subscribeTaskEvents(taskId, {
       lastEventId: lastEventId.current,
@@ -74,15 +89,20 @@ export function TaskProgressPage() {
       subscription.current?.close();
       subscription.current = null;
     };
-  }, [taskId, loading]);
+  }, [taskId, loading, snapshot.status]);
 
   useEffect(() => {
     if (connectionMode !== "POLLING" || !taskId) return;
+    if (isTerminal(snapshot.status)) return;
     const timer = window.setInterval(() => {
-      void getTask(taskId).then((task) => setSnapshot(snapshotFromTask(task)));
-    }, 3000);
+      void getTask(taskId)
+        .then((task) => setSnapshot(snapshotFromTask(task)))
+        .catch(() => {
+          // ignore transient polling failures; next tick retries
+        });
+    }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [connectionMode, taskId]);
+  }, [connectionMode, taskId, snapshot.status]);
 
   async function retry() {
     try {
@@ -134,7 +154,7 @@ export function TaskProgressPage() {
         </div>
         <div className="card">
           <div className="muted">连接</div>
-          <h2>{connectionMode}</h2>
+          <h2>{isTerminal(snapshot.status) ? "已结束" : connectionMode === "POLLING" ? "轮询" : "SSE"}</h2>
         </div>
         <div className="card">
           <div className="muted">尝试次数</div>

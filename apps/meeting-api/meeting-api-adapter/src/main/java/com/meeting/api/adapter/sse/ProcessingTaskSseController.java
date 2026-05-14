@@ -1,6 +1,7 @@
 package com.meeting.api.adapter.sse;
 
 import com.meeting.api.adapter.meeting.TenantContextHolder;
+import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.enums.TaskEventType;
 import com.meeting.api.client.task.ProcessingTaskFacade;
 import com.meeting.api.client.task.TaskEventDTO;
@@ -17,10 +18,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 public class ProcessingTaskSseController {
     private final ProcessingTaskFacade processingTaskFacade;
+    private final MeetingApiMetrics metrics;
     private final AtomicLong sequence = new AtomicLong(1);
 
-    public ProcessingTaskSseController(ProcessingTaskFacade processingTaskFacade) {
+    public ProcessingTaskSseController(ProcessingTaskFacade processingTaskFacade, MeetingApiMetrics metrics) {
         this.processingTaskFacade = processingTaskFacade;
+        this.metrics = metrics;
     }
 
     @GetMapping(value = "/api/processing-tasks/{taskId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -31,6 +34,7 @@ public class ProcessingTaskSseController {
         var task = processingTaskFacade.get(TenantContextHolder.currentTenantId(), taskId)
             .orElseThrow(() -> new IllegalArgumentException("task not found: " + taskId));
         SseEmitter emitter = new SseEmitter(120_000L);
+        metrics.sseOpenedCounter().increment();
         long seq = sequence.getAndIncrement();
         TaskEventDTO event = new TaskEventDTO(
             taskId + ":" + seq,
@@ -53,6 +57,7 @@ public class ProcessingTaskSseController {
             task.leaseExpiresAt()
         );
         emitter.send(SseEmitter.event().id(event.eventId()).name(event.eventType().name()).data(event));
+        metrics.sseEventCounter(event.eventType().name()).increment();
         return emitter;
     }
 }

@@ -285,6 +285,11 @@ class ProcessingTaskCallbackApplicationServiceTest {
         public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return tenantId.equals(task.tenantId()) && meetingId.equals(task.meetingId()) ? Optional.of(task) : Optional.empty();
         }
+
+        @Override
+        public java.util.List<ExpiredLease> findExpiredLeases(java.time.OffsetDateTime now, int limit) {
+            return java.util.List.of();
+        }
     }
 
     private static final class InMemoryCallbackEvents implements CallbackEventRepository {

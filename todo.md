@@ -137,28 +137,76 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ## 阶段 2：音频上传与真实 Worker Pipeline
 
+> **本阶段收尾状态（2026-05-14）：** MVP 链路、上传/转录/任务进度前端、callback 链路、lease scanner、SSE→轮询恢复、阶段二指标骨架均已落地；ai-worker 仍是可替换 runtime 的 fake pipeline，真实模型 runtime 留待阶段二 +。详见 [本节末 _阶段二收尾备忘_](#阶段-2-收尾备忘2026-05-14)。
+
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现音频 multipart upload session：8 MiB 默认分片、10000 part 上限、24h TTL、part sha256 去重、complete 校验全文件 sha256。
-- [ ] 实现 `meeting_files` 持久化和 TOS / MinIO 签名 URL 生成，原始音频落 `meeting-audio` 前缀。
-- [ ] 实现音频 complete 后创建 `MEETING_FULL_PIPELINE` task，并同步会议状态 `CREATED -> PROCESSING`。
-- [ ] 实现 task lease scanner：lease 过期置 `ORPHANED`，可重新入队，旧 attempt callback 不覆盖新 attempt。
-- [ ] 实现 transcript callback 落库：`original_text`、`edited_text`、`current_text`、speaker label、timestamp precision、版本号。
+- [x] 实现音频 multipart upload session：8 MiB 默认分片、10000 part 上限、24h TTL、part sha256 去重、complete 校验全文件 sha256。
+- [x] 实现 `meeting_files` 持久化和 TOS / MinIO 签名 URL 生成，原始音频落 `meeting-audio` 前缀。
+- [x] 实现音频 complete 后创建 `MEETING_FULL_PIPELINE` task，并同步会议状态 `CREATED -> PROCESSING`。
+- [x] 实现 task lease scanner：lease 过期置 `ORPHANED`，可重新入队，旧 attempt callback 不覆盖新 attempt。
+- [x] 实现 transcript callback 落库：`original_text`、`edited_text`、`current_text`、speaker label、timestamp precision、版本号。
 
 ### 工程：`apps/ai-worker`
 
-- [ ] 接入 ArtifactStore / TOS 客户端，支持读取音频、写入质量报告、ASR 原始 JSON、diarization turns、artifact manifest。
-- [ ] 实现 `AUDIO_PREPROCESS`：ffprobe、4 小时上限、采样率低于 16kHz reject、channel_map、质量告警。
-- [ ] 实现 VAD 与 ASR 切片策略：默认 60s、范围 30-120s、overlap 默认 0.5s、记录 chunk strategy / pipeline version。
-- [ ] 接入 ASR model runtime，并为 `ASR_RUNTIME_ERROR`、`ASR_GPU_OOM`、`ASR_MODEL_TIMEOUT` 返回稳定错误码。
-- [ ] 接入 diarization model runtime，输出 `SPEAKER_00` 等匿名 label 和置信度。
-- [ ] 实现 `TRANSCRIPT_MERGE`，输出结构化 segment 并 callback Java。
+- [x] 接入 ArtifactStore / TOS 客户端，支持读取音频、写入质量报告、ASR 原始 JSON、diarization turns、artifact manifest。
+- [x] 实现 `AUDIO_PREPROCESS`：ffprobe、4 小时上限、采样率低于 16kHz reject、channel_map、质量告警。
+- [x] 实现 VAD 与 ASR 切片策略：默认 60s、范围 30-120s、overlap 默认 0.5s、记录 chunk strategy / pipeline version。
+- [ ] **真实 ASR model runtime**（fake 实现已落地，真实模型留待阶段二 +；见上文备忘）。
+- [ ] **真实 diarization model runtime**（同上，fake 实现已落地）。
+- [x] 实现 `TRANSCRIPT_MERGE`，输出结构化 segment 并 callback Java。
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 实现音频上传页面 `/meetings/:meetingId/audio`，支持分片上传、并发数 1-5、part 重试最多 3 次、取消 / 重试。
-- [ ] 实现任务进度 step 展示，不只展示线性百分比；区分 worker step 与 Java-owned step。
-- [ ] 实现转录查看页面，支持分页 / 虚拟滚动，默认使用 `currentText`。
+- [x] 实现音频上传页面 `/meetings/:meetingId/audio`，支持分片上传、并发数 1-5、part 重试最多 3 次、取消 / 重试。
+- [x] 实现任务进度 step 展示，不只展示线性百分比；区分 worker step 与 Java-owned step。
+- [x] 实现转录查看页面，支持分页 / 虚拟滚动，默认使用 `currentText`。
+
+### 阶段 2 收尾备忘（2026-05-14）
+
+#### 已落地
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| 音频 multipart upload | `apps/meeting-api` `AudioUpload*` | 8 MiB 默认分片、part sha256 去重、complete 全文件校验 |
+| `MEETING_FULL_PIPELINE` 任务创建 + 状态转换 | `ProcessingTaskApplicationService#createForCompletedAudioUpload` | 同步会议状态 `CREATED → PROCESSING` |
+| ai-worker fake pipeline | `apps/ai-worker` workflow registry | ASR / diarization 是可替换 runtime 的本地实现，**未接真实模型** |
+| transcript callback 落库 | `ProcessingTaskCallbackApplicationService#writeTranscript` + `transcript_segments` 表 | 含 `original_text` / `edited_text` / `current_text` / 版本号 |
+| Web 音频上传页面 | `apps/meeting-web/src/features/audio/AudioUploadPage.tsx` | 含分片并发、恢复、跨刷新、sha256 校验 |
+| Web 任务进度 step 展示 | `apps/meeting-web/src/features/tasks/TaskProgressPage.tsx` | 含 SSE/轮询切换、终止态停止轮询 |
+| Web 转录页面 | `apps/meeting-web/src/features/transcript/TranscriptPage.tsx` | 含 segment 排序、`currentText` 默认 |
+| `GET /api/meetings/{meetingId}/processing-tasks/latest` | `ProcessingTaskController#getLatestForMeeting` | Web 上传完成后跳转用 |
+| Lease scanner | `ProcessingTaskLeaseScanner` + `ProcessingTaskLeaseScannerConfig` | `@Scheduled` 默认每 30s 扫一次，可通过 `meeting.lease-scanner.enabled=false` 关闭 |
+| 老 attempt callback 拒绝 | `ProcessingTask#validateCallback` | `attemptNo` / `leaseOwner` 双重校验，覆盖在 `ProcessingTaskDomainTest#staleAttemptAndLeaseCannotUpdateCurrentTask` |
+| Metrics 骨架 | `MeetingApiMetrics` | callback / SSE / outbox / lease scanner counter，Spring Boot Actuator `http.server.requests` 默认开启 |
+
+#### 阶段二 +（仍未做，需要先决策）
+
+- [ ] ai-worker 真实模型 runtime（Qwen3-ASR / pyannote / CAM++）——一旦决定要做，需要：模型权重内网制品路径、`docs/model-registry.md` 增加 checksum、`POST /internal/models` 暴露模型版本、production 配置禁联网下载（阶段 8 任务）。
+- [ ] 多租户 callback 鉴权完整 fuzz：HMAC / timestamp skew / nonce / idempotency / attempt / lease / tenant 链接 7 项联合压测。
+- [ ] Playwright / Cypress 端到端：登录 → 上传 → 任务进度 SSE → 转录展示。当前本节末提供手工 E2E 清单替代。
+
+#### 手工 E2E 走查清单（用于阶段三开工前验收）
+
+> 顺序执行；每步出现的命令以仓库根为工作目录。失败立即停下并诊断，不要继续。
+
+| 步骤 | 命令 / 操作 | 期望结果 |
+|---|---|---|
+| 1 | `cp .env.example .env`（一次性） | `.env` 内含 HMAC、MinIO、RabbitMQ 占位值 |
+| 2 | `docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d` | PostgreSQL / RabbitMQ / MinIO / Vault-dev / Prometheus / Grafana / Loki 全部 `healthy` |
+| 3 | `cd apps/meeting-api && export JAVA_HOME=$(/usr/libexec/java_home -v 17) && ./mvnw spring-boot:run -pl meeting-api-start -am` | Flyway 自动 migrate 至最新，端口 `:8080` listen，`http://localhost:8080/actuator/health` 返回 UP |
+| 4 | `cd apps/ai-worker && uv run ai-worker-api` | FastAPI listen `:8090`，`http://localhost:8090/internal/health` 返回 ready |
+| 5 | `cd apps/meeting-web && npm run dev` | Vite listen `:5173`，浏览器打开 |
+| 6 | Web 登录 mock 凭据 | 跳转 `/meetings`，列表加载成功 |
+| 7 | 创建新会议（`INTERNAL`、`zh`） | 跳转会议详情，状态 `CREATED` |
+| 8 | 进入 `/meetings/:meetingId/audio`，选择 ≤ 30 秒 WAV | 触发 multipart upload，分片全部 `completed` |
+| 9 | 上传完成后自动跳转 `/meetings/:meetingId/tasks/:taskId` | 任务进度页显示 `WORKER_DAG_RUNNING`，SSE 连接为 `SSE`，AUDIO_PREPROCESS / ASR 等 step 依序变化 |
+| 10 | 等待 fake pipeline 全部 `SUCCEEDED` | 任务进度连接显示 `已结束`，任务状态 `SUCCEEDED` 或 `PARTIAL_SUCCEEDED` |
+| 11 | 进入 `/meetings/:meetingId/transcript` | 至少 1 个 segment，`speakerLabel` 为 `SPEAKER_00`，`currentText` 非空 |
+| 12 | Prometheus 抓取 `:8080/actuator/prometheus` | 含 `meeting_api_callback_events_total`、`meeting_api_outbox_published_total`、`meeting_api_sse_opened_total`、`meeting_api_lease_scanner_runs_total` |
+| 13 | 手动 kill worker → 等待 lease TTL（5 分钟） | 任务状态从 `RUNNING` 转 `ORPHANED`，scanner 日志 `lease_expired task=...` |
+
+完成所有步骤即视为阶段二可发版到阶段三开工前的验收门禁。Playwright 自动化版本后续在阶段 8 任务里补齐。
 
 ## 阶段 3：Java LLM、纪要、事项与 STALE
 

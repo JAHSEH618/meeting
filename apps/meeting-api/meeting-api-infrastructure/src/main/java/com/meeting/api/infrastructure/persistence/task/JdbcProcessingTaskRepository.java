@@ -106,6 +106,25 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
         return tasks.stream().findFirst();
     }
 
+    @Override
+    public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+        return jdbcTemplate.query(
+            """
+            SELECT tenant_id, id
+              FROM processing_tasks
+             WHERE status = 'RUNNING'
+               AND phase <> 'TERMINAL'
+               AND lease_expires_at IS NOT NULL
+               AND lease_expires_at < ?
+             ORDER BY lease_expires_at ASC
+             LIMIT ?
+            """,
+            (rs, rowNum) -> new ExpiredLease(rs.getString("tenant_id"), rs.getString("id")),
+            Timestamp.from(now.toInstant()),
+            limit
+        );
+    }
+
     private void saveStep(ProcessingTask task, ProcessingTaskStep step) {
         jdbcTemplate.update(
             """

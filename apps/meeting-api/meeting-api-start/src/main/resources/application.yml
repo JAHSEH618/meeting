@@ -85,6 +85,11 @@ meeting:
     lease-duration-seconds: 300
     max-attempts: 3
     orphan-scan-interval-seconds: 60
+  lease-scanner:
+    enabled: true
+    interval-ms: 30000
+    initial-delay-ms: 30000
+    batch-size: 50
   sse:
     heartbeat-interval-seconds: 15
     event-timeout-seconds: 300

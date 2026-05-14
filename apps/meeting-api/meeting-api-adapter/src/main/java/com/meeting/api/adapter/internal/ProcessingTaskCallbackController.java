@@ -1,5 +1,6 @@
 package com.meeting.api.adapter.internal;
 
+import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.task.ProcessingTaskCallbackApplicationService;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
@@ -39,10 +40,16 @@ public class ProcessingTaskCallbackController {
     };
     private final ProcessingTaskCallbackApplicationService callbackApplicationService;
     private final ObjectMapper objectMapper;
+    private final MeetingApiMetrics metrics;
 
-    public ProcessingTaskCallbackController(ProcessingTaskCallbackApplicationService callbackApplicationService, ObjectMapper objectMapper) {
+    public ProcessingTaskCallbackController(
+        ProcessingTaskCallbackApplicationService callbackApplicationService,
+        ObjectMapper objectMapper,
+        MeetingApiMetrics metrics
+    ) {
         this.callbackApplicationService = callbackApplicationService;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     @PatchMapping("/steps/{stepName}")
@@ -58,6 +65,7 @@ public class ProcessingTaskCallbackController {
         int progress = optionalInt(payload, "progress", 0);
         ProcessingStep step = ProcessingStep.valueOf(stepName);
         if (status == StepStatus.RUNNING && progress > 0) {
+            metrics.callbackCounter("heartbeat", stepName).increment();
             return ApiResponse.ok(callbackApplicationService.heartbeat(new StepProgressHeartbeatCommand(
                 metadata,
                 requiredString(payload, "tenantId"),
@@ -69,6 +77,7 @@ public class ProcessingTaskCallbackController {
                 optionalDateTime(payload, "heartbeatAt", OffsetDateTime.now())
             )), metadata.requestId(), metadata.traceId());
         }
+        metrics.callbackCounter("step_" + status.name().toLowerCase(), stepName).increment();
         return ApiResponse.ok(callbackApplicationService.updateStep(new StepCallbackCommand(
             metadata,
             requiredString(payload, "tenantId"),
@@ -91,6 +100,7 @@ public class ProcessingTaskCallbackController {
     ) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        metrics.callbackCounter("complete", "WORKER_DAG").increment();
         return ApiResponse.ok(callbackApplicationService.completeWorkerPhase(new CompleteWorkerPhaseCommand(
             metadata,
             requiredString(payload, "tenantId"),
@@ -117,6 +127,7 @@ public class ProcessingTaskCallbackController {
         @SuppressWarnings("unchecked")
         Map<String, Object> error = (Map<String, Object>) payload.get("error");
         ErrorCode code = ErrorCode.valueOf(String.valueOf(error.get("code")));
+        metrics.callbackCounter("fail", optionalString(payload, "failedStep")).increment();
         return ApiResponse.ok(callbackApplicationService.fail(new FailTaskCommand(
             metadata,
             requiredString(payload, "tenantId"),
@@ -140,6 +151,7 @@ public class ProcessingTaskCallbackController {
     public ApiResponse<ProcessingTaskDTO> transcript(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        metrics.callbackCounter("transcript", "TRANSCRIPT_MERGE").increment();
         return ApiResponse.ok(callbackApplicationService.writeTranscript(new TranscriptCallbackCommand(
             metadata,
             requiredString(payload, "tenantId"),
