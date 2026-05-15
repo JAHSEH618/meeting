@@ -24,4 +24,17 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
             meetingId
         );
     }
+
+    @Override
+    public int markStaleForDocument(String tenantId, String documentId) {
+        return jdbcTemplate.update(
+            """
+            UPDATE knowledge_chunks
+               SET stale_status = 'STALE'::stale_status, updated_at = now()
+             WHERE tenant_id = ? AND document_id = ? AND stale_status = 'ACTIVE'
+            """,
+            tenantId,
+            documentId
+        );
+    }
 }

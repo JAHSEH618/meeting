@@ -255,7 +255,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现文档上传、TOS / MinIO 文件元信息、解析状态、删除、reindex。
+- [x] 实现文档上传、TOS / MinIO 文件元信息、解析状态、删除、reindex。
 - [ ] 使用 JVM 文档解析库解析 PDF / DOCX / TXT / Markdown；扫描 PDF 和图片 OCR 返回明确不支持错误。
 - [ ] 实现 chunk 策略：source type、source version、chunk strategy version、content hash、status、stale_status。
 - [ ] 实现 pgvector + keyword retrieval + metadata filter + PostgreSQL 权限二次校验。
