@@ -351,6 +351,26 @@ errorCodes:
     i18nKey: errors.LEGAL_HOLD_BLOCKED
     opsTags: [compliance, legal_hold]
 
+  # ── Document ──────────────────────────────────────────────────
+  - code: DOCUMENT_PARSE_FAILED
+    step: DOCUMENT_PARSE
+    retryable: true
+    userMessage: 文档解析失败
+    i18nKey: errors.DOCUMENT_PARSE_FAILED
+    opsTags: [document, parse]
+  - code: DOCUMENT_OCR_UNSUPPORTED
+    step: DOCUMENT_PARSE
+    retryable: false
+    userMessage: 不支持扫描 PDF 或图片 OCR
+    i18nKey: errors.DOCUMENT_OCR_UNSUPPORTED
+    opsTags: [document, ocr]
+  - code: DOCUMENT_TYPE_UNSUPPORTED
+    step: DOCUMENT_PARSE
+    retryable: false
+    userMessage: 文档类型不支持
+    i18nKey: errors.DOCUMENT_TYPE_UNSUPPORTED
+    opsTags: [document, validation]
+
   # ── Infra ─────────────────────────────────────────────────────
   - code: DEPENDENCY_UNAVAILABLE
     step: INFRA
