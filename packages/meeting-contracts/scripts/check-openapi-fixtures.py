@@ -59,6 +59,12 @@ FIXTURE_API_MAP = {
     "valid/ai-worker-rerank-200.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/rerank", "method": "post", "status": 200,
     },
+    "valid/ai-worker-models-200.json": {
+        "spec": "ai-worker-internal-api.yaml", "path": "/models", "method": "get", "status": 200,
+    },
+    "valid/ai-worker-warmup-200.json": {
+        "spec": "ai-worker-internal-api.yaml", "path": "/models/warmup", "method": "post", "status": 200,
+    },
     "invalid/public-api-login-missing-username.json": {
         "spec": "public-api.yaml", "path": "/auth/login", "method": "post", "status": 400,
         "expect_error": True,

@@ -1,0 +1,45 @@
+{
+  "description": "GET /internal/models 200 — list configured runtimes and their readiness state",
+  "spec": "openapi/ai-worker-internal-api.yaml",
+  "method": "GET",
+  "path": "/models",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_models_fixture_01",
+    "X-Trace-Id": "trace_models_fixture_01",
+    "X-Tenant-Id": "tenant_fixture_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_models_01",
+    "X-Signature": "hmac-sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "models": [
+        {
+          "name": "bge-m3",
+          "version": "bge-m3-fake-v0",
+          "status": "READY",
+          "device": "fake",
+          "useFake": true,
+          "checksum": null,
+          "modelsDir": null,
+          "lastError": null
+        },
+        {
+          "name": "bge-reranker-v2-m3",
+          "version": "bge-reranker-v2-m3-fake-v0",
+          "status": "READY",
+          "device": "fake",
+          "useFake": true,
+          "checksum": null,
+          "modelsDir": null,
+          "lastError": null
+        }
+      ]
+    },
+    "error": null,
+    "requestId": "req_models_fixture_01",
+    "traceId": "trace_models_fixture_01"
+  }
+}

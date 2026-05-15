@@ -1,0 +1,46 @@
+{
+  "description": "POST /internal/models/warmup 200 — warmup triggered, runtimes in LOADING or READY",
+  "spec": "openapi/ai-worker-internal-api.yaml",
+  "method": "POST",
+  "path": "/models/warmup",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_warmup_fixture_01",
+    "X-Trace-Id": "trace_warmup_fixture_01",
+    "X-Tenant-Id": "tenant_fixture_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_warmup_01",
+    "X-Signature": "hmac-sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "triggered": true,
+      "models": [
+        {
+          "name": "bge-m3",
+          "version": "bge-m3-v1",
+          "status": "LOADING",
+          "device": "cpu",
+          "useFake": false,
+          "checksum": null,
+          "modelsDir": null,
+          "lastError": null
+        },
+        {
+          "name": "bge-reranker-v2-m3",
+          "version": "bge-reranker-v2-m3-v1",
+          "status": "LOADING",
+          "device": "cpu",
+          "useFake": false,
+          "checksum": null,
+          "modelsDir": null,
+          "lastError": null
+        }
+      ]
+    },
+    "error": null,
+    "requestId": "req_warmup_fixture_01",
+    "traceId": "trace_warmup_fixture_01"
+  }
+}

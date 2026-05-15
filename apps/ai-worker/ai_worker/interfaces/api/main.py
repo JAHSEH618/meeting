@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, Request
+from fastapi import BackgroundTasks, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -10,8 +10,12 @@ from ai_worker.infrastructure.internal_api.auth import (
     RerankResultItem,
     verify_hmac_signature,
 )
-from ai_worker.model_runtime.registry import get_bge_reranker
-from ai_worker.model_runtime.rerank import BgeRerankerRuntimeError
+from ai_worker.model_runtime.embedding import BgeM3Runtime
+from ai_worker.model_runtime.registry import get_bge_m3, get_bge_reranker
+from ai_worker.model_runtime.rerank import (
+    BgeRerankerRuntime,
+    BgeRerankerRuntimeError,
+)
 
 
 def _error_response(
@@ -38,6 +42,52 @@ def _error_response(
     )
 
 
+def _model_info(runtime: BgeM3Runtime | BgeRerankerRuntime, name: str) -> dict:
+    """Project a runtime into a `ModelInfo` matching ai-worker-internal-api.yaml.
+
+    `checksum` is reserved for post-M5-0 work: once weights are pinned to
+    docs/model-registry.md, this will surface the loaded file's SHA-256.
+    `modelsDir` is populated when a local snapshot was used (real-mode path).
+    """
+    models_dir: str | None = None
+    if isinstance(runtime, BgeM3Runtime):
+        models_dir = settings.bge_m3_models_dir
+    elif isinstance(runtime, BgeRerankerRuntime):
+        models_dir = settings.bge_reranker_models_dir
+    return {
+        "name": name,
+        "version": runtime.model_version,
+        "status": runtime.status,
+        "device": runtime.device,
+        "useFake": runtime.use_fake,
+        "checksum": None,
+        "modelsDir": models_dir,
+        "lastError": runtime.last_error,
+    }
+
+
+def _all_model_infos() -> list[dict]:
+    return [
+        _model_info(get_bge_m3(), "bge-m3"),
+        _model_info(get_bge_reranker(), "bge-reranker-v2-m3"),
+    ]
+
+
+async def _safe_ensure_loaded(
+    runtime: BgeM3Runtime | BgeRerankerRuntime,
+) -> None:
+    """Background-task wrapper that swallows load failures.
+
+    Errors are surfaced via `runtime.status == "ERROR"` and `last_error`
+    so the next request can return a 503 with full context — we just don't
+    want an unhandled exception to escape the background task.
+    """
+    try:
+        await runtime.ensure_loaded()
+    except Exception:
+        pass
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="ai-worker", version="0.1.0")
 
@@ -55,10 +105,6 @@ def create_app() -> FastAPI:
             },
         }
 
-    @app.get("/internal/models")
-    def models() -> dict:
-        return {"models": []}
-
     @app.get("/internal/workflows/{task_id}")
     def workflow(task_id: str) -> dict:
         snapshot = workflow_state_store.get(task_id)
@@ -71,6 +117,97 @@ def create_app() -> FastAPI:
         return PlainTextResponse(
             content=generate_latest(),
             media_type=CONTENT_TYPE_LATEST,
+        )
+
+    @app.get("/internal/models")
+    async def models(
+        request: Request,
+        x_request_id: str = Header(...),
+        x_trace_id: str = Header(...),
+        x_tenant_id: str = Header(...),
+        x_timestamp: str = Header(...),
+        x_nonce: str = Header(...),
+        x_signature: str = Header(...),
+    ) -> JSONResponse:
+        body = await request.body()
+        if not verify_hmac_signature(
+            method=request.method,
+            path=str(request.url.path),
+            body=body,
+            timestamp=x_timestamp,
+            nonce=x_nonce,
+            signature=x_signature,
+        ):
+            return _error_response(
+                status_code=401,
+                code="MODELS_AUTH_FAILED",
+                message="HMAC signature verification failed",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {"models": _all_model_infos()},
+                "error": None,
+                "requestId": x_request_id,
+                "traceId": x_trace_id,
+            },
+        )
+
+    @app.post("/internal/models/warmup")
+    async def warmup(
+        request: Request,
+        background_tasks: BackgroundTasks,
+        x_request_id: str = Header(...),
+        x_trace_id: str = Header(...),
+        x_tenant_id: str = Header(...),
+        x_timestamp: str = Header(...),
+        x_nonce: str = Header(...),
+        x_signature: str = Header(...),
+    ) -> JSONResponse:
+        body = await request.body()
+        if not verify_hmac_signature(
+            method=request.method,
+            path=str(request.url.path),
+            body=body,
+            timestamp=x_timestamp,
+            nonce=x_nonce,
+            signature=x_signature,
+        ):
+            return _error_response(
+                status_code=401,
+                code="MODELS_AUTH_FAILED",
+                message="HMAC signature verification failed",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        bge_m3 = get_bge_m3()
+        bge_reranker = get_bge_reranker()
+        # Snapshot triggered-ness BEFORE adding background tasks so the
+        # response reflects whether warmup did anything new. Fake mode
+        # starts READY → triggered=False; real mode starts NOT_LOADED
+        # the first time → triggered=True.
+        triggered = bge_m3.status == "NOT_LOADED" or bge_reranker.status == "NOT_LOADED"
+        background_tasks.add_task(_safe_ensure_loaded, bge_m3)
+        background_tasks.add_task(_safe_ensure_loaded, bge_reranker)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "triggered": triggered,
+                    "models": _all_model_infos(),
+                },
+                "error": None,
+                "requestId": x_request_id,
+                "traceId": x_trace_id,
+            },
         )
 
     @app.post("/internal/rerank")

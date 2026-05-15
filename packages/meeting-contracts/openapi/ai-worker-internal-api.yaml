@@ -57,6 +57,60 @@ paths:
           $ref: '#/components/responses/AuthFailed'
         '503':
           $ref: '#/components/responses/RerankUnavailable'
+  /models:
+    get:
+      operationId: listModels
+      tags: [Internal]
+      summary: List model runtimes and their readiness.
+      description: >
+        Returns the current state of all configured model runtimes (bge-m3,
+        bge-reranker-v2-m3). meeting-api may poll this on startup before
+        warmup, and after warmup to confirm READY state. No model load is
+        triggered by this call.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      responses:
+        '200':
+          description: List of model runtimes wrapped in ApiResponse envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          $ref: '#/components/responses/AuthFailed'
+  /models/warmup:
+    post:
+      operationId: warmupModels
+      tags: [Internal]
+      summary: Trigger lazy-load of configured model runtimes.
+      description: >
+        Fire-and-forget warmup. meeting-api SHOULD call this once on boot
+        (ApplicationReadyEvent) to avoid the first /rerank or /embed
+        request paying the 5-15s cold-start cost. The endpoint returns
+        immediately with the runtimes' current state (LOADING for runtimes
+        whose ensure_loaded() was just scheduled). In fake mode runtimes
+        are already READY; the response simply confirms that.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      responses:
+        '200':
+          description: Warmup scheduled; current model states returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          $ref: '#/components/responses/AuthFailed'
 components:
   parameters:
     RequestId:
@@ -186,6 +240,53 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    ModelStatus:
+      type: string
+      enum: [NOT_LOADED, LOADING, READY, ERROR]
+    ModelInfo:
+      type: object
+      required: [name, version, status, device, useFake]
+      properties:
+        name:
+          type: string
+          description: Logical model name, e.g. "bge-m3" or "bge-reranker-v2-m3".
+        version:
+          type: string
+          description: Runtime-reported model version (real or fake suffix).
+        status:
+          $ref: '#/components/schemas/ModelStatus'
+        device:
+          type: string
+          description: '"cpu" | "cuda" | "mps" | "fake".'
+        useFake:
+          type: boolean
+        checksum:
+          type: [string, 'null']
+          description: SHA256 of the weight file when loaded from a local path; null in fake mode.
+        modelsDir:
+          type: [string, 'null']
+          description: Local snapshot directory used in real mode; null when falling back to HF Hub.
+        lastError:
+          type: [string, 'null']
+    ListModelsResponse:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+    WarmupResponse:
+      type: object
+      required: [triggered, models]
+      properties:
+        triggered:
+          type: boolean
+          description: True when at least one runtime transitioned NOT_LOADED → LOADING.
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
     ApiResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -194,6 +295,8 @@ components:
         data:
           anyOf:
             - $ref: '#/components/schemas/RerankResponse'
+            - $ref: '#/components/schemas/ListModelsResponse'
+            - $ref: '#/components/schemas/WarmupResponse'
             - type: 'null'
         error:
           anyOf:

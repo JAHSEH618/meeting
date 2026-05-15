@@ -19,8 +19,8 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.meeting.api.client.workerinternal.model.ApiResponseData;
 import com.meeting.api.client.workerinternal.model.ErrorInfo;
-import com.meeting.api.client.workerinternal.model.RerankResponse;
 import java.io.IOException;
 import java.util.Arrays;
 
@@ -60,7 +60,7 @@ public class ModelApiResponse {
   public static final String SERIALIZED_NAME_DATA = "data";
   @SerializedName(SERIALIZED_NAME_DATA)
   @javax.annotation.Nullable
-  private RerankResponse data;
+  private ApiResponseData data;
 
   public static final String SERIALIZED_NAME_ERROR = "error";
   @SerializedName(SERIALIZED_NAME_ERROR)
@@ -99,7 +99,7 @@ public class ModelApiResponse {
   }
 
 
-  public ModelApiResponse data(@javax.annotation.Nullable RerankResponse data) {
+  public ModelApiResponse data(@javax.annotation.Nullable ApiResponseData data) {
     this.data = data;
     return this;
   }
@@ -109,11 +109,11 @@ public class ModelApiResponse {
    * @return data
    */
   @javax.annotation.Nullable
-  public RerankResponse getData() {
+  public ApiResponseData getData() {
     return data;
   }
 
-  public void setData(@javax.annotation.Nullable RerankResponse data) {
+  public void setData(@javax.annotation.Nullable ApiResponseData data) {
     this.data = data;
   }
 
@@ -260,7 +260,7 @@ public class ModelApiResponse {
         JsonObject jsonObj = jsonElement.getAsJsonObject();
       if (jsonObj.get("data") != null && !jsonObj.get("data").isJsonNull()) {
       // validate the required field `data`
-      RerankResponse.validateJsonElement(jsonObj.get("data"));
+      ApiResponseData.validateJsonElement(jsonObj.get("data"));
       }
       if (jsonObj.get("error") != null && !jsonObj.get("error").isJsonNull()) {
       // validate the required field `error`
