@@ -27,9 +27,23 @@ dev = [
   "ruff>=0.6",
   "pyright>=1.1"
 ]
+# Heavy ML deps for real model runtimes (bge-m3 / bge-reranker-v2-m3).
+# Not installed by default — coding / CI runs with fake runtime via
+# AI_WORKER_USE_FAKE_RUNTIME=true. Enable locally with
+#   uv sync --extra real-models
+# and flip AI_WORKER_USE_FAKE_RUNTIME=false to exercise real weights.
+real-models = [
+  "torch>=2.3,<3.0",
+  "transformers>=4.44,<5.0",
+  "FlagEmbedding>=1.3,<2.0",
+  "sentencepiece>=0.2,<1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "real_models: opt-in tests that exercise real bge-m3 / bge-reranker weights; require `uv sync --extra real-models` and an explicit AI_WORKER_USE_FAKE_RUNTIME=false",
+]
 
 [tool.pyright]
 include = ["ai_worker"]
