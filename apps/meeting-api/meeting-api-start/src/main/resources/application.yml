@@ -58,6 +58,10 @@ meeting:
       hmac-secret: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:change-me-internal-fallback-secret}
       base-url: ${AI_WORKER_BASE_URL:http://localhost:8090}
       rerank-timeout-ms: 3000
+      embed-timeout-ms: 3000
+      warmup-timeout-ms: 5000
+      models-timeout-ms: 2000
+      connect-timeout-ms: 1000
   storage:
     type: ${STORAGE_TYPE:minio}
     minio:

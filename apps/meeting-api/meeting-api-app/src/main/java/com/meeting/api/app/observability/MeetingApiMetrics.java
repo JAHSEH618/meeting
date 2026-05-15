@@ -16,6 +16,7 @@ public class MeetingApiMetrics {
     private static final String OUTBOX_FAILED = "meeting.api.outbox.failed";
     private static final String LEASE_SCANNER_RUNS = "meeting.api.lease_scanner.runs";
     private static final String LEASE_SCANNER_ORPHANED = "meeting.api.lease_scanner.orphaned";
+    private static final String AI_WORKER_CALLS = "meeting.api.aiworker.calls";
 
     private final MeterRegistry registry;
 
@@ -66,5 +67,18 @@ public class MeetingApiMetrics {
 
     public Counter leaseScannerOrphanedCounter() {
         return Counter.builder(LEASE_SCANNER_ORPHANED).register(registry);
+    }
+
+    /**
+     * Counts ai-worker internal API call outcomes. {@code operation} is the
+     * endpoint family ({@code embed}, {@code rerank}, {@code models},
+     * {@code warmup}); {@code outcome} is one of {@code called},
+     * {@code success}, {@code unavailable}, {@code contract_error}.
+     */
+    public Counter aiWorkerCallCounter(String operation, String outcome) {
+        return Counter.builder(AI_WORKER_CALLS)
+            .tag("operation", operation == null ? "unknown" : operation)
+            .tag("outcome", outcome == null ? "unknown" : outcome)
+            .register(registry);
     }
 }
