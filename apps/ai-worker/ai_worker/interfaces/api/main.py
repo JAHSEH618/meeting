@@ -10,6 +10,8 @@ from ai_worker.infrastructure.internal_api.auth import (
     RerankResultItem,
     verify_hmac_signature,
 )
+from ai_worker.model_runtime.registry import get_bge_reranker
+from ai_worker.model_runtime.rerank import BgeRerankerRuntimeError
 
 
 def _error_response(
@@ -112,15 +114,49 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        ranked = []
-        for i, candidate in enumerate(rerank_req.candidates[: rerank_req.topN]):
-            ranked.append(
-                RerankResultItem(
-                    chunkId=candidate.chunkId,
-                    rank=i + 1,
-                    rerankScore=round(1.0 - i * 0.05, 4),
-                )
+        runtime = get_bge_reranker()
+        # In fake mode ensure_loaded is a no-op; in real mode this loads
+        # the model on first call and serializes concurrent callers behind
+        # an asyncio.Lock. Cold-start may take 5-15s — Java side is
+        # expected to have invoked POST /internal/models/warmup at boot.
+        try:
+            await runtime.ensure_loaded()
+        except BgeRerankerRuntimeError as exc:
+            return _error_response(
+                status_code=503,
+                code="RERANK_UNAVAILABLE",
+                message=f"rerank model not ready: {exc}",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
             )
+
+        truncated = list(rerank_req.candidates[: rerank_req.topN])
+        try:
+            scores = runtime.rank(rerank_req.query, [c.text for c in truncated])
+        except BgeRerankerRuntimeError as exc:
+            return _error_response(
+                status_code=503,
+                code="RERANK_UNAVAILABLE",
+                message=f"rerank inference failed: {exc}",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        # Sort by score desc, breaking ties by original input order so the
+        # fake-mode (already-descending) path is a no-op and the real-mode
+        # path produces deterministic ranks when two candidates tie.
+        indexed = list(enumerate(zip(truncated, scores)))
+        indexed.sort(key=lambda item: (-item[1][1], item[0]))
+        ranked = [
+            RerankResultItem(
+                chunkId=cand.chunkId,
+                rank=rank + 1,
+                rerankScore=round(float(score), 4),
+            )
+            for rank, (_, (cand, score)) in enumerate(indexed)
+        ]
 
         return JSONResponse(
             status_code=200,
