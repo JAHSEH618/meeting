@@ -65,6 +65,9 @@ FIXTURE_API_MAP = {
     "valid/ai-worker-warmup-200.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/models/warmup", "method": "post", "status": 200,
     },
+    "valid/ai-worker-embed-200.json": {
+        "spec": "ai-worker-internal-api.yaml", "path": "/embed", "method": "post", "status": 200,
+    },
     "invalid/public-api-login-missing-username.json": {
         "spec": "public-api.yaml", "path": "/auth/login", "method": "post", "status": 400,
         "expect_error": True,
@@ -109,6 +112,11 @@ FIXTURE_API_MAP = {
     },
     "invalid/ai-worker-rerank-empty-query.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/rerank", "method": "post", "status": 400,
+        "expect_error": True,
+        "expect_request_error": True,
+    },
+    "invalid/ai-worker-embed-empty-texts.json": {
+        "spec": "ai-worker-internal-api.yaml", "path": "/embed", "method": "post", "status": 400,
         "expect_error": True,
         "expect_request_error": True,
     },

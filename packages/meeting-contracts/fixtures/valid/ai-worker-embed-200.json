@@ -1,0 +1,33 @@
+{
+  "description": "POST /internal/embed 200 — bge-m3 dense embedding for a single query text",
+  "spec": "openapi/ai-worker-internal-api.yaml",
+  "method": "POST",
+  "path": "/embed",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_embed_fixture_01",
+    "X-Trace-Id": "trace_embed_fixture_01",
+    "X-Tenant-Id": "tenant_fixture_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_embed_01",
+    "X-Signature": "hmac-sha256=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "texts": ["What decisions were made about the Q3 budget?"],
+    "modelVersion": "bge-m3-v1"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "modelVersion": "bge-m3-v1",
+      "dimension": 1024,
+      "vectors": [
+        [0.0123, -0.0456, 0.0789, 0.0234]
+      ]
+    },
+    "error": null,
+    "requestId": "req_embed_fixture_01",
+    "traceId": "trace_embed_fixture_01"
+  }
+}

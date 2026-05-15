@@ -50,6 +50,20 @@ class RerankResponse(BaseModel):
     items: list[RerankResultItem]
 
 
+class EmbedRequest(BaseModel):
+    tenantId: str
+    texts: list[Annotated[str, StringConstraints(min_length=1)]] = Field(
+        ..., min_length=1, max_length=64
+    )
+    modelVersion: str
+
+
+class EmbedResponse(BaseModel):
+    modelVersion: str
+    dimension: int = Field(ge=1)
+    vectors: list[list[float]]
+
+
 # ── Nonce replay protection ──────────────────────────────────────────────────
 # In-memory LRU for recently-seen nonces. Sized for ~5min of traffic at
 # moderate throughput. In a multi-instance deployment this must be backed

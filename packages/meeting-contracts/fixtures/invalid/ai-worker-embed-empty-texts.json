@@ -1,0 +1,31 @@
+{
+  "description": "POST /internal/embed 400 — empty texts array rejected with EMBEDDING_CONTRACT_ERROR",
+  "spec": "openapi/ai-worker-internal-api.yaml",
+  "method": "POST",
+  "path": "/embed",
+  "status": 400,
+  "headers": {
+    "X-Request-Id": "req_embed_invalid_01",
+    "X-Trace-Id": "trace_embed_invalid_01",
+    "X-Tenant-Id": "tenant_fixture_01",
+    "X-Timestamp": "2026-05-11T10:00:00Z",
+    "X-Nonce": "nonce_fixture_embed_invalid_01",
+    "X-Signature": "hmac-sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "texts": [],
+    "modelVersion": "bge-m3-v1"
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "EMBEDDING_CONTRACT_ERROR",
+      "message": "texts must be a non-empty array of strings",
+      "retryable": false
+    },
+    "requestId": "req_embed_invalid_01",
+    "traceId": "trace_embed_invalid_01"
+  }
+}

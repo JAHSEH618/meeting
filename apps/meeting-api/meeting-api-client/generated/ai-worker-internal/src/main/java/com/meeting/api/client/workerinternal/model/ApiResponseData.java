@@ -19,12 +19,14 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.meeting.api.client.workerinternal.model.EmbedResponse;
 import com.meeting.api.client.workerinternal.model.ListModelsResponse;
 import com.meeting.api.client.workerinternal.model.ModelInfo;
 import com.meeting.api.client.workerinternal.model.RerankResponse;
 import com.meeting.api.client.workerinternal.model.RerankResultItem;
 import com.meeting.api.client.workerinternal.model.WarmupResponse;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -79,6 +81,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             final TypeAdapter<RerankResponse> adapterRerankResponse = gson.getDelegateAdapter(this, TypeToken.get(RerankResponse.class));
             final TypeAdapter<ListModelsResponse> adapterListModelsResponse = gson.getDelegateAdapter(this, TypeToken.get(ListModelsResponse.class));
             final TypeAdapter<WarmupResponse> adapterWarmupResponse = gson.getDelegateAdapter(this, TypeToken.get(WarmupResponse.class));
+            final TypeAdapter<EmbedResponse> adapterEmbedResponse = gson.getDelegateAdapter(this, TypeToken.get(EmbedResponse.class));
 
             return (TypeAdapter<T>) new TypeAdapter<ApiResponseData>() {
                 @Override
@@ -106,7 +109,13 @@ public class ApiResponseData extends AbstractOpenApiSchema {
                         elementAdapter.write(out, element);
                         return;
                     }
-                    throw new IOException("Failed to serialize as the type doesn't match anyOf schemas: ListModelsResponse, RerankResponse, WarmupResponse");
+                    // check if the actual instance is of the type `EmbedResponse`
+                    if (value.getActualInstance() instanceof EmbedResponse) {
+                        JsonElement element = adapterEmbedResponse.toJsonTree((EmbedResponse)value.getActualInstance());
+                        elementAdapter.write(out, element);
+                        return;
+                    }
+                    throw new IOException("Failed to serialize as the type doesn't match anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse");
                 }
 
                 @Override
@@ -156,6 +165,19 @@ public class ApiResponseData extends AbstractOpenApiSchema {
                         errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for WarmupResponse failed with `%s`.", e.getMessage()));
                         log.log(Level.FINER, "Input data does not match schema 'WarmupResponse'", e);
                     }
+                    // deserialize EmbedResponse
+                    try {
+                        // validate the JSON object to see if any exception is thrown
+                        EmbedResponse.validateJsonElement(jsonElement);
+                        actualAdapter = adapterEmbedResponse;
+                        ApiResponseData ret = new ApiResponseData();
+                        ret.setActualInstance(actualAdapter.fromJsonTree(jsonElement));
+                        return ret;
+                    } catch (Exception e) {
+                        // deserialization failed, continue
+                        errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for EmbedResponse failed with `%s`.", e.getMessage()));
+                        log.log(Level.FINER, "Input data does not match schema 'EmbedResponse'", e);
+                    }
 
                     throw new IOException(String.format(java.util.Locale.ROOT, "Failed deserialization for ApiResponseData: no class matches result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
                 }
@@ -179,6 +201,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
         schemas.put("RerankResponse", RerankResponse.class);
         schemas.put("ListModelsResponse", ListModelsResponse.class);
         schemas.put("WarmupResponse", WarmupResponse.class);
+        schemas.put("EmbedResponse", EmbedResponse.class);
     }
 
     @Override
@@ -189,7 +212,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
     /**
      * Set the instance that matches the anyOf child schema, check
      * the instance parameter is valid against the anyOf child schemas:
-     * ListModelsResponse, RerankResponse, WarmupResponse
+     * EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse
      *
      * It could be an instance of the 'anyOf' schemas.
      */
@@ -215,14 +238,19 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             return;
         }
 
-        throw new RuntimeException("Invalid instance type. Must be ListModelsResponse, RerankResponse, WarmupResponse");
+        if (instance instanceof EmbedResponse) {
+            super.setActualInstance(instance);
+            return;
+        }
+
+        throw new RuntimeException("Invalid instance type. Must be EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse");
     }
 
     /**
      * Get the actual instance, which can be the following:
-     * ListModelsResponse, RerankResponse, WarmupResponse
+     * EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse
      *
-     * @return The actual instance (ListModelsResponse, RerankResponse, WarmupResponse)
+     * @return The actual instance (EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse)
      */
     @SuppressWarnings("unchecked")
     @Override
@@ -264,6 +292,17 @@ public class ApiResponseData extends AbstractOpenApiSchema {
     }
 
     /**
+     * Get the actual instance of `EmbedResponse`. If the actual instance is not `EmbedResponse`,
+     * the ClassCastException will be thrown.
+     *
+     * @return The actual instance of `EmbedResponse`
+     * @throws ClassCastException if the instance is not `EmbedResponse`
+     */
+    public EmbedResponse getEmbedResponse() throws ClassCastException {
+        return (EmbedResponse)super.getActualInstance();
+    }
+
+    /**
      * Validates the JSON Element and throws an exception if issues found
      *
      * @param jsonElement JSON Element
@@ -296,7 +335,15 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for WarmupResponse failed with `%s`.", e.getMessage()));
             // continue to the next one
         }
-        throw new IOException(String.format(java.util.Locale.ROOT, "The JSON string is invalid for ApiResponseData with anyOf schemas: ListModelsResponse, RerankResponse, WarmupResponse. no class match the result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
+        // validate the json string with EmbedResponse
+        try {
+            EmbedResponse.validateJsonElement(jsonElement);
+            return;
+        } catch (Exception e) {
+            errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for EmbedResponse failed with `%s`.", e.getMessage()));
+            // continue to the next one
+        }
+        throw new IOException(String.format(java.util.Locale.ROOT, "The JSON string is invalid for ApiResponseData with anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse. no class match the result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
     }
 
     /**

@@ -5,12 +5,14 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from ai_worker.application.workflows.state import workflow_state_store
 from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
+    EmbedRequest,
+    EmbedResponse,
     RerankRequest,
     RerankResponse,
     RerankResultItem,
     verify_hmac_signature,
 )
-from ai_worker.model_runtime.embedding import BgeM3Runtime
+from ai_worker.model_runtime.embedding import BgeM3Runtime, BgeM3RuntimeError
 from ai_worker.model_runtime.registry import get_bge_m3, get_bge_reranker
 from ai_worker.model_runtime.rerank import (
     BgeRerankerRuntime,
@@ -204,6 +206,91 @@ def create_app() -> FastAPI:
                     "triggered": triggered,
                     "models": _all_model_infos(),
                 },
+                "error": None,
+                "requestId": x_request_id,
+                "traceId": x_trace_id,
+            },
+        )
+
+    @app.post("/internal/embed")
+    async def embed(
+        request: Request,
+        x_request_id: str = Header(...),
+        x_trace_id: str = Header(...),
+        x_tenant_id: str = Header(...),
+        x_timestamp: str = Header(...),
+        x_nonce: str = Header(...),
+        x_signature: str = Header(...),
+    ) -> JSONResponse:
+        body = await request.body()
+        if not verify_hmac_signature(
+            method=request.method,
+            path=str(request.url.path),
+            body=body,
+            timestamp=x_timestamp,
+            nonce=x_nonce,
+            signature=x_signature,
+        ):
+            return _error_response(
+                status_code=401,
+                code="EMBEDDING_AUTH_FAILED",
+                message="HMAC signature verification failed",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        try:
+            embed_req = EmbedRequest.model_validate_json(body)
+        except Exception as exc:
+            return _error_response(
+                status_code=400,
+                code="EMBEDDING_CONTRACT_ERROR",
+                message=f"Invalid request: {exc}",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        runtime = get_bge_m3()
+        # Query embedding is on the synchronous RAG hot path. Cold-start
+        # blocking is real but a single-request load is what we want here:
+        # the next /api/rag/query already paid the warm-up tax. Java side
+        # should hit /internal/models/warmup at boot to push this off the
+        # user-visible critical path.
+        try:
+            await runtime.ensure_loaded()
+        except BgeM3RuntimeError as exc:
+            return _error_response(
+                status_code=503,
+                code="EMBEDDING_UNAVAILABLE",
+                message=f"embedding model not ready: {exc}",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        try:
+            vectors = runtime.embed(embed_req.texts)
+        except BgeM3RuntimeError as exc:
+            return _error_response(
+                status_code=503,
+                code="EMBEDDING_UNAVAILABLE",
+                message=f"embedding inference failed: {exc}",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": EmbedResponse(
+                    modelVersion=runtime.model_version,
+                    dimension=runtime.DIMENSION,
+                    vectors=vectors,
+                ).model_dump(),
                 "error": None,
                 "requestId": x_request_id,
                 "traceId": x_trace_id,

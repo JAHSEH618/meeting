@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, confloat, conint, constr
+from pydantic import BaseModel, Field, RootModel, confloat, conint, constr
 
 
 class SourceType(Enum):
@@ -73,6 +73,27 @@ class WarmupResponse(BaseModel):
     models: list[ModelInfo]
 
 
+class Text(RootModel[constr(min_length=1)]):
+    root: constr(min_length=1)
+
+
+class EmbedRequest(BaseModel):
+    tenantId: str
+    texts: list[Text] = Field(..., max_length=64, min_length=1)
+    modelVersion: str = Field(
+        ...,
+        description="Caller-advertised model version; the response echoes the runtime's actual version.",
+    )
+
+
+class EmbedResponse(BaseModel):
+    modelVersion: str
+    dimension: conint(ge=1) = Field(
+        ..., description='Length of each vector (bge-m3 → 1024).'
+    )
+    vectors: list[list[float]]
+
+
 class ErrorInfo(BaseModel):
     code: str
     message: str
@@ -95,7 +116,7 @@ class RerankResponse(BaseModel):
 
 class ApiResponse(BaseModel):
     success: bool
-    data: RerankResponse | ListModelsResponse | WarmupResponse | None
+    data: RerankResponse | ListModelsResponse | WarmupResponse | EmbedResponse | None
     error: ErrorInfo | None
     requestId: str
     traceId: str
