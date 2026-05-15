@@ -1,0 +1,23 @@
+{
+  "taskId": "task_01HZ8YDA0DOCEMB1",
+  "taskType": "TEXT_EMBEDDING",
+  "tenantId": "tenant_01",
+  "documentId": "doc_01HZ8YDA0DOC0001",
+  "securityLevel": "INTERNAL",
+  "attemptNo": 1,
+  "pipelineSteps": ["RAG_INDEXING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "default-zh-v1",
+    "documentVersion": 1,
+    "embeddingModelVersion": "bge-m3-v1"
+  },
+  "options": {
+    "enableRagIndexing": true,
+    "chunkIds": [
+      "chunk_doc_01_001",
+      "chunk_doc_01_002",
+      "chunk_doc_01_003"
+    ]
+  },
+  "traceId": "trace_doc_embed_01"
+}

@@ -1,0 +1,20 @@
+{
+  "taskId": "task_01HZ8YDA0MTGREIDX",
+  "taskType": "RAG_REINDEX",
+  "tenantId": "tenant_01",
+  "meetingId": "mtg_01HZ8YDA0MTG0001",
+  "securityLevel": "INTERNAL",
+  "attemptNo": 2,
+  "pipelineSteps": ["RAG_INDEXING"],
+  "expectedInputVersion": {
+    "chunkStrategyVersion": "default-zh-v1",
+    "transcriptVersion": 3,
+    "minutesVersion": 1,
+    "ragVersion": 0,
+    "embeddingModelVersion": "bge-m3-v1"
+  },
+  "options": {
+    "enableRagIndexing": true
+  },
+  "traceId": "trace_mtg_reindex_01"
+}
