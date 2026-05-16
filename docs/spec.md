@@ -1000,7 +1000,6 @@ Worker 心跳要求：
 任务状态迁移：
 
 ```mermaid
-%%{init: {'themeVariables': {'fontSize': '14px'}}}%%
 stateDiagram-v2
     [*] --> PENDING
     PENDING --> QUEUED: outbox published
@@ -1017,8 +1016,6 @@ stateDiagram-v2
     PARTIAL_SUCCEEDED --> QUEUED: retry failed optional step
     FAILED --> QUEUED: manual retry
 ```
-
-*图 7-1　ProcessingTask 状态机：lease、heartbeat、cancel 与 retry 的完整迁移*
 
 关键转换的触发方和副作用：
 
@@ -1076,7 +1073,6 @@ RAG 召回只允许 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk。
 状态迁移：
 
 ```mermaid
-%%{init: {'themeVariables': {'fontSize': '14px'}}}%%
 stateDiagram-v2
     [*] --> ACTIVE
     ACTIVE --> STALE: upstream version changed
@@ -1094,8 +1090,6 @@ stateDiagram-v2
     VALIDATING --> DELETED: deletion job
     FAILED --> DELETED: deletion job
 ```
-
-*图 7-2　STALE 状态机：纪要 / 事项 / knowledge chunk 的过期、重建、校验与删除迁移*
 
 关键转换的触发方和副作用：
 

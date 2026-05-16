@@ -3,7 +3,6 @@
 基于 `本地会议智能系统技术方案文档-优化版.md` 梳理。核心边界是：Java 使用 Spring Boot + 阿里 COLA-V5 负责业务事实、权限、任务状态、审计和对外 API；Python 负责 AI Pipeline、音频处理和模型调用；所有中间产物进入 PostgreSQL 或 TOS，保证任务可重试、可回放。
 
 ```mermaid
-%%{init: {'flowchart': {'htmlLabels': true, 'curve': 'basis'}, 'themeVariables': {'fontSize': '13px'}}}%%
 flowchart LR
     User["用户 / 管理员"]
 
@@ -177,8 +176,6 @@ flowchart LR
     class Worker,FastAPI,WorkerRunner,Workflow,Agent,Runtime,Transcode,Quality,VAD,ASR,Align,Diar,Merge,SpeakerRec,Summary,Indexing compute;
     class ThirdLLM,LocalLLM,AudioModels,RagModels,VectorDB model;
 ```
-
-*图 0-1　总体架构 LR 视图：前端、Java 业务层、计算层、模型层与队列拓扑*
 
 ## 架构要点
 
