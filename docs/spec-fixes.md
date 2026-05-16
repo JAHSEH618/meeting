@@ -202,6 +202,7 @@ callback body 中的 `meetingId` 字段因此必须在 `internal-callback-api.ya
 **修正**：统一为 5 个状态。DDL 已加 `meeting_status` enum type（V202605110002）。
 
 ```mermaid
+%%{init: {'themeVariables': {'fontSize': '14px'}}}%%
 stateDiagram-v2
     [*] --> CREATED: 创建会议
     CREATED --> PROCESSING: 音频上传完成，处理任务创建
@@ -213,6 +214,8 @@ stateDiagram-v2
     FAILED --> PROCESSING: 用户重建任务（retry）
     FAILED --> DELETED: 用户删除
 ```
+
+*图 F3-1　Meeting 业务状态机：legal hold 守门、删除与重试的完整路径*
 
 | 转换 | 触发方 | 副作用 |
 |---|---|---|
