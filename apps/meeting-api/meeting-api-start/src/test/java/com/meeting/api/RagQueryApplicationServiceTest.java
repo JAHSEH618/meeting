@@ -48,6 +48,7 @@ class RagQueryApplicationServiceTest {
     private FakeRerankGateway rerankGateway;
     private FakeLlmGateway llmGateway;
     private FakeCitationEnricher enricher;
+    private com.meeting.api.app.rag.InMemoryRagAnswerCache cache;
     private RagQueryApplicationService service;
 
     @BeforeEach
@@ -58,6 +59,9 @@ class RagQueryApplicationServiceTest {
         rerankGateway = new FakeRerankGateway();
         llmGateway = new FakeLlmGateway();
         enricher = new FakeCitationEnricher();
+        cache = new com.meeting.api.app.rag.InMemoryRagAnswerCache(
+            java.time.Clock.systemUTC(), 300L, 1024
+        );
         service = new RagQueryApplicationService(
             TenantScopedTransaction.immediate(),
             new RagAuthorizationService(authzPort),
@@ -66,6 +70,7 @@ class RagQueryApplicationServiceTest {
             rerankGateway,
             llmGateway,
             enricher,
+            cache,
             new ObjectMapper(),
             50, 50, RrfFusion.DEFAULT_K
         );
@@ -374,6 +379,93 @@ class RagQueryApplicationServiceTest {
         assertThat(rc.text()).isEqualTo("content");
         // After RRF fusion the score is the fused value, not the raw retrieval similarity.
         assertThat(rc.rrfScore()).isPositive();
+    }
+
+    @Test
+    void secondInvocationOfTheSameQuestionServesFromCache() {
+        authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
+        authzPort.allowReadable(Set.of("mtg_a"), Set.of());
+        chunkRepository.vectorReturns(
+            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9, SecurityLevel.INTERNAL)
+        );
+        chunkRepository.keywordReturns(List.of());
+        rerankGateway.respondPreservingOrder();
+        enricher.meetingTitles.put("mtg_a", "M");
+        llmGateway.respond("{\"answer\":\"cached body\",\"citations\":[1]}");
+
+        var cmd = new RagQueryCommand(
+            TENANT, USER, SecurityLevel.INTERNAL, "shared question", RagQueryScope.EMPTY,
+            5, false, "req_a", "trace_a"
+        );
+        service.query(cmd);
+        int callsAfterFirst = llmGateway.callCount.get();
+        int embedCallsAfterFirst = embeddingGateway.callCount.get();
+
+        // Second call with same identity + question — should hit the cache and skip the LLM.
+        var out2 = service.query(new RagQueryCommand(
+            TENANT, USER, SecurityLevel.INTERNAL, "shared question", RagQueryScope.EMPTY,
+            5, false, "req_b", "trace_b"
+        ));
+
+        assertThat(out2.answer()).isEqualTo("cached body");
+        assertThat(llmGateway.callCount.get()).isEqualTo(callsAfterFirst);
+        assertThat(embeddingGateway.callCount.get()).isEqualTo(embedCallsAfterFirst);
+    }
+
+    @Test
+    void reindexEventInvalidatesAffectedCacheEntry() {
+        authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
+        authzPort.allowReadable(Set.of("mtg_a"), Set.of());
+        chunkRepository.vectorReturns(
+            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9, SecurityLevel.INTERNAL)
+        );
+        chunkRepository.keywordReturns(List.of());
+        rerankGateway.respondPreservingOrder();
+        enricher.meetingTitles.put("mtg_a", "M");
+        llmGateway.respond("{\"answer\":\"stale\",\"citations\":[1]}");
+
+        var cmd = new RagQueryCommand(
+            TENANT, USER, SecurityLevel.INTERNAL, "what?", RagQueryScope.EMPTY,
+            5, false, "req_a", "trace_a"
+        );
+        service.query(cmd);
+
+        // Simulate a reindex of mtg_a — the cache entry should be dropped.
+        cache.onChunkReindex(new com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent(
+            TENANT, "mtg_a", null, List.of(),
+            SecurityLevel.INTERNAL, "v1", 1, null, null
+        ));
+
+        llmGateway.respond("{\"answer\":\"fresh\",\"citations\":[1]}");
+        var out = service.query(cmd);
+        assertThat(out.answer()).isEqualTo("fresh");
+    }
+
+    @Test
+    void degradedAnswersAreNotCached() {
+        authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
+        chunkRepository.vectorReturns(List.of());
+        chunkRepository.keywordReturns(List.of());
+
+        var cmd = new RagQueryCommand(
+            TENANT, USER, SecurityLevel.INTERNAL, "none?", RagQueryScope.EMPTY,
+            5, false, "req_a", "trace_a"
+        );
+        var first = service.query(cmd);
+        assertThat(first.artifactManifestId()).isNull();
+
+        // Make a fresh LLM-backed answer possible for the next call.
+        chunkRepository.vectorReturns(
+            meetingChunk("ck1", "mtg_a", "seg_1", "now there's content", 0.9, SecurityLevel.INTERNAL)
+        );
+        authzPort.allowReadable(Set.of("mtg_a"), Set.of());
+        rerankGateway.respondPreservingOrder();
+        enricher.meetingTitles.put("mtg_a", "M");
+        llmGateway.respond("{\"answer\":\"real answer\",\"citations\":[1]}");
+
+        var second = service.query(cmd);
+        // Cache MUST NOT have served the degraded answer.
+        assertThat(second.answer()).isEqualTo("real answer");
     }
 
     // ── Helpers ────────────────────────────────────────────────────────

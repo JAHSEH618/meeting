@@ -90,6 +90,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
     private final RerankGateway rerankGateway;
     private final LlmGateway llmGateway;
     private final RagCitationEnricher citationEnricher;
+    private final RagAnswerCache answerCache;
     private final ObjectMapper objectMapper;
     private final int retrievalTopK;
     private final int rerankCandidatePoolSize;
@@ -103,6 +104,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
         RerankGateway rerankGateway,
         LlmGateway llmGateway,
         RagCitationEnricher citationEnricher,
+        RagAnswerCache answerCache,
         ObjectMapper objectMapper,
         @Value("${meeting.rag.query.retrieval-top-k:50}") int retrievalTopK,
         @Value("${meeting.rag.query.rerank-pool-size:50}") int rerankCandidatePoolSize,
@@ -115,6 +117,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
         this.rerankGateway = rerankGateway;
         this.llmGateway = llmGateway;
         this.citationEnricher = citationEnricher;
+        this.answerCache = answerCache;
         this.objectMapper = objectMapper;
         this.retrievalTopK = retrievalTopK;
         this.rerankCandidatePoolSize = rerankCandidatePoolSize;
@@ -124,9 +127,28 @@ public class RagQueryApplicationService implements RagQueryFacade {
     @Override
     public RagAnswerDTO query(RagQueryCommand command) {
         // RagQueryCommand validates non-blank/non-null in its compact ctor.
+        RagAnswerCache.RagCacheKey cacheKey = toCacheKey(command);
+        var cached = answerCache.lookup(cacheKey);
+        if (cached.isPresent()) {
+            log.info(
+                "rag_query_cache_hit tenant={} user={} citations={} coverage={}",
+                command.tenantId(), command.userId(),
+                cached.get().citations().size(), cached.get().coverage()
+            );
+            return cached.get();
+        }
         return tenantScopedTransaction.execute(
             command.tenantId(), command.userId(), command.requestId(),
-            () -> doQuery(command)
+            () -> {
+                RagAnswerDTO answer = doQuery(command);
+                // Don't cache the degraded "no information" answer: a
+                // subsequent reindex / permission change should be
+                // observable without waiting for the TTL.
+                if (answer.artifactManifestId() != null) {
+                    answerCache.store(cacheKey, answer, coverageOf(answer));
+                }
+                return answer;
+            }
         );
     }
 
@@ -501,6 +523,26 @@ public class RagQueryApplicationService implements RagQueryFacade {
             return RetrievalScope.EMPTY;
         }
         return new RetrievalScope(scope.meetingIds(), scope.documentIds());
+    }
+
+    private static RagAnswerCache.RagCacheKey toCacheKey(RagQueryCommand command) {
+        return new RagAnswerCache.RagCacheKey(
+            command.tenantId(), command.userId(), command.clearance(),
+            command.question(), command.scope(), command.topN(), command.includeStale()
+        );
+    }
+
+    private static RagAnswerCache.CacheCoverage coverageOf(RagAnswerDTO answer) {
+        Set<String> meetingIds = new HashSet<>();
+        Set<String> documentIds = new HashSet<>();
+        for (RagCitationDTO c : answer.citations()) {
+            if (c instanceof MeetingSegmentCitationDTO m) {
+                meetingIds.add(m.meetingId());
+            } else if (c instanceof DocumentChunkCitationDTO d) {
+                documentIds.add(d.documentId());
+            }
+        }
+        return new RagAnswerCache.CacheCoverage(meetingIds, documentIds);
     }
 
     private static RagAnswerDTO degraded(String answer) {
