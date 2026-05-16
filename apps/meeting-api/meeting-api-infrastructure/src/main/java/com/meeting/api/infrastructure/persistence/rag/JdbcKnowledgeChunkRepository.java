@@ -7,6 +7,8 @@ import com.meeting.api.domain.rag.KnowledgeChunk;
 import com.meeting.api.domain.rag.KnowledgeChunkCandidate;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import com.meeting.api.domain.rag.KnowledgeSourceType;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -228,16 +230,101 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
     public List<KnowledgeChunkCandidate> searchByVector(
         String tenantId, float[] queryVector, RetrievalScope scope, int topK
     ) {
-        // Implemented in M5B C15.
-        return List.of();
+        if (queryVector == null || queryVector.length == 0 || topK <= 0) {
+            return List.of();
+        }
+        StringBuilder sql = new StringBuilder("""
+            SELECT id, tenant_id, project_id, meeting_id, document_id,
+                   source_type, source_id, source_segment_id, content,
+                   security_level::text AS security_level,
+                   transcript_version, minutes_version,
+                   1 - (embedding <=> ?::vector) AS similarity
+              FROM knowledge_chunks
+             WHERE tenant_id = ?
+               AND status = 'ACTIVE'::content_status
+               AND stale_status = 'ACTIVE'::stale_status
+               AND embedding IS NOT NULL
+            """);
+        List<Object> args = new ArrayList<>();
+        args.add(formatVector(queryVector));
+        args.add(tenantId);
+        appendScopeFilter(sql, args, scope);
+        sql.append(" ORDER BY embedding <=> ?::vector ASC LIMIT ?");
+        args.add(formatVector(queryVector));
+        args.add(topK);
+        return jdbcTemplate.query(sql.toString(), (rs, n) -> mapCandidate(rs, "similarity"), args.toArray());
     }
 
     @Override
     public List<KnowledgeChunkCandidate> searchByKeyword(
         String tenantId, String queryText, RetrievalScope scope, int topK
     ) {
-        // Implemented in M5B C15.
-        return List.of();
+        if (queryText == null || queryText.isBlank() || topK <= 0) {
+            return List.of();
+        }
+        StringBuilder sql = new StringBuilder("""
+            SELECT id, tenant_id, project_id, meeting_id, document_id,
+                   source_type, source_id, source_segment_id, content,
+                   security_level::text AS security_level,
+                   transcript_version, minutes_version,
+                   ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', ?)) AS rank
+              FROM knowledge_chunks
+             WHERE tenant_id = ?
+               AND status = 'ACTIVE'::content_status
+               AND stale_status = 'ACTIVE'::stale_status
+               AND to_tsvector('simple', content) @@ plainto_tsquery('simple', ?)
+            """);
+        List<Object> args = new ArrayList<>();
+        args.add(queryText);
+        args.add(tenantId);
+        args.add(queryText);
+        appendScopeFilter(sql, args, scope);
+        sql.append(" ORDER BY rank DESC, id ASC LIMIT ?");
+        args.add(topK);
+        return jdbcTemplate.query(sql.toString(), (rs, n) -> mapCandidate(rs, "rank"), args.toArray());
+    }
+
+    private static void appendScopeFilter(StringBuilder sql, List<Object> args, RetrievalScope scope) {
+        if (scope == null || scope.isEmpty()) {
+            return;
+        }
+        List<String> ors = new ArrayList<>();
+        if (!scope.meetingIds().isEmpty()) {
+            ors.add("meeting_id IN (" + placeholders(scope.meetingIds().size()) + ")");
+            args.addAll(scope.meetingIds());
+        }
+        if (!scope.documentIds().isEmpty()) {
+            ors.add("document_id IN (" + placeholders(scope.documentIds().size()) + ")");
+            args.addAll(scope.documentIds());
+        }
+        sql.append(" AND (").append(String.join(" OR ", ors)).append(")");
+    }
+
+    private static String placeholders(int n) {
+        StringBuilder sb = new StringBuilder(n * 2);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(',');
+            sb.append('?');
+        }
+        return sb.toString();
+    }
+
+    private static KnowledgeChunkCandidate mapCandidate(ResultSet rs, String scoreColumn) throws SQLException {
+        return new KnowledgeChunkCandidate(
+            rs.getString("id"),
+            rs.getString("tenant_id"),
+            rs.getString("project_id"),
+            rs.getString("meeting_id"),
+            rs.getString("document_id"),
+            KnowledgeSourceType.valueOf(rs.getString("source_type")),
+            rs.getString("source_id"),
+            rs.getString("source_segment_id"),
+            rs.getString("content"),
+            SecurityLevel.valueOf(rs.getString("security_level")),
+            (Integer) rs.getObject("transcript_version"),
+            (Integer) rs.getObject("minutes_version"),
+            rs.getDouble(scoreColumn)
+        );
     }
 
     @Override

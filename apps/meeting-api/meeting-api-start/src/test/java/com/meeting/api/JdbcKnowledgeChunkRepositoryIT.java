@@ -292,23 +292,129 @@ class JdbcKnowledgeChunkRepositoryIT {
     }
 
     @Test
-    void markEmbeddingsStillUnimplementedSoCallersFailFast() {
-        org.junit.jupiter.api.Assertions.assertThrows(
-            UnsupportedOperationException.class,
-            () -> repo.markEmbedding(TENANT, "chunk_x", new float[] {0.1f}, "bge-m3-v1")
-        );
-        org.junit.jupiter.api.Assertions.assertThrows(
-            UnsupportedOperationException.class,
-            () -> repo.markEmbeddings(TENANT, java.util.Map.of())
-        );
+    void markEmbeddingPersistsVectorAndModelVersion() throws Exception {
+        setTenantContext();
+
+        repo.saveAll(List.of(simpleMeetingChunk("chunk_me_1", "1")));
+
+        float[] vec = randomVector(1024, 11);
+        int touched = repo.markEmbedding(TENANT, "chunk_me_1", vec, "bge-m3-v1");
+        assertThat(touched).isEqualTo(1);
+
+        KnowledgeChunk after = repo.findByMeetingId(TENANT, MEETING).get(0);
+        assertThat(after.embedding()).hasSize(1024);
+        assertThat(after.embedding()[0]).isCloseTo(vec[0], org.assertj.core.data.Offset.offset(1e-5f));
+        assertThat(after.embeddingModelVersion()).isEqualTo("bge-m3-v1");
+        assertThat(after.staleStatus()).isEqualTo(StaleStatus.ACTIVE);
     }
 
     @Test
-    void searchByVectorReturnsEmptyUntilC15() {
-        List<?> r1 = repo.searchByVector(TENANT, new float[] {0.0f}, KnowledgeChunkRepository.RetrievalScope.EMPTY, 5);
-        List<?> r2 = repo.searchByKeyword(TENANT, "anything", KnowledgeChunkRepository.RetrievalScope.EMPTY, 5);
-        assertThat(r1).isEmpty();
-        assertThat(r2).isEmpty();
+    void markEmbeddingsBulkUpdatesPersistAllProvidedRows() throws Exception {
+        setTenantContext();
+
+        repo.saveAll(List.of(
+            simpleMeetingChunk("chunk_mes_a", "a"),
+            simpleMeetingChunk("chunk_mes_b", "b")
+        ));
+
+        var bundle = java.util.Map.of(
+            "chunk_mes_a", new KnowledgeChunkRepository.EmbeddingResult(randomVector(1024, 21), "bge-m3-v1"),
+            "chunk_mes_b", new KnowledgeChunkRepository.EmbeddingResult(randomVector(1024, 22), "bge-m3-v1")
+        );
+        int touched = repo.markEmbeddings(TENANT, bundle);
+        assertThat(touched).isEqualTo(2);
+
+        var fetched = repo.findByMeetingId(TENANT, MEETING);
+        assertThat(fetched).hasSize(2);
+        assertThat(fetched).allSatisfy(c -> {
+            assertThat(c.embedding()).hasSize(1024);
+            assertThat(c.embeddingModelVersion()).isEqualTo("bge-m3-v1");
+        });
+    }
+
+    @Test
+    void searchByVectorOrdersByCosineSimilarityAndSkipsStaleChunks() throws Exception {
+        setTenantContext();
+
+        float[] queryVec = unitVector(1024, 0);   // canonical direction
+        float[] sameVec = unitVector(1024, 0);    // identical → cosine 1
+        float[] oppositeVec = unitVector(1024, 1); // orthogonal direction
+        float[] thirdVec = randomVector(1024, 99);
+
+        repo.saveAll(List.of(
+            chunkWithEmbedding("chunk_sv_close", MEETING, sameVec),
+            chunkWithEmbedding("chunk_sv_far", MEETING, oppositeVec),
+            chunkWithEmbedding("chunk_sv_third", MEETING, thirdVec)
+        ));
+        // Stale chunk must not be returned.
+        KnowledgeChunk stale = chunkWithEmbedding("chunk_sv_stale", MEETING, sameVec);
+        repo.saveAll(List.of(stale));
+        repo.markStaleForMeeting(TENANT, MEETING);
+        // Bring the close + far + third back to ACTIVE; leave only the stale one STALE.
+        repo.updateStaleStatus(TENANT, List.of("chunk_sv_close", "chunk_sv_far", "chunk_sv_third"), StaleStatus.ACTIVE);
+
+        var results = repo.searchByVector(TENANT, queryVec, KnowledgeChunkRepository.RetrievalScope.EMPTY, 5);
+
+        assertThat(results).extracting(c -> c.chunkId())
+            .doesNotContain("chunk_sv_stale")
+            .startsWith("chunk_sv_close");
+        // Score for the matched vector should be ~1.0 (cosine similarity).
+        assertThat(results.get(0).score()).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-3));
+    }
+
+    @Test
+    void searchByVectorRespectsScopeFilter() throws Exception {
+        setTenantContext();
+
+        float[] vec = unitVector(1024, 0);
+        repo.saveAll(List.of(
+            chunkWithEmbedding("chunk_sv_scope_doc", DOCUMENT, vec, KnowledgeSourceType.DOCUMENT),
+            chunkWithEmbedding("chunk_sv_scope_meeting", MEETING, vec, KnowledgeSourceType.PRIMARY_TRANSCRIPT)
+        ));
+
+        var meetingScoped = repo.searchByVector(
+            TENANT, vec,
+            new KnowledgeChunkRepository.RetrievalScope(List.of(MEETING), List.of()),
+            10
+        );
+        assertThat(meetingScoped).extracting(c -> c.chunkId())
+            .containsExactly("chunk_sv_scope_meeting");
+
+        var docScoped = repo.searchByVector(
+            TENANT, vec,
+            new KnowledgeChunkRepository.RetrievalScope(List.of(), List.of(DOCUMENT)),
+            10
+        );
+        assertThat(docScoped).extracting(c -> c.chunkId())
+            .containsExactly("chunk_sv_scope_doc");
+    }
+
+    @Test
+    void searchByKeywordMatchesContentTokensAndRanks() throws Exception {
+        setTenantContext();
+
+        repo.saveAll(List.of(
+            chunkWithContent("chunk_kw_alpha", "Revenue grew strongly this past quarter."),
+            chunkWithContent("chunk_kw_beta", "Revenue projection looks weak next quarter."),
+            chunkWithContent("chunk_kw_gamma", "We renewed the office lease yesterday.")
+        ));
+
+        var hits = repo.searchByKeyword(
+            TENANT, "revenue quarter",
+            KnowledgeChunkRepository.RetrievalScope.EMPTY, 10
+        );
+        assertThat(hits).extracting(c -> c.chunkId())
+            .contains("chunk_kw_alpha", "chunk_kw_beta")
+            .doesNotContain("chunk_kw_gamma");
+    }
+
+    @Test
+    void searchByKeywordReturnsEmptyForBlankQueryOrNoMatches() throws Exception {
+        setTenantContext();
+        repo.saveAll(List.of(chunkWithContent("chunk_kw_solo", "Pizza tastes good.")));
+
+        assertThat(repo.searchByKeyword(TENANT, "  ", KnowledgeChunkRepository.RetrievalScope.EMPTY, 5)).isEmpty();
+        assertThat(repo.searchByKeyword(TENANT, "spreadsheet", KnowledgeChunkRepository.RetrievalScope.EMPTY, 5)).isEmpty();
     }
 
     // ── helpers ───────────────────────────────────────────────────
@@ -349,5 +455,55 @@ class JdbcKnowledgeChunkRepositoryIT {
         float[] v = new float[dim];
         for (int i = 0; i < dim; i++) v[i] = (r.nextFloat() - 0.5f) * 2.0f;
         return v;
+    }
+
+    /**
+     * Produces a unit vector with a single 1.0 at the seeded position, zero elsewhere.
+     * Two such vectors with different seeds are orthogonal — cosine similarity = 0.
+     */
+    private static float[] unitVector(int dim, int oneAt) {
+        float[] v = new float[dim];
+        v[oneAt % dim] = 1.0f;
+        return v;
+    }
+
+    private static KnowledgeChunk chunkWithEmbedding(String id, String ownerId, float[] embedding) {
+        return chunkWithEmbedding(id, ownerId, embedding, KnowledgeSourceType.PRIMARY_TRANSCRIPT);
+    }
+
+    private static KnowledgeChunk chunkWithEmbedding(String id, String ownerId, float[] embedding, KnowledgeSourceType type) {
+        var b = KnowledgeChunk.builder()
+            .id(id)
+            .tenantId(TENANT)
+            .sourceType(type)
+            .sourceId("src_" + id)
+            .content("content " + id)
+            .contentHash("h_" + id)
+            .chunkStrategyVersion("default-zh-v1")
+            .securityLevel(SecurityLevel.INTERNAL)
+            .embedding(embedding)
+            .embeddingModelVersion("bge-m3-v1")
+            .createdAt(NOW)
+            .updatedAt(NOW);
+        if (type == KnowledgeSourceType.DOCUMENT) {
+            b.documentId(ownerId);
+        } else {
+            b.meetingId(ownerId).transcriptVersion(1);
+        }
+        return b.build();
+    }
+
+    private static KnowledgeChunk chunkWithContent(String id, String content) {
+        return KnowledgeChunk.builder()
+            .id(id)
+            .tenantId(TENANT).meetingId(MEETING)
+            .sourceType(KnowledgeSourceType.PRIMARY_TRANSCRIPT)
+            .sourceId("src_" + id).sourceSegmentId("seg_" + id)
+            .content(content).contentHash("h_" + id)
+            .chunkStrategyVersion("default-zh-v1")
+            .transcriptVersion(1)
+            .securityLevel(SecurityLevel.INTERNAL)
+            .createdAt(NOW).updatedAt(NOW)
+            .build();
     }
 }
