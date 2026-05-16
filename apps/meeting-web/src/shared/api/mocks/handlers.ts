@@ -659,6 +659,45 @@ export const handlers = [
   http.post("/api/rag/reindex/documents/:documentId", () => {
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
   }),
+
+  http.post("/api/rag/query", async ({ request }) => {
+    const body = (await request.json()) as { question?: string };
+    const q = body.question ?? "";
+    const isEmpty = q.includes("(empty)");
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        answer: isEmpty ? "根据现有信息无法回答。" : `基于检索到的片段回答：${q}`,
+        citations: isEmpty
+          ? []
+          : [
+              {
+                type: "MEETING_SEGMENT",
+                meetingId: "mtg_01",
+                meetingTitle: "产品周会",
+                segmentId: "seg_01",
+                speaker: "Alice",
+                startMs: 12000,
+                endMs: 25000,
+                content: "我们决定下周完成路线图初稿。",
+              },
+              {
+                type: "DOCUMENT_CHUNK",
+                documentId: "doc_01",
+                documentTitle: "Roadmap.pdf",
+                chunkId: "ck_doc_1",
+                page: 3,
+                content: "Q3 路线图重点关注客户旅程。",
+              },
+            ],
+        coverage: isEmpty ? "TRANSCRIPT_ONLY" : "FULL",
+        artifactManifestId: "llmlog_demo",
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {
