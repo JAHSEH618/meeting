@@ -565,6 +565,100 @@ export const handlers = [
       traceId: "t",
     });
   }),
+
+  // ── Documents ────────────────────────────────────────────────────
+  http.get("/api/documents", () => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: [
+        {
+          documentId: "doc_01",
+          tenantId: "tenant_01",
+          title: "Roadmap.pdf",
+          fileId: "file_doc_01",
+          documentType: "PDF",
+          status: "ACTIVE",
+          securityLevel: "INTERNAL",
+          textExtractionStatus: "EXTRACTED",
+          contentHash: "abc123",
+          sourceUri: null,
+          createdAt: "2026-05-12T08:00:00Z",
+          updatedAt: "2026-05-12T08:00:00Z",
+          deletedAt: null,
+        },
+      ],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/documents", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        documentId: "doc_new",
+        tenantId: "tenant_01",
+        title: body.title ?? "(untitled)",
+        fileId: body.fileId ?? "file_unknown",
+        documentType: body.documentType ?? "PDF",
+        status: "ACTIVE",
+        securityLevel: body.securityLevel ?? "INTERNAL",
+        textExtractionStatus: "PENDING",
+        contentHash: body.contentHash ?? null,
+        sourceUri: null,
+        createdAt: "2026-05-17T09:00:00Z",
+        updatedAt: "2026-05-17T09:00:00Z",
+        deletedAt: null,
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.delete("/api/documents/:documentId", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: null,
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/documents/:documentId/reindex", ({ params }) => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        documentId: params.documentId as string,
+        tenantId: "tenant_01",
+        title: "Roadmap.pdf",
+        fileId: "file_doc_01",
+        documentType: "PDF",
+        status: "ACTIVE",
+        securityLevel: "INTERNAL",
+        textExtractionStatus: "EXTRACTED",
+        contentHash: "abc123",
+        sourceUri: null,
+        createdAt: "2026-05-12T08:00:00Z",
+        updatedAt: "2026-05-17T10:00:00Z",
+        deletedAt: null,
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/rag/reindex/meetings/:meetingId", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/rag/reindex/documents/:documentId", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
 ];
 
 function mockTask(meetingId: string): ProcessingTask {

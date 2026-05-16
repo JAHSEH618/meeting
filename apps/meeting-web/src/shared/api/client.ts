@@ -579,3 +579,43 @@ export async function rejectMeetingSpeaker(meetingId: string, speakerLabel: stri
 export async function ragQuery(data: import("@shared/api/types").RagQueryRequest) {
   return request<import("@shared/api/types").RagQueryResponse>("POST", "/rag/query", data);
 }
+
+export async function reindexMeetingRag(meetingId: string) {
+  return request<void>("POST", `/rag/reindex/meetings/${meetingId}`, {}, generateId("reindex-meeting-rag"));
+}
+
+export async function reindexDocumentRag(documentId: string) {
+  return request<void>("POST", `/rag/reindex/documents/${documentId}`, {}, generateId("reindex-document-rag"));
+}
+
+// ── Documents ──────────────────────────────────────────────────────
+
+export async function listDocuments() {
+  return request<{ items: import("@shared/api/types").Document[] }>("GET", "/documents");
+}
+
+export async function getDocument(documentId: string) {
+  return request<import("@shared/api/types").Document>("GET", `/documents/${documentId}`);
+}
+
+export async function createDocument(input: import("@shared/api/types").CreateDocumentRequest) {
+  return request<import("@shared/api/types").Document>(
+    "POST",
+    "/documents",
+    input,
+    generateId("create-document"),
+  );
+}
+
+export async function deleteDocument(documentId: string) {
+  return request<void>("DELETE", `/documents/${documentId}`);
+}
+
+export async function reindexDocument(documentId: string) {
+  return request<import("@shared/api/types").Document>(
+    "POST",
+    `/documents/${documentId}/reindex`,
+    {},
+    generateId("reindex-document"),
+  );
+}

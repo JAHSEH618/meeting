@@ -64,3 +64,32 @@ export type RagQueryRequest = components["schemas"]["RagQueryRequest"];
 export type RagQueryResponse = NonNullable<operations["queryRag"]["responses"][200]["content"]["application/json"]["data"]>;
 export type MeetingSegmentCitation = components["schemas"]["MeetingSegmentCitation"];
 export type DocumentChunkCitation = components["schemas"]["DocumentChunkCitation"];
+
+// ── Documents ───────────────────────────────────────────────────────
+// Hand-written: openapi-typescript only surfaces request bodies and
+// generic OkPaginated for /api/documents; the DocumentDTO shape comes
+// from meeting-api-client (DocumentDTO.java) and is verified by the
+// types-consistency test.
+export interface Document {
+  documentId: string;
+  tenantId: string;
+  title: string;
+  fileId: string;
+  documentType: string;
+  status: string;
+  securityLevel: SecurityLevel;
+  textExtractionStatus: string;
+  contentHash: string | null;
+  sourceUri: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface CreateDocumentRequest {
+  title: string;
+  fileId: string;
+  documentType: string;
+  securityLevel: SecurityLevel;
+  contentHash: string | null;
+}
