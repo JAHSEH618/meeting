@@ -171,14 +171,57 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
 
     @Override
     public int markEmbedding(String tenantId, String chunkId, float[] values, String modelVersion) {
-        // Implemented in M5A C13 alongside the callback writeback flow.
-        throw new UnsupportedOperationException("markEmbedding lands in M5A C13");
+        if (values == null || values.length == 0) {
+            throw new IllegalArgumentException("markEmbedding values must be non-empty");
+        }
+        if (modelVersion == null || modelVersion.isBlank()) {
+            throw new IllegalArgumentException("markEmbedding modelVersion must be non-blank");
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE knowledge_chunks
+               SET embedding = ?::vector,
+                   embedding_model_version = ?,
+                   stale_status = 'ACTIVE'::stale_status,
+                   updated_at = now()
+             WHERE tenant_id = ? AND id = ?
+            """,
+            formatVector(values),
+            modelVersion,
+            tenantId,
+            chunkId
+        );
     }
 
     @Override
     public int markEmbeddings(String tenantId, Map<String, EmbeddingResult> embeddingsByChunkId) {
-        // Implemented in M5A C13.
-        throw new UnsupportedOperationException("markEmbeddings lands in M5A C13");
+        if (embeddingsByChunkId == null || embeddingsByChunkId.isEmpty()) {
+            return 0;
+        }
+        final String sql = """
+            UPDATE knowledge_chunks
+               SET embedding = ?::vector,
+                   embedding_model_version = ?,
+                   stale_status = 'ACTIVE'::stale_status,
+                   updated_at = now()
+             WHERE tenant_id = ? AND id = ?
+            """;
+        List<Map.Entry<String, EmbeddingResult>> entries = new ArrayList<>(embeddingsByChunkId.entrySet());
+        int[][] updateBatches = jdbcTemplate.batchUpdate(sql, entries, entries.size(), (ps, entry) -> {
+            ps.setString(1, formatVector(entry.getValue().values()));
+            ps.setString(2, entry.getValue().modelVersion());
+            ps.setString(3, tenantId);
+            ps.setString(4, entry.getKey());
+        });
+        int touched = 0;
+        for (int[] batch : updateBatches) {
+            for (int count : batch) {
+                if (count > 0) {
+                    touched += count;
+                }
+            }
+        }
+        return touched;
     }
 
     @Override

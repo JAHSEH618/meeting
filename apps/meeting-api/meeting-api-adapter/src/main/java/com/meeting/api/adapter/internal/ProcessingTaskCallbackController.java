@@ -1,6 +1,7 @@
 package com.meeting.api.adapter.internal;
 
 import com.meeting.api.app.observability.MeetingApiMetrics;
+import com.meeting.api.app.rag.EmbeddingsCallbackApplicationService;
 import com.meeting.api.app.speaker.SpeakerCandidatesCallbackApplicationService;
 import com.meeting.api.app.task.ProcessingTaskCallbackApplicationService;
 import com.meeting.api.client.common.ApiResponse;
@@ -11,6 +12,7 @@ import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.CompleteWorkerPhaseCommand;
+import com.meeting.api.client.internal.callback.EmbeddingsCallbackCommand;
 import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
@@ -42,17 +44,20 @@ public class ProcessingTaskCallbackController {
     };
     private final ProcessingTaskCallbackApplicationService callbackApplicationService;
     private final SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService;
+    private final EmbeddingsCallbackApplicationService embeddingsCallbackApplicationService;
     private final ObjectMapper objectMapper;
     private final MeetingApiMetrics metrics;
 
     public ProcessingTaskCallbackController(
         ProcessingTaskCallbackApplicationService callbackApplicationService,
         SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService,
+        EmbeddingsCallbackApplicationService embeddingsCallbackApplicationService,
         ObjectMapper objectMapper,
         MeetingApiMetrics metrics
     ) {
         this.callbackApplicationService = callbackApplicationService;
         this.speakerCallbackApplicationService = speakerCallbackApplicationService;
+        this.embeddingsCallbackApplicationService = embeddingsCallbackApplicationService;
         this.objectMapper = objectMapper;
         this.metrics = metrics;
     }
@@ -191,7 +196,68 @@ public class ProcessingTaskCallbackController {
     @PostMapping("/embeddings")
     public ApiResponse<Map<String, Object>> embeddings(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
-        return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "EMBEDDINGS"), metadata.requestId(), metadata.traceId());
+        Map<String, Object> payload = parseBody(rawBody);
+        metrics.callbackCounter("embeddings", "RAG_INDEXING").increment();
+        var result = embeddingsCallbackApplicationService.writeEmbeddings(new EmbeddingsCallbackCommand(
+            metadata,
+            requiredString(payload, "tenantId"),
+            taskId,
+            optionalInt(payload, "attemptNo", metadata.attemptNo()),
+            requiredString(payload, "embeddingBatchId"),
+            requiredString(payload, "sourceType"),
+            requiredString(payload, "embeddingModelVersion"),
+            requiredString(payload, "chunkStrategyVersion"),
+            parseEmbeddingItems(payload.get("items"))
+        ));
+        return ApiResponse.ok(
+            Map.of(
+                "accepted", true,
+                "taskId", taskId,
+                "callback", "EMBEDDINGS",
+                "embeddingBatchId", result.batchId(),
+                "updated", result.updated(),
+                "requested", result.requested(),
+                "replayed", result.replayed()
+            ),
+            metadata.requestId(),
+            metadata.traceId()
+        );
+    }
+
+    private static List<EmbeddingsCallbackCommand.Item> parseEmbeddingItems(Object raw) {
+        if (!(raw instanceof List<?> values) || values.isEmpty()) {
+            return List.of();
+        }
+        java.util.List<EmbeddingsCallbackCommand.Item> out = new java.util.ArrayList<>();
+        for (Object item : values) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            Object embeddingRaw = map.get("embedding");
+            if (!(embeddingRaw instanceof Map<?, ?> em)) {
+                throw new IllegalArgumentException("embeddings item missing embedding object");
+            }
+            Object valuesRaw = em.get("values");
+            float[] floats = null;
+            if (valuesRaw instanceof List<?> list) {
+                floats = new float[list.size()];
+                for (int i = 0; i < list.size(); i++) {
+                    Object v = list.get(i);
+                    floats[i] = v instanceof Number n ? n.floatValue() : 0f;
+                }
+            }
+            if (floats == null) {
+                throw new IllegalArgumentException("embeddings item missing embedding.values array");
+            }
+            int dimension = em.get("dimension") instanceof Number dn ? dn.intValue() : floats.length;
+            String format = em.get("format") == null ? "FLOAT32_ARRAY" : String.valueOf(em.get("format"));
+            out.add(new EmbeddingsCallbackCommand.Item(
+                map.get("chunkId") == null ? null : String.valueOf(map.get("chunkId")),
+                map.get("sourceId") == null ? null : String.valueOf(map.get("sourceId")),
+                map.get("sourceVersion") instanceof Number svn ? svn.intValue() : null,
+                map.get("contentHash") == null ? null : String.valueOf(map.get("contentHash")),
+                new EmbeddingsCallbackCommand.Embedding(format, dimension, floats)
+            ));
+        }
+        return out;
     }
 
     private Map<String, Object> parseBody(String rawBody) {
