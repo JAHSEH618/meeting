@@ -118,13 +118,13 @@ public class EmbeddingTaskDispatcher {
     }
 
     public DispatchResult dispatch(KnowledgeChunkReindexRequestedEvent event) {
-        List<String> chunkIds = event.chunkIds();
+        List<KnowledgeChunkReindexRequestedEvent.ChunkRef> chunks = event.chunks();
         List<String> taskIds = new ArrayList<>();
         OffsetDateTime now = OffsetDateTime.now(clock);
 
-        for (int from = 0; from < chunkIds.size(); from += maxChunksPerTask) {
-            int to = Math.min(from + maxChunksPerTask, chunkIds.size());
-            List<String> batch = chunkIds.subList(from, to);
+        for (int from = 0; from < chunks.size(); from += maxChunksPerTask) {
+            int to = Math.min(from + maxChunksPerTask, chunks.size());
+            List<KnowledgeChunkReindexRequestedEvent.ChunkRef> batch = chunks.subList(from, to);
 
             ProcessingTask task = ProcessingTask.create(
                 newTaskId(),
@@ -167,7 +167,7 @@ public class EmbeddingTaskDispatcher {
     private static Map<String, Object> taskMessagePayload(
         KnowledgeChunkReindexRequestedEvent event,
         ProcessingTask task,
-        List<String> chunkIds
+        List<KnowledgeChunkReindexRequestedEvent.ChunkRef> chunks
     ) {
         Map<String, Object> expectedVersion = new LinkedHashMap<>();
         expectedVersion.put("chunkStrategyVersion", event.chunkStrategyVersion());
@@ -175,9 +175,20 @@ public class EmbeddingTaskDispatcher {
         if (event.transcriptVersion() != null) expectedVersion.put("transcriptVersion", event.transcriptVersion());
         if (event.minutesVersion() != null) expectedVersion.put("minutesVersion", event.minutesVersion());
 
+        List<Map<String, Object>> chunkPayloads = new ArrayList<>(chunks.size());
+        List<String> chunkIds = new ArrayList<>(chunks.size());
+        for (var c : chunks) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", c.id());
+            entry.put("content", c.content());
+            chunkPayloads.add(entry);
+            chunkIds.add(c.id());
+        }
+
         Map<String, Object> options = new LinkedHashMap<>();
         options.put("enableRagIndexing", true);
-        options.put("chunkIds", List.copyOf(chunkIds));
+        options.put("chunkIds", chunkIds);
+        options.put("chunks", chunkPayloads);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", task.taskId());

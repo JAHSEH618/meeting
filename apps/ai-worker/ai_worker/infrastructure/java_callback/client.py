@@ -228,6 +228,38 @@ class JavaCallbackClient:
             body["artifactManifestId"] = artifact_manifest_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
+    async def submit_embeddings(
+        self,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        embedding_batch_id: str,
+        source_type: str,
+        embedding_model_version: str,
+        chunk_strategy_version: str,
+        items: list[dict],
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        """POST /internal/processing-tasks/{taskId}/embeddings.
+
+        Submits a batch of text embeddings for RAG indexing chunks. The Java
+        side envelope-encrypts and persists into knowledge_chunks.embedding
+        in M5A C13.
+        """
+        path = f"/internal/processing-tasks/{task_id}/embeddings"
+        idempotency_key = f"{task_id}:embeddings:{attempt_no}:{embedding_batch_id}"
+        body = {
+            "tenantId": tenant_id,
+            "taskId": task_id,
+            "attemptNo": attempt_no,
+            "embeddingBatchId": embedding_batch_id,
+            "sourceType": source_type,
+            "embeddingModelVersion": embedding_model_version,
+            "chunkStrategyVersion": chunk_strategy_version,
+            "items": items,
+        }
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
     async def complete_worker_phase(
         self,
         task_id: str,

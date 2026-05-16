@@ -210,13 +210,16 @@ public class ChunkingApplicationService {
 
         knowledgeChunkRepository.saveAll(built);
 
-        List<String> newChunkIds = built.stream().map(KnowledgeChunk::id).toList();
+        List<KnowledgeChunkReindexRequestedEvent.ChunkRef> refs = built.stream()
+            .map(c -> new KnowledgeChunkReindexRequestedEvent.ChunkRef(c.id(), c.content()))
+            .toList();
+        List<String> newChunkIds = refs.stream().map(KnowledgeChunkReindexRequestedEvent.ChunkRef::id).toList();
         log.info(
             "chunking rebuilt meeting={} stale={} new={} strategy={} transcriptV={} minutesV={}",
             meetingId, stale, built.size(), strategy.name(), transcriptVersion, minutesVersion
         );
         publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
-            tenantId, meetingId, null, newChunkIds,
+            tenantId, meetingId, null, refs,
             meeting.securityLevel(), strategy.name(),
             transcriptVersion > 0 ? transcriptVersion : null,
             minutesVersion > 0 ? minutesVersion : null,
@@ -261,13 +264,16 @@ public class ChunkingApplicationService {
 
         knowledgeChunkRepository.saveAll(built);
 
-        List<String> newChunkIds = built.stream().map(KnowledgeChunk::id).toList();
+        List<KnowledgeChunkReindexRequestedEvent.ChunkRef> refs = built.stream()
+            .map(c -> new KnowledgeChunkReindexRequestedEvent.ChunkRef(c.id(), c.content()))
+            .toList();
+        List<String> newChunkIds = refs.stream().map(KnowledgeChunkReindexRequestedEvent.ChunkRef::id).toList();
         log.info(
             "chunking rebuilt document={} stale={} new={} strategy={}",
             documentId, stale, built.size(), strategy.name()
         );
         publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
-            tenantId, null, documentId, newChunkIds,
+            tenantId, null, documentId, refs,
             doc.securityLevel(), strategy.name(),
             null, null, null
         ));

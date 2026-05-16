@@ -4,6 +4,7 @@ import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.rag.EmbeddingTaskDispatcher;
 import com.meeting.api.app.rag.EmbeddingTaskDispatcher.DispatchResult;
 import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent;
+import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent.ChunkRef;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.common.DomainEvent;
@@ -35,7 +36,7 @@ class EmbeddingTaskDispatcherTest {
     void emptyChunkListShortCircuitsWithNoTaskAndNoMessage() {
         var fx = new Fixtures();
         var event = new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", "mtg_01", null, List.of(),
+            "tenant_01", "mtg_01", null, List.<ChunkRef>of(),
             SecurityLevel.INTERNAL, "default-zh-v1", 1, null, null
         );
 
@@ -50,7 +51,8 @@ class EmbeddingTaskDispatcherTest {
     void singleBatchMeetingProducesOneTaskWithExpectedPayload() {
         var fx = new Fixtures();
         var event = new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", "mtg_01", null, List.of("c1", "c2", "c3"),
+            "tenant_01", "mtg_01", null,
+            List.of(ref("c1", "text 1"), ref("c2", "text 2"), ref("c3", "text 3")),
             SecurityLevel.INTERNAL, "default-zh-v1", 3, 1, "trace_abc"
         );
 
@@ -98,13 +100,20 @@ class EmbeddingTaskDispatcherTest {
         Map<String, Object> options = (Map<String, Object>) payload.get("options");
         assertThat(options).containsEntry("enableRagIndexing", true);
         assertThat(options).containsEntry("chunkIds", List.of("c1", "c2", "c3"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> chunks = (List<Map<String, Object>>) options.get("chunks");
+        assertThat(chunks).hasSize(3);
+        assertThat(chunks.get(0)).containsEntry("id", "c1").containsEntry("content", "text 1");
+        assertThat(chunks.get(2)).containsEntry("id", "c3").containsEntry("content", "text 3");
     }
 
     @Test
     void documentEventEmitsDocumentIdInsteadOfMeetingId() {
         var fx = new Fixtures();
         var event = new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", null, "doc_01", List.of("c1", "c2"),
+            "tenant_01", null, "doc_01",
+            List.of(ref("c1", "alpha"), ref("c2", "beta")),
             SecurityLevel.CONFIDENTIAL, "default-zh-v1", null, null, null
         );
 
@@ -126,9 +135,11 @@ class EmbeddingTaskDispatcherTest {
     @Test
     void largeChunkListFansOutIntoMultipleTasksAtMaxBatchSize() {
         var fx = new Fixtures();
-        List<String> chunkIds = IntStream.range(0, 100).mapToObj(i -> "chunk_" + i).toList();
+        List<ChunkRef> chunkRefs = IntStream.range(0, 100)
+            .mapToObj(i -> ref("chunk_" + i, "content_" + i))
+            .toList();
         var event = new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", "mtg_large", null, chunkIds,
+            "tenant_01", "mtg_large", null, chunkRefs,
             SecurityLevel.INTERNAL, "default-zh-v1", 5, null, null
         );
 
@@ -160,7 +171,7 @@ class EmbeddingTaskDispatcherTest {
         // Union must equal the input set (no chunk dropped, no chunk duplicated)
         List<String> rejoined = new ArrayList<>();
         dispatchedBatches.forEach(rejoined::addAll);
-        assertThat(rejoined).containsExactlyElementsOf(chunkIds);
+        assertThat(rejoined).containsExactlyElementsOf(chunkRefs.stream().map(ChunkRef::id).toList());
     }
 
     @Test
@@ -171,7 +182,8 @@ class EmbeddingTaskDispatcherTest {
         );
 
         var event = new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", "mtg_x", null, List.of("a", "b", "c", "d", "e"),
+            "tenant_01", "mtg_x", null,
+            List.of(ref("a", "1"), ref("b", "2"), ref("c", "3"), ref("d", "4"), ref("e", "5")),
             SecurityLevel.INTERNAL, "default-zh-v1", 1, null, null
         );
 
@@ -193,25 +205,30 @@ class EmbeddingTaskDispatcherTest {
     @Test
     void reindexEventRejectsBothMeetingAndDocumentIds() {
         assertThatThrownBy(() -> new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", "mtg_a", "doc_b", List.of("c1"),
+            "tenant_01", "mtg_a", "doc_b", List.of(ref("c1", "x")),
             SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
         )).isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> new KnowledgeChunkReindexRequestedEvent(
-            "tenant_01", null, null, List.of("c1"),
+            "tenant_01", null, null, List.of(ref("c1", "x")),
             SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void reindexEventCopiesChunkIdsDefensively() {
-        List<String> mutable = new ArrayList<>(List.of("c1"));
+    void reindexEventCopiesChunksDefensively() {
+        List<ChunkRef> mutable = new ArrayList<>(List.of(ref("c1", "x")));
         var evt = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_01", null, mutable,
             SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
         );
-        mutable.add("c2");
+        mutable.add(ref("c2", "y"));
+        assertThat(evt.chunks()).hasSize(1);
         assertThat(evt.chunkIds()).containsExactly("c1");
+    }
+
+    private static ChunkRef ref(String id, String content) {
+        return new ChunkRef(id, content);
     }
 
     // ── Fixtures ──────────────────────────────────────────────────
