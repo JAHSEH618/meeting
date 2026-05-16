@@ -266,6 +266,19 @@ button.primary {
   padding: 4px 0 14px;
 }
 
+.transcript-row-highlighted {
+  background: #fff8d6;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px #fff8d6;
+  animation: rag-citation-flash 2.5s ease-out;
+}
+
+@keyframes rag-citation-flash {
+  0%   { background: #ffe97a; }
+  20%  { background: #ffe97a; }
+  100% { background: #fff8d6; }
+}
+
 .transcript-row p {
   margin: 0;
   line-height: 1.7;

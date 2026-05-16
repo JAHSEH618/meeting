@@ -83,4 +83,32 @@ describe("TranscriptPage", () => {
       expect(screen.getByText(/内容已被更新；已自动刷新到最新版本/)).toBeInTheDocument(),
     );
   });
+
+  it("highlights the segment named in the citation deep link", async () => {
+    render(
+      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_01&startMs=0"]}>
+        <Routes>
+          <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const article = await screen.findByLabelText("segment-seg_01");
+    await waitFor(() => expect(article.className).toContain("transcript-row-highlighted"));
+  });
+
+  it("surfaces a notice when the citation deep link targets a missing segment", async () => {
+    render(
+      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_missing"]}>
+        <Routes>
+          <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("citation-deeplink-missing")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/引用指向的转写片段不在当前版本中/)).toBeInTheDocument();
+  });
 });

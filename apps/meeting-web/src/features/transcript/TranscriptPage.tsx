@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getLatestMeetingTask, getTranscript, updateSegment } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
 import type { ProcessingTask, TranscriptData, TranscriptSegment } from "@shared/api/types";
@@ -10,6 +10,10 @@ const VERSION_CONFLICT_TEXT = "内容已被更新；已自动刷新到最新版�
 
 export function TranscriptPage() {
   const { meetingId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const targetSegmentId = searchParams.get("segmentId");
+  const targetStartMs = searchParams.get("startMs");
+
   const [transcript, setTranscript] = useState<TranscriptData | null>(null);
   const [task, setTask] = useState<ProcessingTask | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +23,10 @@ export function TranscriptPage() {
   const [editingReason, setEditingReason] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [staleNoticeVisible, setStaleNoticeVisible] = useState(false);
+  const [highlightedSegmentId, setHighlightedSegmentId] = useState<string | null>(null);
+  const [missingTarget, setMissingTarget] = useState(false);
+
+  const segmentRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const sortedSegments = useMemo(() => {
     return [...(transcript?.segments ?? [])].sort((a, b) => a.startMs - b.startMs);
@@ -50,6 +58,41 @@ export function TranscriptPage() {
     if (!meetingId) return;
     void loadAll();
   }, [meetingId, loadAll]);
+
+  // Citation deep-link: once segments are loaded, scroll to the requested
+  // segment (preferred by segmentId; falls back to the nearest startMs) and
+  // briefly highlight it. If neither matches, surface a small notice so the
+  // user understands why the page didn't jump.
+  useEffect(() => {
+    if (!transcript || (!targetSegmentId && !targetStartMs)) {
+      return;
+    }
+    let match: TranscriptSegment | undefined;
+    if (targetSegmentId) {
+      match = transcript.segments.find((s) => s.segmentId === targetSegmentId);
+    }
+    if (!match && targetStartMs) {
+      const want = Number.parseInt(targetStartMs, 10);
+      if (Number.isFinite(want)) {
+        match = transcript.segments.find((s) => s.startMs <= want && s.endMs >= want)
+          ?? [...transcript.segments].sort(
+            (a, b) => Math.abs(a.startMs - want) - Math.abs(b.startMs - want),
+          )[0];
+      }
+    }
+    if (!match) {
+      setMissingTarget(true);
+      return;
+    }
+    setMissingTarget(false);
+    setHighlightedSegmentId(match.segmentId);
+    const node = segmentRefs.current.get(match.segmentId);
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    const timer = window.setTimeout(() => setHighlightedSegmentId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [transcript, targetSegmentId, targetStartMs]);
 
   const taskFailed = task?.status === "FAILED" || task?.status === "ORPHANED";
   const taskProcessing = task && !["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"].includes(task.status);
@@ -112,6 +155,15 @@ export function TranscriptPage() {
       {loading ? <p className="muted">加载中</p> : null}
       {error ? <div className="error" role="alert">{error}</div> : null}
 
+      {missingTarget ? (
+        <div className="card stack" role="status" aria-live="polite" aria-label="citation-deeplink-missing">
+          <strong>未找到指定片段</strong>
+          <span className="muted">
+            引用指向的转写片段不在当前版本中（可能已被编辑覆盖或转录尚未刷新）。可继续浏览全文。
+          </span>
+        </div>
+      ) : null}
+
       {staleNoticeVisible ? (
         <section className="card stack" role="status" aria-live="polite">
           <strong>已应用编辑</strong>
@@ -158,7 +210,15 @@ export function TranscriptPage() {
         ) : (
           <div className="transcript-list">
             {sortedSegments.map((segment) => (
-              <article className="transcript-row" key={segment.segmentId}>
+              <article
+                className={`transcript-row${highlightedSegmentId === segment.segmentId ? " transcript-row-highlighted" : ""}`}
+                key={segment.segmentId}
+                ref={(node) => {
+                  if (node) segmentRefs.current.set(segment.segmentId, node);
+                  else segmentRefs.current.delete(segment.segmentId);
+                }}
+                aria-label={`segment-${segment.segmentId}`}
+              >
                 <div className="transcript-meta">
                   <strong>{segment.speakerDisplayName || segment.speakerLabel}</strong>
                   <span className="muted">{formatMs(segment.startMs)} - {formatMs(segment.endMs)}</span>
