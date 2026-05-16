@@ -1,15 +1,25 @@
 package com.meeting.api.infrastructure.mq;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.observability.MeetingApiMetrics;
+import com.meeting.api.client.enums.ProcessingStep;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class OutboxPublisher {
+    private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
+
     private final OutboxEventStore outboxEventStore;
     private final RabbitMqPublisher rabbitMqPublisher;
+    private final ObjectMapper objectMapper;
     private final MeetingApiMetrics metrics;
     private final int batchSize;
     private final int maxRetries;
@@ -17,12 +27,14 @@ public class OutboxPublisher {
     public OutboxPublisher(
         OutboxEventStore outboxEventStore,
         RabbitMqPublisher rabbitMqPublisher,
+        ObjectMapper objectMapper,
         MeetingApiMetrics metrics,
         @Value("${meeting.outbox.batch-size:100}") int batchSize,
         @Value("${meeting.outbox.max-retries:5}") int maxRetries
     ) {
         this.outboxEventStore = outboxEventStore;
         this.rabbitMqPublisher = rabbitMqPublisher;
+        this.objectMapper = objectMapper;
         this.metrics = metrics;
         this.batchSize = batchSize;
         this.maxRetries = maxRetries;
@@ -56,13 +68,50 @@ public class OutboxPublisher {
         return published;
     }
 
-    private String routingKey(OutboxEventRecord record) {
-        if ("ProcessingTaskCreatedEvent".equals(record.eventType())) {
+    /**
+     * Resolve the RabbitMQ routing key for an outbox record.
+     *
+     * <p>For {@code ProcessingTaskCreatedEvent} the routing is derived from the
+     * payload's {@code pipelineSteps[0]} via {@link TaskRouting#routingKeyFor},
+     * so a TEXT_EMBEDDING task ({@code pipelineSteps=["RAG_INDEXING"]}) lands on
+     * {@code task.embed}, an audio task lands on {@code task.audio-cpu}, etc.
+     * Worker-phase + minutes/extraction events keep their legacy {@code task.llm}
+     * routing. Visible for tests.
+     */
+    public String routingKey(OutboxEventRecord record) {
+        String eventType = record.eventType();
+        if ("ProcessingTaskCreatedEvent".equals(eventType)) {
+            List<ProcessingStep> steps = extractPipelineSteps(record.payloadJson());
+            if (steps != null && !steps.isEmpty()) {
+                try {
+                    return TaskRouting.routingKeyFor(steps);
+                } catch (IllegalArgumentException ex) {
+                    log.warn("outbox_routing_invalid_steps event={} steps={} falling_back",
+                        record.id(), steps);
+                }
+            }
             return "task.audio-cpu";
         }
-        if (record.eventType().startsWith("WorkerPhase")) {
+        if (eventType.startsWith("WorkerPhase")) {
             return "task.llm";
         }
         return "task.llm";
+    }
+
+    private List<ProcessingStep> extractPipelineSteps(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) return null;
+        try {
+            JsonNode root = objectMapper.readTree(payloadJson);
+            JsonNode arr = root.path("pipelineSteps");
+            if (!arr.isArray() || arr.isEmpty()) return null;
+            List<ProcessingStep> steps = new ArrayList<>(arr.size());
+            for (JsonNode n : arr) {
+                steps.add(ProcessingStep.valueOf(n.asText()));
+            }
+            return steps;
+        } catch (Exception ex) {
+            log.warn("outbox_payload_parse_failed reason={}", ex.getMessage());
+            return null;
+        }
     }
 }

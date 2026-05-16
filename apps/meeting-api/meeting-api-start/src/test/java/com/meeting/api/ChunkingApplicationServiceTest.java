@@ -2,6 +2,7 @@ package com.meeting.api;
 
 import com.meeting.api.app.rag.ChunkingApplicationService;
 import com.meeting.api.app.rag.ChunkingApplicationService.ChunkingResult;
+import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
@@ -30,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -142,14 +145,14 @@ class ChunkingApplicationServiceTest {
             fx.transcripts, fx.minutes, fx.actions, fx.decisions, fx.risks,
             fx.documents, fx.documentChunks, fx.meetings, fx.chunks,
             new ChunkStrategy("test-zh", 64, 16, "chinese-char"),
-            CLOCK
+            fx.events, CLOCK
         );
         // shrink strategy explicitly for the test rather than relying on prod defaults
         ChunkingApplicationService scoped = new ChunkingApplicationService(
             fx.transcripts, fx.minutes, fx.actions, fx.decisions, fx.risks,
             fx.documents, fx.documentChunks, fx.meetings, fx.chunks,
             new ChunkStrategy("tiny", 32, 8, "tok"),
-            CLOCK
+            fx.events, CLOCK
         );
 
         ChunkingResult result = scoped.rebuildForMeeting("tenant_01", "mtg_long");
@@ -222,6 +225,60 @@ class ChunkingApplicationServiceTest {
         ChunkingResult r = new ChunkingResult(3, null);
         assertThat(r.newChunkIds()).isEmpty();
         assertThat(r.staleCount()).isEqualTo(3);
+    }
+
+    @Test
+    void rebuildForMeetingPublishesReindexEventWithChunkIds() {
+        var fx = new Fixtures();
+        fx.meetings.put(meeting("mtg_evt"));
+        fx.transcripts.setVersion("mtg_evt", 2);
+        fx.transcripts.addSegment(seg("seg_e1", "事件触发测试。", 2));
+        fx.minutes.setCurrent("mtg_evt", minutesWithItem("min_evt", 1, "纪要内容"));
+
+        ChunkingResult result = fx.service().rebuildForMeeting("tenant_01", "mtg_evt");
+
+        var events = fx.events.reindexEvents();
+        assertThat(events).hasSize(1);
+        var evt = events.get(0);
+        assertThat(evt.tenantId()).isEqualTo("tenant_01");
+        assertThat(evt.meetingId()).isEqualTo("mtg_evt");
+        assertThat(evt.documentId()).isNull();
+        assertThat(evt.chunkIds()).containsExactlyElementsOf(result.newChunkIds());
+        assertThat(evt.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
+        assertThat(evt.chunkStrategyVersion()).isEqualTo("default-zh-v1");
+        assertThat(evt.transcriptVersion()).isEqualTo(2);
+        assertThat(evt.minutesVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void rebuildForDocumentPublishesReindexEventScopedToDocument() {
+        var fx = new Fixtures();
+        fx.documents.put(document("doc_evt"));
+        fx.documentChunks.add(new DocumentChunkRepository.ChunkRecord(
+            "src_e1", "tenant_01", "doc_evt", 0, 1, "文档内容。", "h"));
+
+        ChunkingResult result = fx.service().rebuildForDocument("tenant_01", "doc_evt");
+
+        var events = fx.events.reindexEvents();
+        assertThat(events).hasSize(1);
+        var evt = events.get(0);
+        assertThat(evt.meetingId()).isNull();
+        assertThat(evt.documentId()).isEqualTo("doc_evt");
+        assertThat(evt.chunkIds()).containsExactlyElementsOf(result.newChunkIds());
+        assertThat(evt.securityLevel()).isEqualTo(SecurityLevel.CONFIDENTIAL);
+        assertThat(evt.transcriptVersion()).isNull();
+        assertThat(evt.minutesVersion()).isNull();
+    }
+
+    @Test
+    void rebuildEmitsNoEventWhenNoChunksProduced() {
+        var fx = new Fixtures();
+        fx.meetings.put(meeting("mtg_empty"));
+        // no transcript, no minutes, no items → nothing to chunk
+
+        fx.service().rebuildForMeeting("tenant_01", "mtg_empty");
+
+        assertThat(fx.events.reindexEvents()).isEmpty();
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -318,12 +375,34 @@ class ChunkingApplicationServiceTest {
         final InMemoryDocumentRepo documents = new InMemoryDocumentRepo();
         final InMemoryDocumentChunkRepo documentChunks = new InMemoryDocumentChunkRepo();
         final CapturingKnowledgeChunkRepo chunks = new CapturingKnowledgeChunkRepo();
+        final CapturingEventPublisher events = new CapturingEventPublisher();
 
         ChunkingApplicationService service() {
             return new ChunkingApplicationService(
                 transcripts, minutes, actions, decisions, risks,
-                documents, documentChunks, meetings, chunks, CLOCK
+                documents, documentChunks, meetings, chunks, events, CLOCK
             );
+        }
+    }
+
+    private static final class CapturingEventPublisher implements ApplicationEventPublisher {
+        final List<Object> events = new ArrayList<>();
+
+        @Override
+        public void publishEvent(Object event) {
+            events.add(event);
+        }
+
+        @Override
+        public void publishEvent(ApplicationEvent event) {
+            events.add(event);
+        }
+
+        List<KnowledgeChunkReindexRequestedEvent> reindexEvents() {
+            return events.stream()
+                .filter(KnowledgeChunkReindexRequestedEvent.class::isInstance)
+                .map(KnowledgeChunkReindexRequestedEvent.class::cast)
+                .toList();
         }
     }
 

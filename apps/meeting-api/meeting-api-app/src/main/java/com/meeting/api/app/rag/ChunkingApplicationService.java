@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,6 +64,7 @@ public class ChunkingApplicationService {
     private final MeetingRepository meetingRepository;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final ChunkStrategy strategy;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public ChunkingApplicationService(
@@ -75,12 +77,13 @@ public class ChunkingApplicationService {
         DocumentChunkRepository documentChunkRepository,
         MeetingRepository meetingRepository,
         KnowledgeChunkRepository knowledgeChunkRepository,
+        ApplicationEventPublisher eventPublisher,
         Clock clock
     ) {
         this(transcriptRepository, minutesRepository, actionItemRepository,
             decisionRepository, riskRepository, documentRepository,
             documentChunkRepository, meetingRepository, knowledgeChunkRepository,
-            ChunkStrategy.DEFAULT_ZH, clock);
+            ChunkStrategy.DEFAULT_ZH, eventPublisher, clock);
     }
 
     public ChunkingApplicationService(
@@ -94,6 +97,7 @@ public class ChunkingApplicationService {
         MeetingRepository meetingRepository,
         KnowledgeChunkRepository knowledgeChunkRepository,
         ChunkStrategy strategy,
+        ApplicationEventPublisher eventPublisher,
         Clock clock
     ) {
         this.transcriptRepository = transcriptRepository;
@@ -106,6 +110,7 @@ public class ChunkingApplicationService {
         this.meetingRepository = meetingRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.strategy = strategy;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -205,11 +210,19 @@ public class ChunkingApplicationService {
 
         knowledgeChunkRepository.saveAll(built);
 
+        List<String> newChunkIds = built.stream().map(KnowledgeChunk::id).toList();
         log.info(
             "chunking rebuilt meeting={} stale={} new={} strategy={} transcriptV={} minutesV={}",
             meetingId, stale, built.size(), strategy.name(), transcriptVersion, minutesVersion
         );
-        return new ChunkingResult(stale, built.stream().map(KnowledgeChunk::id).toList());
+        publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
+            tenantId, meetingId, null, newChunkIds,
+            meeting.securityLevel(), strategy.name(),
+            transcriptVersion > 0 ? transcriptVersion : null,
+            minutesVersion > 0 ? minutesVersion : null,
+            null
+        ));
+        return new ChunkingResult(stale, newChunkIds);
     }
 
     @Transactional
@@ -248,11 +261,24 @@ public class ChunkingApplicationService {
 
         knowledgeChunkRepository.saveAll(built);
 
+        List<String> newChunkIds = built.stream().map(KnowledgeChunk::id).toList();
         log.info(
             "chunking rebuilt document={} stale={} new={} strategy={}",
             documentId, stale, built.size(), strategy.name()
         );
-        return new ChunkingResult(stale, built.stream().map(KnowledgeChunk::id).toList());
+        publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
+            tenantId, null, documentId, newChunkIds,
+            doc.securityLevel(), strategy.name(),
+            null, null, null
+        ));
+        return new ChunkingResult(stale, newChunkIds);
+    }
+
+    private void publishReindexEvent(KnowledgeChunkReindexRequestedEvent event) {
+        if (eventPublisher == null || !event.hasWork()) {
+            return;
+        }
+        eventPublisher.publishEvent(event);
     }
 
     private void chunkExtraction(
