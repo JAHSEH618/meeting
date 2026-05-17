@@ -14,7 +14,7 @@ Polyglot monorepo for a local meeting-intelligence system. Four cooperating work
 | `packages/meeting-contracts/` | OpenAPI + JSON Schema + enums/error-codes YAML | Cross-workspace contract single source of truth |
 | `infra/meeting-infra/` | Docker Compose, K8s, Terraform | Local + deployment definitions, observability dashboards |
 
-Each workspace has its own `SPEC.md` — read it before non-trivial work in that workspace. `docs/spec.md` is the executable phase-1 spec; `docs/app-api-contracts.md` covers cross-app API/MQ/callback contracts.
+Each workspace has its own `SPEC.md` — read it before non-trivial work in that workspace. `docs/spec.md` is the executable phase-1 spec; `docs/spec-fixes.md` and `docs/spec-clarifications.md` are errata that supersede `spec.md` on conflict. `docs/app-api-contracts.md` covers cross-app API/MQ/callback contracts; `docs/structure.md` is the detailed logical view.
 
 ## Commands
 
@@ -26,11 +26,23 @@ npm install                          # one-time
 npm run check                        # spectral lint + JSON Schema + enum consistency + fixtures (CI gate)
 npm run lint:openapi                 # spectral only
 npm run codegen                      # regen TS/Python/Java types — git diff must be clean afterwards
+npm run codegen:check-temp           # zero-side-effect drift check: generate to a temp dir and diff
 ```
 
-Individual codegen targets exist (`codegen:ts`, `codegen:py-callback`, `codegen:py-worker-internal`, `codegen:py-task-msg`, `codegen:java-public`, `codegen:java-worker-internal`, `codegen:java-export-job`).
+Individual codegen targets exist (`codegen:ts`, `codegen:py-callback`, `codegen:py-worker-internal`, `codegen:py-task-msg`, `codegen:java-public`, `codegen:java-worker-internal`, `codegen:java-export-job`). Java codegen requires JDK 17 (openapi-generator-cli respects `JAVA_HOME`).
 
 ### Java (`apps/meeting-api`)
+
+Six Maven modules — path shorthand throughout this file refers to these:
+
+| Module | Role |
+|---|---|
+| `meeting-api-start` | Spring Boot entry, config, health, component scan |
+| `meeting-api-adapter` | REST / SSE / internal-callback controllers, `export-queue` consumer — protocol translation only |
+| `meeting-api-app` | Use cases, transactions, tenant context, permission orchestration, outbox publish |
+| `meeting-api-domain` | Aggregates, events, ports — no Spring/JDBC/MQ dependencies |
+| `meeting-api-infrastructure` | Repositories, MQ publisher, KMS, TOS, LibreOffice, DashScope; owns Flyway migrations |
+| `meeting-api-client` | DTOs / Commands / Queries / Facades / enums / error codes shared via codegen |
 
 > **JDK 版本**：Maven Enforcer 要求 `[17,18)`。若本机默认 JDK 高于 17，请先显式设置 `JAVA_HOME`（例如 macOS：`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`）。
 
@@ -78,7 +90,19 @@ cp .env.example .env
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
-Brings up PostgreSQL+pgvector, RabbitMQ, MinIO (TOS replacement), Vault-dev (KMS replacement), and the Prometheus/Grafana/Loki observability stack.
+Brings up PostgreSQL+pgvector, RabbitMQ, MinIO (TOS replacement), and Vault-dev (KMS replacement). Add `--profile observability` to also start Prometheus + Grafana (Loki is TBD).
+
+### CI (`.github/workflows/ci.yml`)
+
+Five jobs run in parallel on every PR — all must pass:
+
+1. **contracts** — `npm run check` (Spectral lint + JSON Schema validation + enum / `pipelineSteps` consistency).
+2. **meeting-api** — `./mvnw verify -q` (unit + ArchUnit + Testcontainers IT).
+3. **ai-worker** — `uv run pyright ai_worker/` + `uv run pytest tests/ -x -q` + import smoke.
+4. **meeting-web** — `npx tsc --noEmit` + `npm test`.
+5. **ddl-check** — applies every `meeting-api-infrastructure/.../db/migration/V*.sql` to a fresh `pgvector/pgvector:pg15` with `psql -v ON_ERROR_STOP=1`.
+
+The `ddl-check` job is a **hidden gate**: a syntax error in a new Flyway migration fails CI even when no Java test touches the new table. Run `psql -v ON_ERROR_STOP=1 -f V…__*.sql` against a throwaway PG locally before pushing migrations.
 
 ## Architecture
 
@@ -142,6 +166,7 @@ These are not discoverable from a single file — keep them in mind:
 8. **RLS everywhere.** Every tenant-owned table has `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + USING/WITH CHECK policies. Every transaction sets `app.tenant_id` / `app.user_id` / `app.request_id` first; connections reset tenant context before returning to the pool; missing tenant context fails closed. Don't write business queries that bypass RLS.
 9. **Callback validation order (Java side)**: HMAC → timestamp skew → nonce dedup → `Idempotency-Key` body-hash check → attempt-no match → lease-owner match → tenant/task/meeting-or-document linkage by `taskType` → `expectedInputVersion`. Late callbacks from old attempts/leases must not overwrite newer attempt results.
 10. **Lease lifecycle.** Worker sets `leaseOwner` + `leaseExpiresAt`, heartbeats every 15–30s, lease TTL 120s. Expired → `ORPHANED` → re-enqueue. User cancel goes through `CANCEL_PENDING` before `CANCELLED`.
+11. **Callback transaction propagation.** The outermost callback transaction is `REQUIRES_NEW`, so a protocol-level exception in an outer filter/interceptor cannot roll back an already-confirmed idempotent response. Long external calls — DashScope, LibreOffice headless, file uploads, ai-worker rerank — must **not** be wrapped in a DB transaction; open short transactions before and after the call instead. Exception → errorCode → HTTP mapping is centralized in `ControllerAdvice` (table in `meeting-api/SPEC.md` §7); controllers throw domain exceptions, they don't build response envelopes.
 
 ### Contracts as single source of truth
 
@@ -163,6 +188,24 @@ All HTTP responses use a unified envelope: `{success, data, error: {code, messag
 - **New worker step**: register in `apps/ai-worker/ai_worker/application/workflows/registry.py` (or equivalent), update `pipelineSteps` enum, ensure ai-worker fail-fast covers the new value.
 - **New Flyway migration**: `apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V{yyyyMMddHHmm}__desc.sql`. Don't modify `docs/ddls/`.
 
+### Stack defaults per workspace
+
+Chosen for phase 1 — don't substitute without updating the workspace `SPEC.md` and parent POM/pyproject/package.json:
+
+- **`meeting-api`**: Spring Boot 3.3 · MyBatis-Plus 3.5 + native SQL (no JPA — RLS, `FOR UPDATE SKIP LOCKED`, pgvector queries are explicit SQL) · Flyway 10 · Jackson 2.17 · Logback + Logstash JSON encoder (MDC: `traceId`/`requestId`/`tenantId`/`userId`) · Micrometer + Prometheus · JUnit 5 + Mockito + ArchUnit + Testcontainers + WireMock.
+- **`ai-worker`**: FastAPI + Uvicorn (no gunicorn) · **Dramatiq 1.17** WorkerRuntime over RabbitMQ (no Celery / Temporal) · **Prefect 3** WorkflowEngine · LangGraph for agents · `torch` 2.5+ · `pyannote.audio` 3.3+ · `3D-Speaker` · `structlog` + `prometheus-client` · pytest / pytest-asyncio / respx / pytest-benchmark.
+- **`meeting-web`**: React 18.3 (no React 19 features) · Vite 5 · TS strict · **TanStack Query** for server state · **Zustand** for cross-page UI state (no Redux) · `react-hook-form` + `zod` (zod schema names align with OpenAPI request schemas) · Vitest + React Testing Library + MSW + Playwright. Access token is **memory-only** (no localStorage / sessionStorage); refresh token is HttpOnly cookie + `X-CSRF-Token`. Transcript lists must virtualize; first-screen JS gzip budget `< 200KB`.
+
+### Cross-workspace MVP slicing
+
+Each workspace `SPEC.md` declares the same incremental ladder. Don't park new work outside the current rung — it makes the boundary tests meaningless:
+
+- **MVP-0** (done): auth + meetings + processing tasks + SSE/polling + worker fake pipeline + callback idempotency.
+- **MVP-1** (largely done): audio multipart upload + transcript + minutes/items + STALE cascade + speaker enrollment/confirmation + documents (partial).
+- **MVP-2** (in progress): RAG (chunk strategy, pgvector + permission recheck, rerank, citation, coverage) → exports (async, version-bound, short-link revoke) → compliance (legal hold, deletion jobs, deletion certificates, break-glass) → observability/security/perf hardening + Playwright E2E + Dockerfiles + K8s overlays.
+
+`todo.md` is the live progress ledger — check it before starting work in any phase to avoid duplicating completed items.
+
 ### Generated directories (don't edit by hand)
 
 - `apps/meeting-web/src/shared/api/types.gen.ts`
@@ -170,3 +213,4 @@ All HTTP responses use a unified envelope: `{success, data, error: {code, messag
 - `apps/meeting-api/meeting-api-client/generated/`
 
 CI verifies `git diff` is clean after `npm run codegen` — regenerate locally before committing schema changes.
+
