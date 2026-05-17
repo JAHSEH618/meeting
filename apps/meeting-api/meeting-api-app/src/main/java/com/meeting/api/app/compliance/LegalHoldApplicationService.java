@@ -8,10 +8,14 @@ import com.meeting.api.client.compliance.CreateLegalHoldCommand;
 import com.meeting.api.client.compliance.LegalHoldDTO;
 import com.meeting.api.client.compliance.LegalHoldFacade;
 import com.meeting.api.client.enums.LegalHoldStatus;
+import com.meeting.api.client.enums.AuditAction;
+import com.meeting.api.domain.audit.AuditEventLogger;
+import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
 import com.meeting.api.domain.compliance.LegalHold;
 import com.meeting.api.domain.compliance.LegalHoldRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -33,22 +37,26 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
 
     private final TenantScopedTransaction tenantTx;
     private final LegalHoldRepository repo;
+    private final AuditEventLogger auditLogger;
     private final Clock clock;
 
     public LegalHoldApplicationService(
         TenantScopedTransaction tenantTx,
-        LegalHoldRepository repo
+        LegalHoldRepository repo,
+        AuditEventLogger auditLogger
     ) {
-        this(tenantTx, repo, Clock.systemUTC());
+        this(tenantTx, repo, auditLogger, Clock.systemUTC());
     }
 
     public LegalHoldApplicationService(
         TenantScopedTransaction tenantTx,
         LegalHoldRepository repo,
+        AuditEventLogger auditLogger,
         Clock clock
     ) {
         this.tenantTx = tenantTx;
         this.repo = repo;
+        this.auditLogger = auditLogger;
         this.clock = clock;
     }
 
@@ -68,6 +76,19 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
                 .createdAt(now)
                 .build();
             repo.save(hold);
+            auditLogger.log(AuditEntry.success(
+                cmd.tenantId(),
+                cmd.requestedBy(),
+                AuditAction.LEGAL_HOLD_PLACE,
+                "LEGAL_HOLD",
+                holdId,
+                Map.of(
+                    "scopeType", cmd.scopeType().name(),
+                    "scopeId", cmd.scopeId(),
+                    "reason", cmd.reason()
+                ),
+                cmd.traceId()
+            ));
             log.info(
                 "legal_hold_placed tenant={} hold={} scope={}:{} by={}",
                 cmd.tenantId(), holdId, cmd.scopeType(), cmd.scopeId(), cmd.requestedBy()
@@ -110,6 +131,19 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
             OffsetDateTime now = OffsetDateTime.now(clock);
             hold.release(releasedBy, releaseReason, now);
             repo.update(hold);
+            auditLogger.log(AuditEntry.success(
+                tenantId,
+                releasedBy,
+                AuditAction.LEGAL_HOLD_RELEASE,
+                "LEGAL_HOLD",
+                legalHoldId,
+                Map.of(
+                    "scopeType", hold.scopeType().name(),
+                    "scopeId", hold.scopeId(),
+                    "releaseReason", releaseReason
+                ),
+                null
+            ));
             log.info(
                 "legal_hold_released tenant={} hold={} scope={}:{} by={} reason={}",
                 tenantId, legalHoldId, hold.scopeType(), hold.scopeId(),

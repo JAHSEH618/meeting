@@ -9,10 +9,13 @@ import com.meeting.api.client.compliance.CreateLegalHoldCommand;
 import com.meeting.api.client.compliance.LegalHoldDTO;
 import com.meeting.api.client.enums.LegalHoldScopeType;
 import com.meeting.api.client.enums.LegalHoldStatus;
+import com.meeting.api.domain.audit.AuditEventLogger;
+import com.meeting.api.client.enums.AuditAction;
 import com.meeting.api.domain.compliance.LegalHold;
 import com.meeting.api.domain.compliance.LegalHoldRepository;
 import java.time.Clock;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +32,17 @@ class LegalHoldApplicationServiceTest {
         java.time.OffsetDateTime.parse("2026-05-18T03:00:00Z");
 
     private InMemoryLegalHoldRepository repo;
+    private RecordingAuditLogger audit;
     private LegalHoldApplicationService service;
 
     @BeforeEach
     void setUp() {
         repo = new InMemoryLegalHoldRepository();
+        audit = new RecordingAuditLogger();
         service = new LegalHoldApplicationService(
             TenantScopedTransaction.immediate(),
             repo,
+            audit,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -113,6 +119,41 @@ class LegalHoldApplicationServiceTest {
         }
         PageResult<LegalHoldDTO> page = service.list("tenant_01", null, 10);
         assertThat(page.items()).hasSize(3);
+    }
+
+    @Test
+    void createWritesAuditEvent() {
+        service.create(new CreateLegalHoldCommand(
+            "tenant_01", LegalHoldScopeType.MEETING, "mtg_01",
+            "regulator inquiry", "user_compliance", null,
+            "req_01", "trace_01"
+        ));
+        assertThat(audit.entries).hasSize(1);
+        AuditEventLogger.AuditEntry e = audit.entries.get(0);
+        assertThat(e.action()).isEqualTo(AuditAction.LEGAL_HOLD_PLACE);
+        assertThat(e.resourceType()).isEqualTo("LEGAL_HOLD");
+        assertThat(e.actorUserId()).isEqualTo("user_compliance");
+    }
+
+    @Test
+    void releaseWritesAuditEvent() {
+        LegalHoldDTO created = service.create(new CreateLegalHoldCommand(
+            "tenant_01", LegalHoldScopeType.MEETING, "mtg_01",
+            "x", "user_compliance", null, "req_01", "trace_01"
+        ));
+        audit.entries.clear();
+
+        service.release("tenant_01", created.legalHoldId(), "user_admin", "case closed");
+
+        assertThat(audit.entries).hasSize(1);
+        AuditEventLogger.AuditEntry e = audit.entries.get(0);
+        assertThat(e.action()).isEqualTo(AuditAction.LEGAL_HOLD_RELEASE);
+        assertThat(e.actorUserId()).isEqualTo("user_admin");
+    }
+
+    private static class RecordingAuditLogger implements AuditEventLogger {
+        final List<AuditEntry> entries = new ArrayList<>();
+        @Override public void log(AuditEntry entry) { entries.add(entry); }
     }
 
     /** Hand-rolled in-memory repository to keep tests free of Spring + JDBC. */
