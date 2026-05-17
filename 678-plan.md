@@ -628,25 +628,25 @@
 
 文件：`meeting-api-domain/.../domain/compliance/LegalHold.java`
 
-- [ ] **7.2.1.a** 字段：`id, tenantId, scopeType, scopeId, reason, requestedBy, approvedBy, status, createdAt, releasedAt, releasedBy, releaseReason`
-- [ ] **7.2.1.b** 状态机：`ACTIVE → RELEASED`（不可重新激活），方法 `release(userId, reason, at)`
-- [ ] **7.2.1.c** `LegalHoldRepository`：`save / findById / findActive(tenantId, scopeType, scopeId) / listByTenant(pageable)`
+- [x] **7.2.1.a** 字段：`id, tenantId, scopeType, scopeId, reason, requestedBy, approvedBy, status, createdAt, releasedAt, releasedBy, releaseReason`
+- [x] **7.2.1.b** 状态机：`ACTIVE → RELEASED`（不可重新激活），方法 `release(userId, reason, at)`
+- [x] **7.2.1.c** `LegalHoldRepository`：`save / findById / findActive(tenantId, scopeType, scopeId) / listByTenant(pageable)`
 
 #### 7.2.2 LegalHoldCheckPort（其他域调用的查询端口）
 
 文件：`meeting-api-domain/.../domain/compliance/LegalHoldCheckPort.java`
 
-- [ ] **7.2.2.a** 单方法接口：`boolean isProtected(String tenantId, String scopeType, String scopeId);`
-- [ ] **7.2.2.b** 实现 `JdbcLegalHoldCheckPort` 用单条 SQL：`SELECT 1 FROM legal_holds WHERE tenant_id=? AND scope_type=? AND scope_id=? AND status='ACTIVE' LIMIT 1`，**带 1s 短缓存**（Caffeine，避免热路径打数据库）
-- [ ] **7.2.2.c** 缓存失效：`Place` / `Release` 应用服务在事务提交后 evict 对应 key
+- [x] **7.2.2.a** 单方法接口：`boolean isProtected(String tenantId, String scopeType, String scopeId);`
+- [x] **7.2.2.b** 实现 `JdbcLegalHoldCheckPort` 用单条 SQL：`SELECT 1 FROM legal_holds WHERE tenant_id=? AND scope_type=? AND scope_id=? AND status='ACTIVE' LIMIT 1`，**带 1s 短缓存**（Caffeine，避免热路径打数据库） _(注：暂未加缓存，Phase 8 再做)_
+- [ ] **7.2.2.c** 缓存失效：`Place` / `Release` 应用服务在事务提交后 evict 对应 key _(留给 Phase 8)_
 
 #### 7.2.3 ApplicationService
 
 文件：`meeting-api-app/.../app/compliance/LegalHoldApplicationService.java`
 
-- [ ] **7.2.3.a** 实现 5 个方法（`create / get / list / release / delete`）；`delete` 是 release 的别名（OpenAPI DELETE = release）
-- [ ] **7.2.3.b** create 时 audit log + outbox `LegalHoldPlacedEvent`
-- [ ] **7.2.3.c** release 时 audit log + outbox `LegalHoldReleasedEvent` + 清缓存
+- [x] **7.2.3.a** 实现 5 个方法（`create / get / list / release / delete`）；`delete` 是 release 的别名（OpenAPI DELETE = release）
+- [ ] **7.2.3.b** create 时 audit log + outbox `LegalHoldPlacedEvent` _(audit logger 留给 Phase 7.5；event 暂未做)_
+- [ ] **7.2.3.c** release 时 audit log + outbox `LegalHoldReleasedEvent` + 清缓存 _(同上)_
 
 #### 7.2.4 跨域注入：调用方加 legal hold check
 
@@ -659,8 +659,8 @@
 
 #### 7.2.5 Controller + 测试
 
-- [ ] **7.2.5.a** `LegalHoldController` 5 个路由（OpenAPI 已定义路径）
-- [ ] **7.2.5.b** Testcontainers IT：place → 试删除 meeting 返回 423 → release → 删除成功 200
+- [x] **7.2.5.a** `LegalHoldController` 5 个路由（OpenAPI 已定义路径）
+- [ ] **7.2.5.b** Testcontainers IT：place → 试删除 meeting 返回 423 → release → 删除成功 200 _(Meeting delete 端点尚未实现，IT 留给后续)_
 - [ ] **7.2.5.c** ArchUnit：`compliance` 包不依赖 `meeting` / `document` / `speaker` 的 `ApplicationService`（避免循环依赖）；反向依赖只能通过 `LegalHoldCheckPort` 单向
 
 ### 7.3 Deletion Job（2 PR · ~1.5 周）`[依赖 7.2]`
