@@ -1,0 +1,33 @@
+{
+  "description": "POST /meetings/{meetingId}/exports 422: transcript was edited after the snapshot was taken (EXPORT_CONTENT_STALE)",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/{meetingId}/exports",
+  "status": 422,
+  "headers": {
+    "X-Request-Id": "req_export_stale_422_01",
+    "X-Trace-Id": "trace_export_stale_422_01",
+    "Idempotency-Key": "idem_export_stale_422_01"
+  },
+  "request": {
+    "format": "PDF",
+    "expectedTranscriptVersion": 2,
+    "expectedMinutesVersion": 1
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "EXPORT_CONTENT_STALE",
+      "message": "导出依赖的内容已变更，请先重新生成纪要后重试",
+      "retryable": false,
+      "details": {
+        "meetingId": "mtg_fixture_01",
+        "expectedTranscriptVersion": 2,
+        "currentTranscriptVersion": 3
+      }
+    },
+    "requestId": "req_export_stale_422_01",
+    "traceId": "trace_export_stale_422_01"
+  }
+}

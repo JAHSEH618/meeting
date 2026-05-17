@@ -1491,22 +1491,48 @@ export interface components {
             includeMinutes: boolean;
             /** @default true */
             includeItems: boolean;
+            /** @default true */
+            includeSpeakers: boolean;
+            /** @description Optional watermark to embed in the rendered file footer. */
+            watermarkText?: string | null;
         };
         ExportJobResponse: {
             success: boolean;
             data: {
                 exportId: string;
                 meetingId: string;
-                status: string;
+                /** @enum {string} */
+                status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REVOKED";
                 /** @enum {string} */
                 format: "MARKDOWN" | "DOCX" | "PDF";
+                /**
+                 * @default FULL
+                 * @enum {string|null}
+                 */
+                dataBoundaryMode: "FULL" | "REDACTED" | null;
+                inputTranscriptVersion?: number | null;
+                inputMinutesVersion?: number | null;
+                snapshotManifestId?: string | null;
+                watermarkText?: string | null;
                 downloadUrl?: string | null;
                 /** Format: date-time */
                 downloadUrlExpiresAt?: string | null;
                 sha256?: string | null;
+                /** Format: int64 */
+                fileSizeBytes?: number | null;
                 revoked?: boolean;
+                /**
+                 * @description True when the meeting's current transcriptVersion / minutesVersion has moved past the snapshot's version. UI surfaces a warning.
+                 * @default false
+                 */
+                stale: boolean;
+                errorCode?: string | null;
                 /** Format: date-time */
                 expiresAt?: string;
+                /** Format: date-time */
+                createdAt: string | null;
+                /** Format: date-time */
+                finishedAt?: string | null;
             };
             error: components["schemas"]["ErrorInfo"] | null;
             requestId: string;
@@ -3039,6 +3065,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             422: components["responses"]["Unprocessable"];
+            423: components["responses"]["Locked"];
         };
     };
     getExport: {

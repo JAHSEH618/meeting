@@ -1,0 +1,19 @@
+{
+  "description": "POST /exports/{exportId}/revoke-link 200 success: download link revoked",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/exports/{exportId}/revoke-link",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_export_revoke_01",
+    "X-Trace-Id": "trace_export_revoke_01",
+    "Idempotency-Key": "idem_export_revoke_01"
+  },
+  "response": {
+    "success": true,
+    "data": null,
+    "error": null,
+    "requestId": "req_export_revoke_01",
+    "traceId": "trace_export_revoke_01"
+  }
+}

@@ -43,7 +43,7 @@
 
 文件：`packages/meeting-contracts/schemas/common/enums.yaml`
 
-- [ ] **6.1.1.a** 追加：
+- [x] **6.1.1.a** 追加：
   ```yaml
   exportStatus:
     - QUEUED          # 已创建，等待 consumer 拉取
@@ -61,13 +61,13 @@
     - MEETING         # 单会议导出
     - AUDIT           # Phase 7 审计导出（预留）
   ```
-- [ ] **6.1.1.b** 在 `scripts/check-consistency.sh` 的 enum 一致性检查中加入新枚举的 Java/TS/Python 三端校验（自动通过 codegen 完成）。
+- [x] **6.1.1.b** 在 `scripts/check-consistency.sh` 的 enum 一致性检查中加入新枚举的 Java/TS/Python 三端校验（自动通过 codegen 完成）。
 
 #### 6.1.2 public-api.yaml schema 补齐
 
 文件：`packages/meeting-contracts/openapi/public-api.yaml`
 
-- [ ] **6.1.2.a** 新增 components.schemas：
+- [x] **6.1.2.a** 新增 components.schemas：
   ```yaml
   CreateExportRequest:
     type: object
@@ -108,7 +108,7 @@
 
 文件：`packages/meeting-contracts/schemas/common/error-codes.yaml`
 
-- [ ] **6.1.3.a** 新增 3 条：
+- [x] **6.1.3.a** 新增 3 条：
   ```yaml
   - code: EXPORT_CONTENT_STALE
     httpStatus: 422
@@ -140,16 +140,16 @@
 
 文件位置：`packages/meeting-contracts/fixtures/`
 
-- [ ] **6.1.4.a** `valid/public-api-create-export-pdf-200.json`
-- [ ] **6.1.4.b** `valid/public-api-get-export-stale-200.json`（status=SUCCEEDED, stale=true）
-- [ ] **6.1.4.c** `valid/public-api-revoke-export-link-200.json`
-- [ ] **6.1.4.d** `invalid/public-api-create-export-stale-422.json`（error.code=EXPORT_CONTENT_STALE）
-- [ ] **6.1.4.e** `invalid/public-api-create-export-legal-hold-423.json`（error.code=LEGAL_HOLD_BLOCKED，依赖 7.1.3）
+- [x] **6.1.4.a** `valid/public-api-create-export-pdf-200.json`
+- [x] **6.1.4.b** `valid/public-api-get-export-stale-200.json`（status=SUCCEEDED, stale=true）
+- [x] **6.1.4.c** `valid/public-api-revoke-export-link-200.json`
+- [x] **6.1.4.d** `invalid/public-api-create-export-stale-422.json`（error.code=EXPORT_CONTENT_STALE）
+- [x] **6.1.4.e** `invalid/public-api-create-export-legal-hold-423.json`（error.code=LEGAL_HOLD_BLOCKED，依赖 7.1.3）
 
 #### 6.1.5 Codegen 与验收
 
-- [ ] **6.1.5.a** `npm run check` 通过（Spectral + JSON Schema + enum 一致性 + fixtures）
-- [ ] **6.1.5.b** `npm run codegen` 提交 TS / Python / Java codegen 产物，CI `git diff` 干净
+- [x] **6.1.5.a** `npm run check` 通过（Spectral + JSON Schema + enum 一致性 + fixtures）
+- [x] **6.1.5.b** `npm run codegen` 提交 TS / Python / Java codegen 产物，CI `git diff` 干净
 - [ ] **6.1.5.c** `meeting-api-client` 手写 enum `ExportStatus.java`、`ExportDataBoundaryMode.java`、`ExportType.java` 加上，并由新增的 `EnumConsistencyTest` 校验值集与 enums.yaml 一致
 
 ### 6.2 Domain 层（1 PR · ~2 天）`[BLOCKS 6.3]`

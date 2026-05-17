@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, RootModel, confloat, conint, constr
+from pydantic import BaseModel, Field, confloat, conint, constr
 
 
 class SourceType(Enum):
@@ -23,8 +23,8 @@ class RerankCandidate(BaseModel):
     sourceType: SourceType
     text: constr(min_length=1)
     rrfScore: confloat(ge=0.0)
-    sourceVersion: conint(ge=1) | None = None
-    citationHint: dict[str, Any] | None = None
+    sourceVersion: Optional[conint(ge=1)] = None
+    citationHint: Optional[Dict[str, Any]] = None
 
 
 class RerankResultItem(BaseModel):
@@ -50,19 +50,19 @@ class ModelInfo(BaseModel):
     status: ModelStatus
     device: str = Field(..., description='"cpu" | "cuda" | "mps" | "fake".')
     useFake: bool
-    checksum: str | None = Field(
+    checksum: Optional[str] = Field(
         None,
         description='SHA256 of the weight file when loaded from a local path; null in fake mode.',
     )
-    modelsDir: str | None = Field(
+    modelsDir: Optional[str] = Field(
         None,
         description='Local snapshot directory used in real mode; null when falling back to HF Hub.',
     )
-    lastError: str | None = None
+    lastError: Optional[str] = None
 
 
 class ListModelsResponse(BaseModel):
-    models: list[ModelInfo]
+    models: List[ModelInfo]
 
 
 class WarmupResponse(BaseModel):
@@ -70,16 +70,16 @@ class WarmupResponse(BaseModel):
         ...,
         description='True when at least one runtime transitioned NOT_LOADED → LOADING.',
     )
-    models: list[ModelInfo]
+    models: List[ModelInfo]
 
 
-class Text(RootModel[constr(min_length=1)]):
-    root: constr(min_length=1)
+class Text(BaseModel):
+    __root__: constr(min_length=1)
 
 
 class EmbedRequest(BaseModel):
     tenantId: str
-    texts: list[Text] = Field(..., max_length=64, min_length=1)
+    texts: List[Text] = Field(..., max_items=64, min_items=1)
     modelVersion: str = Field(
         ...,
         description="Caller-advertised model version; the response echoes the runtime's actual version.",
@@ -91,14 +91,14 @@ class EmbedResponse(BaseModel):
     dimension: conint(ge=1) = Field(
         ..., description='Length of each vector (bge-m3 → 1024).'
     )
-    vectors: list[list[float]]
+    vectors: List[List[float]]
 
 
 class ErrorInfo(BaseModel):
     code: str
     message: str
     retryable: bool
-    details: dict[str, Any] | None = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class RerankRequest(BaseModel):
@@ -106,17 +106,19 @@ class RerankRequest(BaseModel):
     query: constr(min_length=1)
     topN: conint(ge=1, le=20)
     modelVersion: str
-    candidates: list[RerankCandidate] = Field(..., max_length=50, min_length=1)
+    candidates: List[RerankCandidate] = Field(..., max_items=50, min_items=1)
 
 
 class RerankResponse(BaseModel):
     modelVersion: str
-    items: list[RerankResultItem]
+    items: List[RerankResultItem]
 
 
 class ApiResponse(BaseModel):
     success: bool
-    data: RerankResponse | ListModelsResponse | WarmupResponse | EmbedResponse | None
-    error: ErrorInfo | None
+    data: Optional[
+        Union[RerankResponse, ListModelsResponse, WarmupResponse, EmbedResponse]
+    ]
+    error: Optional[ErrorInfo]
     requestId: str
     traceId: str

@@ -62,10 +62,70 @@ public class ExportJobResponseData {
   @javax.annotation.Nonnull
   private String meetingId;
 
+  /**
+   * Gets or Sets status
+   */
+  @JsonAdapter(StatusEnum.Adapter.class)
+  public enum StatusEnum {
+    QUEUED("QUEUED"),
+    
+    RUNNING("RUNNING"),
+    
+    SUCCEEDED("SUCCEEDED"),
+    
+    FAILED("FAILED"),
+    
+    CANCELLED("CANCELLED"),
+    
+    REVOKED("REVOKED");
+
+    private String value;
+
+    StatusEnum(String value) {
+      this.value = value;
+    }
+
+    public String getValue() {
+      return value;
+    }
+
+    @Override
+    public String toString() {
+      return String.valueOf(value);
+    }
+
+    public static StatusEnum fromValue(String value) {
+      for (StatusEnum b : StatusEnum.values()) {
+        if (b.value.equals(value)) {
+          return b;
+        }
+      }
+      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    }
+
+    public static class Adapter extends TypeAdapter<StatusEnum> {
+      @Override
+      public void write(final JsonWriter jsonWriter, final StatusEnum enumeration) throws IOException {
+        jsonWriter.value(enumeration.getValue());
+      }
+
+      @Override
+      public StatusEnum read(final JsonReader jsonReader) throws IOException {
+        String value =  jsonReader.nextString();
+        return StatusEnum.fromValue(value);
+      }
+    }
+
+    public static void validateJsonElement(JsonElement jsonElement) throws IOException {
+      String value = jsonElement.getAsString();
+      StatusEnum.fromValue(value);
+    }
+  }
+
   public static final String SERIALIZED_NAME_STATUS = "status";
   @SerializedName(SERIALIZED_NAME_STATUS)
   @javax.annotation.Nonnull
-  private String status;
+  private StatusEnum status;
 
   /**
    * Gets or Sets format
@@ -126,6 +186,83 @@ public class ExportJobResponseData {
   @javax.annotation.Nonnull
   private FormatEnum format;
 
+  /**
+   * Gets or Sets dataBoundaryMode
+   */
+  @JsonAdapter(DataBoundaryModeEnum.Adapter.class)
+  public enum DataBoundaryModeEnum {
+    FULL("FULL"),
+    
+    REDACTED("REDACTED");
+
+    private String value;
+
+    DataBoundaryModeEnum(String value) {
+      this.value = value;
+    }
+
+    public String getValue() {
+      return value;
+    }
+
+    @Override
+    public String toString() {
+      return String.valueOf(value);
+    }
+
+    public static DataBoundaryModeEnum fromValue(String value) {
+      for (DataBoundaryModeEnum b : DataBoundaryModeEnum.values()) {
+        if (b.value.equals(value)) {
+          return b;
+        }
+      }
+      return null;
+    }
+
+    public static class Adapter extends TypeAdapter<DataBoundaryModeEnum> {
+      @Override
+      public void write(final JsonWriter jsonWriter, final DataBoundaryModeEnum enumeration) throws IOException {
+        jsonWriter.value(enumeration.getValue());
+      }
+
+      @Override
+      public DataBoundaryModeEnum read(final JsonReader jsonReader) throws IOException {
+        String value =  jsonReader.nextString();
+        return DataBoundaryModeEnum.fromValue(value);
+      }
+    }
+
+    public static void validateJsonElement(JsonElement jsonElement) throws IOException {
+      String value = jsonElement.getAsString();
+      DataBoundaryModeEnum.fromValue(value);
+    }
+  }
+
+  public static final String SERIALIZED_NAME_DATA_BOUNDARY_MODE = "dataBoundaryMode";
+  @SerializedName(SERIALIZED_NAME_DATA_BOUNDARY_MODE)
+  @javax.annotation.Nullable
+  private DataBoundaryModeEnum dataBoundaryMode = DataBoundaryModeEnum.FULL;
+
+  public static final String SERIALIZED_NAME_INPUT_TRANSCRIPT_VERSION = "inputTranscriptVersion";
+  @SerializedName(SERIALIZED_NAME_INPUT_TRANSCRIPT_VERSION)
+  @javax.annotation.Nullable
+  private Integer inputTranscriptVersion;
+
+  public static final String SERIALIZED_NAME_INPUT_MINUTES_VERSION = "inputMinutesVersion";
+  @SerializedName(SERIALIZED_NAME_INPUT_MINUTES_VERSION)
+  @javax.annotation.Nullable
+  private Integer inputMinutesVersion;
+
+  public static final String SERIALIZED_NAME_SNAPSHOT_MANIFEST_ID = "snapshotManifestId";
+  @SerializedName(SERIALIZED_NAME_SNAPSHOT_MANIFEST_ID)
+  @javax.annotation.Nullable
+  private String snapshotManifestId;
+
+  public static final String SERIALIZED_NAME_WATERMARK_TEXT = "watermarkText";
+  @SerializedName(SERIALIZED_NAME_WATERMARK_TEXT)
+  @javax.annotation.Nullable
+  private String watermarkText;
+
   public static final String SERIALIZED_NAME_DOWNLOAD_URL = "downloadUrl";
   @SerializedName(SERIALIZED_NAME_DOWNLOAD_URL)
   @javax.annotation.Nullable
@@ -141,15 +278,40 @@ public class ExportJobResponseData {
   @javax.annotation.Nullable
   private String sha256;
 
+  public static final String SERIALIZED_NAME_FILE_SIZE_BYTES = "fileSizeBytes";
+  @SerializedName(SERIALIZED_NAME_FILE_SIZE_BYTES)
+  @javax.annotation.Nullable
+  private Long fileSizeBytes;
+
   public static final String SERIALIZED_NAME_REVOKED = "revoked";
   @SerializedName(SERIALIZED_NAME_REVOKED)
   @javax.annotation.Nullable
   private Boolean revoked;
 
+  public static final String SERIALIZED_NAME_STALE = "stale";
+  @SerializedName(SERIALIZED_NAME_STALE)
+  @javax.annotation.Nullable
+  private Boolean stale = false;
+
+  public static final String SERIALIZED_NAME_ERROR_CODE = "errorCode";
+  @SerializedName(SERIALIZED_NAME_ERROR_CODE)
+  @javax.annotation.Nullable
+  private String errorCode;
+
   public static final String SERIALIZED_NAME_EXPIRES_AT = "expiresAt";
   @SerializedName(SERIALIZED_NAME_EXPIRES_AT)
   @javax.annotation.Nullable
   private OffsetDateTime expiresAt;
+
+  public static final String SERIALIZED_NAME_CREATED_AT = "createdAt";
+  @SerializedName(SERIALIZED_NAME_CREATED_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime createdAt;
+
+  public static final String SERIALIZED_NAME_FINISHED_AT = "finishedAt";
+  @SerializedName(SERIALIZED_NAME_FINISHED_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime finishedAt;
 
   public ExportJobResponseData() {
   }
@@ -192,7 +354,7 @@ public class ExportJobResponseData {
   }
 
 
-  public ExportJobResponseData status(@javax.annotation.Nonnull String status) {
+  public ExportJobResponseData status(@javax.annotation.Nonnull StatusEnum status) {
     this.status = status;
     return this;
   }
@@ -202,11 +364,11 @@ public class ExportJobResponseData {
    * @return status
    */
   @javax.annotation.Nonnull
-  public String getStatus() {
+  public StatusEnum getStatus() {
     return status;
   }
 
-  public void setStatus(@javax.annotation.Nonnull String status) {
+  public void setStatus(@javax.annotation.Nonnull StatusEnum status) {
     this.status = status;
   }
 
@@ -227,6 +389,103 @@ public class ExportJobResponseData {
 
   public void setFormat(@javax.annotation.Nonnull FormatEnum format) {
     this.format = format;
+  }
+
+
+  public ExportJobResponseData dataBoundaryMode(@javax.annotation.Nullable DataBoundaryModeEnum dataBoundaryMode) {
+    this.dataBoundaryMode = dataBoundaryMode;
+    return this;
+  }
+
+  /**
+   * Get dataBoundaryMode
+   * @return dataBoundaryMode
+   */
+  @javax.annotation.Nullable
+  public DataBoundaryModeEnum getDataBoundaryMode() {
+    return dataBoundaryMode;
+  }
+
+  public void setDataBoundaryMode(@javax.annotation.Nullable DataBoundaryModeEnum dataBoundaryMode) {
+    this.dataBoundaryMode = dataBoundaryMode;
+  }
+
+
+  public ExportJobResponseData inputTranscriptVersion(@javax.annotation.Nullable Integer inputTranscriptVersion) {
+    this.inputTranscriptVersion = inputTranscriptVersion;
+    return this;
+  }
+
+  /**
+   * Get inputTranscriptVersion
+   * minimum: 0
+   * @return inputTranscriptVersion
+   */
+  @javax.annotation.Nullable
+  public Integer getInputTranscriptVersion() {
+    return inputTranscriptVersion;
+  }
+
+  public void setInputTranscriptVersion(@javax.annotation.Nullable Integer inputTranscriptVersion) {
+    this.inputTranscriptVersion = inputTranscriptVersion;
+  }
+
+
+  public ExportJobResponseData inputMinutesVersion(@javax.annotation.Nullable Integer inputMinutesVersion) {
+    this.inputMinutesVersion = inputMinutesVersion;
+    return this;
+  }
+
+  /**
+   * Get inputMinutesVersion
+   * minimum: 0
+   * @return inputMinutesVersion
+   */
+  @javax.annotation.Nullable
+  public Integer getInputMinutesVersion() {
+    return inputMinutesVersion;
+  }
+
+  public void setInputMinutesVersion(@javax.annotation.Nullable Integer inputMinutesVersion) {
+    this.inputMinutesVersion = inputMinutesVersion;
+  }
+
+
+  public ExportJobResponseData snapshotManifestId(@javax.annotation.Nullable String snapshotManifestId) {
+    this.snapshotManifestId = snapshotManifestId;
+    return this;
+  }
+
+  /**
+   * Get snapshotManifestId
+   * @return snapshotManifestId
+   */
+  @javax.annotation.Nullable
+  public String getSnapshotManifestId() {
+    return snapshotManifestId;
+  }
+
+  public void setSnapshotManifestId(@javax.annotation.Nullable String snapshotManifestId) {
+    this.snapshotManifestId = snapshotManifestId;
+  }
+
+
+  public ExportJobResponseData watermarkText(@javax.annotation.Nullable String watermarkText) {
+    this.watermarkText = watermarkText;
+    return this;
+  }
+
+  /**
+   * Get watermarkText
+   * @return watermarkText
+   */
+  @javax.annotation.Nullable
+  public String getWatermarkText() {
+    return watermarkText;
+  }
+
+  public void setWatermarkText(@javax.annotation.Nullable String watermarkText) {
+    this.watermarkText = watermarkText;
   }
 
 
@@ -287,6 +546,26 @@ public class ExportJobResponseData {
   }
 
 
+  public ExportJobResponseData fileSizeBytes(@javax.annotation.Nullable Long fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
+    return this;
+  }
+
+  /**
+   * Get fileSizeBytes
+   * minimum: 0
+   * @return fileSizeBytes
+   */
+  @javax.annotation.Nullable
+  public Long getFileSizeBytes() {
+    return fileSizeBytes;
+  }
+
+  public void setFileSizeBytes(@javax.annotation.Nullable Long fileSizeBytes) {
+    this.fileSizeBytes = fileSizeBytes;
+  }
+
+
   public ExportJobResponseData revoked(@javax.annotation.Nullable Boolean revoked) {
     this.revoked = revoked;
     return this;
@@ -303,6 +582,44 @@ public class ExportJobResponseData {
 
   public void setRevoked(@javax.annotation.Nullable Boolean revoked) {
     this.revoked = revoked;
+  }
+
+
+  public ExportJobResponseData stale(@javax.annotation.Nullable Boolean stale) {
+    this.stale = stale;
+    return this;
+  }
+
+  /**
+   * True when the meeting&#39;s current transcriptVersion / minutesVersion has moved past the snapshot&#39;s version. UI surfaces a warning.
+   * @return stale
+   */
+  @javax.annotation.Nullable
+  public Boolean getStale() {
+    return stale;
+  }
+
+  public void setStale(@javax.annotation.Nullable Boolean stale) {
+    this.stale = stale;
+  }
+
+
+  public ExportJobResponseData errorCode(@javax.annotation.Nullable String errorCode) {
+    this.errorCode = errorCode;
+    return this;
+  }
+
+  /**
+   * Get errorCode
+   * @return errorCode
+   */
+  @javax.annotation.Nullable
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public void setErrorCode(@javax.annotation.Nullable String errorCode) {
+    this.errorCode = errorCode;
   }
 
 
@@ -325,6 +642,44 @@ public class ExportJobResponseData {
   }
 
 
+  public ExportJobResponseData createdAt(@javax.annotation.Nullable OffsetDateTime createdAt) {
+    this.createdAt = createdAt;
+    return this;
+  }
+
+  /**
+   * Get createdAt
+   * @return createdAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getCreatedAt() {
+    return createdAt;
+  }
+
+  public void setCreatedAt(@javax.annotation.Nullable OffsetDateTime createdAt) {
+    this.createdAt = createdAt;
+  }
+
+
+  public ExportJobResponseData finishedAt(@javax.annotation.Nullable OffsetDateTime finishedAt) {
+    this.finishedAt = finishedAt;
+    return this;
+  }
+
+  /**
+   * Get finishedAt
+   * @return finishedAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getFinishedAt() {
+    return finishedAt;
+  }
+
+  public void setFinishedAt(@javax.annotation.Nullable OffsetDateTime finishedAt) {
+    this.finishedAt = finishedAt;
+  }
+
+
 
   @Override
   public boolean equals(Object o) {
@@ -339,11 +694,21 @@ public class ExportJobResponseData {
         Objects.equals(this.meetingId, exportJobResponseData.meetingId) &&
         Objects.equals(this.status, exportJobResponseData.status) &&
         Objects.equals(this.format, exportJobResponseData.format) &&
+        Objects.equals(this.dataBoundaryMode, exportJobResponseData.dataBoundaryMode) &&
+        Objects.equals(this.inputTranscriptVersion, exportJobResponseData.inputTranscriptVersion) &&
+        Objects.equals(this.inputMinutesVersion, exportJobResponseData.inputMinutesVersion) &&
+        Objects.equals(this.snapshotManifestId, exportJobResponseData.snapshotManifestId) &&
+        Objects.equals(this.watermarkText, exportJobResponseData.watermarkText) &&
         Objects.equals(this.downloadUrl, exportJobResponseData.downloadUrl) &&
         Objects.equals(this.downloadUrlExpiresAt, exportJobResponseData.downloadUrlExpiresAt) &&
         Objects.equals(this.sha256, exportJobResponseData.sha256) &&
+        Objects.equals(this.fileSizeBytes, exportJobResponseData.fileSizeBytes) &&
         Objects.equals(this.revoked, exportJobResponseData.revoked) &&
-        Objects.equals(this.expiresAt, exportJobResponseData.expiresAt);
+        Objects.equals(this.stale, exportJobResponseData.stale) &&
+        Objects.equals(this.errorCode, exportJobResponseData.errorCode) &&
+        Objects.equals(this.expiresAt, exportJobResponseData.expiresAt) &&
+        Objects.equals(this.createdAt, exportJobResponseData.createdAt) &&
+        Objects.equals(this.finishedAt, exportJobResponseData.finishedAt);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -352,7 +717,7 @@ public class ExportJobResponseData {
 
   @Override
   public int hashCode() {
-    return Objects.hash(exportId, meetingId, status, format, downloadUrl, downloadUrlExpiresAt, sha256, revoked, expiresAt);
+    return Objects.hash(exportId, meetingId, status, format, dataBoundaryMode, inputTranscriptVersion, inputMinutesVersion, snapshotManifestId, watermarkText, downloadUrl, downloadUrlExpiresAt, sha256, fileSizeBytes, revoked, stale, errorCode, expiresAt, createdAt, finishedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -370,11 +735,21 @@ public class ExportJobResponseData {
     sb.append("    meetingId: ").append(toIndentedString(meetingId)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    format: ").append(toIndentedString(format)).append("\n");
+    sb.append("    dataBoundaryMode: ").append(toIndentedString(dataBoundaryMode)).append("\n");
+    sb.append("    inputTranscriptVersion: ").append(toIndentedString(inputTranscriptVersion)).append("\n");
+    sb.append("    inputMinutesVersion: ").append(toIndentedString(inputMinutesVersion)).append("\n");
+    sb.append("    snapshotManifestId: ").append(toIndentedString(snapshotManifestId)).append("\n");
+    sb.append("    watermarkText: ").append(toIndentedString(watermarkText)).append("\n");
     sb.append("    downloadUrl: ").append(toIndentedString(downloadUrl)).append("\n");
     sb.append("    downloadUrlExpiresAt: ").append(toIndentedString(downloadUrlExpiresAt)).append("\n");
     sb.append("    sha256: ").append(toIndentedString(sha256)).append("\n");
+    sb.append("    fileSizeBytes: ").append(toIndentedString(fileSizeBytes)).append("\n");
     sb.append("    revoked: ").append(toIndentedString(revoked)).append("\n");
+    sb.append("    stale: ").append(toIndentedString(stale)).append("\n");
+    sb.append("    errorCode: ").append(toIndentedString(errorCode)).append("\n");
     sb.append("    expiresAt: ").append(toIndentedString(expiresAt)).append("\n");
+    sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    finishedAt: ").append(toIndentedString(finishedAt)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -393,10 +768,10 @@ public class ExportJobResponseData {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("exportId", "meetingId", "status", "format", "downloadUrl", "downloadUrlExpiresAt", "sha256", "revoked", "expiresAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("exportId", "meetingId", "status", "format", "dataBoundaryMode", "inputTranscriptVersion", "inputMinutesVersion", "snapshotManifestId", "watermarkText", "downloadUrl", "downloadUrlExpiresAt", "sha256", "fileSizeBytes", "revoked", "stale", "errorCode", "expiresAt", "createdAt", "finishedAt"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("exportId", "meetingId", "status", "format"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("exportId", "meetingId", "status", "format", "createdAt"));
   }
 
   /**
@@ -436,16 +811,34 @@ public class ExportJobResponseData {
       if (!jsonObj.get("status").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `status` to be a primitive type in the JSON string but got `%s`", jsonObj.get("status").toString()));
       }
+      // validate the required field `status`
+      StatusEnum.validateJsonElement(jsonObj.get("status"));
       if (!jsonObj.get("format").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `format` to be a primitive type in the JSON string but got `%s`", jsonObj.get("format").toString()));
       }
       // validate the required field `format`
       FormatEnum.validateJsonElement(jsonObj.get("format"));
+      if ((jsonObj.get("dataBoundaryMode") != null && !jsonObj.get("dataBoundaryMode").isJsonNull()) && !jsonObj.get("dataBoundaryMode").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `dataBoundaryMode` to be a primitive type in the JSON string but got `%s`", jsonObj.get("dataBoundaryMode").toString()));
+      }
+      // validate the optional field `dataBoundaryMode`
+      if (jsonObj.get("dataBoundaryMode") != null && !jsonObj.get("dataBoundaryMode").isJsonNull()) {
+        DataBoundaryModeEnum.validateJsonElement(jsonObj.get("dataBoundaryMode"));
+      }
+      if ((jsonObj.get("snapshotManifestId") != null && !jsonObj.get("snapshotManifestId").isJsonNull()) && !jsonObj.get("snapshotManifestId").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `snapshotManifestId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("snapshotManifestId").toString()));
+      }
+      if ((jsonObj.get("watermarkText") != null && !jsonObj.get("watermarkText").isJsonNull()) && !jsonObj.get("watermarkText").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `watermarkText` to be a primitive type in the JSON string but got `%s`", jsonObj.get("watermarkText").toString()));
+      }
       if ((jsonObj.get("downloadUrl") != null && !jsonObj.get("downloadUrl").isJsonNull()) && !jsonObj.get("downloadUrl").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `downloadUrl` to be a primitive type in the JSON string but got `%s`", jsonObj.get("downloadUrl").toString()));
       }
       if ((jsonObj.get("sha256") != null && !jsonObj.get("sha256").isJsonNull()) && !jsonObj.get("sha256").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `sha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("sha256").toString()));
+      }
+      if ((jsonObj.get("errorCode") != null && !jsonObj.get("errorCode").isJsonNull()) && !jsonObj.get("errorCode").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `errorCode` to be a primitive type in the JSON string but got `%s`", jsonObj.get("errorCode").toString()));
       }
   }
 

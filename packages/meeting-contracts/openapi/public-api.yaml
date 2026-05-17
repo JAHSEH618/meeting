@@ -1218,6 +1218,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '423':
+          $ref: '#/components/responses/Locked'
 
   /exports/{exportId}:
     get:
@@ -2520,6 +2522,11 @@ components:
         includeTranscript: {type: boolean, default: true}
         includeMinutes: {type: boolean, default: true}
         includeItems: {type: boolean, default: true}
+        includeSpeakers: {type: boolean, default: true}
+        watermarkText:
+          type: [string, 'null']
+          maxLength: 200
+          description: Optional watermark to embed in the rendered file footer.
 
     ExportJobResponse:
       type: object
@@ -2528,19 +2535,39 @@ components:
         success: {type: boolean}
         data:
           type: object
-          required: [exportId, meetingId, status, format]
+          required: [exportId, meetingId, status, format, createdAt]
           properties:
             exportId: {type: string}
             meetingId: {type: string}
-            status: {type: string}
+            status:
+              type: string
+              enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED, REVOKED]
             format:
               type: string
               enum: [MARKDOWN, DOCX, PDF]
+            dataBoundaryMode:
+              type: [string, 'null']
+              enum: [FULL, REDACTED, null]
+              default: FULL
+            inputTranscriptVersion: {type: [integer, 'null'], minimum: 0}
+            inputMinutesVersion:    {type: [integer, 'null'], minimum: 0}
+            snapshotManifestId:     {type: [string, 'null']}
+            watermarkText:          {type: [string, 'null']}
             downloadUrl: {type: [string, 'null']}
             downloadUrlExpiresAt: {type: [string, 'null'], format: date-time}
             sha256: {type: [string, 'null']}
+            fileSizeBytes: {type: [integer, 'null'], format: int64, minimum: 0}
             revoked: {type: boolean}
+            stale:
+              type: boolean
+              default: false
+              description: >-
+                True when the meeting's current transcriptVersion / minutesVersion
+                has moved past the snapshot's version. UI surfaces a warning.
+            errorCode: {type: [string, 'null']}
             expiresAt: {type: string, format: date-time}
+            createdAt: {type: [string, 'null'], format: date-time}
+            finishedAt: {type: [string, 'null'], format: date-time}
         error:
           anyOf:
             - $ref: '#/components/schemas/ErrorInfo'

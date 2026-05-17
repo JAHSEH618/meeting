@@ -135,6 +135,16 @@ public class CreateExportRequest {
   @javax.annotation.Nullable
   private Boolean includeItems = true;
 
+  public static final String SERIALIZED_NAME_INCLUDE_SPEAKERS = "includeSpeakers";
+  @SerializedName(SERIALIZED_NAME_INCLUDE_SPEAKERS)
+  @javax.annotation.Nullable
+  private Boolean includeSpeakers = true;
+
+  public static final String SERIALIZED_NAME_WATERMARK_TEXT = "watermarkText";
+  @SerializedName(SERIALIZED_NAME_WATERMARK_TEXT)
+  @javax.annotation.Nullable
+  private String watermarkText;
+
   public CreateExportRequest() {
   }
 
@@ -254,6 +264,44 @@ public class CreateExportRequest {
   }
 
 
+  public CreateExportRequest includeSpeakers(@javax.annotation.Nullable Boolean includeSpeakers) {
+    this.includeSpeakers = includeSpeakers;
+    return this;
+  }
+
+  /**
+   * Get includeSpeakers
+   * @return includeSpeakers
+   */
+  @javax.annotation.Nullable
+  public Boolean getIncludeSpeakers() {
+    return includeSpeakers;
+  }
+
+  public void setIncludeSpeakers(@javax.annotation.Nullable Boolean includeSpeakers) {
+    this.includeSpeakers = includeSpeakers;
+  }
+
+
+  public CreateExportRequest watermarkText(@javax.annotation.Nullable String watermarkText) {
+    this.watermarkText = watermarkText;
+    return this;
+  }
+
+  /**
+   * Optional watermark to embed in the rendered file footer.
+   * @return watermarkText
+   */
+  @javax.annotation.Nullable
+  public String getWatermarkText() {
+    return watermarkText;
+  }
+
+  public void setWatermarkText(@javax.annotation.Nullable String watermarkText) {
+    this.watermarkText = watermarkText;
+  }
+
+
 
   @Override
   public boolean equals(Object o) {
@@ -269,7 +317,9 @@ public class CreateExportRequest {
         Objects.equals(this.expectedMinutesVersion, createExportRequest.expectedMinutesVersion) &&
         Objects.equals(this.includeTranscript, createExportRequest.includeTranscript) &&
         Objects.equals(this.includeMinutes, createExportRequest.includeMinutes) &&
-        Objects.equals(this.includeItems, createExportRequest.includeItems);
+        Objects.equals(this.includeItems, createExportRequest.includeItems) &&
+        Objects.equals(this.includeSpeakers, createExportRequest.includeSpeakers) &&
+        Objects.equals(this.watermarkText, createExportRequest.watermarkText);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -278,7 +328,7 @@ public class CreateExportRequest {
 
   @Override
   public int hashCode() {
-    return Objects.hash(format, expectedTranscriptVersion, expectedMinutesVersion, includeTranscript, includeMinutes, includeItems);
+    return Objects.hash(format, expectedTranscriptVersion, expectedMinutesVersion, includeTranscript, includeMinutes, includeItems, includeSpeakers, watermarkText);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -298,6 +348,8 @@ public class CreateExportRequest {
     sb.append("    includeTranscript: ").append(toIndentedString(includeTranscript)).append("\n");
     sb.append("    includeMinutes: ").append(toIndentedString(includeMinutes)).append("\n");
     sb.append("    includeItems: ").append(toIndentedString(includeItems)).append("\n");
+    sb.append("    includeSpeakers: ").append(toIndentedString(includeSpeakers)).append("\n");
+    sb.append("    watermarkText: ").append(toIndentedString(watermarkText)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -316,7 +368,7 @@ public class CreateExportRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("format", "expectedTranscriptVersion", "expectedMinutesVersion", "includeTranscript", "includeMinutes", "includeItems"));
+    openapiFields = new HashSet<String>(Arrays.asList("format", "expectedTranscriptVersion", "expectedMinutesVersion", "includeTranscript", "includeMinutes", "includeItems", "includeSpeakers", "watermarkText"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("format", "expectedTranscriptVersion"));
@@ -355,6 +407,9 @@ public class CreateExportRequest {
       }
       // validate the required field `format`
       FormatEnum.validateJsonElement(jsonObj.get("format"));
+      if ((jsonObj.get("watermarkText") != null && !jsonObj.get("watermarkText").isJsonNull()) && !jsonObj.get("watermarkText").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `watermarkText` to be a primitive type in the JSON string but got `%s`", jsonObj.get("watermarkText").toString()));
+      }
   }
 
   public static class CustomTypeAdapterFactory implements TypeAdapterFactory {

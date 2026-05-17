@@ -318,6 +318,24 @@ errorCodes:
     userMessage: 导出链接已被撤销
     i18nKey: errors.EXPORT_LINK_REVOKED
     opsTags: [export, link]
+  - code: EXPORT_CONTENT_STALE
+    step: EXPORT
+    retryable: false
+    userMessage: 导出依赖的内容已变更，请先重新生成纪要后重试
+    i18nKey: errors.EXPORT_CONTENT_STALE
+    opsTags: [export, stale]
+  - code: EXPORT_FORMAT_UNSUPPORTED
+    step: EXPORT
+    retryable: false
+    userMessage: 不支持的导出格式
+    i18nKey: errors.EXPORT_FORMAT_UNSUPPORTED
+    opsTags: [export, validation]
+  - code: EXPORT_ALREADY_FINISHED
+    step: EXPORT
+    retryable: false
+    userMessage: 导出任务已结束，无法取消
+    i18nKey: errors.EXPORT_ALREADY_FINISHED
+    opsTags: [export, conflict]
 
   # ── Outbox ────────────────────────────────────────────────────
   - code: OUTBOX_PUBLISH_FAILED

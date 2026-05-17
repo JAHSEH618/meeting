@@ -316,7 +316,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`packages/meeting-contracts`
 
-- [ ] 补齐 export DTO、export job status、短链撤销、STALE 确认相关 schema 和 fixtures。
+- [x] 补齐 export DTO、export job status、短链撤销、STALE 确认相关 schema 和 fixtures。
 
 ### 工程：`apps/meeting-api`
 

@@ -1,0 +1,33 @@
+{
+  "description": "POST /meetings/{meetingId}/exports 423: meeting is under a legal hold (LEGAL_HOLD_BLOCKED)",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/{meetingId}/exports",
+  "status": 423,
+  "headers": {
+    "X-Request-Id": "req_export_legal_hold_423_01",
+    "X-Trace-Id": "trace_export_legal_hold_423_01",
+    "Idempotency-Key": "idem_export_legal_hold_423_01"
+  },
+  "request": {
+    "format": "PDF",
+    "expectedTranscriptVersion": 3,
+    "expectedMinutesVersion": 2
+  },
+  "response": {
+    "success": false,
+    "data": null,
+    "error": {
+      "code": "LEGAL_HOLD_BLOCKED",
+      "message": "对象处于法定保全状态，不能删除",
+      "retryable": false,
+      "details": {
+        "scopeType": "MEETING",
+        "scopeId": "mtg_fixture_01",
+        "legalHoldId": "lh_fixture_01"
+      }
+    },
+    "requestId": "req_export_legal_hold_423_01",
+    "traceId": "trace_export_legal_hold_423_01"
+  }
+}

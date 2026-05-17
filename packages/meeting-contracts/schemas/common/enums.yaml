@@ -81,6 +81,22 @@ exportFormat:
   - DOCX
   - PDF
 
+exportStatus:
+  - QUEUED          # 已创建，等待 consumer 拉取
+  - RUNNING         # consumer 正在渲染
+  - SUCCEEDED       # file_id 已生成，downloadUrl 可用
+  - FAILED          # 渲染失败，errorCode 已填
+  - CANCELLED       # 用户取消
+  - REVOKED         # SUCCEEDED 后短链被撤销
+
+exportDataBoundaryMode:
+  - FULL            # 一期默认；不做文本脱敏
+  - REDACTED        # 预留；一期不允许选
+
+exportType:
+  - MEETING         # 单会议导出（一期默认）
+  - AUDIT           # Phase 7 审计导出（预留）
+
 timestampPrecision:
   - WORD
   - SEGMENT

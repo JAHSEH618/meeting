@@ -1,0 +1,49 @@
+{
+  "description": "POST /meetings/{meetingId}/exports 200 success: PDF export queued",
+  "spec": "openapi/public-api.yaml",
+  "method": "POST",
+  "path": "/meetings/{meetingId}/exports",
+  "status": 200,
+  "headers": {
+    "X-Request-Id": "req_export_create_pdf_01",
+    "X-Trace-Id": "trace_export_create_pdf_01",
+    "Idempotency-Key": "idem_export_create_pdf_01"
+  },
+  "request": {
+    "format": "PDF",
+    "expectedTranscriptVersion": 3,
+    "expectedMinutesVersion": 2,
+    "includeTranscript": true,
+    "includeMinutes": true,
+    "includeItems": true,
+    "includeSpeakers": true,
+    "watermarkText": "INTERNAL · tenant_fixture_01"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "exportId": "exp_fixture_pdf_01",
+      "meetingId": "mtg_fixture_01",
+      "status": "QUEUED",
+      "format": "PDF",
+      "dataBoundaryMode": "FULL",
+      "inputTranscriptVersion": 3,
+      "inputMinutesVersion": 2,
+      "snapshotManifestId": "mfst_export_fixture_01",
+      "watermarkText": "INTERNAL · tenant_fixture_01",
+      "downloadUrl": null,
+      "downloadUrlExpiresAt": null,
+      "sha256": null,
+      "fileSizeBytes": null,
+      "revoked": false,
+      "stale": false,
+      "errorCode": null,
+      "expiresAt": "2026-05-19T02:00:00Z",
+      "createdAt": "2026-05-18T02:00:00Z",
+      "finishedAt": null
+    },
+    "error": null,
+    "requestId": "req_export_create_pdf_01",
+    "traceId": "trace_export_create_pdf_01"
+  }
+}

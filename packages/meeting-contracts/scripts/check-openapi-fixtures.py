@@ -41,6 +41,15 @@ FIXTURE_API_MAP = {
     "valid/public-api-create-legal-hold-201.json": {
         "spec": "public-api.yaml", "path": "/legal-holds", "method": "post", "status": 201,
     },
+    "valid/public-api-create-export-pdf-200.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/exports", "method": "post", "status": 200,
+    },
+    "valid/public-api-get-export-stale-200.json": {
+        "spec": "public-api.yaml", "path": "/exports/{exportId}", "method": "get", "status": 200,
+    },
+    "valid/public-api-revoke-export-link-200.json": {
+        "spec": "public-api.yaml", "path": "/exports/{exportId}/revoke-link", "method": "post", "status": 200,
+    },
     "valid/public-api-delete-meeting-200.json": {
         "spec": "public-api.yaml", "path": "/meetings/{meetingId}", "method": "delete", "status": 200,
     },
@@ -104,6 +113,14 @@ FIXTURE_API_MAP = {
     },
     "invalid/public-api-500-error.json": {
         "spec": "public-api.yaml", "path": "/meetings", "method": "get", "status": 500,
+        "expect_error": True,
+    },
+    "invalid/public-api-create-export-stale-422.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/exports", "method": "post", "status": 422,
+        "expect_error": True,
+    },
+    "invalid/public-api-create-export-legal-hold-423.json": {
+        "spec": "public-api.yaml", "path": "/meetings/{meetingId}/exports", "method": "post", "status": 423,
         "expect_error": True,
     },
     "invalid/callback-missing-hmac.json": {

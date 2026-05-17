@@ -3,34 +3,35 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
-from pydantic import AwareDatetime, BaseModel, confloat, conint, constr
+from pydantic import BaseModel, confloat, conint, constr
 
 
 class ErrorInfo(BaseModel):
     code: str
     message: str
     retryable: bool
-    details: dict[str, Any] | None = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class Artifact(BaseModel):
     artifactType: str
-    artifactUri: constr(pattern=r'^tos://.+')
+    artifactUri: constr(regex=r'^tos://.+')
     sha256: str
-    sizeBytes: int | None = None
-    metadata: dict[str, Any] | None = None
+    sizeBytes: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class ArtifactCallbackRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
-    artifacts: list[Artifact]
-    artifactManifestId: str | None = None
+    artifacts: List[Artifact]
+    artifactManifestId: Optional[str] = None
 
 
 class TimestampPrecision(Enum):
@@ -45,10 +46,10 @@ class TranscriptSegment(BaseModel):
     endMs: int
     speakerLabel: str
     text: str
-    asrConfidence: confloat(ge=0.0, le=1.0) | None = None
-    diarizationConfidence: confloat(ge=0.0, le=1.0) | None = None
-    speakerConfidence: confloat(ge=0.0, le=1.0) | None = None
-    timestampPrecision: TimestampPrecision | None = None
+    asrConfidence: Optional[confloat(ge=0.0, le=1.0)] = None
+    diarizationConfidence: Optional[confloat(ge=0.0, le=1.0)] = None
+    speakerConfidence: Optional[confloat(ge=0.0, le=1.0)] = None
+    timestampPrecision: Optional[TimestampPrecision] = None
 
 
 class Candidate(BaseModel):
@@ -73,10 +74,10 @@ class PersistedBy(Enum):
 class PlainSpeakerEmbedding(BaseModel):
     format: Format
     dimension: conint(ge=1)
-    values: list[float]
+    values: List[float]
     checksum: str
     modelVersion: str
-    plaintextTransport: PlaintextTransport | None = None
+    plaintextTransport: Optional[PlaintextTransport] = None
     persistedBy: PersistedBy
 
 
@@ -92,9 +93,9 @@ class SourceType(Enum):
 class Embedding(BaseModel):
     format: Format
     dimension: int
-    values: list[float] | None = None
-    artifactUri: constr(pattern=r'^tos://.+') | None = None
-    sha256: str | None = None
+    values: Optional[List[float]] = None
+    artifactUri: Optional[constr(regex=r'^tos://.+')] = None
+    sha256: Optional[str] = None
 
 
 class Item(BaseModel):
@@ -113,8 +114,8 @@ class EmbeddingsCallbackRequest(BaseModel):
     sourceType: SourceType
     embeddingModelVersion: str
     chunkStrategyVersion: str
-    items: list[Item]
-    artifactManifestId: str | None = None
+    items: List[Item]
+    artifactManifestId: Optional[str] = None
 
 
 class Phase(Enum):
@@ -144,74 +145,74 @@ class ProcessingStep(Enum):
 class ApiResponse(BaseModel):
     success: bool
     data: Any
-    error: ErrorInfo | None
+    error: Optional[ErrorInfo]
     requestId: str
     traceId: str
 
 
 class StepUpdateRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
     stepName: ProcessingStep
     status: str
-    progress: conint(ge=0, le=100) | None = None
-    errorCode: str | None = None
-    heartbeatAt: AwareDatetime | None = None
-    artifactManifestId: str | None = None
+    progress: Optional[conint(ge=0, le=100)] = None
+    errorCode: Optional[str] = None
+    heartbeatAt: Optional[datetime] = None
+    artifactManifestId: Optional[str] = None
 
 
 class TranscriptCallbackRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
     transcriptVersion: int
-    segments: list[TranscriptSegment]
-    metadata: dict[str, Any] | None = None
-    artifactManifestId: str | None = None
+    segments: List[TranscriptSegment]
+    metadata: Optional[Dict[str, Any]] = None
+    artifactManifestId: Optional[str] = None
 
 
 class SpeakerCandidate(BaseModel):
     speakerLabel: str
-    candidates: list[Candidate]
+    candidates: List[Candidate]
     embedding: PlainSpeakerEmbedding
 
 
 class SpeakerCandidatesCallbackRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
-    speakerCandidates: list[SpeakerCandidate]
-    artifactManifestId: str | None = None
+    speakerCandidates: List[SpeakerCandidate]
+    artifactManifestId: Optional[str] = None
 
 
 class SkippedStep(BaseModel):
-    stepName: ProcessingStep | None = None
-    reason: str | None = None
+    stepName: Optional[ProcessingStep] = None
+    reason: Optional[str] = None
 
 
 class CompleteWorkerPhaseRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
     phase: Phase
     status: Status
-    completedSteps: list[ProcessingStep]
-    skippedSteps: list[SkippedStep] | None = None
-    artifactManifestId: str | None = None
-    finishedAt: AwareDatetime
+    completedSteps: List[ProcessingStep]
+    skippedSteps: Optional[List[SkippedStep]] = None
+    artifactManifestId: Optional[str] = None
+    finishedAt: datetime
 
 
 class FailTaskRequest(BaseModel):
     tenantId: str
-    meetingId: str | None = None
+    meetingId: Optional[str] = None
     taskId: str
     attemptNo: int
     failedStep: ProcessingStep
     error: ErrorInfo
-    artifactManifestId: str | None = None
-    failedAt: AwareDatetime
+    artifactManifestId: Optional[str] = None
+    failedAt: datetime

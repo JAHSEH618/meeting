@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
+from typing import List, Optional
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, conint, constr
+from pydantic import BaseModel, Extra, Field, conint, constr
 
 
 class TaskType(Enum):
@@ -34,32 +36,32 @@ class PipelineStep(Enum):
 
 
 class ExpectedInputVersion(BaseModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    transcriptVersion: conint(ge=0) | None = None
-    minutesVersion: conint(ge=0) | None = None
-    ragVersion: conint(ge=0) | None = None
-    documentVersion: conint(ge=1) | None = None
+    class Config:
+        extra = Extra.forbid
+
+    transcriptVersion: Optional[conint(ge=0)] = None
+    minutesVersion: Optional[conint(ge=0)] = None
+    ragVersion: Optional[conint(ge=0)] = None
+    documentVersion: Optional[conint(ge=1)] = None
     chunkStrategyVersion: constr(min_length=1)
-    embeddingModelVersion: str | None = None
+    embeddingModelVersion: Optional[str] = None
 
 
 class Channel(BaseModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
+    class Config:
+        extra = Extra.forbid
+
     index: conint(ge=0)
     label: str
 
 
 class ChannelMap(BaseModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    channelCount: conint(ge=1) | None = None
-    layout: str | None = None
-    channels: list[Channel] | None = None
+    class Config:
+        extra = Extra.forbid
+
+    channelCount: Optional[conint(ge=1)] = None
+    layout: Optional[str] = None
+    channels: Optional[List[Channel]] = None
 
 
 class ExportFormat(Enum):
@@ -70,39 +72,39 @@ class ExportFormat(Enum):
 
 
 class Options(BaseModel):
-    model_config = ConfigDict(
-        extra='allow',
-    )
-    enableAsr: bool | None = True
-    enableDiarization: bool | None = True
-    enableSpeakerRecognition: bool | None = True
-    enableRagIndexing: bool | None = True
-    enableAlignment: bool | None = False
-    exportFormat: ExportFormat | None = None
+    class Config:
+        extra = Extra.allow
+
+    enableAsr: Optional[bool] = True
+    enableDiarization: Optional[bool] = True
+    enableSpeakerRecognition: Optional[bool] = True
+    enableRagIndexing: Optional[bool] = True
+    enableAlignment: Optional[bool] = False
+    exportFormat: Optional[ExportFormat] = None
 
 
 class ProcessingTaskMessage(BaseModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
+    class Config:
+        extra = Extra.forbid
+
     taskId: constr(min_length=1)
     taskType: TaskType
     tenantId: constr(min_length=1)
-    meetingId: str | None = None
-    documentId: str | None = None
-    speakerProfileId: str | None = None
-    speakerEnrollmentId: str | None = None
-    audioFileId: str | None = None
-    audioUri: constr(pattern=r'^(tos://.+)?$') | None = None
+    meetingId: Optional[str] = None
+    documentId: Optional[str] = None
+    speakerProfileId: Optional[str] = None
+    speakerEnrollmentId: Optional[str] = None
+    audioFileId: Optional[str] = None
+    audioUri: Optional[constr(regex=r'^(tos://.+)?$')] = None
     securityLevel: SecurityLevel
     attemptNo: conint(ge=1)
-    pipelineSteps: list[PipelineStep] = Field(..., min_length=1)
+    pipelineSteps: List[PipelineStep] = Field(..., min_items=1, unique_items=True)
     expectedInputVersion: ExpectedInputVersion
-    language: str | None = None
-    channelMap: ChannelMap | None = None
-    knownParticipants: list[str] | None = []
-    minSpeakers: conint(ge=1) | None = None
-    maxSpeakers: conint(ge=1) | None = None
+    language: Optional[str] = None
+    channelMap: Optional[ChannelMap] = None
+    knownParticipants: Optional[List[str]] = []
+    minSpeakers: Optional[conint(ge=1)] = None
+    maxSpeakers: Optional[conint(ge=1)] = None
     options: Options
     traceId: constr(min_length=1)
-    createdAt: AwareDatetime | None = None
+    createdAt: Optional[datetime] = None
