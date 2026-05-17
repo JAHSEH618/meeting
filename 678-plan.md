@@ -160,8 +160,8 @@
 
 模板：`KnowledgeChunk.java`（Builder + 状态机方法）
 
-- [ ] **6.2.1.a** 字段（对齐 DDL `export_jobs`）：`id, tenantId, meetingId, exportType, format, dataBoundaryMode, status, inputMinutesVersion, inputTranscriptVersion, snapshotManifestId, watermarkText, fileId, fileHash, fileSizeBytes, downloadExpiresAt, downloadRevokedAt, errorCode, createdBy, createdAt, updatedAt, finishedAt`
-- [ ] **6.2.1.b** 状态机方法：
+- [x] **6.2.1.a** 字段（对齐 DDL `export_jobs`）：`id, tenantId, meetingId, exportType, format, dataBoundaryMode, status, inputMinutesVersion, inputTranscriptVersion, snapshotManifestId, watermarkText, fileId, fileHash, fileSizeBytes, downloadExpiresAt, downloadRevokedAt, errorCode, createdBy, createdAt, updatedAt, finishedAt`
+- [x] **6.2.1.b** 状态机方法：
   ```java
   public void markRunning(OffsetDateTime at);                                    // QUEUED -> RUNNING
   public void markSucceeded(String fileId, String sha256, long sizeBytes,
@@ -171,13 +171,13 @@
   public void revokeDownload(OffsetDateTime at);                                 // SUCCEEDED -> REVOKED
   ```
   非法转换抛 `IllegalStateException(currentStatus + " -> " + target)`。
-- [ ] **6.2.1.c** 单元测试 `ExportJobTest.java`：覆盖每个状态机转换 + 非法路径（如 SUCCEEDED → RUNNING 抛异常）
+- [x] **6.2.1.c** 单元测试 `ExportJobTest.java`：覆盖每个状态机转换 + 非法路径（如 SUCCEEDED → RUNNING 抛异常）
 
 #### 6.2.2 仓储端口
 
 文件：`meeting-api-domain/.../domain/export/ExportJobRepository.java`
 
-- [ ] **6.2.2.a** 接口签名：
+- [x] **6.2.2.a** 接口签名：
   ```java
   public interface ExportJobRepository {
       void save(ExportJob job);                                                    // INSERT or UPDATE by id
@@ -197,7 +197,7 @@
 
 文件：`meeting-api-domain/.../domain/export/ExportGateway.java`
 
-- [ ] **6.2.3.a** Strategy 端口：
+- [x] **6.2.3.a** Strategy 端口：
   ```java
   public interface ExportGateway {
       ExportFormat supportedFormat();
@@ -212,7 +212,7 @@
 
 文件：`meeting-api-domain/.../domain/export/MeetingSnapshotPort.java`
 
-- [ ] **6.2.4.a** 跨域只读端口：
+- [x] **6.2.4.a** 跨域只读端口：
   ```java
   public interface MeetingSnapshotPort {
       Optional<MeetingSnapshot> loadSnapshot(
@@ -229,21 +229,21 @@
       int transcriptVersion, @Nullable Integer minutesVersion
   ) {}
   ```
-- [ ] **6.2.4.b** **关键**：实现位于 `meeting-api-infrastructure/.../persistence/export/JdbcMeetingSnapshotPort.java`，查询时 **必须**校验 `transcript_version`、`minutes_version`、`stale_status=ACTIVE` —— 如果版本不存在或已 STALE 直接返回 `Optional.empty()`，应用服务把 empty 翻译成 `EXPORT_CONTENT_STALE`。
+- [ ] **6.2.4.b** **关键**：实现位于 `meeting-api-infrastructure/.../persistence/export/JdbcMeetingSnapshotPort.java`，查询时 **必须**校验 `transcript_version`、`minutes_version`、`stale_status=ACTIVE` —— 如果版本不存在或已 STALE 直接返回 `Optional.empty()`，应用服务把 empty 翻译成 `EXPORT_CONTENT_STALE`。 _(留给 PR-E)_
 
 #### 6.2.5 领域事件 + 异常
 
-- [ ] **6.2.5.a** 在 `meeting-api-domain/.../domain/export/event/` 新增：
+- [x] **6.2.5.a** 在 `meeting-api-domain/.../domain/export/event/` 新增：
   - `ExportJobCreatedEvent(tenantId, exportId, meetingId, format, expectedInputVersion)`
   - `ExportJobCompletedEvent(tenantId, exportId, status, fileId, fileSha256)`
   - `ExportDownloadRevokedEvent(tenantId, exportId, revokedBy)`
   事件 payload 需满足 outbox `domain_events_outbox.payload_json` 反序列化（参考 `WorkerPhaseCompletedEvent`）
-- [ ] **6.2.5.b** `ExportRuntimeException extends RuntimeException`：携带 `ErrorCode` + cause；`ExportInputInvalidException`（不可重试）
+- [x] **6.2.5.b** `ExportRuntimeException extends RuntimeException`：携带 `ErrorCode` + cause；`ExportInputInvalidException`（不可重试）
 
 #### 6.2.6 验收
 
-- [ ] **6.2.6.a** Domain 测试 ≥ 8 个：状态转换正反路径、Snapshot 版本不匹配返回 empty
-- [ ] **6.2.6.b** ArchUnit 仍 ERROR 级通过（domain 包不依赖 Spring Web / JDBC / MyBatis-Plus）
+- [x] **6.2.6.a** Domain 测试 ≥ 8 个：状态转换正反路径、Snapshot 版本不匹配返回 empty
+- [x] **6.2.6.b** ArchUnit 仍 ERROR 级通过（domain 包不依赖 Spring Web / JDBC / MyBatis-Plus）
 
 ### 6.3 Application + Infrastructure 层（3 PR · ~1.5 周）`[BLOCKS 6.4]`
 
