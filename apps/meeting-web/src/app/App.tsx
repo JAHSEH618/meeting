@@ -14,6 +14,7 @@ import { SpeakerProfilesPage } from "@features/speakers/SpeakerProfilesPage";
 import { MeetingSpeakerConfirmPage } from "@features/speakers/MeetingSpeakerConfirmPage";
 import { DocumentsPage } from "@features/documents/DocumentsPage";
 import { ExportsPage } from "@features/exports/ExportsPage";
+import { LegalHoldsPage } from "@features/admin/LegalHoldsPage";
 import { TaskProgressPage } from "@features/tasks/TaskProgressPage";
 
 export function App() {
@@ -37,6 +38,7 @@ export function App() {
           <Route path="/rag" element={<RagPage />} />
           <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/admin/legal-holds" element={<LegalHoldsPage />} />
           <Route path="/speakers" element={<Navigate to="/speaker-profiles" replace />} />
           <Route path="/exports" element={<Navigate to="/meetings" replace />} />
         </Route>
@@ -55,6 +57,7 @@ function Shell() {
           <NavLink to="/documents">文档</NavLink>
           <NavLink to="/rag">RAG</NavLink>
           <NavLink to="/speaker-profiles">声纹档案</NavLink>
+          <NavLink to="/admin/legal-holds">合规</NavLink>
         </nav>
       </header>
       <Outlet />

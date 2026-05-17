@@ -701,3 +701,66 @@ export async function revokeExportLink(exportId: string) {
     generateId("revoke-export"),
   );
 }
+
+// ── Legal holds (Phase 7) ─────────────────────────────────────────
+
+export type LegalHoldStatus = "ACTIVE" | "RELEASED";
+export type LegalHoldScopeType =
+  | "MEETING"
+  | "DOCUMENT"
+  | "SPEAKER_PROFILE"
+  | "PROJECT";
+
+export interface LegalHold {
+  legalHoldId: string;
+  scopeType: LegalHoldScopeType;
+  scopeId: string;
+  reason: string;
+  status: LegalHoldStatus;
+  requestedBy: string;
+  approvedBy?: string | null;
+  createdAt: string;
+  releasedAt?: string | null;
+  releasedBy?: string | null;
+  releaseReason?: string | null;
+}
+
+export interface CreateLegalHoldInput {
+  scopeType: LegalHoldScopeType;
+  scopeId: string;
+  reason: string;
+  approvedBy?: string | null;
+}
+
+export interface ReleaseLegalHoldInput {
+  reason: string;
+}
+
+export async function listLegalHolds() {
+  return request<{ items: LegalHold[]; page?: { cursor?: string | null; hasMore?: boolean } }>(
+    "GET",
+    "/legal-holds",
+  );
+}
+
+export async function createLegalHold(input: CreateLegalHoldInput) {
+  return request<LegalHold>(
+    "POST",
+    "/legal-holds",
+    input,
+    generateId("create-legal-hold"),
+  );
+}
+
+export async function getLegalHold(legalHoldId: string) {
+  return request<LegalHold>("GET", `/legal-holds/${legalHoldId}`);
+}
+
+export async function releaseLegalHold(legalHoldId: string, input: ReleaseLegalHoldInput) {
+  return request<void>(
+    "PUT",
+    `/legal-holds/${legalHoldId}/release`,
+    input,
+    generateId("release-legal-hold"),
+  );
+}

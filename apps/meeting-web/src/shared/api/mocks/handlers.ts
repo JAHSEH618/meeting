@@ -40,6 +40,22 @@ interface MockExportJob {
 const exportsByMeeting: Record<string, MockExportJob[]> = {};
 let exportIdCounter = 0;
 
+// Phase 7 legal hold mock state.
+interface MockLegalHold {
+  legalHoldId: string;
+  scopeType: "MEETING" | "DOCUMENT" | "SPEAKER_PROFILE" | "PROJECT";
+  scopeId: string;
+  reason: string;
+  status: "ACTIVE" | "RELEASED";
+  requestedBy: string;
+  approvedBy: string | null;
+  createdAt: string;
+  releasedAt: string | null;
+  releasedBy: string | null;
+  releaseReason: string | null;
+}
+const legalHolds: MockLegalHold[] = [];
+
 const uploadSession: AudioUploadSession = {
   uploadId: "upl_01",
   meetingId: "mtg_01",
@@ -772,6 +788,79 @@ export const handlers = [
         break;
       }
     }
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  // ── Legal holds (phase 7) ───────────────────────────────────
+  http.get("/api/legal-holds", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: { items: legalHolds.slice() },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/legal-holds", async ({ request }) => {
+    const body = (await request.json()) as {
+      scopeType: "MEETING" | "DOCUMENT" | "SPEAKER_PROFILE" | "PROJECT";
+      scopeId: string;
+      reason: string;
+      approvedBy?: string | null;
+    };
+    const next = {
+      legalHoldId: `lh_mock_${legalHolds.length + 1}`,
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      reason: body.reason,
+      status: "ACTIVE" as const,
+      requestedBy: "user_compliance_mock",
+      approvedBy: body.approvedBy ?? null,
+      createdAt: new Date().toISOString(),
+      releasedAt: null,
+      releasedBy: null,
+      releaseReason: null,
+    };
+    legalHolds.unshift(next);
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: next,
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    }, { status: 201 });
+  }),
+
+  http.get("/api/legal-holds/:legalHoldId", ({ params }) => {
+    const id = String(params.legalHoldId);
+    const found = legalHolds.find((h) => h.legalHoldId === id);
+    if (!found) {
+      return HttpResponse.json(
+        { success: false, data: null, error: { code: "LEGAL_HOLD_NOT_FOUND", message: "n/a", retryable: false, details: {} }, requestId: "r", traceId: "t" },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json<ApiResponse>({ success: true, data: found, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.put("/api/legal-holds/:legalHoldId/release", async ({ params, request }) => {
+    const id = String(params.legalHoldId);
+    const body = (await request.json()) as { reason: string };
+    const idx = legalHolds.findIndex((h) => h.legalHoldId === id);
+    if (idx < 0) {
+      return HttpResponse.json(
+        { success: false, data: null, error: { code: "LEGAL_HOLD_NOT_FOUND", message: "n/a", retryable: false, details: {} }, requestId: "r", traceId: "t" },
+        { status: 404 },
+      );
+    }
+    legalHolds[idx] = {
+      ...legalHolds[idx]!,
+      status: "RELEASED",
+      releasedAt: new Date().toISOString(),
+      releasedBy: "user_admin_mock",
+      releaseReason: body.reason,
+    };
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
   }),
 
