@@ -349,7 +349,7 @@
 
 文件：`meeting-api-infrastructure/.../gateway/export/`
 
-- [ ] **6.3.5.a** `MarkdownExportGateway.java`：
+- [x] **6.3.5.a** `MarkdownExportGateway.java`：
   - 章节模板：`# 标题` → `## 元数据`（与会人 / 安全等级）→ `## 转录`（按 segment，`[hh:mm:ss] 张三：xxx`）→ `## 纪要` → `## 待办` → `## 决策` → `## 风险`
   - 水印放页脚： `<!-- watermark: xxx -->` （Markdown 注释，不渲染但保留）
   - sha256 = `MessageDigest.getInstance("SHA-256").digest(utf8Bytes)`
