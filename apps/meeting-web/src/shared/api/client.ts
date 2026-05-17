@@ -764,3 +764,66 @@ export async function releaseLegalHold(legalHoldId: string, input: ReleaseLegalH
     generateId("release-legal-hold"),
   );
 }
+
+// ── Deletion jobs (Phase 7.3) ─────────────────────────────────────
+
+export type DeletionScopeType =
+  | "MEETING"
+  | "DOCUMENT"
+  | "SPEAKER_PROFILE"
+  | "USER"
+  | "PROJECT"
+  | "TENANT";
+
+export type DeletionJobStatus =
+  | "REQUESTED"
+  | "PENDING_APPROVAL"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "PARTIAL_FAILED"
+  | "FAILED"
+  | "BLOCKED_BY_LEGAL_HOLD";
+
+export interface DeletionJob {
+  deletionJobId: string;
+  scopeType: DeletionScopeType;
+  scopeId: string;
+  status: DeletionJobStatus;
+  requestedBy: string;
+  approvedBy?: string | null;
+  legalHoldChecked: boolean;
+  deletedRows: Record<string, unknown>;
+  deletedFiles: Record<string, unknown>;
+  kmsKeysDestroyed: Record<string, unknown>;
+  certificateHash?: string | null;
+  errorCode?: string | null;
+  createdAt: string;
+  finishedAt?: string | null;
+}
+
+export interface CreateDeletionJobInput {
+  scopeType: DeletionScopeType;
+  scopeId: string;
+  reason: string;
+  approvedBy?: string | null;
+}
+
+export async function listDeletionJobs() {
+  return request<{ items: DeletionJob[]; page?: { cursor?: string | null; hasMore?: boolean } }>(
+    "GET",
+    "/admin/deletion-jobs",
+  );
+}
+
+export async function createDeletionJob(input: CreateDeletionJobInput) {
+  return request<DeletionJob>(
+    "POST",
+    "/admin/deletion-jobs",
+    input,
+    generateId("create-deletion-job"),
+  );
+}
+
+export async function getDeletionJob(deletionJobId: string) {
+  return request<DeletionJob>("GET", `/admin/deletion-jobs/${deletionJobId}`);
+}

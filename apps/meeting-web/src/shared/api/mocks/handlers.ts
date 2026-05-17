@@ -56,6 +56,25 @@ interface MockLegalHold {
 }
 const legalHolds: MockLegalHold[] = [];
 
+// Phase 7.3 deletion job mock state.
+interface MockDeletionJob {
+  deletionJobId: string;
+  scopeType: "MEETING" | "DOCUMENT" | "SPEAKER_PROFILE" | "USER" | "PROJECT" | "TENANT";
+  scopeId: string;
+  status: "REQUESTED" | "PENDING_APPROVAL" | "RUNNING" | "SUCCEEDED" | "PARTIAL_FAILED" | "FAILED" | "BLOCKED_BY_LEGAL_HOLD";
+  requestedBy: string;
+  approvedBy: string | null;
+  legalHoldChecked: boolean;
+  deletedRows: Record<string, unknown>;
+  deletedFiles: Record<string, unknown>;
+  kmsKeysDestroyed: Record<string, unknown>;
+  certificateHash: string | null;
+  errorCode: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+const deletionJobs: MockDeletionJob[] = [];
+
 const uploadSession: AudioUploadSession = {
   uploadId: "upl_01",
   meetingId: "mtg_01",
@@ -862,6 +881,66 @@ export const handlers = [
       releaseReason: body.reason,
     };
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  // ── Deletion jobs (phase 7.3) ───────────────────────────────
+  http.get("/api/admin/deletion-jobs", () => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: { items: deletionJobs.slice() },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/admin/deletion-jobs", async ({ request }) => {
+    const body = (await request.json()) as {
+      scopeType: MockDeletionJob["scopeType"];
+      scopeId: string;
+      reason: string;
+      approvedBy?: string | null;
+    };
+    // For the front-end tests, simulate the legal-hold check by treating
+    // any scopeId containing "_protected" as blocked.
+    const blocked = body.scopeId.includes("_protected");
+    const now = new Date().toISOString();
+    const next: MockDeletionJob = {
+      deletionJobId: `dj_mock_${deletionJobs.length + 1}`,
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      status: blocked ? "BLOCKED_BY_LEGAL_HOLD" : "REQUESTED",
+      requestedBy: "user_compliance_mock",
+      approvedBy: body.approvedBy ?? null,
+      legalHoldChecked: true,
+      deletedRows: {},
+      deletedFiles: {},
+      kmsKeysDestroyed: {},
+      certificateHash: null,
+      errorCode: blocked ? "DELETION_JOB_BLOCKED_BY_LEGAL_HOLD" : null,
+      createdAt: now,
+      finishedAt: blocked ? now : null,
+    };
+    deletionJobs.unshift(next);
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: next,
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    }, { status: 202 });
+  }),
+
+  http.get("/api/admin/deletion-jobs/:jobId", ({ params }) => {
+    const id = String(params.jobId);
+    const found = deletionJobs.find((j) => j.deletionJobId === id);
+    if (!found) {
+      return HttpResponse.json(
+        { success: false, data: null, error: { code: "VALIDATION_FAILED", message: "not found", retryable: false, details: {} }, requestId: "r", traceId: "t" },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json<ApiResponse>({ success: true, data: found, error: null, requestId: "r", traceId: "t" });
   }),
 
   http.post("/api/rag/query", async ({ request }) => {

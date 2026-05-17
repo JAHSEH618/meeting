@@ -15,6 +15,7 @@ import { MeetingSpeakerConfirmPage } from "@features/speakers/MeetingSpeakerConf
 import { DocumentsPage } from "@features/documents/DocumentsPage";
 import { ExportsPage } from "@features/exports/ExportsPage";
 import { LegalHoldsPage } from "@features/admin/LegalHoldsPage";
+import { DeletionJobsPage } from "@features/admin/DeletionJobsPage";
 import { TaskProgressPage } from "@features/tasks/TaskProgressPage";
 
 export function App() {
@@ -39,6 +40,7 @@ export function App() {
           <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/admin/legal-holds" element={<LegalHoldsPage />} />
+          <Route path="/admin/deletion-jobs" element={<DeletionJobsPage />} />
           <Route path="/speakers" element={<Navigate to="/speaker-profiles" replace />} />
           <Route path="/exports" element={<Navigate to="/meetings" replace />} />
         </Route>
