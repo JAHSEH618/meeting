@@ -1,10 +1,18 @@
 package com.meeting.api;
 
 import com.meeting.api.client.enums.AudioUploadStatus;
+import com.meeting.api.client.enums.AuditAction;
+import com.meeting.api.client.enums.AuditActorType;
+import com.meeting.api.client.enums.AuditResult;
+import com.meeting.api.client.enums.BreakGlassStatus;
+import com.meeting.api.client.enums.DeletionJobStatus;
+import com.meeting.api.client.enums.DeletionScopeType;
 import com.meeting.api.client.enums.ExportDataBoundaryMode;
 import com.meeting.api.client.enums.ExportFormat;
 import com.meeting.api.client.enums.ExportStatus;
 import com.meeting.api.client.enums.ExportType;
+import com.meeting.api.client.enums.LegalHoldScopeType;
+import com.meeting.api.client.enums.LegalHoldStatus;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingStepUpdateSource;
@@ -48,6 +56,14 @@ class ClientEnumConsistencyTest {
         assertThat(names(ExportStatus.class)).containsExactlyElementsOf(enums.get("exportStatus"));
         assertThat(names(ExportDataBoundaryMode.class)).containsExactlyElementsOf(enums.get("exportDataBoundaryMode"));
         assertThat(names(ExportType.class)).containsExactlyElementsOf(enums.get("exportType"));
+        assertThat(names(LegalHoldStatus.class)).containsExactlyElementsOf(enums.get("legalHoldStatus"));
+        assertThat(names(LegalHoldScopeType.class)).containsExactlyElementsOf(enums.get("legalHoldScopeType"));
+        assertThat(names(DeletionJobStatus.class)).containsExactlyElementsOf(enums.get("deletionJobStatus"));
+        assertThat(names(DeletionScopeType.class)).containsExactlyElementsOf(enums.get("deletionScopeType"));
+        assertThat(names(BreakGlassStatus.class)).containsExactlyElementsOf(enums.get("breakGlassStatus"));
+        assertThat(names(AuditActorType.class)).containsExactlyElementsOf(enums.get("auditActorType"));
+        assertThat(names(AuditResult.class)).containsExactlyElementsOf(enums.get("auditResult"));
+        assertThat(names(AuditAction.class)).containsExactlyElementsOf(enums.get("auditAction"));
     }
 
     private static List<String> names(Class<? extends Enum<?>> enumType) {

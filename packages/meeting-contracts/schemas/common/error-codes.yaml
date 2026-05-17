@@ -368,6 +368,54 @@ errorCodes:
     userMessage: 对象处于法定保全状态，不能删除
     i18nKey: errors.LEGAL_HOLD_BLOCKED
     opsTags: [compliance, legal_hold]
+  - code: LEGAL_HOLD_NOT_FOUND
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 法定保全不存在
+    i18nKey: errors.LEGAL_HOLD_NOT_FOUND
+    opsTags: [compliance, legal_hold]
+  - code: LEGAL_HOLD_ALREADY_RELEASED
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 法定保全已被释放
+    i18nKey: errors.LEGAL_HOLD_ALREADY_RELEASED
+    opsTags: [compliance, legal_hold, conflict]
+  - code: DELETION_JOB_BLOCKED_BY_LEGAL_HOLD
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 删除任务被法定保全阻断
+    i18nKey: errors.DELETION_JOB_BLOCKED_BY_LEGAL_HOLD
+    opsTags: [compliance, deletion, legal_hold]
+  - code: DELETION_JOB_ALREADY_FINISHED
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 删除任务已结束
+    i18nKey: errors.DELETION_JOB_ALREADY_FINISHED
+    opsTags: [compliance, deletion, conflict]
+  - code: BREAK_GLASS_REQUEST_EXPIRED
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 紧急访问申请已过期
+    i18nKey: errors.BREAK_GLASS_REQUEST_EXPIRED
+    opsTags: [compliance, break_glass]
+  - code: BREAK_GLASS_INSUFFICIENT_APPROVERS
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 紧急访问审批人数不足
+    i18nKey: errors.BREAK_GLASS_INSUFFICIENT_APPROVERS
+    opsTags: [compliance, break_glass]
+  - code: BREAK_GLASS_SELF_APPROVAL_FORBIDDEN
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 申请人不能审批自己的紧急访问申请
+    i18nKey: errors.BREAK_GLASS_SELF_APPROVAL_FORBIDDEN
+    opsTags: [compliance, break_glass]
+  - code: AUDIT_QUERY_TOO_BROAD
+    step: COMPLIANCE
+    retryable: false
+    userMessage: 审计查询时间窗超出 90 天上限
+    i18nKey: errors.AUDIT_QUERY_TOO_BROAD
+    opsTags: [compliance, audit]
 
   # ── Document ──────────────────────────────────────────────────
   - code: DOCUMENT_PARSE_FAILED

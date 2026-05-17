@@ -107,6 +107,78 @@ exportType:
   - MEETING
   - AUDIT
 
+# ── Phase 7 合规 ─────────────────────────────────────────────────
+# legal_holds.status — 一期单向流转：ACTIVE → RELEASED；释放后需新建。
+legalHoldStatus:
+  - ACTIVE
+  - RELEASED
+
+legalHoldScopeType:
+  - MEETING
+  - DOCUMENT
+  - SPEAKER_PROFILE
+  - PROJECT
+
+# deletion_jobs.status — REQUESTED → RUNNING → SUCCEEDED | PARTIAL_FAILED
+# | FAILED | BLOCKED_BY_LEGAL_HOLD；PENDING_APPROVAL 一期保留不启用。
+deletionJobStatus:
+  - REQUESTED
+  - PENDING_APPROVAL
+  - RUNNING
+  - SUCCEEDED
+  - PARTIAL_FAILED
+  - FAILED
+  - BLOCKED_BY_LEGAL_HOLD
+
+deletionScopeType:
+  - MEETING
+  - DOCUMENT
+  - SPEAKER_PROFILE
+  - USER
+  - PROJECT
+  - TENANT
+
+# break_glass_requests.status — PENDING → APPROVED|REJECTED；APPROVED
+# 可后续转 EXPIRED（窗口结束）或 REVOKED（提前撤回）。
+breakGlassStatus:
+  - PENDING
+  - APPROVED
+  - REJECTED
+  - EXPIRED
+  - REVOKED
+
+# audit_events.actor_type
+auditActorType:
+  - USER
+  - SYSTEM
+  - SERVICE_ACCOUNT
+
+# audit_events.result — 业务级 result，区分 SUCCESS vs 系统 FAILURE vs
+# 权限 BLOCKED vs 显式 DENIED（例如 break-glass 自审批拒绝）。
+auditResult:
+  - SUCCESS
+  - FAILURE
+  - BLOCKED
+  - DENIED
+
+# audit_events.action — 一期覆盖 phase 6 / 7 写入路径
+auditAction:
+  - CREATE
+  - READ
+  - UPDATE
+  - DELETE
+  - EXPORT
+  - LOGIN
+  - LOGOUT
+  - LEGAL_HOLD_PLACE
+  - LEGAL_HOLD_RELEASE
+  - DELETION_REQUEST
+  - DELETION_EXECUTE
+  - BREAK_GLASS_REQUEST
+  - BREAK_GLASS_APPROVE
+  - BREAK_GLASS_REJECT
+  - BREAK_GLASS_ACCESS
+
 timestampPrecision:
   - WORD
   - SEGMENT
