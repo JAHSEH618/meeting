@@ -17,6 +17,12 @@ public class MeetingApiMetrics {
     private static final String LEASE_SCANNER_RUNS = "meeting.api.lease_scanner.runs";
     private static final String LEASE_SCANNER_ORPHANED = "meeting.api.lease_scanner.orphaned";
     private static final String AI_WORKER_CALLS = "meeting.api.aiworker.calls";
+    private static final String EXPORT_RENDERS = "meeting.api.export.renders";
+    private static final String LEGAL_HOLD_BLOCKS = "meeting.api.legal_hold.blocks";
+    private static final String AUDIT_EVENTS = "meeting.api.audit.events";
+    private static final String KMS_FAILURES = "meeting.api.kms.encrypt_failures";
+    private static final String LLM_BLOCKED = "meeting.api.llm.blocked_security_level";
+    private static final String TENANT_CONTEXT_MISSING = "meeting.api.tenant_context.missing";
 
     private final MeterRegistry registry;
 
@@ -79,6 +85,74 @@ public class MeetingApiMetrics {
         return Counter.builder(AI_WORKER_CALLS)
             .tag("operation", operation == null ? "unknown" : operation)
             .tag("outcome", outcome == null ? "unknown" : outcome)
+            .register(registry);
+    }
+
+    /**
+     * Counts export render outcomes by format. {@code format} is one of
+     * {@code MARKDOWN}, {@code DOCX}, {@code PDF}; {@code outcome} is one
+     * of {@code succeeded}, {@code failed}, {@code cancelled},
+     * {@code revoked}.
+     */
+    public Counter exportRendersCounter(String format, String outcome) {
+        return Counter.builder(EXPORT_RENDERS)
+            .tag("format", format == null ? "unknown" : format)
+            .tag("outcome", outcome == null ? "unknown" : outcome)
+            .register(registry);
+    }
+
+    /**
+     * Counts operations rejected because the target was under an active
+     * legal hold. {@code operation} is the verb being blocked
+     * ({@code delete_meeting}, {@code delete_document},
+     * {@code create_export}, ...).
+     */
+    public Counter legalHoldBlocksCounter(String operation) {
+        return Counter.builder(LEGAL_HOLD_BLOCKS)
+            .tag("operation", operation == null ? "unknown" : operation)
+            .register(registry);
+    }
+
+    /**
+     * Counts audit events appended. {@code action} matches
+     * {@link com.meeting.api.client.enums.AuditAction}; {@code result}
+     * matches {@link com.meeting.api.client.enums.AuditResult}.
+     */
+    public Counter auditEventCounter(String action, String result) {
+        return Counter.builder(AUDIT_EVENTS)
+            .tag("action", action == null ? "unknown" : action)
+            .tag("result", result == null ? "unknown" : result)
+            .register(registry);
+    }
+
+    /**
+     * Counts KMS envelope-encrypt failures by operation
+     * ({@code wrap}, {@code unwrap}, {@code rotate}). Critical alert
+     * threshold lives in the Prometheus rules.
+     */
+    public Counter kmsEncryptFailuresCounter(String operation) {
+        return Counter.builder(KMS_FAILURES)
+            .tag("operation", operation == null ? "unknown" : operation)
+            .register(registry);
+    }
+
+    /**
+     * Counts LLM calls fail-closed by security level. The
+     * {@code SecurityLevelBlockedException} writes here before throwing.
+     */
+    public Counter llmBlockedBySecurityLevelCounter(String securityLevel) {
+        return Counter.builder(LLM_BLOCKED)
+            .tag("level", securityLevel == null ? "unknown" : securityLevel)
+            .register(registry);
+    }
+
+    /**
+     * Counts requests that reached production code paths without a
+     * tenant context. Should be 0; non-zero indicates a missing filter.
+     */
+    public Counter tenantContextMissingCounter(String path) {
+        return Counter.builder(TENANT_CONTEXT_MISSING)
+            .tag("path", path == null ? "unknown" : path)
             .register(registry);
     }
 }

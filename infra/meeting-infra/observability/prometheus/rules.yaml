@@ -1,0 +1,154 @@
+# Prometheus alerting rules for the meeting-api stack (Phase 8.2).
+#
+# Loaded by docker-compose's prometheus service via the rule_files entry
+# in prometheus.yml; in K8s the same file is mounted via the PrometheusRule
+# CRD (see infra/meeting-infra/k8s/base/meeting-api/servicemonitor.yaml).
+#
+# Metric names use the underscore form Prometheus exposes for Micrometer
+# meters (dots become underscores; tags become labels; _total suffix is
+# auto-appended to counters).
+groups:
+  - name: meeting-api.outbox
+    interval: 30s
+    rules:
+      - alert: OutboxBacklogHigh
+        expr: |
+          sum(meeting_api_outbox_backlog) > 5000
+        for: 30m
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "Outbox backlog exceeds 5000 events for 30+ minutes"
+          description: "domain_events_outbox has accumulated unpublished events. Check publisher logs and Rabbit availability."
+
+      - alert: OutboxPublishLag
+        expr: |
+          max(meeting_api_outbox_oldest_pending_seconds) > 30
+        for: 5m
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "Oldest pending outbox event is older than 30s"
+          description: "Phase 8 SPEC §9 demands p95 <= 5s. Investigate row-lock contention or Rabbit publisher errors."
+
+  - name: meeting-api.callback
+    interval: 30s
+    rules:
+      - alert: CallbackAuthFailureSurge
+        expr: |
+          sum(increase(meeting_api_callback_events_total{outcome="auth_failed"}[5m])) > 50
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "Callback HMAC auth failures >50/5min"
+          description: "Likely HMAC secret drift between meeting-api and ai-worker, or a misbehaving worker."
+
+  - name: meeting-api.rabbitmq
+    interval: 30s
+    rules:
+      - alert: RabbitMqDlqDepth
+        expr: |
+          max(rabbitmq_queue_messages_ready{queue=~".*\\.dlq"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: meeting-api
+        annotations:
+          summary: "RabbitMQ DLQ depth > 100"
+          description: "DLQ {{ $labels.queue }} is accumulating. Worker is failing and exhausted retries."
+
+  - name: meeting-api.rag
+    interval: 60s
+    rules:
+      - alert: RagRerankDegradedRate
+        expr: |
+          sum(rate(meeting_api_aiworker_calls_total{operation="rerank",outcome="unavailable"}[5m]))
+            /
+          clamp_min(sum(rate(meeting_api_aiworker_calls_total{operation="rerank"}[5m])), 0.001)
+            > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          team: meeting-api
+        annotations:
+          summary: "RAG rerank degraded >20% (ai-worker unavailable)"
+          description: "Rerank fall-back to RRF is hot — investigate ai-worker availability or HMAC config drift."
+
+  - name: meeting-api.export
+    interval: 60s
+    rules:
+      - alert: ExportFailureRateHigh
+        expr: |
+          sum(rate(meeting_api_export_renders_total{outcome="failed"}[1h]))
+            /
+          clamp_min(sum(rate(meeting_api_export_renders_total[1h])), 0.001)
+            > 0.1
+        for: 30m
+        labels:
+          severity: warning
+          team: meeting-api
+        annotations:
+          summary: "Export failure rate >10% for 30 min"
+          description: "Investigate render gateway errors (LibreOffice, docx4j) and DLQ depth."
+
+  - name: meeting-api.compliance
+    interval: 60s
+    rules:
+      - alert: LegalHoldBlocksSurge
+        expr: |
+          sum(increase(meeting_api_legal_hold_blocks_total[1h])) > 20
+        labels:
+          severity: warning
+          team: meeting-api
+        annotations:
+          summary: "Legal-hold blocks >20/hour"
+          description: "Many delete/export attempts blocked. Could be a UI bug surfacing legal-hold scopes to wrong users."
+
+  - name: meeting-api.security
+    interval: 60s
+    rules:
+      - alert: KmsEncryptFailureSurge
+        expr: |
+          sum(increase(meeting_api_kms_encrypt_failures_total[5m])) > 5
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "KMS encrypt failures >5/5min"
+          description: "Speaker embedding writes are failing. Check Vault/KMS availability before user-visible errors mount."
+
+      - alert: TenantContextMissingSurge
+        expr: |
+          sum(increase(meeting_api_tenant_context_missing_total[5m])) > 0
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "Tenant context missing on a request"
+          description: "Indicates a missing auth/tenant filter — RLS may be silently bypassed. Treat as P1."
+
+      - alert: LlmBlockedBySecurityLevelSurge
+        expr: |
+          sum(increase(meeting_api_llm_blocked_security_level_total{level=~"PUBLIC|INTERNAL"}[15m])) > 0
+        labels:
+          severity: warning
+          team: meeting-api
+        annotations:
+          summary: "PUBLIC/INTERNAL LLM call was blocked"
+          description: "Unexpected — these levels should not fail-closed in phase 1. Inspect data-boundary policy version."
+
+  - name: ai-worker.gpu
+    interval: 60s
+    rules:
+      - alert: GpuOomExit
+        expr: |
+          sum(increase(ai_worker_oom_exits_total[10m])) > 0
+        labels:
+          severity: critical
+          team: ai-worker
+        annotations:
+          summary: "ai-worker OOM exit detected"
+          description: "Worker process exited due to CUDA OOM. Supervisor should auto-restart; investigate model/batch sizing."
