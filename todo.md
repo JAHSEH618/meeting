@@ -329,7 +329,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 实现会议导出页面 `/meetings/:meetingId/exports`，支持 Markdown / DOCX / PDF 异步创建、状态、取消、下载、短链撤销。
+- [x] 实现会议导出页面 `/meetings/:meetingId/exports`，支持 Markdown / DOCX / PDF 异步创建、状态、取消、下载、短链撤销。
 - [ ] 导出入口展示 STALE 提示和版本绑定摘要。
 
 ### 工程：`infra/meeting-infra`

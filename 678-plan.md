@@ -456,14 +456,14 @@
 
 模板：`apps/meeting-web/src/features/documents/DocumentsPage.tsx`
 
-- [ ] **6.5.1.a** 当前 19 行 stub 改为：
+- [x] **6.5.1.a** 当前 19 行 stub 改为：
   - 顶部"创建导出"按钮（弹出 `ExportCreateDialog`：选 format / watermark / 包含项）
   - 列表表格：`createdAt | format | status | downloadUrl | actions`
   - status 列徽标颜色：QUEUED 灰、RUNNING 蓝、SUCCEEDED 绿、FAILED 红、REVOKED 黄
   - actions：`下载` / `取消` / `撤销链接`，按后端权限和当前状态显示
   - `stale=true` 时在 status 旁加 ⚠️ + tooltip "导出后内容已变更"
-- [ ] **6.5.1.b** 状态自刷新：`useQuery` 配 `refetchInterval: 3000`，全部 status 终态后停止；或接 SSE（视 6.4.3 选型）
-- [ ] **6.5.1.c** 错误码文案：
+- [x] **6.5.1.b** 状态自刷新：`useQuery` 配 `refetchInterval: 3000`，全部 status 终态后停止；或接 SSE（视 6.4.3 选型）
+- [x] **6.5.1.c** 错误码文案：
   - `EXPORT_CONTENT_STALE` → "导出依赖的内容已变更，请先重新生成纪要后重试"，按钮 disabled
   - `LEGAL_HOLD_BLOCKED` → "该会议处于 legal hold 状态，无法导出"
   - `EXPORT_DOWNLOAD_LINK_REVOKED` → "下载链接已撤销"

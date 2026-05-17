@@ -15,6 +15,31 @@ const meetingList: Meeting[] = [
   },
 ];
 
+// Phase 6 export mock state — per-meeting list ordered most-recent first.
+interface MockExportJob {
+  exportId: string;
+  meetingId: string;
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REVOKED";
+  format: "MARKDOWN" | "DOCX" | "PDF";
+  dataBoundaryMode: string;
+  inputTranscriptVersion: number;
+  inputMinutesVersion: number | null;
+  snapshotManifestId: string;
+  watermarkText: string | null;
+  downloadUrl: string | null;
+  downloadUrlExpiresAt: string | null;
+  sha256: string | null;
+  fileSizeBytes: number | null;
+  revoked: boolean;
+  stale: boolean;
+  errorCode: string | null;
+  expiresAt: string;
+  createdAt: string;
+  finishedAt: string | null;
+}
+const exportsByMeeting: Record<string, MockExportJob[]> = {};
+let exportIdCounter = 0;
+
 const uploadSession: AudioUploadSession = {
   uploadId: "upl_01",
   meetingId: "mtg_01",
@@ -657,6 +682,96 @@ export const handlers = [
   }),
 
   http.post("/api/rag/reindex/documents/:documentId", () => {
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  // ── Exports (phase 6) ───────────────────────────────────────
+  http.get("/api/meetings/:meetingId/exports", ({ params }) => {
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: { items: exportsByMeeting[String(params.meetingId)] ?? [] },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/meetings/:meetingId/exports", async ({ params, request }) => {
+    const meetingId = String(params.meetingId);
+    const body = (await request.json()) as {
+      format: "MARKDOWN" | "DOCX" | "PDF";
+      expectedTranscriptVersion: number;
+      expectedMinutesVersion: number | null;
+      includeTranscript: boolean;
+      includeMinutes: boolean;
+      includeItems: boolean;
+      includeSpeakers: boolean;
+      watermarkText: string | null;
+    };
+    if (body.expectedTranscriptVersion === -1) {
+      return HttpResponse.json(
+        {
+          success: false,
+          data: null,
+          error: { code: "EXPORT_CONTENT_STALE", message: "stale", retryable: false, details: {} },
+          requestId: "r",
+          traceId: "t",
+        },
+        { status: 422 },
+      );
+    }
+    const next = {
+      exportId: `exp_mock_${++exportIdCounter}`,
+      meetingId,
+      status: "QUEUED" as const,
+      format: body.format,
+      dataBoundaryMode: "FULL",
+      inputTranscriptVersion: body.expectedTranscriptVersion,
+      inputMinutesVersion: body.expectedMinutesVersion,
+      snapshotManifestId: "mfst_mock_01",
+      watermarkText: body.watermarkText,
+      downloadUrl: null,
+      downloadUrlExpiresAt: null,
+      sha256: null,
+      fileSizeBytes: null,
+      revoked: false,
+      stale: false,
+      errorCode: null,
+      expiresAt: "2026-05-19T02:00:00Z",
+      createdAt: "2026-05-18T02:00:00Z",
+      finishedAt: null,
+    };
+    exportsByMeeting[meetingId] = [next, ...(exportsByMeeting[meetingId] ?? [])];
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: next,
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/exports/:exportId/cancel", ({ params }) => {
+    const id = String(params.exportId);
+    for (const list of Object.values(exportsByMeeting)) {
+      const idx = list.findIndex((j) => j.exportId === id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx]!, status: "CANCELLED", finishedAt: "2026-05-18T02:01:00Z" };
+        break;
+      }
+    }
+    return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  http.post("/api/exports/:exportId/revoke-link", ({ params }) => {
+    const id = String(params.exportId);
+    for (const list of Object.values(exportsByMeeting)) {
+      const idx = list.findIndex((j) => j.exportId === id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx]!, status: "REVOKED", revoked: true, downloadUrl: null };
+        break;
+      }
+    }
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
   }),
 

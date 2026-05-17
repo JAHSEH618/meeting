@@ -619,3 +619,85 @@ export async function reindexDocument(documentId: string) {
     generateId("reindex-document"),
   );
 }
+
+// ── Exports ───────────────────────────────────────────────────────
+
+export type ExportFormat = "MARKDOWN" | "DOCX" | "PDF";
+export type ExportStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "REVOKED";
+
+export interface ExportJob {
+  exportId: string;
+  meetingId: string;
+  status: ExportStatus;
+  format: ExportFormat;
+  dataBoundaryMode?: "FULL" | "REDACTED" | null;
+  inputTranscriptVersion?: number | null;
+  inputMinutesVersion?: number | null;
+  snapshotManifestId?: string | null;
+  watermarkText?: string | null;
+  downloadUrl?: string | null;
+  downloadUrlExpiresAt?: string | null;
+  sha256?: string | null;
+  fileSizeBytes?: number | null;
+  revoked: boolean;
+  stale: boolean;
+  errorCode?: string | null;
+  expiresAt: string;
+  createdAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface CreateExportInput {
+  format: ExportFormat;
+  expectedTranscriptVersion: number;
+  expectedMinutesVersion?: number | null;
+  includeTranscript?: boolean;
+  includeMinutes?: boolean;
+  includeItems?: boolean;
+  includeSpeakers?: boolean;
+  watermarkText?: string | null;
+}
+
+export async function listMeetingExports(meetingId: string) {
+  return request<{ items: ExportJob[]; page?: { cursor?: string | null; hasMore?: boolean } }>(
+    "GET",
+    `/meetings/${meetingId}/exports`,
+  );
+}
+
+export async function createExport(meetingId: string, input: CreateExportInput) {
+  return request<ExportJob>(
+    "POST",
+    `/meetings/${meetingId}/exports`,
+    input,
+    generateId("create-export"),
+  );
+}
+
+export async function getExport(exportId: string) {
+  return request<ExportJob>("GET", `/exports/${exportId}`);
+}
+
+export async function cancelExport(exportId: string) {
+  return request<void>(
+    "POST",
+    `/exports/${exportId}/cancel`,
+    {},
+    generateId("cancel-export"),
+  );
+}
+
+export async function revokeExportLink(exportId: string) {
+  return request<void>(
+    "POST",
+    `/exports/${exportId}/revoke-link`,
+    {},
+    generateId("revoke-export"),
+  );
+}

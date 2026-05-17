@@ -54,6 +54,7 @@ export function MeetingDetailPage() {
             <div className="toolbar">
               <Link className="button primary" to={`/meetings/${meeting.meetingId}/audio`}>上传音频</Link>
               <Link className="button" to={`/meetings/${meeting.meetingId}/transcript`}>转录</Link>
+              <Link className="button" to={`/meetings/${meeting.meetingId}/exports`}>导出</Link>
               <Link className="button" to="/meetings">返回列表</Link>
             </div>
           </div>
