@@ -340,7 +340,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现 legal hold 创建、释放、命中阻断和 audit event。
+- [x] 实现 legal hold 创建、释放、命中阻断和 audit event。
 - [ ] 实现 deletion job：计划生成、执行锁、legal hold 二次检查、对象删除 / 生命周期标记、失败项摘要。
 - [ ] 实现 deletion certificate：对象 hash、范围、执行人、时间、失败项和审计摘要。
 - [ ] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。
