@@ -1377,13 +1377,64 @@ export interface components {
             status?: string;
             expectedVersion?: number;
         };
+        /**
+         * @description Register an already-uploaded knowledge-base document file for parsing
+         *     and indexing. The file itself must already exist in object storage
+         *     (referenced by `fileId`); phase-1 does not expose an in-app document
+         *     upload flow analogous to audio's multipart upload — the file is
+         *     ingested out-of-band, the API registers its metadata and triggers
+         *     the parse / chunk / embed pipeline.
+         */
         CreateDocumentRequest: {
-            fileName: string;
-            contentType: string;
-            sizeBytes: number;
-            sha256: string;
+            title: string;
+            /** @description TOS / MinIO object key for the source file */
+            fileId: string;
+            /** @enum {string} */
+            documentType: "PDF" | "DOCX" | "MARKDOWN" | "TXT";
             securityLevel: components["schemas"]["SecurityLevel"];
-            title?: string | null;
+            /** @description SHA-256 of the source file content (optional, recorded for audit / dedup) */
+            contentHash?: string | null;
+        };
+        /**
+         * @description A registered knowledge-base document. `textExtractionStatus` reflects
+         *     the document-parser pipeline (Apache Tika) state; `status` is the
+         *     business-level lifecycle (ACTIVE / DELETED). RAG retrieval filters
+         *     on both.
+         */
+        Document: {
+            documentId: string;
+            tenantId: string;
+            title: string;
+            fileId: string;
+            /** @enum {string} */
+            documentType: "PDF" | "DOCX" | "MARKDOWN" | "TXT";
+            /** @enum {string} */
+            status: "ACTIVE" | "DELETED";
+            securityLevel: components["schemas"]["SecurityLevel"];
+            /** @enum {string} */
+            textExtractionStatus: "PENDING" | "EXTRACTED" | "FAILED" | "OCR_UNSUPPORTED" | "TYPE_UNSUPPORTED";
+            contentHash?: string | null;
+            sourceUri?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt?: string | null;
+        };
+        DocumentResponse: {
+            success: boolean;
+            data: components["schemas"]["Document"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        DocumentListResponse: {
+            success: boolean;
+            data: components["schemas"]["Document"][];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
         };
         RagQueryRequest: {
             question: string;
@@ -2758,7 +2809,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["OkPaginated"];
+            /** @description Documents readable by the caller */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
         };
     };
     createDocument: {
@@ -2778,7 +2837,17 @@ export interface operations {
             };
         };
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Document registered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getDocument: {
@@ -2795,7 +2864,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Document detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
             404: components["responses"]["NotFound"];
         };
     };
@@ -2834,7 +2911,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["Ok"];
+            /** @description Document reindex accepted; returns the updated document state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     queryRag: {

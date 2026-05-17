@@ -48,117 +48,148 @@ import java.util.Set;
 import com.meeting.api.client.JSON;
 
 /**
- * CreateDocumentRequest
+ * Register an already-uploaded knowledge-base document file for parsing and indexing. The file itself must already exist in object storage (referenced by &#x60;fileId&#x60;); phase-1 does not expose an in-app document upload flow analogous to audio&#39;s multipart upload — the file is ingested out-of-band, the API registers its metadata and triggers the parse / chunk / embed pipeline. 
  */
 @javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.22.0")
 public class CreateDocumentRequest {
-  public static final String SERIALIZED_NAME_FILE_NAME = "fileName";
-  @SerializedName(SERIALIZED_NAME_FILE_NAME)
+  public static final String SERIALIZED_NAME_TITLE = "title";
+  @SerializedName(SERIALIZED_NAME_TITLE)
   @javax.annotation.Nonnull
-  private String fileName;
+  private String title;
 
-  public static final String SERIALIZED_NAME_CONTENT_TYPE = "contentType";
-  @SerializedName(SERIALIZED_NAME_CONTENT_TYPE)
+  public static final String SERIALIZED_NAME_FILE_ID = "fileId";
+  @SerializedName(SERIALIZED_NAME_FILE_ID)
   @javax.annotation.Nonnull
-  private String contentType;
+  private String fileId;
 
-  public static final String SERIALIZED_NAME_SIZE_BYTES = "sizeBytes";
-  @SerializedName(SERIALIZED_NAME_SIZE_BYTES)
-  @javax.annotation.Nonnull
-  private Integer sizeBytes;
+  /**
+   * Gets or Sets documentType
+   */
+  @JsonAdapter(DocumentTypeEnum.Adapter.class)
+  public enum DocumentTypeEnum {
+    PDF("PDF"),
+    
+    DOCX("DOCX"),
+    
+    MARKDOWN("MARKDOWN"),
+    
+    TXT("TXT");
 
-  public static final String SERIALIZED_NAME_SHA256 = "sha256";
-  @SerializedName(SERIALIZED_NAME_SHA256)
+    private String value;
+
+    DocumentTypeEnum(String value) {
+      this.value = value;
+    }
+
+    public String getValue() {
+      return value;
+    }
+
+    @Override
+    public String toString() {
+      return String.valueOf(value);
+    }
+
+    public static DocumentTypeEnum fromValue(String value) {
+      for (DocumentTypeEnum b : DocumentTypeEnum.values()) {
+        if (b.value.equals(value)) {
+          return b;
+        }
+      }
+      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    }
+
+    public static class Adapter extends TypeAdapter<DocumentTypeEnum> {
+      @Override
+      public void write(final JsonWriter jsonWriter, final DocumentTypeEnum enumeration) throws IOException {
+        jsonWriter.value(enumeration.getValue());
+      }
+
+      @Override
+      public DocumentTypeEnum read(final JsonReader jsonReader) throws IOException {
+        String value =  jsonReader.nextString();
+        return DocumentTypeEnum.fromValue(value);
+      }
+    }
+
+    public static void validateJsonElement(JsonElement jsonElement) throws IOException {
+      String value = jsonElement.getAsString();
+      DocumentTypeEnum.fromValue(value);
+    }
+  }
+
+  public static final String SERIALIZED_NAME_DOCUMENT_TYPE = "documentType";
+  @SerializedName(SERIALIZED_NAME_DOCUMENT_TYPE)
   @javax.annotation.Nonnull
-  private String sha256;
+  private DocumentTypeEnum documentType;
 
   public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
   @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
   @javax.annotation.Nonnull
   private SecurityLevel securityLevel;
 
-  public static final String SERIALIZED_NAME_TITLE = "title";
-  @SerializedName(SERIALIZED_NAME_TITLE)
+  public static final String SERIALIZED_NAME_CONTENT_HASH = "contentHash";
+  @SerializedName(SERIALIZED_NAME_CONTENT_HASH)
   @javax.annotation.Nullable
-  private String title;
+  private String contentHash;
 
   public CreateDocumentRequest() {
   }
 
-  public CreateDocumentRequest fileName(@javax.annotation.Nonnull String fileName) {
-    this.fileName = fileName;
+  public CreateDocumentRequest title(@javax.annotation.Nonnull String title) {
+    this.title = title;
     return this;
   }
 
   /**
-   * Get fileName
-   * @return fileName
+   * Get title
+   * @return title
    */
   @javax.annotation.Nonnull
-  public String getFileName() {
-    return fileName;
+  public String getTitle() {
+    return title;
   }
 
-  public void setFileName(@javax.annotation.Nonnull String fileName) {
-    this.fileName = fileName;
+  public void setTitle(@javax.annotation.Nonnull String title) {
+    this.title = title;
   }
 
 
-  public CreateDocumentRequest contentType(@javax.annotation.Nonnull String contentType) {
-    this.contentType = contentType;
+  public CreateDocumentRequest fileId(@javax.annotation.Nonnull String fileId) {
+    this.fileId = fileId;
     return this;
   }
 
   /**
-   * Get contentType
-   * @return contentType
+   * TOS / MinIO object key for the source file
+   * @return fileId
    */
   @javax.annotation.Nonnull
-  public String getContentType() {
-    return contentType;
+  public String getFileId() {
+    return fileId;
   }
 
-  public void setContentType(@javax.annotation.Nonnull String contentType) {
-    this.contentType = contentType;
+  public void setFileId(@javax.annotation.Nonnull String fileId) {
+    this.fileId = fileId;
   }
 
 
-  public CreateDocumentRequest sizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
-    this.sizeBytes = sizeBytes;
+  public CreateDocumentRequest documentType(@javax.annotation.Nonnull DocumentTypeEnum documentType) {
+    this.documentType = documentType;
     return this;
   }
 
   /**
-   * Get sizeBytes
-   * minimum: 1
-   * @return sizeBytes
+   * Get documentType
+   * @return documentType
    */
   @javax.annotation.Nonnull
-  public Integer getSizeBytes() {
-    return sizeBytes;
+  public DocumentTypeEnum getDocumentType() {
+    return documentType;
   }
 
-  public void setSizeBytes(@javax.annotation.Nonnull Integer sizeBytes) {
-    this.sizeBytes = sizeBytes;
-  }
-
-
-  public CreateDocumentRequest sha256(@javax.annotation.Nonnull String sha256) {
-    this.sha256 = sha256;
-    return this;
-  }
-
-  /**
-   * Get sha256
-   * @return sha256
-   */
-  @javax.annotation.Nonnull
-  public String getSha256() {
-    return sha256;
-  }
-
-  public void setSha256(@javax.annotation.Nonnull String sha256) {
-    this.sha256 = sha256;
+  public void setDocumentType(@javax.annotation.Nonnull DocumentTypeEnum documentType) {
+    this.documentType = documentType;
   }
 
 
@@ -181,22 +212,22 @@ public class CreateDocumentRequest {
   }
 
 
-  public CreateDocumentRequest title(@javax.annotation.Nullable String title) {
-    this.title = title;
+  public CreateDocumentRequest contentHash(@javax.annotation.Nullable String contentHash) {
+    this.contentHash = contentHash;
     return this;
   }
 
   /**
-   * Get title
-   * @return title
+   * SHA-256 of the source file content (optional, recorded for audit / dedup)
+   * @return contentHash
    */
   @javax.annotation.Nullable
-  public String getTitle() {
-    return title;
+  public String getContentHash() {
+    return contentHash;
   }
 
-  public void setTitle(@javax.annotation.Nullable String title) {
-    this.title = title;
+  public void setContentHash(@javax.annotation.Nullable String contentHash) {
+    this.contentHash = contentHash;
   }
 
 
@@ -210,12 +241,11 @@ public class CreateDocumentRequest {
       return false;
     }
     CreateDocumentRequest createDocumentRequest = (CreateDocumentRequest) o;
-    return Objects.equals(this.fileName, createDocumentRequest.fileName) &&
-        Objects.equals(this.contentType, createDocumentRequest.contentType) &&
-        Objects.equals(this.sizeBytes, createDocumentRequest.sizeBytes) &&
-        Objects.equals(this.sha256, createDocumentRequest.sha256) &&
+    return Objects.equals(this.title, createDocumentRequest.title) &&
+        Objects.equals(this.fileId, createDocumentRequest.fileId) &&
+        Objects.equals(this.documentType, createDocumentRequest.documentType) &&
         Objects.equals(this.securityLevel, createDocumentRequest.securityLevel) &&
-        Objects.equals(this.title, createDocumentRequest.title);
+        Objects.equals(this.contentHash, createDocumentRequest.contentHash);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -224,7 +254,7 @@ public class CreateDocumentRequest {
 
   @Override
   public int hashCode() {
-    return Objects.hash(fileName, contentType, sizeBytes, sha256, securityLevel, title);
+    return Objects.hash(title, fileId, documentType, securityLevel, contentHash);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -238,12 +268,11 @@ public class CreateDocumentRequest {
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class CreateDocumentRequest {\n");
-    sb.append("    fileName: ").append(toIndentedString(fileName)).append("\n");
-    sb.append("    contentType: ").append(toIndentedString(contentType)).append("\n");
-    sb.append("    sizeBytes: ").append(toIndentedString(sizeBytes)).append("\n");
-    sb.append("    sha256: ").append(toIndentedString(sha256)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    title: ").append(toIndentedString(title)).append("\n");
+    sb.append("    fileId: ").append(toIndentedString(fileId)).append("\n");
+    sb.append("    documentType: ").append(toIndentedString(documentType)).append("\n");
+    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
+    sb.append("    contentHash: ").append(toIndentedString(contentHash)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -262,10 +291,10 @@ public class CreateDocumentRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "sizeBytes", "sha256", "securityLevel", "title"));
+    openapiFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType", "securityLevel", "contentHash"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("fileName", "contentType", "sizeBytes", "sha256", "securityLevel"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType", "securityLevel"));
   }
 
   /**
@@ -296,19 +325,21 @@ public class CreateDocumentRequest {
         }
       }
         JsonObject jsonObj = jsonElement.getAsJsonObject();
-      if (!jsonObj.get("fileName").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileName` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileName").toString()));
+      if (!jsonObj.get("title").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `title` to be a primitive type in the JSON string but got `%s`", jsonObj.get("title").toString()));
       }
-      if (!jsonObj.get("contentType").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `contentType` to be a primitive type in the JSON string but got `%s`", jsonObj.get("contentType").toString()));
+      if (!jsonObj.get("fileId").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `fileId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("fileId").toString()));
       }
-      if (!jsonObj.get("sha256").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `sha256` to be a primitive type in the JSON string but got `%s`", jsonObj.get("sha256").toString()));
+      if (!jsonObj.get("documentType").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `documentType` to be a primitive type in the JSON string but got `%s`", jsonObj.get("documentType").toString()));
       }
+      // validate the required field `documentType`
+      DocumentTypeEnum.validateJsonElement(jsonObj.get("documentType"));
       // validate the required field `securityLevel`
       SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
-      if ((jsonObj.get("title") != null && !jsonObj.get("title").isJsonNull()) && !jsonObj.get("title").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `title` to be a primitive type in the JSON string but got `%s`", jsonObj.get("title").toString()));
+      if ((jsonObj.get("contentHash") != null && !jsonObj.get("contentHash").isJsonNull()) && !jsonObj.get("contentHash").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `contentHash` to be a primitive type in the JSON string but got `%s`", jsonObj.get("contentHash").toString()));
       }
   }
 

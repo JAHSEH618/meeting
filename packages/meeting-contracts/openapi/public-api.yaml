@@ -1033,7 +1033,11 @@ paths:
         - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/OkPaginated'
+          description: Documents readable by the caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
     post:
       operationId: createDocument
       description: Register a new document for indexing.
@@ -1050,7 +1054,15 @@ paths:
               $ref: '#/components/schemas/CreateDocumentRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Document registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /documents/{documentId}:
     get:
       operationId: getDocument
@@ -1062,7 +1074,11 @@ paths:
         - $ref: '#/components/parameters/XTraceId'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Document detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
@@ -1093,7 +1109,13 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          description: Document reindex accepted; returns the updated document state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ── RAG ─────────────────────────────────────────────────────
   /rag/query:
@@ -2332,15 +2354,87 @@ components:
     # ── Documents ─────────────────────────────────────────────
     CreateDocumentRequest:
       type: object
-      required: [fileName, contentType, sizeBytes, sha256, securityLevel]
+      description: |
+        Register an already-uploaded knowledge-base document file for parsing
+        and indexing. The file itself must already exist in object storage
+        (referenced by `fileId`); phase-1 does not expose an in-app document
+        upload flow analogous to audio's multipart upload — the file is
+        ingested out-of-band, the API registers its metadata and triggers
+        the parse / chunk / embed pipeline.
+      required: [title, fileId, documentType, securityLevel]
       properties:
-        fileName: {type: string}
-        contentType: {type: string}
-        sizeBytes: {type: integer, minimum: 1}
-        sha256: {type: string}
+        title: {type: string, minLength: 1}
+        fileId: {type: string, minLength: 1, description: 'TOS / MinIO object key for the source file'}
+        documentType:
+          type: string
+          enum: [PDF, DOCX, MARKDOWN, TXT]
         securityLevel:
           $ref: '#/components/schemas/SecurityLevel'
-        title: {type: [string, 'null']}
+        contentHash:
+          type: [string, 'null']
+          description: 'SHA-256 of the source file content (optional, recorded for audit / dedup)'
+
+    Document:
+      type: object
+      description: |
+        A registered knowledge-base document. `textExtractionStatus` reflects
+        the document-parser pipeline (Apache Tika) state; `status` is the
+        business-level lifecycle (ACTIVE / DELETED). RAG retrieval filters
+        on both.
+      required:
+        [documentId, tenantId, title, fileId, documentType, status,
+         securityLevel, textExtractionStatus, createdAt, updatedAt]
+      properties:
+        documentId: {type: string}
+        tenantId: {type: string}
+        title: {type: string}
+        fileId: {type: string}
+        documentType:
+          type: string
+          enum: [PDF, DOCX, MARKDOWN, TXT]
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+        securityLevel:
+          $ref: '#/components/schemas/SecurityLevel'
+        textExtractionStatus:
+          type: string
+          enum: [PENDING, EXTRACTED, FAILED, OCR_UNSUPPORTED, TYPE_UNSUPPORTED]
+        contentHash: {type: [string, 'null']}
+        sourceUri: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        deletedAt: {type: [string, 'null'], format: date-time}
+
+    DocumentResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/Document'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    DocumentListResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
 
     # ── RAG ────────────────────────────────────────────────────
     RagQueryRequest:
