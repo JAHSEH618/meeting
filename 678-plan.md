@@ -390,7 +390,7 @@
 
 模板：`RagQueryController.java`
 
-- [ ] **6.4.1.a** 5 个路由：
+- [x] **6.4.1.a** 5 个路由：
   ```java
   @GetMapping("/api/meetings/{meetingId}/exports")
   ResponseEntity<ApiResponse<PageResult<ExportJobDTO>>> list(...)
@@ -407,7 +407,7 @@
   @PostMapping("/api/exports/{exportId}/revoke-link")
   ResponseEntity<ApiResponse<Void>> revokeLink(...)
   ```
-- [ ] **6.4.1.b** 所有写操作必带 `X-Request-Id` / `X-Trace-Id` / `Idempotency-Key`（参考 `RagQueryController`）；`get/list` 不要求 Idempotency-Key
+- [x] **6.4.1.b** 所有写操作必带 `X-Request-Id` / `X-Trace-Id` / `Idempotency-Key`（参考 `RagQueryController`）；`get/list` 不要求 Idempotency-Key
 
 #### 6.4.2 ExportQueueConsumer
 
