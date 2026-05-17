@@ -257,23 +257,60 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [x] 实现文档上传、TOS / MinIO 文件元信息、解析状态、删除、reindex。
 - [x] 使用 JVM 文档解析库解析 PDF / DOCX / TXT / Markdown；扫描 PDF 和图片 OCR 返回明确不支持错误。
-- [ ] 实现 chunk 策略：source type、source version、chunk strategy version、content hash、status、stale_status。
-- [ ] 实现 pgvector + keyword retrieval + metadata filter + PostgreSQL 权限二次校验。
-- [ ] 实现 `RerankGateway` 同步调用 ai-worker `/internal/rerank`：HMAC、3s timeout、503 / 5xx 降级、400 / 401 不降级并告警。
-- [ ] 实现 RAG 答案生成：scope 计算、citation、coverage=`TRANSCRIPT_ONLY|FULL`、query log、LLM log、artifact manifest。
-- [ ] coverage 从 `TRANSCRIPT_ONLY` 到 `FULL` 时使旧 answer cache 失效。
+- [x] 实现 chunk 策略：source type、source version、chunk strategy version、content hash、status、stale_status。
+- [x] 实现 pgvector + keyword retrieval + metadata filter + PostgreSQL 权限二次校验。
+- [x] 实现 `RerankGateway` 同步调用 ai-worker `/internal/rerank`：HMAC、3s timeout、503 / 5xx 降级、400 / 401 不降级并告警。
+- [x] 实现 RAG 答案生成：scope 计算、citation、coverage=`TRANSCRIPT_ONLY|FULL`、query log、LLM log、artifact manifest。
+- [x] coverage 从 `TRANSCRIPT_ONLY` 到 `FULL` 时使旧 answer cache 失效。
 
 ### 工程：`apps/ai-worker`
 
-- [ ] 接入 bge-m3 embedding runtime，支持会议、纪要、事项和文档 chunk embedding callback。
-- [ ] 接入 bge-reranker-v2-m3 lazy-load，并实现 `/internal/rerank` 真实 rerank。
-- [ ] 模型加载失败返回稳定错误码，Java 决定是否按规则降级。
+- [x] 接入 bge-m3 embedding runtime，支持会议、纪要、事项和文档 chunk embedding callback。
+- [x] 接入 bge-reranker-v2-m3 lazy-load，并实现 `/internal/rerank` 真实 rerank。
+- [x] 模型加载失败返回稳定错误码，Java 决定是否按规则降级。
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 实现文档知识库页面：上传、解析状态、扫描 PDF 不支持、reindex、删除。
-- [ ] 实现 RAG 页面：scope 选择、提问、coverage 标签、citation、无可检索内容、429 限流。
-- [ ] citation 点击定位到会议 segment / 文档 chunk；权限撤销或音频归档时展示退化状态。
+- [x] 实现文档知识库页面：上传、解析状态、扫描 PDF 不支持、reindex、删除。
+- [x] 实现 RAG 页面：scope 选择、提问、coverage 标签、citation、无可检索内容、429 限流。
+- [x] citation 点击定位到会议 segment / 文档 chunk；权限撤销或音频归档时展示退化状态。
+
+### 阶段 5 收尾备忘（2026-05-18）
+
+#### 已落地
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| KnowledgeChunk 聚合 + ChunkStrategy | `meeting-api-domain/.../domain/rag/KnowledgeChunk.java` (fe0960d) | Builder + markEmbedding/markStale 状态机 |
+| ChunkingApplicationService | `meeting-api-app/.../app/rag/` (18b03b3) | 会议 + 文档统一切分入口 |
+| JdbcKnowledgeChunkRepository | `meeting-api-infrastructure/.../persistence/rag/` (58e2cff) | pgvector + HNSW + tsvector 双通道 |
+| EmbeddingTaskDispatcher | `meeting-api-app/.../app/rag/` (18f797c) | 新 chunk 扇出 TEXT_EMBEDDING 任务 |
+| ai-worker TEXT_EMBEDDING workflow | `apps/ai-worker/...` (aba7043) | 含 inline chunk content |
+| writeEmbeddings callback | (d6ef50e) | 批量 pgvector 持久化 |
+| `/api/rag/reindex/{meetings,documents}/{id}` | `meeting-api-adapter/.../rag/RagReindexController.java` (fc25d42) | |
+| Vector + keyword + RRF fusion | `meeting-api-domain/.../rag/RrfFusion.java` (79703ab) | |
+| RagAuthorizationService（二次过滤） | `meeting-api-app/.../app/rag/RagAuthorizationService.java` (e24928b) | 严格 RLS 兜底 |
+| RagQueryApplicationService | `meeting-api-app/.../app/rag/RagQueryApplicationService.java` (d93cf70) | scope → embed → 检索 → 授权 → rerank → LLM → citation |
+| `POST /api/rag/query` adapter | (6a99013) | |
+| RagAnswerCache (coverage-based eviction) | `InMemoryRagAnswerCache.java` (18594a9) | TRANSCRIPT_ONLY → FULL 跃迁清缓存 |
+| bge-m3 embedding runtime | `apps/ai-worker/ai_worker/model_runtime/embedding/bge_m3_runtime.py` (1633988) | fake/real 切换 |
+| bge-reranker-v2-m3 runtime | `apps/ai-worker/ai_worker/model_runtime/rerank/bge_reranker_runtime.py` (b9376be) | |
+| `/internal/embed` 同步查询 embedding | (e5d45ea) | |
+| `/internal/models` + warmup | (4861771) | 含 HMAC |
+| Embedding + Rerank gateways | `meeting-api-domain/.../rag/{EmbeddingGateway,RerankGateway}.java` (c9c2cda) | 503/5xx 降级 + 400/401 fail-fast |
+| ai-worker warmup on ApplicationReady | (d75a135) | fire-and-forget |
+| Document parser | `meeting-api-domain/.../document/DocumentParser.java` (ad08e56) | OCR-unsupported 错误码 |
+| Document CRUD + reindex | `meeting-api-app/.../document/DocumentApplicationService.java` (c4a6214) | |
+| DocumentsPage | `meeting-web/src/features/documents/DocumentsPage.tsx` (4786114) | |
+| RagPage | `meeting-web/src/features/rag/RagPage.tsx` (8a67201) | scope + coverage badge + citations |
+| TranscriptPage citation deep-link | `meeting-web/src/features/transcript/TranscriptPage.tsx` (05ffc6f) | 含退化态 |
+| artifact_manifests 写入 LLM pipeline | (21ab929) | |
+
+#### 未做（落到 Phase 8 收尾）
+
+- [ ] RAG 拆分计时（`rag_query_phase_duration_seconds{phase=...}`）—— 等 Phase 8.1 一并加
+- [ ] RAG 答案 429 限流 —— Phase 8.1 性能基线一并做
+- [ ] Playwright E2E 覆盖 RAG 主链路 + citation 跳转 —— Phase 8.7
 
 ## 阶段 6：异步导出
 
