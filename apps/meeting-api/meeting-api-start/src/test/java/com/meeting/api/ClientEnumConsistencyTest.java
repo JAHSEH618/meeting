@@ -1,6 +1,10 @@
 package com.meeting.api;
 
 import com.meeting.api.client.enums.AudioUploadStatus;
+import com.meeting.api.client.enums.ExportDataBoundaryMode;
+import com.meeting.api.client.enums.ExportFormat;
+import com.meeting.api.client.enums.ExportStatus;
+import com.meeting.api.client.enums.ExportType;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingStepUpdateSource;
@@ -40,6 +44,10 @@ class ClientEnumConsistencyTest {
         assertThat(names(StaleStatus.class)).containsExactlyElementsOf(enums.get("staleStatus"));
         assertThat(names(TaskEventType.class)).containsExactlyElementsOf(enums.get("taskEventType"));
         assertThat(names(AudioUploadStatus.class)).containsExactlyElementsOf(enums.get("audioUploadStatus"));
+        assertThat(names(ExportFormat.class)).containsExactlyElementsOf(enums.get("exportFormat"));
+        assertThat(names(ExportStatus.class)).containsExactlyElementsOf(enums.get("exportStatus"));
+        assertThat(names(ExportDataBoundaryMode.class)).containsExactlyElementsOf(enums.get("exportDataBoundaryMode"));
+        assertThat(names(ExportType.class)).containsExactlyElementsOf(enums.get("exportType"));
     }
 
     private static List<String> names(Class<? extends Enum<?>> enumType) {

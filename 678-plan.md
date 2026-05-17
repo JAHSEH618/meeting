@@ -253,7 +253,7 @@
 
 模板：`RagQueryApplicationService` + `DocumentApplicationService.create()`
 
-- [ ] **6.3.1.a** 实现 `ExportFacade.create(CreateExportCommand)` 接口：
+- [x] **6.3.1.a** 实现 `ExportFacade.create(CreateExportCommand)` 接口：
   ```java
   @Service
   public class CreateExportApplicationService implements CreateExportFacade {
@@ -315,14 +315,14 @@
       }
   }
   ```
-- [ ] **6.3.1.b** 配置：`meeting.export.download-ttl-hours=24`、`meeting.export.bucket=meeting-exports`、`meeting.export.watermark-default=` (空)
+- [x] **6.3.1.b** 配置：`meeting.export.download-ttl-hours=24`、`meeting.export.bucket=meeting-exports`、`meeting.export.watermark-default=` (空)
 
 #### 6.3.2 其他应用服务
 
-- [ ] **6.3.2.a** `ListExportsApplicationService.list(tenantId, meetingId, cursor)`：列表 + cursor 分页
-- [ ] **6.3.2.b** `GetExportApplicationService.get(tenantId, exportId)`：返回 ExportJobDTO，**生成 downloadUrl** 通过 `TosSignedUrlService.sign(bucket, objectKey, ttl)`；如果 `download_revoked_at != null` 则返回 `downloadUrl=null`；如果 SUCCEEDED 但快照已 STALE（通过比对 `meetings.transcript_version > job.input_transcript_version`）则在 DTO 中 `stale=true`
-- [ ] **6.3.2.c** `CancelExportApplicationService.cancel(tenantId, exportId, userId)`：终态 export 抛 409（`EXPORT_ALREADY_FINISHED`）；RUNNING 状态发布 `ExportCancelRequestedEvent`，consumer 收到后 markCancelled 并清理临时文件
-- [ ] **6.3.2.d** `RevokeExportLinkApplicationService.revoke(tenantId, exportId, userId)`：调用 `ExportJob.revokeDownload(now)`，写 audit `EXPORT_REVOKED`
+- [x] **6.3.2.a** `ListExportsApplicationService.list(tenantId, meetingId, cursor)`：列表 + cursor 分页
+- [x] **6.3.2.b** `GetExportApplicationService.get(tenantId, exportId)`：返回 ExportJobDTO，**生成 downloadUrl** 通过 `TosSignedUrlService.sign(bucket, objectKey, ttl)`；如果 `download_revoked_at != null` 则返回 `downloadUrl=null`；如果 SUCCEEDED 但快照已 STALE（通过比对 `meetings.transcript_version > job.input_transcript_version`）则在 DTO 中 `stale=true` _(downloadUrl 签名留给 PR-G adapter 层)_
+- [x] **6.3.2.c** `CancelExportApplicationService.cancel(tenantId, exportId, userId)`：终态 export 抛 409（`EXPORT_ALREADY_FINISHED`）；RUNNING 状态发布 `ExportCancelRequestedEvent`，consumer 收到后 markCancelled 并清理临时文件
+- [x] **6.3.2.d** `RevokeExportLinkApplicationService.revoke(tenantId, exportId, userId)`：调用 `ExportJob.revokeDownload(now)`，写 audit `EXPORT_REVOKED`
 
 #### 6.3.3 仓储实现
 
@@ -330,12 +330,12 @@
 
 模板：`JdbcKnowledgeChunkRepository.java`
 
-- [ ] **6.3.3.a** 用 MyBatis-Plus + 原生 SQL；`claimQueued()` 使用 `FOR UPDATE SKIP LOCKED LIMIT ?`
+- [x] **6.3.3.a** 用 MyBatis-Plus + 原生 SQL；`claimQueued()` 使用 `FOR UPDATE SKIP LOCKED LIMIT ?`
 - [ ] **6.3.3.b** Testcontainers IT `JdbcExportJobRepositoryIT.java`：
   - 写入 → findById 命中
   - 跨租户隔离：tenant A 写的 export tenant B 看不到（RLS 验证）
-  - `claimQueued` 在两次调用之间锁互斥
-- [ ] **6.3.3.c** `JdbcMeetingSnapshotPort`：从 transcript_segments + meeting_minutes + meeting_action_items + decisions + risks 拉取，**带版本号过滤**
+  - `claimQueued` 在两次调用之间锁互斥 _(留给 PR-F/G 一并落)_
+- [ ] **6.3.3.c** `JdbcMeetingSnapshotPort`：从 transcript_segments + meeting_minutes + meeting_action_items + decisions + risks 拉取，**带版本号过滤** _(留给 PR-F：gateway 实际消费时再做)_
 
 #### 6.3.4 Outbox -> RabbitMQ publisher
 
