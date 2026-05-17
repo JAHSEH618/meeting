@@ -169,7 +169,7 @@ public class MinutesApplicationService implements MinutesFacade {
             sectionRecords,
             "PUBLISHED",
             StaleStatus.ACTIVE,
-            response.llmCallLogId(),
+            response.artifactManifestId(),
             command.requestedBy(),
             now,
             now

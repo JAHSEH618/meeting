@@ -107,7 +107,7 @@ class RagQueryApplicationServiceTest {
 
         assertThat(out.answer()).isEqualTo("基于会议与文档的综合回答");
         assertThat(out.coverage()).isEqualTo(RagAnswerCoverage.FULL);
-        assertThat(out.artifactManifestId()).isEqualTo("llmlog_fake");
+        assertThat(out.artifactManifestId()).isEqualTo("art_fake");
         assertThat(out.citations()).hasSize(2);
 
         var first = (MeetingSegmentCitationDTO) out.citations().get(0);
@@ -597,7 +597,7 @@ class RagQueryApplicationServiceTest {
             callCount.incrementAndGet();
             this.lastVariables = new HashMap<>(request.variables());
             this.lastSecurityLevel = request.securityLevel();
-            return new LlmResponse(responseBody, null, 0, 0, 0L, "qwen-plus-fake", "llmlog_fake");
+            return new LlmResponse(responseBody, null, 0, 0, 0L, "qwen-plus-fake", "llmlog_fake", "art_fake");
         }
     }
 

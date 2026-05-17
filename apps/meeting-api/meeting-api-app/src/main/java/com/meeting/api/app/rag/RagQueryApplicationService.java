@@ -267,7 +267,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
             authorized.size(), top.size(), citations.size(), coverage, response.llmCallLogId()
         );
 
-        return new RagAnswerDTO(parsed.answer(), citations, coverage, response.llmCallLogId());
+        return new RagAnswerDTO(parsed.answer(), citations, coverage, response.artifactManifestId());
     }
 
     private List<KnowledgeChunkCandidate> rerankOrFallback(

@@ -37,7 +37,8 @@ public interface LlmGateway {
         int completionTokens,
         long latencyMs,
         String modelVersion,
-        String llmCallLogId
+        String llmCallLogId,
+        String artifactManifestId
     ) {
     }
 }

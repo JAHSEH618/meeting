@@ -3,6 +3,7 @@ package com.meeting.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.SecurityLevel;
+import com.meeting.api.domain.artifact.ArtifactManifestRepository;
 import com.meeting.api.domain.llm.LlmCallLogRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
@@ -31,7 +32,8 @@ class DashScopeLlmGatewayTest {
     void confidentialSecurityLevelIsFailClosed() {
         InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
         InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
-        DashScopeLlmGateway gateway = gateway(new CapturingClient(), templates, logs);
+        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
+        DashScopeLlmGateway gateway = gateway(new CapturingClient(), templates, logs, manifests);
 
         assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.CONFIDENTIAL)))
             .isInstanceOf(SecurityLevelBlockedException.class)
@@ -41,6 +43,7 @@ class DashScopeLlmGatewayTest {
                 assertThat(blocked.blockedCapability()).isEqualTo("MINUTES_SUMMARY");
             });
         assertThat(logs.records).isEmpty();
+        assertThat(manifests.records).isEmpty();
     }
 
     @Test
@@ -51,6 +54,7 @@ class DashScopeLlmGatewayTest {
             "{\"required\":[\"summary\",\"sections\"]}",
             "ACTIVE");
         InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
+        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
         CapturingClient client = new CapturingClient();
         client.next = new OpenAiCompatibleChatClient.ChatCompletion(
             "{\"summary\":\"ok\",\"sections\":[]}",
@@ -60,7 +64,7 @@ class DashScopeLlmGatewayTest {
             42L,
             Map.of()
         );
-        DashScopeLlmGateway gateway = gateway(client, templates, logs);
+        DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
         LlmGateway.LlmResponse response = gateway.complete(new LlmGateway.LlmRequest(
             "tenant_01",
@@ -82,6 +86,7 @@ class DashScopeLlmGatewayTest {
         assertThat(response.promptTokens()).isEqualTo(12);
         assertThat(response.completionTokens()).isEqualTo(34);
         assertThat(response.llmCallLogId()).startsWith("llmlog_");
+        assertThat(response.artifactManifestId()).startsWith("art_");
 
         assertThat(logs.records).hasSize(1);
         LlmCallLogRepository.LlmCallLogRecord record = logs.records.get(0);
@@ -91,6 +96,39 @@ class DashScopeLlmGatewayTest {
         assertThat(record.tokenTotal()).isEqualTo(46);
         assertThat(record.promptTemplateId()).isEqualTo("tpl_MINUTES_SUMMARY_tenant_01");
         assertThat(record.actualModelVersion()).isEqualTo("qwen-plus-1.0");
+
+        // The manifest row is what downstream business FKs reference.
+        assertThat(manifests.records).hasSize(1);
+        ArtifactManifestRepository.ArtifactManifestRecord manifest = manifests.records.get(0);
+        assertThat(manifest.id()).isEqualTo(response.artifactManifestId());
+        assertThat(manifest.tenantId()).isEqualTo("tenant_01");
+        assertThat(manifest.meetingId()).isEqualTo("meeting_01");
+        assertThat(manifest.taskId()).isEqualTo("task_01");
+        assertThat(manifest.artifactType()).isEqualTo("LLM_MINUTES_SUMMARY");
+        assertThat(manifest.inputArtifactHash()).hasSize(64);
+        assertThat(manifest.artifactHash()).hasSize(64);
+        assertThat(manifest.provider()).isEqualTo("dashscope");
+        assertThat(manifest.modelVersion()).isEqualTo("qwen-plus-1.0");
+        assertThat(manifest.promptTemplateId()).isEqualTo("tpl_MINUTES_SUMMARY_tenant_01");
+        assertThat(manifest.promptTemplateVersion()).isEqualTo("1.0.0");
+    }
+
+    @Test
+    void manifestPersistFailureFailsTheLlmCall() {
+        InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
+        templates.put(null, "MINUTES_SUMMARY", "render {{transcript}}", "{}", "ACTIVE");
+        InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
+        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
+        manifests.throwOnNextSave = true;
+        CapturingClient client = new CapturingClient();
+        client.next = new OpenAiCompatibleChatClient.ChatCompletion("answer", "qwen-plus", 1, 1, 1L, Map.of());
+        DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
+
+        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
+            .isInstanceOfSatisfying(LlmProviderException.class, ex ->
+                assertThat(ex.errorCode()).isEqualTo(ErrorCode.WRITEBACK_FAILED));
+        // No call-log row either — manifest failure aborts before the call log is written.
+        assertThat(logs.records).isEmpty();
     }
 
     @Test
@@ -101,6 +139,7 @@ class DashScopeLlmGatewayTest {
             "{\"required\":[\"summary\",\"sections\"]}",
             "ACTIVE");
         InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
+        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
         CapturingClient client = new CapturingClient();
         client.next = new OpenAiCompatibleChatClient.ChatCompletion(
             "{\"summary\":\"ok\"}",
@@ -110,7 +149,7 @@ class DashScopeLlmGatewayTest {
             10L,
             Map.of()
         );
-        DashScopeLlmGateway gateway = gateway(client, templates, logs);
+        DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
         assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
             .isInstanceOf(LlmProviderException.class)
@@ -123,10 +162,11 @@ class DashScopeLlmGatewayTest {
         InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
         templates.put(null, "MINUTES_SUMMARY", "render {{transcript}}", "{}", "ACTIVE");
         InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
+        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
         OpenAiCompatibleChatClient client = req -> {
             throw new LlmProviderException(ErrorCode.LLM_PROVIDER_TIMEOUT, "timeout");
         };
-        DashScopeLlmGateway gateway = gateway(client, templates, logs);
+        DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
         assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
             .isInstanceOf(LlmProviderException.class);
@@ -134,11 +174,15 @@ class DashScopeLlmGatewayTest {
         assertThat(logs.records).hasSize(1);
         assertThat(logs.records.get(0).status()).isEqualTo("FAILED");
         assertThat(logs.records.get(0).errorCode()).isEqualTo("LLM_PROVIDER_TIMEOUT");
+        // No manifest on a failed call — no AI artifact was produced to reference.
+        assertThat(manifests.records).isEmpty();
     }
 
     @Test
     void missingPromptTemplateRaisesProviderError() {
-        DashScopeLlmGateway gateway = gateway(new CapturingClient(), new InMemoryTemplateRepo(), new InMemoryCallLogRepo());
+        DashScopeLlmGateway gateway = gateway(
+            new CapturingClient(), new InMemoryTemplateRepo(), new InMemoryCallLogRepo(), new InMemoryManifestRepo()
+        );
 
         assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.PUBLIC)))
             .isInstanceOf(LlmProviderException.class)
@@ -163,12 +207,14 @@ class DashScopeLlmGatewayTest {
     private static DashScopeLlmGateway gateway(
         OpenAiCompatibleChatClient client,
         PromptTemplateRepository templates,
-        LlmCallLogRepository logs
+        LlmCallLogRepository logs,
+        ArtifactManifestRepository manifests
     ) {
         return new DashScopeLlmGateway(
             client,
             templates,
             logs,
+            manifests,
             new ObjectMapper(),
             "qwen-plus",
             EnumSet.of(SecurityLevel.CONFIDENTIAL, SecurityLevel.SECRET),
@@ -218,6 +264,21 @@ class DashScopeLlmGatewayTest {
 
         @Override
         public String record(LlmCallLogRecord record) {
+            records.add(record);
+            return record.id();
+        }
+    }
+
+    private static final class InMemoryManifestRepo implements ArtifactManifestRepository {
+        private final List<ArtifactManifestRecord> records = new ArrayList<>();
+        boolean throwOnNextSave = false;
+
+        @Override
+        public String save(ArtifactManifestRecord record) {
+            if (throwOnNextSave) {
+                throwOnNextSave = false;
+                throw new RuntimeException("fake manifest persist failure");
+            }
             records.add(record);
             return record.id();
         }

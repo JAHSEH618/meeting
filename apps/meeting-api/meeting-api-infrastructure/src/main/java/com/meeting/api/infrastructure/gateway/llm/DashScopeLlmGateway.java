@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.SecurityLevel;
+import com.meeting.api.domain.artifact.ArtifactManifestRepository;
 import com.meeting.api.domain.llm.LlmCallLogRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
@@ -35,7 +36,12 @@ import org.springframework.stereotype.Component;
  *   <li>Render template by substituting {@code {{var}}} placeholders.</li>
  *   <li>Call the LLM via {@link OpenAiCompatibleChatClient}.</li>
  *   <li>Validate the response against the template's JSON schema (top-level required keys check).</li>
- *   <li>Persist an {@link LlmCallLogRepository.LlmCallLogRecord} entry with input/output hashes.</li>
+ *   <li>On success, persist an {@code artifact_manifests} row (provenance ledger for §12.5
+ *       traceability) and an {@code llm_call_logs} row (per-call audit log). The manifest id
+ *       is returned in {@link LlmResponse#artifactManifestId()} so downstream business rows
+ *       (e.g. {@code meeting_minutes.artifact_manifest_id}) can satisfy their FK to this
+ *       ledger; the call-log id stays available for raw-call audit linkage.</li>
+ *   <li>On failure, record only the call-log row (no business artifact was produced).</li>
  * </ol>
  */
 @Component
@@ -47,6 +53,7 @@ public class DashScopeLlmGateway implements LlmGateway {
     private final OpenAiCompatibleChatClient client;
     private final PromptTemplateRepository promptTemplateRepository;
     private final LlmCallLogRepository llmCallLogRepository;
+    private final ArtifactManifestRepository artifactManifestRepository;
     private final ObjectMapper objectMapper;
     private final String defaultModel;
     private final Set<SecurityLevel> blockedSecurityLevels;
@@ -56,6 +63,7 @@ public class DashScopeLlmGateway implements LlmGateway {
         OpenAiCompatibleChatClient client,
         PromptTemplateRepository promptTemplateRepository,
         LlmCallLogRepository llmCallLogRepository,
+        ArtifactManifestRepository artifactManifestRepository,
         ObjectMapper objectMapper,
         @Value("${meeting.llm.dashscope.default-model:qwen-plus}") String defaultModel,
         @Value("${meeting.llm.security-level-blocked:CONFIDENTIAL,SECRET}") String blockedLevelsCsv,
@@ -64,6 +72,7 @@ public class DashScopeLlmGateway implements LlmGateway {
         this.client = client;
         this.promptTemplateRepository = promptTemplateRepository;
         this.llmCallLogRepository = llmCallLogRepository;
+        this.artifactManifestRepository = artifactManifestRepository;
         this.objectMapper = objectMapper;
         this.defaultModel = defaultModel;
         this.blockedSecurityLevels = parseLevels(blockedLevelsCsv);
@@ -74,6 +83,7 @@ public class DashScopeLlmGateway implements LlmGateway {
         OpenAiCompatibleChatClient client,
         PromptTemplateRepository promptTemplateRepository,
         LlmCallLogRepository llmCallLogRepository,
+        ArtifactManifestRepository artifactManifestRepository,
         ObjectMapper objectMapper,
         String defaultModel,
         Set<SecurityLevel> blockedSecurityLevels,
@@ -82,6 +92,7 @@ public class DashScopeLlmGateway implements LlmGateway {
         this.client = client;
         this.promptTemplateRepository = promptTemplateRepository;
         this.llmCallLogRepository = llmCallLogRepository;
+        this.artifactManifestRepository = artifactManifestRepository;
         this.objectMapper = objectMapper;
         this.defaultModel = defaultModel;
         this.blockedSecurityLevels = blockedSecurityLevels;
@@ -124,6 +135,10 @@ public class DashScopeLlmGateway implements LlmGateway {
             validateAgainstSchema(structuredJson, template.jsonSchema());
         }
         String outputHash = sha256(completion.content());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        String manifestId = recordArtifactManifest(
+            request, template, inputHash, outputHash, completion, now
+        );
         String callLogId = recordSuccessfulCall(
             request,
             template,
@@ -139,8 +154,89 @@ public class DashScopeLlmGateway implements LlmGateway {
             completion.completionTokens(),
             completion.latencyMs(),
             completion.modelVersion(),
-            callLogId
+            callLogId,
+            manifestId
         );
+    }
+
+    private String recordArtifactManifest(
+        LlmRequest request,
+        PromptTemplateRepository.PromptTemplate template,
+        String inputHash,
+        String outputHash,
+        OpenAiCompatibleChatClient.ChatCompletion completion,
+        OffsetDateTime now
+    ) {
+        String id = "art_" + UUID.randomUUID().toString().replace("-", "");
+        String modelsJson = String.format(
+            "[{\"role\":\"llm\",\"provider\":\"%s\",\"modelVersion\":%s}]",
+            PROVIDER, quoteJson(completion.modelVersion())
+        );
+        // Don't persist raw input/output text — we already have content
+        // hashes on llm_call_logs and full content can be re-derived from
+        // the prompt template + input variables when reproducing the call.
+        String inputJson = String.format(
+            "{\"capability\":%s,\"taskName\":%s,\"securityLevel\":\"%s\"}",
+            quoteJson(request.capability()),
+            quoteJson(request.taskName()),
+            request.securityLevel().name()
+        );
+        String outputJson = String.format(
+            "{\"promptTokens\":%d,\"completionTokens\":%d,\"latencyMs\":%d}",
+            completion.promptTokens(), completion.completionTokens(), completion.latencyMs()
+        );
+        try {
+            return artifactManifestRepository.save(new ArtifactManifestRepository.ArtifactManifestRecord(
+                id,
+                request.tenantId(),
+                request.meetingId(),
+                request.taskId(),
+                "LLM_" + request.capability(),
+                null,
+                outputHash,
+                inputHash,
+                inputJson,
+                outputJson,
+                modelsJson,
+                template.id(),
+                template.version(),
+                PROVIDER,
+                completion.modelVersion(),
+                null,
+                null,
+                null,
+                now
+            ));
+        } catch (RuntimeException ex) {
+            // The downstream business write FKs to artifact_manifests; if we
+            // can't persist the manifest the caller must fail closed rather
+            // than write an orphaned business row.
+            throw new LlmProviderException(
+                ErrorCode.WRITEBACK_FAILED,
+                "artifact_manifest persist failed: " + ex.getMessage(),
+                ex
+            );
+        }
+    }
+
+    private static String quoteJson(String value) {
+        if (value == null) return "null";
+        // Minimal JSON string escape — sufficient for our short, audited inputs.
+        StringBuilder sb = new StringBuilder(value.length() + 2);
+        sb.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> sb.append(c);
+            }
+        }
+        sb.append('"');
+        return sb.toString();
     }
 
     static String renderTemplate(String template, Map<String, Object> variables) {

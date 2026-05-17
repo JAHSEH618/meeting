@@ -160,7 +160,7 @@ class MinutesApplicationServiceTest {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
         meetings.add(meeting("meeting_01", SecurityLevel.INTERNAL, 1, 0));
         FakeLlmGateway llm = new FakeLlmGateway();
-        llm.next = new LlmGateway.LlmResponse("not json", "not json", 0, 0, 1L, "qwen", "llmlog_x");
+        llm.next = new LlmGateway.LlmResponse("not json", "not json", 0, 0, 1L, "qwen", "llmlog_x", "art_x");
         MinutesApplicationService service = service(
             meetings,
             new InMemoryTranscriptRepo(1),
@@ -191,7 +191,7 @@ class MinutesApplicationServiceTest {
     }
 
     private static LlmGateway.LlmResponse llmResponse(String json) {
-        return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t");
+        return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t", "art_t");
     }
 
     private static Meeting meeting(String id, SecurityLevel level, int transcriptVersion, int minutesVersion) {

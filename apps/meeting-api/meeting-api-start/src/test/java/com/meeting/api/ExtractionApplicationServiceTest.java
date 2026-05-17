@@ -162,7 +162,7 @@ class ExtractionApplicationServiceTest {
     }
 
     private static LlmGateway.LlmResponse llmResponse(String json) {
-        return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t");
+        return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t", "art_t");
     }
 
     private static Meeting meeting(SecurityLevel level) {

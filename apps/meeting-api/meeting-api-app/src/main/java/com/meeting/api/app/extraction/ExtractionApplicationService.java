@@ -127,9 +127,9 @@ public class ExtractionApplicationService {
 
         JsonNode root = parseJson(response.structuredJson() != null ? response.structuredJson() : response.content());
         OffsetDateTime now = OffsetDateTime.now(clock);
-        int actions = persistActionItems(root, tenantId, meetingId, transcriptVersion, segmentById, response.llmCallLogId(), now);
-        int decisions = persistDecisions(root, tenantId, meetingId, transcriptVersion, segmentById, response.llmCallLogId(), now);
-        int risks = persistRisks(root, tenantId, meetingId, transcriptVersion, segmentById, response.llmCallLogId(), now);
+        int actions = persistActionItems(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
+        int decisions = persistDecisions(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
+        int risks = persistRisks(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
         log.info("extraction_completed tenant={} meeting={} actions={} decisions={} risks={}", tenantId, meetingId, actions, decisions, risks);
         return new ExtractionSummary(actions, decisions, risks);
     }
