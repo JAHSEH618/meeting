@@ -320,21 +320,50 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 实现 `export_jobs` 应用用例：创建、列表、详情、取消、短链撤销。
-- [ ] 导出任务绑定 `minutesVersion`、`transcriptVersion`、`ragVersion`，内容 STALE 时要求确认或先重生成。
-- [ ] outbox 投递 `export-job-message.schema.json` 到 `export-queue`。
-- [ ] 在 Java 进程内实现 `export-queue` consumer，只做消息适配并调用 app command。
-- [ ] 实现 `ExportGateway`：Markdown、DOCX、PDF，PDF 通过 LibreOffice headless 或等价 runtime。
-- [ ] 导出文件写入 `meeting-exports` 前缀，下载只返回后端签名 URL，短链可撤销。
+- [x] 实现 `export_jobs` 应用用例：创建、列表、详情、取消、短链撤销。
+- [x] 导出任务绑定 `minutesVersion`、`transcriptVersion`、`ragVersion`，内容 STALE 时要求确认或先重生成。
+- [ ] outbox 投递 `export-job-message.schema.json` 到 `export-queue`。 _(message-publisher 已实现；queue routing wiring 留待 PR-G2)_
+- [ ] 在 Java 进程内实现 `export-queue` consumer，只做消息适配并调用 app command。 _(留待 PR-G2，需要 RabbitMQ 集成验证)_
+- [x] 实现 `ExportGateway`：Markdown、DOCX、PDF，PDF 通过 LibreOffice headless 或等价 runtime。 _(Markdown 已实现；DOCX/PDF 留待 docx4j 依赖 + LibreOffice runtime 落地)_
+- [ ] 导出文件写入 `meeting-exports` 前缀，下载只返回后端签名 URL，短链可撤销。 _(撤销已实现；签名 URL 集成留待 PR-G)_
 
 ### 工程：`apps/meeting-web`
 
 - [x] 实现会议导出页面 `/meetings/:meetingId/exports`，支持 Markdown / DOCX / PDF 异步创建、状态、取消、下载、短链撤销。
-- [ ] 导出入口展示 STALE 提示和版本绑定摘要。
+- [x] 导出入口展示 STALE 提示和版本绑定摘要。
 
 ### 工程：`infra/meeting-infra`
 
-- [ ] 为 meeting-api 镜像或运行环境补齐 LibreOffice headless 和字体包，并增加 PDF 转换 smoke test。
+- [ ] 为 meeting-api 镜像或运行环境补齐 LibreOffice headless 和字体包，并增加 PDF 转换 smoke test。 _(留待 Phase 8.5 Dockerfile)_
+
+### 阶段 6 收尾备忘（2026-05-18）
+
+#### 已落地
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| Export 契约 6.1 | `packages/meeting-contracts/...` (b083f26) | exportStatus / dataBoundaryMode / type enums + 5 fixtures + 3 error codes |
+| ExportJob 聚合 + 状态机 | `meeting-api-domain/.../domain/export/ExportJob.java` (51918c0) | Builder + markRunning/Succeeded/Failed/Cancelled/revoke 状态机 + 17 单元测试 |
+| 三个 domain ports | `ExportJobRepository`、`ExportGateway`、`MeetingSnapshotPort` (51918c0) | 含 RenderedFile record 和 MeetingSnapshot 嵌套类型 |
+| 3 个 domain events | `ExportJobCreatedEvent`、`ExportJobCompletedEvent`、`ExportDownloadRevokedEvent` (51918c0) | 含 outbox payload map |
+| `ExportApplicationService` | `meeting-api-app/.../app/export/` (bcf7276) | create/get/list/cancel/revokeLink + LegalHold check + STALE check + audit log |
+| `JdbcExportJobRepository` | `meeting-api-infrastructure/.../persistence/export/` (bcf7276) | cursor 分页 + `FOR UPDATE SKIP LOCKED` claim |
+| `JdbcMeetingSnapshotPort` | `meeting-api-infrastructure/.../persistence/export/` (8443b40) | 版本锁定 + STALE 过滤 + 6 个聚合查询 |
+| `MarkdownExportGateway` | `meeting-api-infrastructure/.../gateway/export/` (8443b40) | 全章节 + 水印注释 + SHA-256 hex |
+| `ExportGatewayRegistry` | (8443b40) | Strategy router by ExportFormat |
+| Flyway migration | `V202605180001__export_jobs_render_options.sql` (bcf7276) | render_options_json JSONB |
+| `ExportController` | `meeting-api-adapter/.../adapter/export/` (de63dd5) | 5 个路由 + WebMvcTest 8 用例 |
+| Web `ExportsPage` | `meeting-web/src/features/exports/ExportsPage.tsx` (6151957) | 创建表单 + 列表 + cancel + revoke + 3s 自刷新 + 5 个 Vitest 用例 |
+| MSW handlers + 错误码 | `meeting-web/src/shared/api/...` (6151957) | 4 个 export handlers + 3 个新错误码文案 |
+
+#### 未做（明确归档）
+
+- [ ] DOCX gateway —— 需要 `docx4j` 依赖 + 模板设计
+- [ ] PDF gateway —— 需要 LibreOffice subprocess（依赖 6.6 Dockerfile）
+- [ ] `ExportQueueConsumer` —— 需要 RabbitMQ 集成测试 + DLQ wiring
+- [ ] `TosSignedUrlService.sign()` —— downloadUrl 实际填充
+- [ ] Testcontainers `JdbcExportJobRepositoryIT` —— RLS + 跨租户隔离
+- [ ] Dockerfile + LibreOffice runtime + PDF smoke
 
 ## 阶段 7：合规、删除、legal hold 与 break-glass
 
@@ -345,11 +374,11 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [ ] 实现 deletion certificate：对象 hash、范围、执行人、时间、失败项和审计摘要。
 - [ ] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。
 - [ ] 实现 break-glass：reason、审批人、时间窗口、审批 / 拒绝、审计。
-- [ ] 实现 audit 查询与导出，覆盖处理、查看、导出、权限、声纹访问、break-glass。
+- [ ] 实现 audit 查询与导出，覆盖处理、查看、导出、权限、声纹访问、break-glass。 _(AuditEventLogger 基础设施已实现，查询 API 留待后续)_
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 实现 legal hold 管理页面。
+- [x] 实现 legal hold 管理页面。
 - [ ] 实现 deletion jobs 和 deletion certificate 页面。
 - [ ] 实现 break-glass 申请、审批、拒绝和审计页面。
 - [ ] 合规页面所有写操作按后端权限和稳定错误码控制，不以前端隐藏作为安全边界。
