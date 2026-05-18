@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Pre-commit hook for the meeting monorepo (final-check.md G4).
+#
+# Runs locally before each `git commit`. Goal: catch the same supply-chain
+# regressions CI catches (gitleaks + basic syntax) but cheaper — only
+# scan staged files, skip the heavy unit suites.
+#
+# Install with:
+#   bash scripts/install-git-hooks.sh
+#
+# Bypass once (e.g. when the hook itself is broken):
+#   git commit --no-verify
+#
+# Adding new checks here is fine, but keep them <2 s on typical PRs;
+# anything slower belongs in CI.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+passed=0
+failed=0
+
+step() { printf '\n→ %s\n' "$*"; }
+ok()   { printf '  ✓ %s\n' "$*"; passed=$((passed + 1)); }
+warn() { printf '  ! %s\n' "$*" >&2; }
+fail() { printf '  ✗ %s\n' "$*" >&2; failed=$((failed + 1)); }
+
+# ── gitleaks ──────────────────────────────────────────────────────
+# Mirrors the CI `secret-scan` job. Skipped silently when the binary
+# is not on PATH so the hook stays optional / installable on machines
+# without homebrew. Use `brew install gitleaks` on macOS or download
+# from https://github.com/gitleaks/gitleaks/releases.
+if command -v gitleaks >/dev/null 2>&1; then
+    step "gitleaks (staged files)"
+    if gitleaks protect --staged --redact --config .gitleaks.toml; then
+        ok "no secrets in staged files"
+    else
+        fail "gitleaks flagged staged content — see output above"
+    fi
+else
+    warn "gitleaks not on PATH; skipping secret scan (CI still enforces it)"
+fi
+
+# ── basic syntax checks on touched files ──────────────────────────
+mapfile -t staged_yaml < <(git diff --cached --name-only --diff-filter=ACMR -- '*.yaml' '*.yml' || true)
+if [[ ${#staged_yaml[@]} -gt 0 ]]; then
+    step "yaml syntax (${#staged_yaml[@]} file(s))"
+    if python3 -c "
+import sys, yaml
+for path in sys.argv[1:]:
+    with open(path) as fh:
+        yaml.safe_load(fh)
+" "${staged_yaml[@]}" 2>&1; then
+        ok "all staged YAML parses"
+    else
+        fail "YAML parse error in a staged file"
+    fi
+fi
+
+mapfile -t staged_sh < <(git diff --cached --name-only --diff-filter=ACMR -- '*.sh' || true)
+if [[ ${#staged_sh[@]} -gt 0 ]]; then
+    step "bash -n on staged shell scripts (${#staged_sh[@]} file(s))"
+    syntax_ok=1
+    for script in "${staged_sh[@]}"; do
+        if ! bash -n "$script" 2>&1; then
+            syntax_ok=0
+        fi
+    done
+    if [[ $syntax_ok -eq 1 ]]; then
+        ok "all staged shell scripts parse"
+    else
+        fail "bash -n flagged a staged shell script"
+    fi
+fi
+
+# ── summary ───────────────────────────────────────────────────────
+echo
+if [[ $failed -gt 0 ]]; then
+    printf '✗ pre-commit blocked: %d check(s) failed (%d passed)\n' \
+        "$failed" "$passed" >&2
+    printf '  bypass with `git commit --no-verify` if intentional.\n' >&2
+    exit 1
+fi
+printf '✓ pre-commit ok (%d check(s) passed)\n' "$passed"
+exit 0

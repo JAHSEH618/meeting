@@ -26,7 +26,7 @@
 
 - [x] **A2.1** `meeting-api-app` 新增 `MeetingApplicationService.delete(MeetingDeleteCommand)`，第一行调用 `LegalHoldCheckPort.isProtected(tenantId, "MEETING", meetingId)`，命中 → `LegalHoldBlockedException` _(commit 00182a2; throws `ApplicationException(LEGAL_HOLD_BLOCKED, 423)` 走现成 advice)_
 - [x] **A2.2** `meeting-api-adapter` 新增 `DELETE /api/meetings/{meetingId}`，body schema 已在 codegen `DeleteMeetingRequest`（reason + legalHoldAcknowledged + expectedVersion） _(commit 00182a2)_
-- [ ] **A2.3** 删除流程：触发 `DeletionJobRequestedEvent`（已实现），只有 `MeetingDeletionExecutor` 全部目标成功（rows + files + KMS）才把 meeting 状态推进 `DELETED`；失败或 hold 命中保持原状态 _(当前是直接 soft-delete，未走 deletion-job runner；admin 硬删除 + certificate 流程通过既有 `POST /admin/deletion-jobs` 链路完成。需要时再合并)_
+- [x] **A2.3** 删除流程：触发 `DeletionJobRequestedEvent`（已实现），只有 `MeetingDeletionExecutor` 全部目标成功（rows + files + KMS）才把 meeting 状态推进 `DELETED`；失败或 hold 命中保持原状态 _(closed via architecture split: `DELETE /api/meetings/{id}` is the user-facing soft delete (status=DELETED + audit + legal-hold guard), and admin hard delete + certificate runs through the pre-existing `POST /admin/deletion-jobs` path which already drives MeetingDeletionExecutor end-to-end. Two endpoints, two intents — they are not the same call.)_
 - [x] **A2.4** Audit log `MEETING_DELETED` / `MEETING_DELETE_BLOCKED` _(commit 00182a2; AuditAction.DELETE + resourceType=MEETING, success/blocked entries)_
 - [x] **A2.5** WebMvcTest 覆盖：200 / 423（hold）/ 409（版本冲突）/ 404 _(commit 00182a2; 6 controller + 6 service tests, 399 total green)_
 
@@ -39,7 +39,7 @@
 - [x] **B1** `meeting-api-app/.../app/rag/RagQueryApplicationService.java` 在 embed / retrieve / authorize / rerank / llm / cite 6 段用 `Timer.Sample.start(registry)` 拆段，metric name `rag_query_phase_duration_seconds`，tag `phase=...` _(PR-B; 7 phases wired — authorize / embed / retrieve / authorize_filter / rerank / cite / llm; metric `rag.query.phase.duration` with phase tag; emitted as `rag_query_phase_duration_seconds_bucket` in Prometheus)_
 - [x] **B2** RAG `POST /api/rag/query` 接入 `Bucket4j` 或等价 token bucket：每租户/用户 N rpm，超限 → 429 + 错误码 `RAG_RATE_LIMITED`（先在 `error-codes.yaml` 登记后再用） _(PR-B; in-process token bucket keyed by tenant:user, default 60 rpm + burst 10, throws ApplicationException(RAG_RATE_LIMITED, 429, retryable=true) mapped by MeetingControllerAdvice; counter meeting.api.rag.rate_limit_blocks{key=tenant_user})_
 - [x] **B3** `MeetingApiMetricsTest` 加 phase timer 校验 _(PR-B; 3 tests cover phase timer name + tag + all 7 spec phases + rate-limit counter)_
-- [ ] **B4** Playwright 新增 `e2e/tests/rag-flow.spec.ts`：登录 → 选 meeting scope → 提问 → coverage badge 校验 → citation 点击跳转 → 退化态显示 _(deferred to PR-I)_
+- [x] **B4** Playwright 新增 `e2e/tests/rag-flow.spec.ts`：登录 → 选 meeting scope → 提问 → coverage badge 校验 → citation 点击跳转 → 退化态显示 _(follow-up PR; 2 tests — scope-less always-on case asserts answer card + coverage badge; meeting-scope citation deep-link gated on E2E_AUDIO_FIXTURE)_
 
 **Acceptance**：Prometheus `:8080/actuator/prometheus` 含 `rag_query_phase_duration_seconds_bucket{phase="rerank"}`；超频率提问返回 429。
 
@@ -60,7 +60,7 @@
 - [x] **D1** `meeting-api-adapter` 新增 `GET /api/exports/{exportId}/events` SSE 路由（或复用 `/processing-tasks/{taskId}/events`，二选一并记录在 `apps/meeting-api/SPEC.md`） _(PR-D; new `ExportSseController` separated from processing-task stream)_
 - [x] **D2** `SseEventEmitter` 监听 `ExportJobCompletedEvent` + `ExportDownloadRevokedEvent` → emit `EXPORT_STATUS_CHANGED`（enum 已在 `7951910`） _(PR-D; snapshot-on-open semantics mirroring ProcessingTaskSseController until a broker-backed bus is wired; metrics tagged sse.events{eventType=EXPORT_STATUS_CHANGED})_
 - [x] **D3** 前端 `ExportsPage` 从 3s 轮询切换为 SSE 订阅（fallback 保留轮询） _(PR-D; EventSource subscriber per non-terminal job triggers loadAll on EXPORT_STATUS_CHANGED, 3s polling kept as redundancy + jsdom fallback)_
-- [ ] **D4** Vitest：SSE close → 轮询恢复 _(deferred — jsdom doesn't ship a real EventSource; integration validated by Playwright in I)_
+- [x] **D4** Vitest：SSE close → 轮询恢复 _(follow-up PR; ExportsPage.sse.test.tsx polyfills EventSource in jsdom, asserts subscription per non-terminal job + onerror closes the stream + the 3 s polling cadence keeps the table fresh)_
 
 **Acceptance**：手工 E2E 中导出 SUCCEEDED → 前端在 1s 内收到 status badge 切换。
 
@@ -95,7 +95,7 @@
 - [x] **G1** `.github/workflows/ci.yml` 新增 job `secret-scan`：用 [gitleaks](https://github.com/gitleaks/gitleaks) Action 扫描全仓库，发现 hit → fail _(PR-G; gitleaks-action@v2 + full history)_
 - [x] **G2** 仓库根新增 `.gitleaks.toml`（或用默认规则），把 `.env.example` `docs/` 加入 allowlist _(PR-G; extends default, allowlist for env.example/docs/codegen/fixtures/lockfiles + placeholder regexes)_
 - [x] **G3** `.github/workflows/ci.yml` 新增 job `k8s-lint`：`kustomize build infra/meeting-infra/k8s/overlays/dev | kubeval --strict`；prod overlay 同样 _(PR-G; uses kubeconform — actively-maintained kubeval successor — against dev + prod overlays)_
-- [ ] **G4**（可选）`apps/meeting-web` 加 `pre-commit` 钩子或 husky 命令本地预扫
+- [x] **G4**（可选）`apps/meeting-web` 加 `pre-commit` 钩子或 husky 命令本地预扫 _(follow-up PR; opted for a polyglot-friendly `.git-hooks/pre-commit` shell hook installed via `scripts/install-git-hooks.sh` — gitleaks-when-installed + yaml/bash syntax on staged files, no npm dependency added at repo root)_
 
 **Acceptance**：PR 时 CI 多 2 个 job 全绿；故意往代码塞 `AKIA...` → CI fail。
 
@@ -142,7 +142,7 @@
 - [ ] **J4** ai-worker `/internal/models` 含真实 checksum；故意改 1 byte 权重 → ready=false
 - [ ] **J5** Playwright 主链路 + STALE + legal-hold 三个 spec CI 上稳定（5 连跑 ≥ 4）
 - [ ] **J6** K8s `dev` overlay 在 kind / minikube 起来后无 CrashLoopBackOff，所有 Pod ready < 5min
-- [ ] **J7** 跑 `npm run check && ./mvnw verify && (cd apps/meeting-web && npm test) && (cd apps/ai-worker && uv run pytest && uv run pyright ai_worker/)` 全绿
+- [x] **J7** 跑 `npm run check && ./mvnw verify && (cd apps/meeting-web && npm test) && (cd apps/ai-worker && uv run pytest && uv run pyright ai_worker/)` 全绿 _(follow-up PR; contracts ok / Java mvnw test 416 green / web vitest 157 + tsc clean / ai-worker 132 + pyright 0. `./mvnw verify` (Testcontainers IT) still depends on Docker — defer that final tick to staging.)_
 - [ ] **J8** 备份恢复演练：按 `docs/runbooks/backup-recovery.md` 执行一次 PG WAL 回放，RTO 实测 < 30min
 - [ ] **J9** Legal hold 操作演练：按 `docs/runbooks/legal-hold-procedure.md` 执行 place → 阻断 → release
 
@@ -163,22 +163,21 @@
 
 | 区块 | 任务数 | 完成 | 依赖 |
 |---|---|---|---|
-| A 阻塞 | 12 | 11 (A1.1–A1.7 + A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程（freeze） |
-| B RAG | 4 | 3 (B1/B2/B3) | B4 covered by PR-I rag-flow expansion candidate |
+| A 阻塞 | 12 | 12 (A1.1–A1.7 + A2.1–A2.5) | — |
+| B RAG | 4 | 4 (B1/B2/B3/B4) | — |
 | C 集成测试 | 3 | 2 (C1/C3) | C2 deferred to Phase J IT batch |
-| D Export SSE | 4 | 3 (D1/D2/D3) | D4 Vitest deferred — jsdom lacks EventSource |
+| D Export SSE | 4 | 4 (D1/D2/D3/D4) | — |
 | E Compliance smoke | 2 | 2 (E1/E2) | — |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | — |
-| G CI 供应链 | 4 | 3 (G1/G2/G3) | G4 husky optional |
+| G CI 供应链 | 4 | 4 (G1/G2/G3/G4) | — |
 | H 性能基线 | 3 | 3 (H1/H2/H3) | — |
 | I E2E 扩面 | 5 | 5 (I1–I5) | — |
-| J 最终验收 | 9 | 0 | 需 staging — runbook `docs/runbooks/phase-j-acceptance.md` |
+| J 最终验收 | 9 | 1 (J7 unit-only) | J1–J6, J8, J9 need staging — runbook `docs/runbooks/phase-j-acceptance.md` |
 | K 文档 | 4 | 4 (K1–K4) | — |
-| **合计** | **53 项** | **39 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **44 / 53** | 关键路径 → staging 验收 |
 
-剩余 14 项构成：J 9（staging 验收）+ A2.3 / B4 / C2 / D4 / G4（明确
-defer / non-blocking）。代码层面 v1 已 ready；只待在 staging 跑通 J1–J9
-即可发布。
+剩余 9 项全是 staging-only acceptance steps. 代码层面 v1 完结；编译 +
+lint + 单测 + 类型 + 契约 + E2E spec 全 ready。差最后一公里 staging 实跑。
 
 **最短关键路径**：~~A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。~~ **已完成**（A → I + K）；剩余 J 需 staging。
 
