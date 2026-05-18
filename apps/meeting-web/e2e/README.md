@@ -1,0 +1,29 @@
+# meeting-web E2E suite
+
+Playwright covers the Phase 8.7 golden path:
+
+* Login → create meeting → transcript / exports pages render.
+* CONFIDENTIAL meetings surface a fixed `SECURITY_LEVEL_BLOCKED` copy
+  on the minutes page (no LLM call goes out).
+
+## Run locally
+
+```bash
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+    --profile full-stack up -d --build
+
+cd apps/meeting-web
+npm install
+npm run e2e:install     # one-time: pulls the chromium binary
+npm run e2e
+```
+
+Tests assume the meeting-api seeded a demo account (`demo@meeting.local` / `demo`).
+Override with `E2E_USER` / `E2E_PASS` / `E2E_BASE_URL` when running
+against staging.
+
+## CI hook
+
+`.github/workflows/ci.yml` runs the suite in the `meeting-web-e2e`
+job — bring the compose stack up, then `npm run e2e`. The Playwright
+report is uploaded as a build artifact on failure.

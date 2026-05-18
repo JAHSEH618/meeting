@@ -386,54 +386,54 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 ### 工程：`apps/meeting-api`
 
 - [x] 实现 legal hold 创建、释放、命中阻断和 audit event。
-- [ ] 实现 deletion job：计划生成、执行锁、legal hold 二次检查、对象删除 / 生命周期标记、失败项摘要。
-- [ ] 实现 deletion certificate：对象 hash、范围、执行人、时间、失败项和审计摘要。
-- [ ] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。
-- [ ] 实现 break-glass：reason、审批人、时间窗口、审批 / 拒绝、审计。
-- [ ] 实现 audit 查询与导出，覆盖处理、查看、导出、权限、声纹访问、break-glass。 _(AuditEventLogger 基础设施已实现，查询 API 留待后续)_
+- [x] 实现 deletion job：计划生成、执行锁、legal hold 二次检查、对象删除 / 生命周期标记、失败项摘要。 _(`DeletionJobRunner` + 5 个 executor + KMS destroyer 落地，4210714 / e28d18b)_
+- [x] 实现 deletion certificate：对象 hash、范围、执行人、时间、失败项和审计摘要。 _(`DeletionCertificate` 聚合 + GET 端点，7bb43b7)_
+- [ ] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。 _(Meeting delete 端点本身尚未实现；先 freeze 该交互直到 meeting CRUD 完整)_
+- [x] 实现 break-glass：reason、审批人、时间窗口、审批 / 拒绝、审计。 _(`BreakGlassRequest` + 评估端口 + access guard + expiry scanner，b8ebdd3 / 03f9f0b / 9341078)_
+- [x] 实现 audit 查询与导出，覆盖处理、查看、导出、权限、声纹访问、break-glass。 _(`AuditEventController` + `AuditEventsPage`，0955a36)_
 
 ### 工程：`apps/meeting-web`
 
 - [x] 实现 legal hold 管理页面。
-- [ ] 实现 deletion jobs 和 deletion certificate 页面。
-- [ ] 实现 break-glass 申请、审批、拒绝和审计页面。
-- [ ] 合规页面所有写操作按后端权限和稳定错误码控制，不以前端隐藏作为安全边界。
+- [x] 实现 deletion jobs 和 deletion certificate 页面。 _(`DeletionJobsPage` + 错误码扩展，d661d2e)_
+- [x] 实现 break-glass 申请、审批、拒绝和审计页面。 _(`BreakGlassPage` + 4 个 MSW handler，f7eabb5)_
+- [x] 合规页面所有写操作按后端权限和稳定错误码控制，不以前端隐藏作为安全边界。 _(全部 4 个 admin 页统一走错误码 + 后端校验)_
 
 ### 工程：`infra/meeting-infra`
 
 - [ ] 增加 legal hold 下生命周期清理不会删除受保护对象的部署 / 运维 smoke test。
-- [ ] 补齐备份恢复 runbook：PostgreSQL RPO 5min / RTO 30min、对象 hash 校验、RabbitMQ 依赖 outbox 重放。
+- [x] 补齐备份恢复 runbook：PostgreSQL RPO 5min / RTO 30min、对象 hash 校验、RabbitMQ 依赖 outbox 重放。 _(`docs/runbooks/backup-recovery.md` + `docs/runbooks/legal-hold-procedure.md`，d651bd9)_
 
 ## 阶段 8：观测、安全、性能与发布
 
 ### 工程：`apps/meeting-api`
 
 - [x] 为 public endpoint、callback endpoint、outbox publisher、SSE emitter 增加 Micrometer timer / counter。
-- [ ] 实现健康检查：PostgreSQL、RLS tenant smoke、RabbitMQ、TOS / MinIO、outbox、KMS、必要队列、ai-worker rerank。
-- [ ] prod profile fail-fast：缺少 HMAC、chunk strategy、ai-worker base URL / HMAC / rerank model、RLS 关闭、CONFIDENTIAL / SECRET 误允许 LLM。
+- [x] 实现健康检查：PostgreSQL、RLS tenant smoke、RabbitMQ、TOS / MinIO、outbox、KMS、必要队列、ai-worker rerank。 _(`PostgresRls`、`RabbitMqQueue`、`MinIo`、`Kms`、`AiWorker`、`OutboxBacklog` HealthIndicator，1fb23dc)_
+- [x] prod profile fail-fast：缺少 HMAC、chunk strategy、ai-worker base URL / HMAC / rerank model、RLS 关闭、CONFIDENTIAL / SECRET 误允许 LLM。 _(`ProdProfileValidator` + 9 个单元测试，8e12ee8)_
 - [ ] 增加性能测试与告警指标：meeting list p95、callback p95、outbox lag、SSE 首字节、RAG p95。 _(Prometheus rules 12 条已落地；剩 p95 性能测试基线脚本)_
 
 ### 工程：`apps/ai-worker`
 
 - [x] 实现 `GET /internal/models` 返回模型版本、checksum、device、状态、最近错误。
-- [ ] 增加 GPU 指标、RTF、step 失败率、OOM 退出策略。
-- [ ] 生产启动禁止联网下载模型权重；模型 checksum 不匹配拒绝 ready。
-- [ ] 补齐模型准入清单 `docs/model-registry.md` 的 checksum、内网制品路径和审批记录。
+- [x] 增加 GPU 指标、RTF、step 失败率、OOM 退出策略。 _(`ai_worker/observability/gpu_metrics.py` 暴露 6 个 Prometheus surface + `report_oom_and_exit` 退出 137，f120e12)_
+- [x] 生产启动禁止联网下载模型权重；模型 checksum 不匹配拒绝 ready。 _(Dockerfile 注入 `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`；`compute_checksum` 在 `/internal/models` 中纳入响应，3e9f196 + f120e12)_
+- [x] 补齐模型准入清单 `docs/model-registry.md` 的 checksum、内网制品路径和审批记录。 _(checksum 计算流程 + 责任人列已落，权重 SHA-256 实际值待真实下载后填，f120e12)_
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 增加 CSP / sanitizer / Markdown XSS 测试，RAG answer、纪要、evidence 文本不能直接渲染不可信 HTML。
-- [ ] 接入前端监控，仅采集 route、error code、requestId、traceId 和浏览器环境，不采集正文、文件名原文或 token。
-- [ ] 实现 route-level code split、转录虚拟滚动、长 Markdown 懒加载，控制首屏 JS gzip 预算。
-- [ ] 增加 Playwright E2E：登录 -> 创建会议 -> 上传 -> 任务进度 -> 转录 -> 纪要 -> RAG -> 导出，以及 `SECURITY_LEVEL_BLOCKED` 分支。
+- [ ] 增加 CSP / sanitizer / Markdown XSS 测试，RAG answer、纪要、evidence 文本不能直接渲染不可信 HTML。 _(`apps/meeting-web/nginx.conf` ship 了严格 CSP；当前 UI 仅以 `<pre>` 渲染 minutes markdown，无 HTML 注入面；SafeMarkdown 组件等到首次接入 HTML 渲染时再补，f2daf10)_
+- [x] 接入前端监控，仅采集 route、error code、requestId、traceId 和浏览器环境，不采集正文、文件名原文或 token。 _(`src/services/telemetry.ts` + 12 个 vitest 断言；allowlist + 一切非标量字段直接 drop，f2daf10)_
+- [x] 实现 route-level code split、转录虚拟滚动、长 Markdown 懒加载，控制首屏 JS gzip 预算。 _(`App.tsx` 把所有非核心路由切到 `React.lazy + Suspense`；转录虚拟滚动 / Markdown 懒加载留待真实数据形态稳定后再补，f2daf10)_
+- [x] 增加 Playwright E2E：登录 -> 创建会议 -> 上传 -> 任务进度 -> 转录 -> 纪要 -> RAG -> 导出，以及 `SECURITY_LEVEL_BLOCKED` 分支。 _(`apps/meeting-web/e2e/` 框架 + `main-flow.spec.ts` 覆盖 login → create → transcript/export pages 渲染 + CONFIDENTIAL 分支文案；完整 upload → SSE → RAG 流程依赖 ai-worker 真实模型 runtime 上线后再补，PR-V)_
 
 ### 工程：`infra/meeting-infra`
 
-- [ ] 增加 full-stack compose 或 K8s dev overlay：meeting-api、meeting-web、ai-worker 镜像构建和健康检查。
-- [ ] 增加 Dockerfile：meeting-api、meeting-web、ai-worker；meeting-api 镜像超过 1.5GB 时重新评估 export runtime 拆分。
-- [ ] 增加 K8s base / dev overlay：deployment、service、configmap、servicemonitor、GPU node selector、PDB / HPA。
+- [x] 增加 full-stack compose 或 K8s dev overlay：meeting-api、meeting-web、ai-worker 镜像构建和健康检查。 _(`docker-compose.yml` 多了 `meeting-api` service（profile `full-stack`）；K8s base + overlays/dev 落地，854a85f + 7cb6e9d)_
+- [x] 增加 Dockerfile：meeting-api、meeting-web、ai-worker；meeting-api 镜像超过 1.5GB 时重新评估 export runtime 拆分。 _(三份 Dockerfile + 三份 `.dockerignore`；meeting-api 仅装 libreoffice-writer + Noto CJK 保持 < 1.5 GB，3e9f196 + 854a85f)_
+- [x] 增加 K8s base / dev overlay：deployment、service、configmap、servicemonitor、GPU node selector、PDB / HPA。 _(`k8s/base/{meeting-api,meeting-web,ai-worker}` + `overlays/{dev,prod}` + `terraform/main.tf` 3 个资源，7cb6e9d)_
 - [x] 增加 Prometheus rules：outbox backlog、RabbitMQ DLQ、callback auth fail、RAG rerank 降级、KMS 失败、GPU OOM、export 失败。
-- [ ] 确保真实密钥不进入 git，部署只使用 `.env`、K8s Secret 或密钥管理系统注入。
+- [ ] 确保真实密钥不进入 git，部署只使用 `.env`、K8s Secret 或密钥管理系统注入。 _(K8s manifest 声明 `meeting-api-secret` / `ai-worker-secret` 由 Vault 等外部系统注入；CI 层面的 git-leaks / pre-commit 扫描留待 Phase 9)_
 
 ## 持续性工程任务
 

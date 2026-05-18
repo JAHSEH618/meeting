@@ -11,6 +11,8 @@
     "test:watch": "node scripts/run-vitest.mjs",
     "lint": "eslint src/ --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
+    "e2e": "playwright test --config=e2e/playwright.config.ts",
+    "e2e:install": "playwright install chromium",
     "codegen": "openapi-typescript ../../packages/meeting-contracts/openapi/public-api.yaml -o src/shared/api/types.gen.ts"
   },
   "dependencies": {
