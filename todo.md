@@ -322,10 +322,10 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [x] 实现 `export_jobs` 应用用例：创建、列表、详情、取消、短链撤销。
 - [x] 导出任务绑定 `minutesVersion`、`transcriptVersion`、`ragVersion`，内容 STALE 时要求确认或先重生成。
-- [ ] outbox 投递 `export-job-message.schema.json` 到 `export-queue`。 _(message-publisher 已实现；queue routing wiring 留待 PR-G2)_
-- [ ] 在 Java 进程内实现 `export-queue` consumer，只做消息适配并调用 app command。 _(留待 PR-G2，需要 RabbitMQ 集成验证)_
-- [x] 实现 `ExportGateway`：Markdown、DOCX、PDF，PDF 通过 LibreOffice headless 或等价 runtime。 _(Markdown 已实现；DOCX/PDF 留待 docx4j 依赖 + LibreOffice runtime 落地)_
-- [ ] 导出文件写入 `meeting-exports` 前缀，下载只返回后端签名 URL，短链可撤销。 _(撤销已实现；签名 URL 集成留待 PR-G)_
+- [x] outbox 投递 `export-job-message.schema.json` 到 `export-queue`。 _(`OutboxPublisher.routingKey` 现在为 `ExportJobCreatedEvent` 返回 `task.export`，事件 payload 已含 schema 必填 `traceId` / `createdAt`，b1a7e52)_
+- [x] 在 Java 进程内实现 `export-queue` consumer，只做消息适配并调用 app command。 _(`ExportQueueConsumer` + `ExportRenderService` 落地于 b0130a8；短 TX 拆分、retry / DLQ 语义、`failTerminally` 通道都已覆盖)_
+- [x] 实现 `ExportGateway`：Markdown、DOCX、PDF，PDF 通过 LibreOffice headless 或等价 runtime。 _(Markdown / DOCX / PDF 全部实现；PDF 经 DOCX → `soffice --headless --convert-to pdf`，可配置 binary 与 timeout，b8c75b4)_
+- [x] 导出文件写入 `meeting-exports` 前缀，下载只返回后端签名 URL，短链可撤销。 _(`ExportRenderService` 写 `tenant/{t}/meeting/{m}/export/{e}/file.{ext}` 到 `meeting-exports` bucket；`ExportApplicationService.toDto` 经 `ObjectStorageGateway.presignGet` 生成 downloadUrl，REVOKED / 非 SUCCEEDED 强制 null；b0130a8)_
 
 ### 工程：`apps/meeting-web`
 
@@ -334,7 +334,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`infra/meeting-infra`
 
-- [ ] 为 meeting-api 镜像或运行环境补齐 LibreOffice headless 和字体包，并增加 PDF 转换 smoke test。 _(留待 Phase 8.5 Dockerfile)_
+- [x] 为 meeting-api 镜像或运行环境补齐 LibreOffice headless 和字体包，并增加 PDF 转换 smoke test。 _(`apps/meeting-api/Dockerfile` 多阶段构建，runtime 安装 libreoffice-core/writer + Noto CJK；compose `full-stack` profile 拉起 meeting-api 容器；`infra/meeting-infra/scripts/export-pdf-smoke.sh` 验证登录 → 创建 → 等待 SUCCEEDED → 下载 → `pdftotext` 校验水印 → revoke；854a85f)_
 
 ### 阶段 6 收尾备忘（2026-05-18）
 
@@ -358,12 +358,28 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 #### 未做（明确归档）
 
-- [ ] DOCX gateway —— 需要 `docx4j` 依赖 + 模板设计
-- [ ] PDF gateway —— 需要 LibreOffice subprocess（依赖 6.6 Dockerfile）
-- [ ] `ExportQueueConsumer` —— 需要 RabbitMQ 集成测试 + DLQ wiring
-- [ ] `TosSignedUrlService.sign()` —— downloadUrl 实际填充
-- [ ] Testcontainers `JdbcExportJobRepositoryIT` —— RLS + 跨租户隔离
-- [ ] Dockerfile + LibreOffice runtime + PDF smoke
+- [ ] Testcontainers `JdbcExportJobRepositoryIT` —— RLS + 跨租户隔离 + claimByStatus 锁互斥；与 ExportQueueConsumerIT（RabbitMQ + MinIO + PG 全 Testcontainer）合并到 Phase 8 集成测试一并落地
+
+#### 阶段 6 收尾增量（2026-05-18）
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| `PdfExportGateway` | `meeting-api-infrastructure/.../gateway/export/PdfExportGateway.java` (b8c75b4) | DOCX → `soffice --headless --convert-to pdf`；可配置 binary + timeout；2 个单元测试（supportedFormat、missing binary fail-fast） |
+| `ExportJobCreatedEvent` payload schema 合规 | `meeting-api-domain/.../export/ExportJobCreatedEvent.java` (b1a7e52) | 增加 `traceId` (来自 cmd.requestId) + `createdAt`，匹配 `export-job-message.schema.json` |
+| `OutboxPublisher` 路由 | `meeting-api-infrastructure/.../mq/OutboxPublisher.java` (b1a7e52) | `ExportJobCreatedEvent → task.export`，命中已绑定的 `export-queue` |
+| `ExportRenderService` | `meeting-api-app/.../app/export/ExportRenderService.java` (b0130a8) | 三段短 TX：markRunning → render+upload → markSucceeded；`failTerminally` 通道；ExportInputInvalid 标 FAILED + 抛出，ExportRuntime 维持 RUNNING 让 broker 重试；6 个单元测试 |
+| `ExportQueueConsumer` | `meeting-api-infrastructure/.../mq/ExportQueueConsumer.java` (b0130a8) | bare-RabbitMQ-client `@Component`，opt-in via `meeting.export.consumer.enabled`，5 个 onMessage 单元测试 |
+| `ObjectStorageGateway.putObject` | `meeting-api-domain/.../storage/ObjectStorageGateway.java` (b0130a8) | 新端口 + `LocalObjectStorageGateway` 实现（可写本地 `meeting.storage.local-root`） |
+| downloadUrl 签名 | `ExportApplicationService.toDto` (b0130a8) | SUCCEEDED + 未 revoked + meeting_files 行存在时经 `presignGet` 注入；REVOKED 强制 null |
+| `EXPORT_STATUS_CHANGED` 加入 `taskEventType` | `enums.yaml` + `public-api.yaml` (7951910) | 契约就位；live SSE emitter 暂未接，前端继续 3s 轮询 |
+| meeting-api Dockerfile | `apps/meeting-api/Dockerfile` (854a85f) | 多阶段 + LibreOffice writer + Noto CJK，目标 < 1.5 GB |
+| compose full-stack profile | `infra/meeting-infra/docker/compose/docker-compose.yml` (854a85f) | 新增 `meeting-api` service，依赖 postgres/rabbitmq/minio |
+| PDF smoke 脚本 | `infra/meeting-infra/scripts/export-pdf-smoke.sh` (854a85f) | login → create → 轮询 SUCCEEDED → 下载 → pdftotext 校验水印 → revoke 检查 |
+
+#### 已知 follow-up
+
+- [ ] 完整的 RabbitMQ + MinIO + PG Testcontainers IT（`ExportQueueConsumerIT`）——一旦 Phase 8 集成测试基建到位再补
+- [ ] SSE emitter for `EXPORT_STATUS_CHANGED`——若 UX 出现 3s 轮询延迟问题再实现
 
 ## 阶段 7：合规、删除、legal hold 与 break-glass
 
