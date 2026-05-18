@@ -3,10 +3,13 @@ package com.meeting.api.adapter.meeting;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -74,12 +77,42 @@ public class MeetingController {
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @DeleteMapping("/{meetingId}")
+    public ApiResponse<DeleteMeetingResult> delete(
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId,
+        @RequestHeader("Idempotency-Key") String idempotencyKey,
+        @PathVariable String meetingId,
+        @RequestBody(required = false) DeleteMeetingRequest body
+    ) {
+        String tenantId = TenantContextHolder.currentTenantId();
+        String userId = TenantContextHolder.currentUserId();
+        DeleteMeetingCommand command = new DeleteMeetingCommand(
+            tenantId,
+            meetingId,
+            userId,
+            requestId,
+            body == null ? null : body.reason(),
+            body == null ? null : body.expectedVersion(),
+            body != null && Boolean.TRUE.equals(body.legalHoldAcknowledged())
+        );
+        DeleteMeetingResult result = meetingFacade.delete(command);
+        return ApiResponse.ok(result, requestId, traceId);
+    }
+
     public record CreateMeetingRequest(
         String title,
         java.time.OffsetDateTime scheduledStartAt,
         SecurityLevel securityLevel,
         String language,
         List<CreateMeetingCommand.ParticipantCommand> participants
+    ) {
+    }
+
+    public record DeleteMeetingRequest(
+        String reason,
+        Boolean legalHoldAcknowledged,
+        Integer expectedVersion
     ) {
     }
 }

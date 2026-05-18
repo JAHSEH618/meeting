@@ -3,10 +3,14 @@ package com.meeting.api;
 import com.meeting.api.adapter.meeting.MeetingController;
 import com.meeting.api.adapter.meeting.TenantContextHolder;
 import com.meeting.api.adapter.meeting.TenantContextMissingException;
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.client.common.ApiResponse;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
 import java.time.OffsetDateTime;
@@ -62,6 +66,60 @@ class MeetingControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(404);
     }
 
+    @Test
+    void deleteForwardsCommandWithTenantContextAndReasonBody() {
+        StubMeetingFacade facade = new StubMeetingFacade();
+        MeetingController controller = new MeetingController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        ApiResponse<DeleteMeetingResult> response = controller.delete(
+            "req_01", "trace_01", "idem_01", "m_01",
+            new MeetingController.DeleteMeetingRequest("policy_violation", Boolean.TRUE, 3)
+        );
+
+        assertThat(response.success()).isTrue();
+        DeleteMeetingCommand captured = facade.lastDeleteCommand;
+        assertThat(captured.tenantId()).isEqualTo("tenant_01");
+        assertThat(captured.meetingId()).isEqualTo("m_01");
+        assertThat(captured.actorUserId()).isEqualTo("user_01");
+        assertThat(captured.requestId()).isEqualTo("req_01");
+        assertThat(captured.reason()).isEqualTo("policy_violation");
+        assertThat(captured.expectedTranscriptVersion()).isEqualTo(3);
+        assertThat(captured.legalHoldAcknowledged()).isTrue();
+        assertThat(response.data().status()).isEqualTo(MeetingStatus.DELETED);
+    }
+
+    @Test
+    void deleteAcceptsEmptyBodyAndDefaultsOptionalFields() {
+        StubMeetingFacade facade = new StubMeetingFacade();
+        MeetingController controller = new MeetingController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        controller.delete("req_01", "trace_01", "idem_01", "m_01", null);
+
+        DeleteMeetingCommand captured = facade.lastDeleteCommand;
+        assertThat(captured.reason()).isNull();
+        assertThat(captured.expectedTranscriptVersion()).isNull();
+        assertThat(captured.legalHoldAcknowledged()).isFalse();
+    }
+
+    @Test
+    void deletePropagatesApplicationException() {
+        StubMeetingFacade facade = new StubMeetingFacade();
+        facade.deleteException = new ApplicationException(
+            ErrorCode.LEGAL_HOLD_BLOCKED, 423, "under hold", false
+        );
+        MeetingController controller = new MeetingController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.delete(
+            "req_01", "trace_01", "idem_01", "m_01", null
+        ))
+            .isInstanceOf(ApplicationException.class)
+            .satisfies(ex -> assertThat(((ApplicationException) ex).errorCode())
+                .isEqualTo(ErrorCode.LEGAL_HOLD_BLOCKED));
+    }
+
     private static final class StubMeetingFacade implements MeetingFacade {
         private final MeetingDTO meeting = new MeetingDTO(
             "m_01",
@@ -76,7 +134,9 @@ class MeetingControllerTest {
         );
         private String lastListTenantId;
         private String lastGetTenantId;
+        private DeleteMeetingCommand lastDeleteCommand;
         private Optional<MeetingDTO> getResult = Optional.of(meeting);
+        private ApplicationException deleteException;
 
         @Override
         public MeetingDTO create(CreateMeetingCommand command) {
@@ -93,6 +153,19 @@ class MeetingControllerTest {
         public List<MeetingDTO> list(String tenantId) {
             lastListTenantId = tenantId;
             return List.of(meeting);
+        }
+
+        @Override
+        public DeleteMeetingResult delete(DeleteMeetingCommand command) {
+            lastDeleteCommand = command;
+            if (deleteException != null) {
+                throw deleteException;
+            }
+            return new DeleteMeetingResult(
+                command.meetingId(),
+                MeetingStatus.DELETED,
+                OffsetDateTime.parse("2026-05-20T10:00:00Z")
+            );
         }
     }
 }

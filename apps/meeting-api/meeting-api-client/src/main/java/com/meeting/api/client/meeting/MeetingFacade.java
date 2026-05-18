@@ -9,4 +9,6 @@ public interface MeetingFacade {
     Optional<MeetingDTO> get(String tenantId, String meetingId);
 
     List<MeetingDTO> list(String tenantId);
+
+    DeleteMeetingResult delete(DeleteMeetingCommand command);
 }

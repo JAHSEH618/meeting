@@ -23,7 +23,7 @@ public class InMemoryMeetingRepository implements MeetingRepository {
     @Override
     public Optional<Meeting> findById(String tenantId, String meetingId) {
         Meeting m = store.get(meetingId);
-        if (m != null && m.tenantId().equals(tenantId)) {
+        if (m != null && m.tenantId().equals(tenantId) && m.status() != MeetingStatus.DELETED) {
             return Optional.of(m);
         }
         return Optional.empty();
@@ -33,6 +33,7 @@ public class InMemoryMeetingRepository implements MeetingRepository {
     public List<Meeting> findByTenantId(String tenantId) {
         return store.values().stream()
             .filter(m -> m.tenantId().equals(tenantId))
+            .filter(m -> m.status() != MeetingStatus.DELETED)
             .toList();
     }
 
@@ -56,5 +57,17 @@ public class InMemoryMeetingRepository implements MeetingRepository {
                 .participants(meeting.participants())
                 .build();
         });
+    }
+
+    @Override
+    public boolean markDeleted(String tenantId, String meetingId) {
+        Meeting existing = store.get(meetingId);
+        if (existing == null
+            || !existing.tenantId().equals(tenantId)
+            || existing.status() == MeetingStatus.DELETED) {
+            return false;
+        }
+        store.put(meetingId, existing.markDeleted());
+        return true;
     }
 }

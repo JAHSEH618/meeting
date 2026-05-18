@@ -100,6 +100,22 @@ public class JdbcMeetingRepository implements MeetingRepository {
         );
     }
 
+    @Override
+    public boolean markDeleted(String tenantId, String meetingId) {
+        int affected = jdbcTemplate.update(
+            """
+            UPDATE meetings
+               SET status = 'DELETED'::meeting_status,
+                   deleted_at = now(),
+                   updated_at = now()
+             WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
+            """,
+            tenantId,
+            meetingId
+        );
+        return affected == 1;
+    }
+
     private void replaceParticipants(Meeting meeting) {
         jdbcTemplate.update("DELETE FROM meeting_participants WHERE tenant_id = ? AND meeting_id = ?", meeting.tenantId(), meeting.id());
         for (Meeting.Participant participant : meeting.participants()) {

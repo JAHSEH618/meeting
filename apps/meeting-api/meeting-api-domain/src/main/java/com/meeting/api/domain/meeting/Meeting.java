@@ -83,6 +83,13 @@ public final class Meeting {
         return copyWithStatus(MeetingStatus.PROCESSING);
     }
 
+    public Meeting markDeleted() {
+        if (status == MeetingStatus.DELETED) {
+            throw new IllegalStateException("meeting is already deleted");
+        }
+        return copyWithStatus(MeetingStatus.DELETED);
+    }
+
     private Meeting copyWithStatus(MeetingStatus nextStatus) {
         return new Builder()
             .id(id)

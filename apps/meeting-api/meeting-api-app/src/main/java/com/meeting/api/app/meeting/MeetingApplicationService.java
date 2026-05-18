@@ -1,20 +1,32 @@
 package com.meeting.api.app.meeting;
 
+import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.common.TenantScopedTransaction;
+import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.client.enums.AuditAction;
+import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingCommand;
+import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
-import com.meeting.api.app.common.TenantScopedTransaction;
+import com.meeting.api.domain.audit.AuditEventLogger;
+import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
+import com.meeting.api.domain.compliance.LegalHoldCheckPort;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingCreatedEvent;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.task.MessagePublisher;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Meeting application service — use-case orchestration.
@@ -29,22 +41,48 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MeetingApplicationService implements MeetingFacade {
     private static final Logger log = LoggerFactory.getLogger(MeetingApplicationService.class);
+
+    static final String RESOURCE_TYPE_MEETING = "MEETING";
+    static final String LEGAL_HOLD_SCOPE_MEETING = "MEETING";
+
     private final MeetingRepository meetingRepository;
     private final MessagePublisher messagePublisher;
     private final TenantScopedTransaction tenantScopedTransaction;
+    private final LegalHoldCheckPort legalHoldCheck;
+    private final AuditEventLogger auditLogger;
+    private final Clock clock;
 
-    public MeetingApplicationService(MeetingRepository meetingRepository) {
-        this(meetingRepository, null, TenantScopedTransaction.immediate());
+    public MeetingApplicationService(
+        MeetingRepository meetingRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        LegalHoldCheckPort legalHoldCheck,
+        AuditEventLogger auditLogger
+    ) {
+        this(
+            meetingRepository,
+            messagePublisher,
+            tenantScopedTransaction,
+            legalHoldCheck,
+            auditLogger,
+            Clock.systemUTC()
+        );
     }
 
     public MeetingApplicationService(
         MeetingRepository meetingRepository,
         MessagePublisher messagePublisher,
-        TenantScopedTransaction tenantScopedTransaction
+        TenantScopedTransaction tenantScopedTransaction,
+        LegalHoldCheckPort legalHoldCheck,
+        AuditEventLogger auditLogger,
+        Clock clock
     ) {
         this.meetingRepository = meetingRepository;
         this.messagePublisher = messagePublisher;
         this.tenantScopedTransaction = tenantScopedTransaction;
+        this.legalHoldCheck = legalHoldCheck;
+        this.auditLogger = auditLogger;
+        this.clock = clock;
     }
 
     @Override
@@ -73,6 +111,90 @@ public class MeetingApplicationService implements MeetingFacade {
     @Override
     public List<MeetingDTO> list(String tenantId) {
         return meetingRepository.findByTenantId(tenantId).stream().map(this::toDto).toList();
+    }
+
+    @Override
+    public DeleteMeetingResult delete(DeleteMeetingCommand command) {
+        return tenantScopedTransaction.execute(command.tenantId(), command.actorUserId(), command.requestId(), () -> {
+            Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
+                .orElseThrow(() -> new ApplicationException(
+                    ErrorCode.MEETING_NOT_FOUND, 404,
+                    "meeting not found: " + command.meetingId(), false
+                ));
+
+            if (command.expectedTranscriptVersion() != null
+                && command.expectedTranscriptVersion() != meeting.transcriptVersion()) {
+                logBlocked(command, "version mismatch");
+                throw new ApplicationException(
+                    ErrorCode.VERSION_CONFLICT, 409,
+                    "meeting was modified: expected transcriptVersion="
+                        + command.expectedTranscriptVersion()
+                        + " actual=" + meeting.transcriptVersion(),
+                    false
+                );
+            }
+
+            if (legalHoldCheck.isProtected(
+                command.tenantId(), LEGAL_HOLD_SCOPE_MEETING, command.meetingId()
+            )) {
+                logBlocked(command, "legal hold");
+                throw new ApplicationException(
+                    ErrorCode.LEGAL_HOLD_BLOCKED, 423,
+                    "meeting is under legal hold: " + command.meetingId(),
+                    false
+                );
+            }
+
+            boolean affected = meetingRepository.markDeleted(
+                command.tenantId(), command.meetingId()
+            );
+            if (!affected) {
+                throw new ApplicationException(
+                    ErrorCode.MEETING_NOT_FOUND, 404,
+                    "meeting not found or already deleted: " + command.meetingId(),
+                    false
+                );
+            }
+
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("status", MeetingStatus.DELETED.name());
+            if (command.reason() != null && !command.reason().isBlank()) {
+                payload.put("reason", command.reason());
+            }
+            if (command.expectedTranscriptVersion() != null) {
+                payload.put("expectedTranscriptVersion", command.expectedTranscriptVersion());
+            }
+            payload.put("legalHoldAcknowledged", command.legalHoldAcknowledged());
+
+            auditLogger.log(AuditEntry.success(
+                command.tenantId(), command.actorUserId(),
+                AuditAction.DELETE,
+                RESOURCE_TYPE_MEETING, command.meetingId(),
+                payload,
+                command.requestId()
+            ));
+            log.info(
+                "meeting_deleted tenant={} meeting={} actor={} reason={}",
+                command.tenantId(), command.meetingId(), command.actorUserId(),
+                command.reason() == null ? "" : command.reason()
+            );
+
+            return new DeleteMeetingResult(command.meetingId(), MeetingStatus.DELETED, now);
+        });
+    }
+
+    private void logBlocked(DeleteMeetingCommand command, String reason) {
+        auditLogger.log(AuditEntry.blocked(
+            command.tenantId(), command.actorUserId(),
+            AuditAction.DELETE,
+            RESOURCE_TYPE_MEETING, command.meetingId(),
+            reason, command.requestId()
+        ));
+        log.info(
+            "meeting_delete_blocked tenant={} meeting={} actor={} reason={}",
+            command.tenantId(), command.meetingId(), command.actorUserId(), reason
+        );
     }
 
     private MeetingDTO toDto(Meeting meeting) {

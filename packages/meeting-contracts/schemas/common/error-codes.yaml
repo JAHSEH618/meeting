@@ -48,6 +48,12 @@ errorCodes:
     userMessage: 任务不存在
     i18nKey: errors.TASK_NOT_FOUND
     opsTags: [task]
+  - code: MEETING_NOT_FOUND
+    step: TASK
+    retryable: false
+    userMessage: 会议不存在
+    i18nKey: errors.MEETING_NOT_FOUND
+    opsTags: [meeting]
   - code: TASK_ATTEMPT_CONFLICT
     step: TASK
     retryable: false
