@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     # must set these to the internal artifact mount and HF_HUB_OFFLINE=1.
     bge_m3_models_dir: str | None = None
     bge_reranker_models_dir: str | None = None
+    # ── final-check.md A1 — real ASR / diarization runtime ──────────────────
+    # Pipeline runtimes are independent of use_fake_runtime so we can ship
+    # bge-m3 / bge-reranker live while keeping ASR / diarization on the
+    # deterministic fallback until weights are staged. Production must point
+    # each *_MODELS_DIR at the internal artifact mount and run with
+    # HF_HUB_OFFLINE=1 + TRANSFORMERS_OFFLINE=1 (already set in the Dockerfile).
+    use_fake_asr_runtime: bool = True
+    use_fake_diarization_runtime: bool = True
+    qwen3_asr_models_dir: str | None = None
+    pyannote_models_dir: str | None = None
     # Device autodetect happens in the runtime; "auto" → cuda > mps > cpu.
     model_device: str = "auto"
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")

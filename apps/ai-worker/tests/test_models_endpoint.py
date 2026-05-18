@@ -57,10 +57,10 @@ def test_get_models_returns_fake_runtimes_ready() -> None:
     payload = response.json()
     assert payload["success"] is True
     models = payload["data"]["models"]
-    assert len(models) == 2
+    assert len(models) == 4
 
     by_name = {m["name"]: m for m in models}
-    assert set(by_name) == {"bge-m3", "bge-reranker-v2-m3"}
+    assert set(by_name) == {"bge-m3", "bge-reranker-v2-m3", "qwen3-asr", "pyannote-diarization"}
 
     for info in models:
         assert info["status"] == "READY"
@@ -68,7 +68,10 @@ def test_get_models_returns_fake_runtimes_ready() -> None:
         assert info["useFake"] is True
         assert info["checksum"] is None
         assert info["lastError"] is None
-        assert info["version"].endswith("-fake-v0")
+        # Each fake runtime uses its own deterministic placeholder version
+        # (see *_FAKE_MODEL_VERSION constants); not all of them end in
+        # "-fake-v0" — just assert the runtime advertises *some* version.
+        assert isinstance(info["version"], str) and info["version"]
 
 
 def test_get_models_rejects_missing_signature() -> None:
@@ -100,7 +103,7 @@ def test_post_warmup_in_fake_mode_reports_not_triggered() -> None:
     assert payload["success"] is True
     # Fake mode starts READY → nothing to trigger.
     assert payload["data"]["triggered"] is False
-    assert len(payload["data"]["models"]) == 2
+    assert len(payload["data"]["models"]) == 4
     for info in payload["data"]["models"]:
         assert info["status"] == "READY"
 

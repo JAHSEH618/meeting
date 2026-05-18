@@ -12,8 +12,15 @@ from ai_worker.infrastructure.internal_api.auth import (
     RerankResultItem,
     verify_hmac_signature,
 )
+from ai_worker.model_runtime.asr import Qwen3AsrRuntime
+from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
 from ai_worker.model_runtime.embedding import BgeM3Runtime, BgeM3RuntimeError
-from ai_worker.model_runtime.registry import get_bge_m3, get_bge_reranker
+from ai_worker.model_runtime.registry import (
+    get_asr_runtime,
+    get_bge_m3,
+    get_bge_reranker,
+    get_diarization_runtime,
+)
 from ai_worker.model_runtime.rerank import (
     BgeRerankerRuntime,
     BgeRerankerRuntimeError,
@@ -46,7 +53,10 @@ def _error_response(
     )
 
 
-def _model_info(runtime: BgeM3Runtime | BgeRerankerRuntime, name: str) -> dict:
+def _model_info(
+    runtime: BgeM3Runtime | BgeRerankerRuntime | Qwen3AsrRuntime | PyannoteDiarizationRuntime,
+    name: str,
+) -> dict:
     """Project a runtime into a `ModelInfo` matching ai-worker-internal-api.yaml.
 
     `checksum` is now computed lazily from the on-disk weight files
@@ -59,6 +69,10 @@ def _model_info(runtime: BgeM3Runtime | BgeRerankerRuntime, name: str) -> dict:
         models_dir = settings.bge_m3_models_dir
     elif isinstance(runtime, BgeRerankerRuntime):
         models_dir = settings.bge_reranker_models_dir
+    elif isinstance(runtime, Qwen3AsrRuntime):
+        models_dir = settings.qwen3_asr_models_dir
+    elif isinstance(runtime, PyannoteDiarizationRuntime):
+        models_dir = settings.pyannote_models_dir
     return {
         "name": name,
         "version": runtime.model_version,
@@ -75,6 +89,8 @@ def _all_model_infos() -> list[dict]:
     return [
         _model_info(get_bge_m3(), "bge-m3"),
         _model_info(get_bge_reranker(), "bge-reranker-v2-m3"),
+        _model_info(get_asr_runtime(), "qwen3-asr"),
+        _model_info(get_diarization_runtime(), "pyannote-diarization"),
     ]
 
 

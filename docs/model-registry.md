@@ -65,6 +65,27 @@ nexus://models/bge-m3/v1/
 nexus://models/bge-reranker-v2-m3/v1/
 ```
 
+## 运行时挂载点
+
+容器内每个模型必须固定挂载到 `/opt/models/<model>` 下，并通过 env 告诉
+ai-worker 真实路径。下表是 prod / staging 推荐配置（dev / CI 留空即
+回退到 deterministic fake runtime）：
+
+| 模型 | env 变量 | 推荐挂载点 | 备注 |
+|---|---|---|---|
+| Qwen3-ASR-1.7B | `AI_WORKER_QWEN3_ASR_MODELS_DIR` | `/opt/models/qwen3-asr-1.7b/v2026.05.1` | 一并设 `AI_WORKER_USE_FAKE_ASR_RUNTIME=false` |
+| pyannote/speaker-diarization-3.1 | `AI_WORKER_PYANNOTE_MODELS_DIR` | `/opt/models/pyannote/v3.1` | 一并设 `AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false` |
+| BAAI/bge-m3 | `AI_WORKER_BGE_M3_MODELS_DIR` | `/opt/models/bge-m3/v1` | 一并设 `AI_WORKER_USE_FAKE_RUNTIME=false` |
+| BAAI/bge-reranker-v2-m3 | `AI_WORKER_BGE_RERANKER_MODELS_DIR` | `/opt/models/bge-reranker-v2-m3/v1` | 同上 |
+| Qwen3-ForcedAligner-0.6B | 暂未接入 runtime — pipeline 仍走轻量对齐 | — | 待 alignment 改造再开 env |
+| 3D-Speaker CAM++ | 暂未接入 runtime — speaker matching 走 mock | — | 待 speaker matching 改造再开 env |
+
+Dockerfile 已注入 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`，因此
+即使代码里 `from_pretrained("...")` 也不会触发联网下载——挂载缺失会
+直接 `FileNotFoundError`，对应 runtime 的 `status=ERROR` +
+`/internal/models` 的 `lastError` 字段会暴露原因，prod ready 探针
+拒绝转入 healthy。
+
 ## 后续步骤
 
 1. 由架构 owner 或法务确认项目本体 License，更新 `README.md` 和根目录 `LICENSE` 文件。

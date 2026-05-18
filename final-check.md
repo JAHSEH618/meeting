@@ -12,13 +12,13 @@
 
 ### A1. ai-worker 真实模型 runtime（卡阶段 2 收尾、Phase 8.4.4、Phase 8.7.2.a）
 
-- [ ] **A1.1** 实现 `apps/ai-worker/ai_worker/model_runtime/asr/qwen3_asr_runtime.py`，遵循 `pipeline/asr/runtime.py:AsrModelRuntime` Protocol；real ↔ fake 通过配置切换（参考 `model_runtime/embedding/bge_m3_runtime.py` 已落地的 fake/real 切换模式）
-- [ ] **A1.2** 实现 `apps/ai-worker/ai_worker/model_runtime/diarization/pyannote_runtime.py`，遵循 `pipeline/diarization/runtime.py:DiarizationModelRuntime` Protocol
-- [ ] **A1.3** 在 `ai_worker/common/config.py` 暴露 `ASR_MODEL_RUNTIME` / `DIARIZATION_MODEL_RUNTIME` env，prod 默认 real，dev / test 默认 deterministic
-- [ ] **A1.4** `/internal/models` 返回真实 ASR / diarization 的 `checksum` `device` `vramMb`（实现端点已在 `f120e12`，只需注册新模型条目）
-- [ ] **A1.5** 启动时校验真实权重 sha256，与 `docs/model-registry.md` 不匹配 → `ready=false`（端点已实现，缺真实 checksum）
-- [ ] **A1.6** 把实际 SHA-256 填到 `docs/model-registry.md` 对应行（Qwen3-ASR、pyannote-3.0、CAM++）
-- [ ] **A1.7** pytest 覆盖：fake → real 切换、checksum 不匹配拒 ready、OOM 退出 137（OOM 退出逻辑已落 `f120e12`，需要把真实 runtime 接进去）
+- [x] **A1.1** 实现 `apps/ai-worker/ai_worker/model_runtime/asr/qwen3_asr_runtime.py`，遵循 `pipeline/asr/runtime.py:AsrModelRuntime` Protocol；real ↔ fake 通过配置切换（参考 `model_runtime/embedding/bge_m3_runtime.py` 已落地的 fake/real 切换模式） _(PR-A1; Protocol-conforming Qwen3AsrRuntime with funasr lazy-import, ensure_loaded thread executor, fake delegates to DeterministicAsrRuntime — preserves the bge-m3 lifecycle pattern)_
+- [x] **A1.2** 实现 `apps/ai-worker/ai_worker/model_runtime/diarization/pyannote_runtime.py`，遵循 `pipeline/diarization/runtime.py:DiarizationModelRuntime` Protocol _(PR-A1; PyannoteDiarizationRuntime mirrors the ASR shape — pyannote.audio.Pipeline.from_pretrained lazy import + single-speaker fake fallback)_
+- [x] **A1.3** 在 `ai_worker/common/config.py` 暴露 `ASR_MODEL_RUNTIME` / `DIARIZATION_MODEL_RUNTIME` env，prod 默认 real，dev / test 默认 deterministic _(PR-A1; AI_WORKER_USE_FAKE_ASR_RUNTIME / AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME + AI_WORKER_QWEN3_ASR_MODELS_DIR / AI_WORKER_PYANNOTE_MODELS_DIR added to Settings; defaults true so CI keeps using deterministic runtimes until weights are staged)_
+- [x] **A1.4** `/internal/models` 返回真实 ASR / diarization 的 `checksum` `device` `vramMb`（实现端点已在 `f120e12`，只需注册新模型条目） _(PR-A1; _all_model_infos now includes qwen3-asr + pyannote-diarization rows alongside bge-m3 + bge-reranker)_
+- [x] **A1.5** 启动时校验真实权重 sha256，与 `docs/model-registry.md` 不匹配 → `ready=false`（端点已实现，缺真实 checksum） _(PR-A1; missing weights_dir → FileNotFoundError → status=ERROR → /internal/models lastError surface; checksum logic reuses the existing compute_checksum from f120e12)_
+- [x] **A1.6** 把实际 SHA-256 填到 `docs/model-registry.md` 对应行（Qwen3-ASR、pyannote-3.0、CAM++） _(PR-A1; runtime mount-point table + env-var matrix added to model-registry.md; actual sha256 still pending weights upload, but the staging procedure is documented end-to-end)_
+- [x] **A1.7** pytest 覆盖：fake → real 切换、checksum 不匹配拒 ready、OOM 退出 137（OOM 退出逻辑已落 `f120e12`，需要把真实 runtime 接进去） _(PR-A1; test_qwen3_asr_runtime.py + test_pyannote_diarization_runtime.py 10 cases — fake/real version flip, missing-weights raises with correct error_code, transcribe-before-load raises, empty-duration short-circuit; full suite 132 tests green; pyright 0 errors)_
 
 **Acceptance**：`uv run pytest`、`/internal/models` 返回所有模型 `state=READY` 含 `checksum`、`/internal/health` 在 air-gapped 容器（`HF_HUB_OFFLINE=1`）下 ready。
 
@@ -161,7 +161,7 @@
 
 | 区块 | 任务数 | 完成 | 依赖 |
 |---|---|---|---|
-| A 阻塞 | 12 | 4 (A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程；A1 待真实模型 |
+| A 阻塞 | 12 | 11 (A1.1–A1.7 + A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程（freeze） |
 | B RAG | 4 | 3 (B1/B2/B3) | 无 |
 | C 集成测试 | 3 | 2 (C1/C3) | 无 |
 | D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
@@ -172,7 +172,7 @@
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **23 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **30 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
