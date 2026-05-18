@@ -1,7 +1,10 @@
 package com.meeting.api.adapter.rag;
 
 import com.meeting.api.adapter.meeting.TenantContextHolder;
+import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ApiResponse;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryCommand;
@@ -28,6 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
  * API (see {@code DocumentController}). This keeps the read-time
  * permission check fail-closed without forcing every caller to learn a
  * new header.
+ *
+ * <p>Rate limiting (Phase 8 final-check.md B2): a per-(tenant,user)
+ * token bucket guards GPU rerank cost. When exceeded the controller
+ * throws {@code ApplicationException(RAG_RATE_LIMITED, 429)} which the
+ * {@code MeetingControllerAdvice} maps to a standard error envelope.
  */
 @RestController
 public class RagQueryController {
@@ -35,9 +43,17 @@ public class RagQueryController {
     private static final int DEFAULT_TOP_N = 8;
 
     private final RagQueryFacade facade;
+    private final RagRateLimiter rateLimiter;
+    private final MeetingApiMetrics metrics;
 
-    public RagQueryController(RagQueryFacade facade) {
+    public RagQueryController(
+        RagQueryFacade facade,
+        RagRateLimiter rateLimiter,
+        MeetingApiMetrics metrics
+    ) {
         this.facade = facade;
+        this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
     }
 
     @PostMapping("/api/rag/query")
@@ -52,6 +68,18 @@ public class RagQueryController {
         if (body == null || body.question() == null || body.question().isBlank()) {
             throw new IllegalArgumentException("question must not be blank");
         }
+        String tenantId = TenantContextHolder.currentTenantId();
+        String effectiveUserId = userId == null || userId.isBlank() ? "anonymous" : userId;
+
+        if (!rateLimiter.tryAcquire(tenantId, effectiveUserId)) {
+            metrics.ragRateLimitBlocksCounter("tenant_user").increment();
+            throw new ApplicationException(
+                ErrorCode.RAG_RATE_LIMITED, 429,
+                "rag query rate exceeded — retry after a short backoff",
+                true
+            );
+        }
+
         SecurityLevel clearance = clearanceHeader == null || clearanceHeader.isBlank()
             ? SecurityLevel.INTERNAL
             : SecurityLevel.valueOf(clearanceHeader.trim().toUpperCase());
@@ -64,8 +92,8 @@ public class RagQueryController {
             );
 
         RagAnswerDTO dto = facade.query(new RagQueryCommand(
-            TenantContextHolder.currentTenantId(),
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            tenantId,
+            effectiveUserId,
             clearance,
             body.question(),
             scope,

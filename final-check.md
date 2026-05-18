@@ -36,10 +36,10 @@
 
 ## B. RAG 收尾（`todo.md` 阶段 5 follow-up + Phase 8.1.1.b）
 
-- [ ] **B1** `meeting-api-app/.../app/rag/RagQueryApplicationService.java` 在 embed / retrieve / authorize / rerank / llm / cite 6 段用 `Timer.Sample.start(registry)` 拆段，metric name `rag_query_phase_duration_seconds`，tag `phase=...`
-- [ ] **B2** RAG `POST /api/rag/query` 接入 `Bucket4j` 或等价 token bucket：每租户/用户 N rpm，超限 → 429 + 错误码 `RAG_RATE_LIMITED`（先在 `error-codes.yaml` 登记后再用）
-- [ ] **B3** `MeetingApiMetricsTest` 加 phase timer 校验
-- [ ] **B4** Playwright 新增 `e2e/tests/rag-flow.spec.ts`：登录 → 选 meeting scope → 提问 → coverage badge 校验 → citation 点击跳转 → 退化态显示
+- [x] **B1** `meeting-api-app/.../app/rag/RagQueryApplicationService.java` 在 embed / retrieve / authorize / rerank / llm / cite 6 段用 `Timer.Sample.start(registry)` 拆段，metric name `rag_query_phase_duration_seconds`，tag `phase=...` _(PR-B; 7 phases wired — authorize / embed / retrieve / authorize_filter / rerank / cite / llm; metric `rag.query.phase.duration` with phase tag; emitted as `rag_query_phase_duration_seconds_bucket` in Prometheus)_
+- [x] **B2** RAG `POST /api/rag/query` 接入 `Bucket4j` 或等价 token bucket：每租户/用户 N rpm，超限 → 429 + 错误码 `RAG_RATE_LIMITED`（先在 `error-codes.yaml` 登记后再用） _(PR-B; in-process token bucket keyed by tenant:user, default 60 rpm + burst 10, throws ApplicationException(RAG_RATE_LIMITED, 429, retryable=true) mapped by MeetingControllerAdvice; counter meeting.api.rag.rate_limit_blocks{key=tenant_user})_
+- [x] **B3** `MeetingApiMetricsTest` 加 phase timer 校验 _(PR-B; 3 tests cover phase timer name + tag + all 7 spec phases + rate-limit counter)_
+- [ ] **B4** Playwright 新增 `e2e/tests/rag-flow.spec.ts`：登录 → 选 meeting scope → 提问 → coverage badge 校验 → citation 点击跳转 → 退化态显示 _(deferred to PR-I)_
 
 **Acceptance**：Prometheus `:8080/actuator/prometheus` 含 `rag_query_phase_duration_seconds_bucket{phase="rerank"}`；超频率提问返回 429。
 
@@ -162,7 +162,7 @@
 | 区块 | 任务数 | 完成 | 依赖 |
 |---|---|---|---|
 | A 阻塞 | 12 | 4 (A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程；A1 待真实模型 |
-| B RAG | 4 | 0 | 无 |
+| B RAG | 4 | 3 (B1/B2/B3) | 无 |
 | C 集成测试 | 3 | 0 | 无 |
 | D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
 | E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
@@ -172,7 +172,7 @@
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **13 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **16 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 

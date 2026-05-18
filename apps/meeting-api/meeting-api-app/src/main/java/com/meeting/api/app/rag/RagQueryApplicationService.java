@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
+import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.RagAnswerCoverage;
 import com.meeting.api.client.enums.SecurityLevel;
@@ -26,6 +27,9 @@ import com.meeting.api.domain.rag.RagCitationEnricher;
 import com.meeting.api.domain.rag.RagCitationEnricher.TranscriptSegmentInfo;
 import com.meeting.api.domain.rag.RerankGateway;
 import com.meeting.api.domain.rag.RrfFusion;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -92,6 +96,8 @@ public class RagQueryApplicationService implements RagQueryFacade {
     private final RagCitationEnricher citationEnricher;
     private final RagAnswerCache answerCache;
     private final ObjectMapper objectMapper;
+    private final MeetingApiMetrics metrics;
+    private final MeterRegistry meterRegistry;
     private final int retrievalTopK;
     private final int rerankCandidatePoolSize;
     private final int rrfK;
@@ -106,6 +112,8 @@ public class RagQueryApplicationService implements RagQueryFacade {
         RagCitationEnricher citationEnricher,
         RagAnswerCache answerCache,
         ObjectMapper objectMapper,
+        MeetingApiMetrics metrics,
+        MeterRegistry meterRegistry,
         @Value("${meeting.rag.query.retrieval-top-k:50}") int retrievalTopK,
         @Value("${meeting.rag.query.rerank-pool-size:50}") int rerankCandidatePoolSize,
         @Value("${meeting.rag.query.rrf-k:" + RrfFusion.DEFAULT_K + "}") int rrfK
@@ -119,9 +127,42 @@ public class RagQueryApplicationService implements RagQueryFacade {
         this.citationEnricher = citationEnricher;
         this.answerCache = answerCache;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
+        this.meterRegistry = meterRegistry;
         this.retrievalTopK = retrievalTopK;
         this.rerankCandidatePoolSize = rerankCandidatePoolSize;
         this.rrfK = rrfK;
+    }
+
+    /**
+     * Test-only convenience constructor that wires a private
+     * {@link SimpleMeterRegistry} so suites which don't care about
+     * metrics can keep their previous 9-arg signature. Production
+     * code-paths must use the 14-arg constructor so Prometheus picks
+     * up phase timers.
+     */
+    public RagQueryApplicationService(
+        TenantScopedTransaction tenantScopedTransaction,
+        RagAuthorizationService authorizationService,
+        EmbeddingGateway embeddingGateway,
+        KnowledgeChunkRepository knowledgeChunkRepository,
+        RerankGateway rerankGateway,
+        LlmGateway llmGateway,
+        RagCitationEnricher citationEnricher,
+        RagAnswerCache answerCache,
+        ObjectMapper objectMapper,
+        int retrievalTopK,
+        int rerankCandidatePoolSize,
+        int rrfK
+    ) {
+        this(
+            tenantScopedTransaction, authorizationService, embeddingGateway,
+            knowledgeChunkRepository, rerankGateway, llmGateway, citationEnricher,
+            answerCache, objectMapper,
+            new MeetingApiMetrics(new SimpleMeterRegistry()),
+            new SimpleMeterRegistry(),
+            retrievalTopK, rerankCandidatePoolSize, rrfK
+        );
     }
 
     @Override
@@ -157,9 +198,15 @@ public class RagQueryApplicationService implements RagQueryFacade {
         String userId = command.userId();
         SecurityLevel clearance = command.clearance();
 
-        RetrievalScope authorizedScope = authorizationService.authorizeScope(
-            tenantId, userId, clearance, toRetrievalScope(command.scope())
-        );
+        Timer.Sample authorizeSample = Timer.start(meterRegistry);
+        RetrievalScope authorizedScope;
+        try {
+            authorizedScope = authorizationService.authorizeScope(
+                tenantId, userId, clearance, toRetrievalScope(command.scope())
+            );
+        } finally {
+            authorizeSample.stop(metrics.ragQueryPhaseTimer("authorize"));
+        }
 
         // If the caller supplied an explicit scope but lost every meeting / document
         // through authorization, fail closed without embedding or retrieving.
@@ -172,30 +219,49 @@ public class RagQueryApplicationService implements RagQueryFacade {
             return degraded(DEGRADED_ANSWER_NO_CHUNKS);
         }
 
-        EmbeddingGateway.EmbedResult embedded = embeddingGateway.embed(new EmbeddingGateway.EmbedRequest(
-            tenantId, List.of(command.question()), command.requestId(), command.traceId()
-        ));
+        Timer.Sample embedSample = Timer.start(meterRegistry);
+        EmbeddingGateway.EmbedResult embedded;
+        try {
+            embedded = embeddingGateway.embed(new EmbeddingGateway.EmbedRequest(
+                tenantId, List.of(command.question()), command.requestId(), command.traceId()
+            ));
+        } finally {
+            embedSample.stop(metrics.ragQueryPhaseTimer("embed"));
+        }
         if (embedded.vectors().isEmpty()) {
             throw new IllegalStateException("EmbeddingGateway returned no vector for the query");
         }
         float[] queryVector = embedded.vectors().get(0);
 
-        List<KnowledgeChunkCandidate> vectorRanked = knowledgeChunkRepository.searchByVector(
-            tenantId, queryVector, authorizedScope, retrievalTopK
-        );
-        List<KnowledgeChunkCandidate> keywordRanked = knowledgeChunkRepository.searchByKeyword(
-            tenantId, command.question(), authorizedScope, retrievalTopK
-        );
-
-        List<KnowledgeChunkCandidate> fused = RrfFusion.fuse(vectorRanked, keywordRanked, rrfK);
+        Timer.Sample retrieveSample = Timer.start(meterRegistry);
+        List<KnowledgeChunkCandidate> vectorRanked;
+        List<KnowledgeChunkCandidate> keywordRanked;
+        List<KnowledgeChunkCandidate> fused;
+        try {
+            vectorRanked = knowledgeChunkRepository.searchByVector(
+                tenantId, queryVector, authorizedScope, retrievalTopK
+            );
+            keywordRanked = knowledgeChunkRepository.searchByKeyword(
+                tenantId, command.question(), authorizedScope, retrievalTopK
+            );
+            fused = RrfFusion.fuse(vectorRanked, keywordRanked, rrfK);
+        } finally {
+            retrieveSample.stop(metrics.ragQueryPhaseTimer("retrieve"));
+        }
         if (fused.isEmpty()) {
             log.info("rag_query_empty_retrieval tenant={} user={} vec=0 kw=0", tenantId, userId);
             return degraded(DEGRADED_ANSWER_NO_CHUNKS);
         }
 
-        List<KnowledgeChunkCandidate> authorized = authorizationService.filterAuthorized(
-            tenantId, userId, clearance, fused
-        );
+        Timer.Sample authzFilterSample = Timer.start(meterRegistry);
+        List<KnowledgeChunkCandidate> authorized;
+        try {
+            authorized = authorizationService.filterAuthorized(
+                tenantId, userId, clearance, fused
+            );
+        } finally {
+            authzFilterSample.stop(metrics.ragQueryPhaseTimer("authorize_filter"));
+        }
         if (authorized.isEmpty()) {
             log.info(
                 "rag_query_empty_after_authz tenant={} user={} fused={}",
@@ -209,13 +275,26 @@ public class RagQueryApplicationService implements RagQueryFacade {
             ? authorized.subList(0, rerankCandidatePoolSize)
             : authorized;
 
-        List<KnowledgeChunkCandidate> ordered = rerankOrFallback(command, rerankPool);
+        Timer.Sample rerankSample = Timer.start(meterRegistry);
+        List<KnowledgeChunkCandidate> ordered;
+        try {
+            ordered = rerankOrFallback(command, rerankPool);
+        } finally {
+            rerankSample.stop(metrics.ragQueryPhaseTimer("rerank"));
+        }
 
         int topN = Math.min(command.topN(), ordered.size());
         List<KnowledgeChunkCandidate> top = ordered.subList(0, topN);
 
-        EnrichedCitations enriched = enrich(tenantId, top);
-        String contextBlock = renderContext(top, enriched);
+        Timer.Sample citeSample = Timer.start(meterRegistry);
+        EnrichedCitations enriched;
+        String contextBlock;
+        try {
+            enriched = enrich(tenantId, top);
+            contextBlock = renderContext(top, enriched);
+        } finally {
+            citeSample.stop(metrics.ragQueryPhaseTimer("cite"));
+        }
 
         // The LLM is called under the highest security level surfaced in the
         // citations — that way DashScopeLlmGateway can fail closed if any
@@ -232,6 +311,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
         variables.put("query", command.question());
         variables.put("retrievedChunks", contextBlock);
 
+        Timer.Sample llmSample = Timer.start(meterRegistry);
         LlmGateway.LlmResponse response;
         try {
             response = llmGateway.complete(new LlmGateway.LlmRequest(
@@ -251,6 +331,8 @@ public class RagQueryApplicationService implements RagQueryFacade {
                 tenantId, userId, ex.errorCode(), ex.getMessage()
             );
             throw ex;
+        } finally {
+            llmSample.stop(metrics.ragQueryPhaseTimer("llm"));
         }
 
         ParsedAnswer parsed = parseAnswer(

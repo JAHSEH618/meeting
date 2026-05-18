@@ -23,6 +23,8 @@ public class MeetingApiMetrics {
     private static final String KMS_FAILURES = "meeting.api.kms.encrypt_failures";
     private static final String LLM_BLOCKED = "meeting.api.llm.blocked_security_level";
     private static final String TENANT_CONTEXT_MISSING = "meeting.api.tenant_context.missing";
+    private static final String RAG_PHASE_DURATION = "rag.query.phase.duration";
+    private static final String RAG_RATE_LIMIT_BLOCKS = "meeting.api.rag.rate_limit_blocks";
 
     private final MeterRegistry registry;
 
@@ -51,6 +53,33 @@ public class MeetingApiMetrics {
     public Counter sseEventCounter(String eventType) {
         return Counter.builder(SSE_EVENTS)
             .tag("eventType", eventType == null ? "unknown" : eventType)
+            .register(registry);
+    }
+
+    /**
+     * Per-phase timer for the RAG query pipeline. Phase tag values are
+     * authoritative: {@code authorize}, {@code embed}, {@code retrieve},
+     * {@code authorize_filter}, {@code rerank}, {@code llm}, {@code cite}.
+     *
+     * <p>Phase 8 (final-check.md B1) — exposed as
+     * {@code rag_query_phase_duration_seconds_bucket{phase=...}} in
+     * Prometheus to drive p95 alerts.
+     */
+    public Timer ragQueryPhaseTimer(String phase) {
+        return Timer.builder(RAG_PHASE_DURATION)
+            .tag("phase", phase == null ? "unknown" : phase)
+            .publishPercentileHistogram()
+            .register(registry);
+    }
+
+    /**
+     * Counts RAG queries rejected with {@code RAG_RATE_LIMITED}. {@code key}
+     * is a coarse bucket identifier — defaults to {@code "tenant_user"} —
+     * to avoid high-cardinality tag explosion.
+     */
+    public Counter ragRateLimitBlocksCounter(String key) {
+        return Counter.builder(RAG_RATE_LIMIT_BLOCKS)
+            .tag("key", key == null ? "unknown" : key)
             .register(registry);
     }
 

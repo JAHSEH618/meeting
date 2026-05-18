@@ -4,13 +4,18 @@ import com.meeting.api.adapter.meeting.TenantContextHolder;
 import com.meeting.api.adapter.meeting.TenantContextMissingException;
 import com.meeting.api.adapter.rag.RagQueryController;
 import com.meeting.api.adapter.rag.RagQueryRequest;
+import com.meeting.api.adapter.rag.RagRateLimiter;
+import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ApiResponse;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.RagAnswerCoverage;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.MeetingSegmentCitationDTO;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryCommand;
 import com.meeting.api.client.rag.RagQueryFacade;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +33,7 @@ class RagQueryControllerTest {
 
     @Test
     void queryFailsClosedWhenTenantContextIsMissing() {
-        RagQueryController controller = new RagQueryController(new StubFacade());
+        RagQueryController controller = newController(new StubFacade(), permissiveLimiter());
         assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("q", null, null, null),
             "req_01", "trace_01", null, "user_01", null
@@ -38,7 +43,7 @@ class RagQueryControllerTest {
     @Test
     void queryAppliesDefaultsAndDelegatesToFacade() {
         StubFacade facade = new StubFacade();
-        RagQueryController controller = new RagQueryController(facade);
+        RagQueryController controller = newController(facade, permissiveLimiter());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         ResponseEntity<ApiResponse<RagAnswerDTO>> response = controller.query(
@@ -64,7 +69,7 @@ class RagQueryControllerTest {
     @Test
     void queryParsesScopeAndClearanceHeader() {
         StubFacade facade = new StubFacade();
-        RagQueryController controller = new RagQueryController(facade);
+        RagQueryController controller = newController(facade, permissiveLimiter());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         controller.query(
@@ -87,7 +92,7 @@ class RagQueryControllerTest {
     @Test
     void queryDefaultsUserIdToAnonymousWhenHeaderAbsent() {
         StubFacade facade = new StubFacade();
-        RagQueryController controller = new RagQueryController(facade);
+        RagQueryController controller = newController(facade, permissiveLimiter());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         controller.query(
@@ -100,7 +105,7 @@ class RagQueryControllerTest {
 
     @Test
     void queryRejectsBlankQuestionAtAdapter() {
-        RagQueryController controller = new RagQueryController(new StubFacade());
+        RagQueryController controller = newController(new StubFacade(), permissiveLimiter());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         assertThatThrownBy(() -> controller.query(
@@ -111,13 +116,52 @@ class RagQueryControllerTest {
 
     @Test
     void queryRejectsInvalidClearanceHeader() {
-        RagQueryController controller = new RagQueryController(new StubFacade());
+        RagQueryController controller = newController(new StubFacade(), permissiveLimiter());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("q", null, null, null),
             "req_05", "trace_05", null, "user_01", "OMEGA"
         )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void queryRejectsAfterBurstCapacityExceeded() {
+        StubFacade facade = new StubFacade();
+        // burst capacity 2, very low rpm so refill is negligible inside the test window.
+        RagRateLimiter limiter = new RagRateLimiter(/*rpm=*/ 1, /*burst=*/ 2);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        MeetingApiMetrics metrics = new MeetingApiMetrics(registry);
+        RagQueryController controller = new RagQueryController(facade, limiter, metrics);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        controller.query(new RagQueryRequest("q", null, null, null),
+            "req_01", "trace_01", null, "user_01", null);
+        controller.query(new RagQueryRequest("q", null, null, null),
+            "req_02", "trace_02", null, "user_01", null);
+
+        // 3rd request inside the burst window exceeds capacity.
+        assertThatThrownBy(() -> controller.query(
+            new RagQueryRequest("q", null, null, null),
+            "req_03", "trace_03", null, "user_01", null
+        ))
+            .isInstanceOf(ApplicationException.class)
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.RAG_RATE_LIMITED);
+                assertThat(ae.httpStatus()).isEqualTo(429);
+                assertThat(ae.retryable()).isTrue();
+            });
+        assertThat(registry.counter("meeting.api.rag.rate_limit_blocks", "key", "tenant_user").count())
+            .isEqualTo(1.0);
+    }
+
+    private static RagQueryController newController(RagQueryFacade facade, RagRateLimiter limiter) {
+        return new RagQueryController(facade, limiter, new MeetingApiMetrics(new SimpleMeterRegistry()));
+    }
+
+    private static RagRateLimiter permissiveLimiter() {
+        return new RagRateLimiter(6_000, 1_000);
     }
 
     private static final class StubFacade implements RagQueryFacade {
