@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.6
+
+# ----- build stage -----------------------------------------------------------
+# JDK 17 is enforced by Maven Enforcer ([17,18)); use the matching maven image.
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /src
+
+# Cache dependencies first so source-only changes don't redownload the world.
+COPY pom.xml ./
+COPY meeting-api-client/pom.xml meeting-api-client/
+COPY meeting-api-domain/pom.xml meeting-api-domain/
+COPY meeting-api-app/pom.xml meeting-api-app/
+COPY meeting-api-infrastructure/pom.xml meeting-api-infrastructure/
+COPY meeting-api-adapter/pom.xml meeting-api-adapter/
+COPY meeting-api-start/pom.xml meeting-api-start/
+RUN mvn -q -B -ntp dependency:go-offline -DskipTests || true
+
+# Bring in the full source tree (.dockerignore strips target/ etc.) and build.
+COPY . .
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mvn -B -ntp -DskipTests -pl meeting-api-start -am package
+
+# ----- runtime stage ---------------------------------------------------------
+FROM eclipse-temurin:17-jre-jammy
+
+# LibreOffice headless + CJK + common fonts. We deliberately keep only
+# Writer (no impress/calc/draw/base) to stay under the 1.5 GB image cap;
+# PdfExportGateway only needs DOCX → PDF.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         libreoffice-core libreoffice-writer \
+         fonts-noto-cjk fonts-noto-cjk-extra \
+         fonts-liberation \
+         curl ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user; mount points stay writable so soffice can create profile dirs.
+RUN useradd --create-home --shell /bin/false meeting \
+    && mkdir -p /app /tmp/soffice \
+    && chown -R meeting:meeting /app /tmp/soffice
+
+WORKDIR /app
+COPY --from=build /src/meeting-api-start/target/meeting-api-start-*.jar /app/app.jar
+
+USER meeting
+
+ENV JAVA_OPTS="" \
+    LIBREOFFICE_BINARY="soffice" \
+    LIBREOFFICE_TIMEOUT_SECONDS="60"
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fs http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

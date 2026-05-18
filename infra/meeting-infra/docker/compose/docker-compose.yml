@@ -91,6 +91,52 @@ services:
       wait
       "
 
+  # ── 应用服务（profile: full-stack）─────────────────────────
+  # `docker compose --profile full-stack up -d meeting-api`
+  meeting-api:
+    image: meeting-api:dev
+    container_name: meeting-api
+    profiles: ["full-stack"]
+    build:
+      context: ../../../../apps/meeting-api
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-meeting}
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meeting_dev}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-meeting}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-meeting_dev}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AI_WORKER_BASE_URL: http://ai-worker:8090
+      AI_WORKER_CALLBACK_HMAC_SECRET: ${AI_WORKER_CALLBACK_HMAC_SECRET:-change-me-callback-fallback-secret}
+      AI_WORKER_INTERNAL_API_HMAC_SECRET: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:-change-me-internal-fallback-secret}
+      CHUNK_STRATEGY_VERSION: v1
+      KMS_MASTER_KEY_ID: ${KMS_MASTER_KEY_ID:-dev-kms-master-key}
+      LIBREOFFICE_BINARY: soffice
+      LIBREOFFICE_TIMEOUT_SECONDS: "60"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70.0"
+    ports:
+      - "${MEETING_API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
   # ── 可观测性（本地开发可选）────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
