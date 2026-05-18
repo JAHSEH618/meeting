@@ -2086,7 +2086,7 @@ components:
         sequenceNo: {type: integer}
         eventType:
           type: string
-          enum: [TASK_SNAPSHOT, TASK_STARTED, TASK_STEP_UPDATED, TASK_HEARTBEAT, TRANSCRIPT_READY, TASK_FAILED, TASK_COMPLETED, TASK_CANCELLED]
+          enum: [TASK_SNAPSHOT, TASK_STARTED, TASK_STEP_UPDATED, TASK_HEARTBEAT, TRANSCRIPT_READY, TASK_FAILED, TASK_COMPLETED, TASK_CANCELLED, EXPORT_STATUS_CHANGED]
         taskId: {type: string}
         meetingId: {type: [string, 'null']}
         stepName: {type: [string, 'null']}

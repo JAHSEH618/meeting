@@ -1219,7 +1219,7 @@ export interface components {
             eventId: string;
             sequenceNo: number;
             /** @enum {string} */
-            eventType: "TASK_SNAPSHOT" | "TASK_STARTED" | "TASK_STEP_UPDATED" | "TASK_HEARTBEAT" | "TRANSCRIPT_READY" | "TASK_FAILED" | "TASK_COMPLETED" | "TASK_CANCELLED";
+            eventType: "TASK_SNAPSHOT" | "TASK_STARTED" | "TASK_STEP_UPDATED" | "TASK_HEARTBEAT" | "TRANSCRIPT_READY" | "TASK_FAILED" | "TASK_COMPLETED" | "TASK_CANCELLED" | "EXPORT_STATUS_CHANGED";
             taskId: string;
             meetingId?: string | null;
             stepName?: string | null;

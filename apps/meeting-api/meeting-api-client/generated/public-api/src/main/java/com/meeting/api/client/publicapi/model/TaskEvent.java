@@ -85,7 +85,9 @@ public class TaskEvent {
     
     TASK_COMPLETED("TASK_COMPLETED"),
     
-    TASK_CANCELLED("TASK_CANCELLED");
+    TASK_CANCELLED("TASK_CANCELLED"),
+    
+    EXPORT_STATUS_CHANGED("EXPORT_STATUS_CHANGED");
 
     private String value;
 
