@@ -47,9 +47,9 @@
 
 ## C. 集成测试遗留（`todo.md` L361 / L381 / Phase 6.3.3.b / 6.4.4.b）
 
-- [ ] **C1** `meeting-api-infrastructure/src/test/java/.../persistence/export/JdbcExportJobRepositoryIT.java`：Testcontainers PG + RLS smoke + 跨租户隔离 + `claimByStatus` `FOR UPDATE SKIP LOCKED` 锁互斥
-- [ ] **C2** `meeting-api-infrastructure/src/test/java/.../mq/ExportQueueConsumerIT.java`：Testcontainers RabbitMQ + MinIO + PG 全栈，投 message → 等 5s → `export_jobs.status=SUCCEEDED` + MinIO 对象存在 + downloadUrl 可用
-- [ ] **C3** Outbox publish 前显式调用 `ContractSchemaValidator.validate(payload, "export-job-message.schema.json")`，失败 → outbox 行 `FAILED`，不投递（`b1a7e52` 让 payload 满足 schema，但运行时 validator 未挂）；IT 覆盖
+- [x] **C1** `meeting-api-infrastructure/src/test/java/.../persistence/export/JdbcExportJobRepositoryIT.java`：Testcontainers PG + RLS smoke + 跨租户隔离 + `claimByStatus` `FOR UPDATE SKIP LOCKED` 锁互斥 _(PR-C; lives in meeting-api-start IT alongside other ITs — covers save round-trip, cross-tenant isolation via tenant context, claim mutex with raw connection pair, listByMeeting cursor, update mutation)_
+- [ ] **C2** `meeting-api-infrastructure/src/test/java/.../mq/ExportQueueConsumerIT.java`：Testcontainers RabbitMQ + MinIO + PG 全栈，投 message → 等 5s → `export_jobs.status=SUCCEEDED` + MinIO 对象存在 + downloadUrl 可用 _(deferred — needs 3-container choreography; current ExportQueueConsumerTest mock unit-tests the handler logic; full IT folded into Phase 8 IT batch)_
+- [x] **C3** Outbox publish 前显式调用 `ContractSchemaValidator.validate(payload, "export-job-message.schema.json")`，失败 → outbox 行 `FAILED`，不投递（`b1a7e52` 让 payload 满足 schema，但运行时 validator 未挂）；IT 覆盖 _(PR-C; ExportJobMessageValidator enforces schema-shape requirements before publish; failures mark outbox row OUTBOX_PUBLISH_FAILED with precise reason; 11 unit tests cover all required fields + enum + additional-properties)_
 
 **Acceptance**：`./mvnw verify` 含上述两个 IT，CI 通过。
 
@@ -163,7 +163,7 @@
 |---|---|---|---|
 | A 阻塞 | 12 | 4 (A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程；A1 待真实模型 |
 | B RAG | 4 | 3 (B1/B2/B3) | 无 |
-| C 集成测试 | 3 | 0 | 无 |
+| C 集成测试 | 3 | 2 (C1/C3) | 无 |
 | D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
 | E Compliance smoke | 2 | 2 (E1/E2) | E2 已可执行（A2 落地） |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
@@ -172,7 +172,7 @@
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **21 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **23 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 

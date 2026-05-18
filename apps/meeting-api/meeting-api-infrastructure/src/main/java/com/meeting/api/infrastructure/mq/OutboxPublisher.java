@@ -45,6 +45,7 @@ public class OutboxPublisher {
         int published = 0;
         for (OutboxEventRecord record : outboxEventStore.lockPendingBatch(batchSize)) {
             try {
+                preflightValidate(record);
                 rabbitMqPublisher.publish(
                     routingKey(record),
                     record.payloadJson(),
@@ -60,12 +61,35 @@ public class OutboxPublisher {
                 outboxEventStore.markPublished(record.id());
                 metrics.outboxPublishedCounter(record.eventType()).increment();
                 published++;
+            } catch (ExportJobMessageValidator.InvalidPayloadException ex) {
+                // Schema violation — message would be rejected downstream;
+                // mark FAILED with a precise error so on-call sees the
+                // missing-field message rather than a generic publish error.
+                log.warn(
+                    "outbox_schema_violation event={} type={} reason={}",
+                    record.id(), record.eventType(), ex.getMessage()
+                );
+                outboxEventStore.markFailed(record.id(), "OUTBOX_PUBLISH_FAILED",
+                    "schema violation: " + ex.getMessage(), maxRetries);
+                metrics.outboxFailedCounter(record.eventType(), "OUTBOX_PUBLISH_FAILED").increment();
             } catch (Exception ex) {
                 outboxEventStore.markFailed(record.id(), "OUTBOX_PUBLISH_FAILED", ex.getMessage(), maxRetries);
                 metrics.outboxFailedCounter(record.eventType(), "OUTBOX_PUBLISH_FAILED").increment();
             }
         }
         return published;
+    }
+
+    /**
+     * Per-event-type schema gate (final-check.md C3). For event types we
+     * have a schema for, validate the payload's shape before handing it
+     * to the broker so a downstream consumer never has to reject a
+     * malformed message.
+     */
+    private void preflightValidate(OutboxEventRecord record) {
+        if ("ExportJobCreatedEvent".equals(record.eventType())) {
+            ExportJobMessageValidator.INSTANCE.validate(record.payloadJson(), objectMapper);
+        }
     }
 
     /**
