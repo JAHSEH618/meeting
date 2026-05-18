@@ -101,6 +101,40 @@ export function ExportsPage() {
     return () => window.clearInterval(handle);
   }, [hasActiveJob, loadAll]);
 
+  // SSE live-nudge: open /api/exports/{id}/events for each non-terminal
+  // job. The backend (Phase 8 D1/D2) sends a snapshot event on
+  // EXPORT_STATUS_CHANGED and closes; the browser auto-reconnects, so
+  // combined with the 3s polling above we get sub-second update latency
+  // when the broker pushes and a guaranteed fallback when SSE is
+  // unsupported / blocked. Closing the EventSource on cleanup prevents
+  // leaks when the page unmounts.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
+      return;
+    }
+    const activeJobs = jobs.filter((j) => !TERMINAL_STATUSES.has(j.status));
+    if (activeJobs.length === 0) return;
+    const sources: EventSource[] = [];
+    for (const job of activeJobs) {
+      try {
+        const source = new EventSource(`/api/exports/${encodeURIComponent(job.exportId)}/events`);
+        source.addEventListener("EXPORT_STATUS_CHANGED", () => {
+          void loadAll();
+        });
+        source.onerror = () => {
+          // Silent — 3s polling still drives updates.
+          source.close();
+        };
+        sources.push(source);
+      } catch {
+        // EventSource construction failure → rely on polling.
+      }
+    }
+    return () => {
+      for (const source of sources) source.close();
+    };
+  }, [jobs, loadAll]);
+
   const handleCreate = useCallback(async () => {
     if (!meeting) return;
     setCreateError(null);

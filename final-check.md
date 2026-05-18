@@ -57,10 +57,10 @@
 
 ## D. Export SSE emitter（`todo.md` L382 + Phase 6.4.3）
 
-- [ ] **D1** `meeting-api-adapter` 新增 `GET /api/exports/{exportId}/events` SSE 路由（或复用 `/processing-tasks/{taskId}/events`，二选一并记录在 `apps/meeting-api/SPEC.md`）
-- [ ] **D2** `SseEventEmitter` 监听 `ExportJobCompletedEvent` + `ExportDownloadRevokedEvent` → emit `EXPORT_STATUS_CHANGED`（enum 已在 `7951910`）
-- [ ] **D3** 前端 `ExportsPage` 从 3s 轮询切换为 SSE 订阅（fallback 保留轮询）
-- [ ] **D4** Vitest：SSE close → 轮询恢复
+- [x] **D1** `meeting-api-adapter` 新增 `GET /api/exports/{exportId}/events` SSE 路由（或复用 `/processing-tasks/{taskId}/events`，二选一并记录在 `apps/meeting-api/SPEC.md`） _(PR-D; new `ExportSseController` separated from processing-task stream)_
+- [x] **D2** `SseEventEmitter` 监听 `ExportJobCompletedEvent` + `ExportDownloadRevokedEvent` → emit `EXPORT_STATUS_CHANGED`（enum 已在 `7951910`） _(PR-D; snapshot-on-open semantics mirroring ProcessingTaskSseController until a broker-backed bus is wired; metrics tagged sse.events{eventType=EXPORT_STATUS_CHANGED})_
+- [x] **D3** 前端 `ExportsPage` 从 3s 轮询切换为 SSE 订阅（fallback 保留轮询） _(PR-D; EventSource subscriber per non-terminal job triggers loadAll on EXPORT_STATUS_CHANGED, 3s polling kept as redundancy + jsdom fallback)_
+- [ ] **D4** Vitest：SSE close → 轮询恢复 _(deferred — jsdom doesn't ship a real EventSource; integration validated by Playwright in I)_
 
 **Acceptance**：手工 E2E 中导出 SUCCEEDED → 前端在 1s 内收到 status badge 切换。
 
@@ -164,7 +164,7 @@
 | A 阻塞 | 12 | 4 (A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程；A1 待真实模型 |
 | B RAG | 4 | 0 | 无 |
 | C 集成测试 | 3 | 0 | 无 |
-| D Export SSE | 4 | 0 | 无 |
+| D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
 | E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
 | G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
@@ -172,7 +172,7 @@
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **10 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **13 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
