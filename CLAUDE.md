@@ -81,6 +81,8 @@ npx tsc --noEmit                                 # type check (CI gate)
 npm run build                                    # tsc -b && vite build
 npm run lint                                     # eslint src/ --ext .ts,.tsx
 npm run codegen                                  # regen src/shared/api/types.gen.ts from contracts
+npm run e2e:install                              # one-time: install Playwright chromium
+npm run e2e                                      # Playwright E2E (e2e/playwright.config.ts) — excluded from vitest discovery
 ```
 
 ### Local infrastructure
@@ -91,6 +93,8 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
 Brings up PostgreSQL+pgvector, RabbitMQ, MinIO (TOS replacement), and Vault-dev (KMS replacement). Add `--profile observability` to also start Prometheus + Grafana (Loki is TBD).
+
+Per-app images live under each app (`apps/meeting-web/Dockerfile`, `apps/ai-worker/Dockerfile`); each has its own `.dockerignore`. K8s manifests are kustomize-style: `infra/meeting-infra/k8s/base/` + `overlays/{dev,prod}/`. `infra/meeting-infra/terraform/main.tf` is a stub for future cloud provisioning — not wired into CI.
 
 ### CI (`.github/workflows/ci.yml`)
 
@@ -202,7 +206,7 @@ Each workspace `SPEC.md` declares the same incremental ladder. Don't park new wo
 
 - **MVP-0** (done): auth + meetings + processing tasks + SSE/polling + worker fake pipeline + callback idempotency.
 - **MVP-1** (largely done): audio multipart upload + transcript + minutes/items + STALE cascade + speaker enrollment/confirmation + documents (partial).
-- **MVP-2** (in progress): RAG (chunk strategy, pgvector + permission recheck, rerank, citation, coverage) → exports (async, version-bound, short-link revoke) → compliance (legal hold, deletion jobs, deletion certificates, break-glass) → observability/security/perf hardening + Playwright E2E + Dockerfiles + K8s overlays.
+- **MVP-2** (in progress): RAG (chunk strategy, pgvector + permission recheck, rerank, citation, coverage) → exports (async, version-bound, short-link revoke) → compliance (legal hold, deletion jobs, deletion certificates, break-glass) → observability/security/perf hardening. Playwright E2E, per-app Dockerfiles, and K8s base+overlays have landed (commits 8.5–8.7); Terraform is a stub.
 
 `todo.md` is the live progress ledger — check it before starting work in any phase to avoid duplicating completed items.
 
