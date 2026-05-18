@@ -392,14 +392,14 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-api`
 
-- [ ] 为 public endpoint、callback endpoint、outbox publisher、SSE emitter 增加 Micrometer timer / counter。
+- [x] 为 public endpoint、callback endpoint、outbox publisher、SSE emitter 增加 Micrometer timer / counter。
 - [ ] 实现健康检查：PostgreSQL、RLS tenant smoke、RabbitMQ、TOS / MinIO、outbox、KMS、必要队列、ai-worker rerank。
 - [ ] prod profile fail-fast：缺少 HMAC、chunk strategy、ai-worker base URL / HMAC / rerank model、RLS 关闭、CONFIDENTIAL / SECRET 误允许 LLM。
-- [ ] 增加性能测试与告警指标：meeting list p95、callback p95、outbox lag、SSE 首字节、RAG p95。
+- [ ] 增加性能测试与告警指标：meeting list p95、callback p95、outbox lag、SSE 首字节、RAG p95。 _(Prometheus rules 12 条已落地；剩 p95 性能测试基线脚本)_
 
 ### 工程：`apps/ai-worker`
 
-- [ ] 实现 `GET /internal/models` 返回模型版本、checksum、device、状态、最近错误。
+- [x] 实现 `GET /internal/models` 返回模型版本、checksum、device、状态、最近错误。
 - [ ] 增加 GPU 指标、RTF、step 失败率、OOM 退出策略。
 - [ ] 生产启动禁止联网下载模型权重；模型 checksum 不匹配拒绝 ready。
 - [ ] 补齐模型准入清单 `docs/model-registry.md` 的 checksum、内网制品路径和审批记录。
@@ -416,7 +416,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [ ] 增加 full-stack compose 或 K8s dev overlay：meeting-api、meeting-web、ai-worker 镜像构建和健康检查。
 - [ ] 增加 Dockerfile：meeting-api、meeting-web、ai-worker；meeting-api 镜像超过 1.5GB 时重新评估 export runtime 拆分。
 - [ ] 增加 K8s base / dev overlay：deployment、service、configmap、servicemonitor、GPU node selector、PDB / HPA。
-- [ ] 增加 Prometheus rules：outbox backlog、RabbitMQ DLQ、callback auth fail、RAG rerank 降级、KMS 失败、GPU OOM、export 失败。
+- [x] 增加 Prometheus rules：outbox backlog、RabbitMQ DLQ、callback auth fail、RAG rerank 降级、KMS 失败、GPU OOM、export 失败。
 - [ ] 确保真实密钥不进入 git，部署只使用 `.env`、K8s Secret 或密钥管理系统注入。
 
 ## 持续性工程任务
