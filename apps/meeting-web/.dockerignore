@@ -1,0 +1,15 @@
+node_modules/
+**/node_modules/
+dist/
+.parcel-cache/
+.vite/
+coverage/
+.idea/
+.vscode/
+*.log
+*.tmp
+.DS_Store
+.git/
+.gitignore
+README.md
+SPEC.md
