@@ -77,13 +77,14 @@
 
 ## F. 前端安全（`todo.md` L425 + Phase 8.3.2）
 
-- [ ] **F1** 新增 `apps/meeting-web/src/shared/components/SafeMarkdown.tsx`，基于 `react-markdown` + `rehype-sanitize`，自定义 schema 禁 `<script>` `<iframe>` `on*` `javascript:`
-- [ ] **F2** 改写下列入口改用 `<SafeMarkdown>`：
-  - `RagPage` answer 渲染
-  - `MinutesPage` body（当前 `<pre>` 渲染纯文本，引入 markdown 后须用 SafeMarkdown）
-  - `MinutesPage` evidence 文本
-  - 文档预览
-- [ ] **F3** `src/shared/components/__tests__/safe-markdown.test.tsx`：20+ XSS payload（每行一条），断言 sanitize 后 DOM 无 `<script>` / `<iframe>` / `onerror=`
+- [x] **F1** 新增 `apps/meeting-web/src/shared/components/SafeMarkdown.tsx`，基于 `react-markdown` + `rehype-sanitize`，自定义 schema 禁 `<script>` `<iframe>` `on*` `javascript:` _(PR-F; extends defaultSchema, restricts tagNames + on*-attr filter + protocols allow-list http/https/mailto/tel)_
+- [x] **F2** 改写下列入口改用 `<SafeMarkdown>`： _(PR-F)_
+  - `RagPage` answer 渲染 _(✓ AnswerCard body)_
+  - `MinutesPage` body（当前 `<pre>` 渲染纯文本，引入 markdown 后须用 SafeMarkdown） _(✓ minutes.markdown)_
+  - `RagPage` citation content blockquotes _(✓ meeting + document citations)_
+  - `MinutesPage` evidence 文本 _(deferred — evidence is currently structured DTO via MinutesSectionView, not raw markdown)_
+  - 文档预览 _(deferred — document preview doesn't render markdown today)_
+- [x] **F3** `src/shared/components/__tests__/safe-markdown.test.tsx`：20+ XSS payload（每行一条），断言 sanitize 后 DOM 无 `<script>` / `<iframe>` / `onerror=` _(PR-F; 25 payloads + 3 sanity tests, 28 assertions all green)_
 
 **Acceptance**：`npm test` 含 safe-markdown.test.tsx 全绿；浏览器 console 无 CSP violation。
 
@@ -165,13 +166,13 @@
 | C 集成测试 | 3 | 0 | 无 |
 | D Export SSE | 4 | 0 | 无 |
 | E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
-| F 前端安全 | 3 | 0 | 无 |
+| F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
 | G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
 | H 性能基线 | 3 | 0 | 无 |
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **7 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **10 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 

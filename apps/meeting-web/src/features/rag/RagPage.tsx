@@ -6,6 +6,7 @@ import {
   ragQuery,
   type ApiClientError,
 } from "@shared/api/client";
+import { SafeMarkdown } from "@shared/components/SafeMarkdown";
 import type {
   Document,
   Meeting,
@@ -277,7 +278,7 @@ function AnswerCard({ answer }: { answer: RagAnswerDTO }) {
         ) : null}
       </div>
       <p className="muted">{COVERAGE_HINT[answer.coverage]}</p>
-      <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{answer.answer}</pre>
+      <SafeMarkdown source={answer.answer} ariaLabel="rag-answer-body" />
 
       {noCitations ? (
         <p className="muted">
@@ -314,7 +315,9 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
             {formatMs(citation.startMs)} – {formatMs(citation.endMs)}
           </span>
         </div>
-        <blockquote style={{ margin: 0 }}>{citation.content}</blockquote>
+        <blockquote style={{ margin: 0 }}>
+          <SafeMarkdown source={citation.content} />
+        </blockquote>
         <Link to={target}>跳转到转写片段 →</Link>
       </article>
     );
@@ -326,7 +329,9 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
         <strong>{citation.documentTitle}</strong>
         {citation.page > 0 ? <span className="muted">第 {citation.page} 页</span> : null}
       </div>
-      <blockquote style={{ margin: 0 }}>{citation.content}</blockquote>
+      <blockquote style={{ margin: 0 }}>
+        <SafeMarkdown source={citation.content} />
+      </blockquote>
     </article>
   );
 }

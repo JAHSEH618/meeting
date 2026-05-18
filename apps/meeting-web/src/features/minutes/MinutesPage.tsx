@@ -5,6 +5,7 @@ import type { ApiClientError } from "@shared/api/client";
 import type { Meeting, MinutesData, MinutesSection } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import { SecurityLevelBlockedNotice } from "@shared/components/SecurityLevelBlockedNotice";
+import { SafeMarkdown } from "@shared/components/SafeMarkdown";
 
 export function MinutesPage() {
   const { meetingId = "" } = useParams();
@@ -132,7 +133,11 @@ export function MinutesPage() {
           </div>
 
           {minutes.markdown ? (
-            <pre className="markdown-preview" aria-label="纪要 markdown">{minutes.markdown}</pre>
+            <SafeMarkdown
+              source={minutes.markdown}
+              className="markdown-preview"
+              ariaLabel="纪要 markdown"
+            />
           ) : null}
 
           <div className="stack">
