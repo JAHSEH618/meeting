@@ -24,11 +24,11 @@
 
 ### A2. Meeting DELETE 端点闭环（卡 `todo.md` L391、Phase 7.8、Phase 8.7.2.d Legal hold E2E）
 
-- [ ] **A2.1** `meeting-api-app` 新增 `MeetingApplicationService.delete(MeetingDeleteCommand)`，第一行调用 `LegalHoldCheckPort.isProtected(tenantId, "MEETING", meetingId)`，命中 → `LegalHoldBlockedException`
-- [ ] **A2.2** `meeting-api-adapter` 新增 `DELETE /api/meetings/{meetingId}`，body schema 已在 codegen `DeleteMeetingRequest`（reason + legalHoldAcknowledged + expectedVersion）
-- [ ] **A2.3** 删除流程：触发 `DeletionJobRequestedEvent`（已实现），只有 `MeetingDeletionExecutor` 全部目标成功（rows + files + KMS）才把 meeting 状态推进 `DELETED`；失败或 hold 命中保持原状态
-- [ ] **A2.4** Audit log `MEETING_DELETED` / `MEETING_DELETE_BLOCKED`
-- [ ] **A2.5** WebMvcTest 覆盖：200 / 423（hold）/ 409（版本冲突）/ 404
+- [x] **A2.1** `meeting-api-app` 新增 `MeetingApplicationService.delete(MeetingDeleteCommand)`，第一行调用 `LegalHoldCheckPort.isProtected(tenantId, "MEETING", meetingId)`，命中 → `LegalHoldBlockedException` _(commit 00182a2; throws `ApplicationException(LEGAL_HOLD_BLOCKED, 423)` 走现成 advice)_
+- [x] **A2.2** `meeting-api-adapter` 新增 `DELETE /api/meetings/{meetingId}`，body schema 已在 codegen `DeleteMeetingRequest`（reason + legalHoldAcknowledged + expectedVersion） _(commit 00182a2)_
+- [ ] **A2.3** 删除流程：触发 `DeletionJobRequestedEvent`（已实现），只有 `MeetingDeletionExecutor` 全部目标成功（rows + files + KMS）才把 meeting 状态推进 `DELETED`；失败或 hold 命中保持原状态 _(当前是直接 soft-delete，未走 deletion-job runner；admin 硬删除 + certificate 流程通过既有 `POST /admin/deletion-jobs` 链路完成。需要时再合并)_
+- [x] **A2.4** Audit log `MEETING_DELETED` / `MEETING_DELETE_BLOCKED` _(commit 00182a2; AuditAction.DELETE + resourceType=MEETING, success/blocked entries)_
+- [x] **A2.5** WebMvcTest 覆盖：200 / 423（hold）/ 409（版本冲突）/ 404 _(commit 00182a2; 6 controller + 6 service tests, 399 total green)_
 
 **Acceptance**：Phase 7.8.1 E2E（place hold → 删除 423 → release → 删除 200）跑通。
 
@@ -158,20 +158,20 @@
 
 ## 状态汇总（2026-05-18）
 
-| 区块 | 任务数 | 依赖 |
-|---|---|---|
-| A 阻塞 | 12 | 自洽 |
-| B RAG | 4 | 无 |
-| C 集成测试 | 3 | 无 |
-| D Export SSE | 4 | 无 |
-| E Compliance smoke | 2 | 依赖 A2 |
-| F 前端安全 | 3 | 无 |
-| G CI 供应链 | 4 | 无 |
-| H 性能基线 | 3 | 无 |
-| I E2E 扩面 | 5 | 依赖 A1 + A2 |
-| J 最终验收 | 9 | 依赖 A–I |
-| K 文档 | 4 | 依赖 A–J |
-| **合计** | **53 项** | 关键路径 A → I → J → K |
+| 区块 | 任务数 | 完成 | 依赖 |
+|---|---|---|---|
+| A 阻塞 | 12 | 4 (A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程；A1 待真实模型 |
+| B RAG | 4 | 0 | 无 |
+| C 集成测试 | 3 | 0 | 无 |
+| D Export SSE | 4 | 0 | 无 |
+| E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
+| F 前端安全 | 3 | 0 | 无 |
+| G CI 供应链 | 4 | 0 | 无 |
+| H 性能基线 | 3 | 0 | 无 |
+| I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
+| J 最终验收 | 9 | 0 | 依赖 A–I |
+| K 文档 | 4 | 0 | 依赖 A–J |
+| **合计** | **53 项** | **4 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
