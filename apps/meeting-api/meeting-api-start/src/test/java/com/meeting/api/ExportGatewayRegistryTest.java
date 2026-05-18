@@ -6,7 +6,7 @@ import com.meeting.api.domain.export.ExportGateway;
 import com.meeting.api.domain.export.ExportInputInvalidException;
 import com.meeting.api.domain.export.ExportJob;
 import com.meeting.api.domain.export.MeetingSnapshotPort.MeetingSnapshot;
-import com.meeting.api.infrastructure.gateway.export.ExportGatewayRegistry;
+import com.meeting.api.domain.export.ExportGatewayRegistry;
 import com.meeting.api.infrastructure.gateway.export.MarkdownExportGateway;
 import java.util.List;
 import org.junit.jupiter.api.Test;

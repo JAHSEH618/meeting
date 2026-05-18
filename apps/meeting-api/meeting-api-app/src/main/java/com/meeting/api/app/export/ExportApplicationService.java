@@ -16,6 +16,9 @@ import com.meeting.api.domain.export.ExportJobCreatedEvent;
 import com.meeting.api.domain.export.ExportJobRepository;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
+import com.meeting.api.domain.storage.MeetingFile;
+import com.meeting.api.domain.storage.MeetingFileRepository;
+import com.meeting.api.domain.storage.ObjectStorageGateway;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.client.enums.ExportType;
 import java.time.Clock;
@@ -57,6 +60,8 @@ public class ExportApplicationService implements ExportFacade {
     private final TenantScopedTransaction tenantTx;
     private final ExportJobRepository exportRepo;
     private final MeetingRepository meetingRepo;
+    private final MeetingFileRepository meetingFileRepo;
+    private final ObjectStorageGateway storage;
     private final LegalHoldCheckPort legalHoldCheck;
     private final MessagePublisher messagePublisher;
     private final Clock clock;
@@ -66,11 +71,14 @@ public class ExportApplicationService implements ExportFacade {
         TenantScopedTransaction tenantTx,
         ExportJobRepository exportRepo,
         MeetingRepository meetingRepo,
+        MeetingFileRepository meetingFileRepo,
+        ObjectStorageGateway storage,
         LegalHoldCheckPort legalHoldCheck,
         MessagePublisher messagePublisher,
         @Value("${meeting.export.download-ttl-hours:24}") long downloadTtlHours
     ) {
-        this(tenantTx, exportRepo, meetingRepo, legalHoldCheck, messagePublisher,
+        this(tenantTx, exportRepo, meetingRepo, meetingFileRepo, storage,
+             legalHoldCheck, messagePublisher,
              Clock.systemUTC(), Duration.ofHours(downloadTtlHours).toSeconds());
     }
 
@@ -78,6 +86,8 @@ public class ExportApplicationService implements ExportFacade {
         TenantScopedTransaction tenantTx,
         ExportJobRepository exportRepo,
         MeetingRepository meetingRepo,
+        MeetingFileRepository meetingFileRepo,
+        ObjectStorageGateway storage,
         LegalHoldCheckPort legalHoldCheck,
         MessagePublisher messagePublisher,
         Clock clock,
@@ -86,6 +96,8 @@ public class ExportApplicationService implements ExportFacade {
         this.tenantTx = tenantTx;
         this.exportRepo = exportRepo;
         this.meetingRepo = meetingRepo;
+        this.meetingFileRepo = meetingFileRepo;
+        this.storage = storage;
         this.legalHoldCheck = legalHoldCheck;
         this.messagePublisher = messagePublisher;
         this.clock = clock;
@@ -282,11 +294,31 @@ public class ExportApplicationService implements ExportFacade {
     }
 
     /**
-     * Build the DTO. {@code downloadUrl} is left null here; the adapter
-     * layer signs the TOS object key once we know the request scheme.
-     * Phase 6.4 wires the actual signing.
+     * Build the DTO. {@code downloadUrl} is filled by presigning the
+     * underlying {@code meeting_files} object when the export is
+     * SUCCEEDED, the download isn't revoked, and the file row is still
+     * findable. REVOKED jobs and STALE results explicitly return {@code null}.
      */
     private ExportJobDTO toDto(ExportJob job, boolean stale) {
+        String downloadUrl = null;
+        Long fileSizeBytes = null;
+        boolean revoked = job.status() == ExportStatus.REVOKED
+            || job.downloadRevokedAt() != null;
+        if (job.status() == ExportStatus.SUCCEEDED
+            && !revoked
+            && job.fileId() != null) {
+            OffsetDateTime expiresAt = job.downloadExpiresAt() == null
+                ? OffsetDateTime.now(clock).plusSeconds(downloadTtlSeconds)
+                : job.downloadExpiresAt();
+            MeetingFile file = meetingFileRepo.findById(job.tenantId(), job.fileId())
+                .orElse(null);
+            if (file != null) {
+                downloadUrl = storage
+                    .presignGet(file.bucket(), file.objectKey(), expiresAt)
+                    .url();
+                fileSizeBytes = file.sizeBytes();
+            }
+        }
         return new ExportJobDTO(
             job.id(),
             job.meetingId(),
@@ -297,11 +329,11 @@ public class ExportApplicationService implements ExportFacade {
             job.inputMinutesVersion(),
             job.snapshotManifestId(),
             job.watermarkText(),
-            /* downloadUrl */ null,
-            /* downloadUrlExpiresAt */ job.downloadExpiresAt(),
+            downloadUrl,
+            job.downloadExpiresAt(),
             job.fileHash(),
-            /* fileSizeBytes */ null,
-            job.status() == ExportStatus.REVOKED || job.downloadRevokedAt() != null,
+            fileSizeBytes,
+            revoked,
             stale,
             job.errorCode() == null ? null : job.errorCode().name(),
             job.downloadExpiresAt() == null

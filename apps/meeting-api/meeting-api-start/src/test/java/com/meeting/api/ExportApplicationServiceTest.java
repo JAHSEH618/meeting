@@ -46,6 +46,8 @@ class ExportApplicationServiceTest {
     private InMemoryMeetingRepository meetingRepo;
     private RecordingMessagePublisher publisher;
     private ToggleableLegalHoldCheck legalHold;
+    private InMemoryMeetingFileRepository meetingFileRepo;
+    private StubStorageGateway storage;
     private ExportApplicationService service;
 
     @BeforeEach
@@ -54,10 +56,14 @@ class ExportApplicationServiceTest {
         meetingRepo = new InMemoryMeetingRepository();
         publisher = new RecordingMessagePublisher();
         legalHold = new ToggleableLegalHoldCheck();
+        meetingFileRepo = new InMemoryMeetingFileRepository();
+        storage = new StubStorageGateway();
         service = new ExportApplicationService(
             TenantScopedTransaction.immediate(),
             exportRepo,
             meetingRepo,
+            meetingFileRepo,
+            storage,
             legalHold,
             publisher,
             Clock.fixed(FIXED_NOW.toInstant(), ZoneOffset.UTC),
@@ -270,6 +276,62 @@ class ExportApplicationServiceTest {
         @Override
         public boolean isProtected(String tenantId, String scopeType, String scopeId) {
             return protectedKeys.contains(scopeType + ":" + scopeId);
+        }
+    }
+
+    private static final class InMemoryMeetingFileRepository
+        implements com.meeting.api.domain.storage.MeetingFileRepository {
+        private final Map<String, com.meeting.api.domain.storage.MeetingFile> rows = new HashMap<>();
+        @Override
+        public com.meeting.api.domain.storage.MeetingFile save(
+            com.meeting.api.domain.storage.MeetingFile file
+        ) {
+            rows.put(key(file.tenantId(), file.fileId()), file);
+            return file;
+        }
+        @Override
+        public Optional<com.meeting.api.domain.storage.MeetingFile> findById(
+            String tenantId, String fileId
+        ) {
+            return Optional.ofNullable(rows.get(key(tenantId, fileId)));
+        }
+        private static String key(String tenantId, String fileId) {
+            return tenantId + "|" + fileId;
+        }
+        void put(com.meeting.api.domain.storage.MeetingFile file) { save(file); }
+    }
+
+    private static final class StubStorageGateway
+        implements com.meeting.api.domain.storage.ObjectStorageGateway {
+        @Override public String defaultBucket() { return "meeting-exports"; }
+        @Override public PresignedUrl presignPut(
+            String bucket, String objectKey, int partNumber,
+            String contentType, OffsetDateTime expiresAt
+        ) {
+            return new PresignedUrl("http://stub/" + bucket + "/" + objectKey, expiresAt, Map.of());
+        }
+        @Override public PresignedUrl presignGet(
+            String bucket, String objectKey, OffsetDateTime expiresAt
+        ) {
+            return new PresignedUrl(
+                "http://stub/" + bucket + "/" + objectKey + "?expires=" + expiresAt,
+                expiresAt, Map.of()
+            );
+        }
+        @Override public com.meeting.api.domain.storage.StorageObject statObject(
+            String bucket, String objectKey
+        ) {
+            return new com.meeting.api.domain.storage.StorageObject(
+                bucket, objectKey, 0L, null, null, OffsetDateTime.now()
+            );
+        }
+        @Override public void deleteObject(String bucket, String objectKey) { }
+        @Override public com.meeting.api.domain.storage.StorageObject putObject(
+            String bucket, String objectKey, byte[] bytes, String contentType, String sha256
+        ) {
+            return new com.meeting.api.domain.storage.StorageObject(
+                bucket, objectKey, bytes == null ? 0L : bytes.length, sha256, null, OffsetDateTime.now()
+            );
         }
     }
 }

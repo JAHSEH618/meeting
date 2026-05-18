@@ -4,24 +4,38 @@ import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.domain.storage.ObjectStorageGateway;
 import com.meeting.api.domain.storage.StorageObject;
 import com.meeting.api.app.common.ApplicationException;
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class LocalObjectStorageGateway implements ObjectStorageGateway {
+
+    private static final Logger log = LoggerFactory.getLogger(LocalObjectStorageGateway.class);
+
     private final String endpoint;
     private final String bucket;
+    private final Path localRoot;
 
     public LocalObjectStorageGateway(
         @Value("${meeting.storage.endpoint:http://localhost:9000}") String endpoint,
-        @Value("${meeting.storage.bucket:meeting-local}") String bucket
+        @Value("${meeting.storage.bucket:meeting-local}") String bucket,
+        @Value("${meeting.storage.local-root:}") String localRoot
     ) {
         this.endpoint = trimTrailingSlash(endpoint);
         this.bucket = bucket;
+        this.localRoot = localRoot == null || localRoot.isBlank()
+            ? null
+            : Paths.get(localRoot);
     }
 
     @Override
@@ -55,6 +69,40 @@ public class LocalObjectStorageGateway implements ObjectStorageGateway {
     @Override
     public void deleteObject(String bucket, String objectKey) {
         // P2-3 replaces this local stub with MinIO/TOS SDK deletion.
+    }
+
+    /**
+     * Local-disk implementation of upload: if
+     * {@code meeting.storage.local-root} is set, materializes the bytes
+     * to {@code <root>/<bucket>/<objectKey>} so the dev loop can verify
+     * file contents end-to-end. Otherwise it logs and returns a
+     * descriptor — useful for tests where we don't care about the side
+     * effect.
+     */
+    @Override
+    public StorageObject putObject(
+        String bucket, String objectKey, byte[] bytes,
+        String contentType, String sha256
+    ) {
+        if (localRoot != null) {
+            try {
+                Path target = localRoot.resolve(bucket).resolve(objectKey);
+                Files.createDirectories(target.getParent());
+                Files.write(target, bytes);
+            } catch (IOException ex) {
+                throw new ApplicationException(
+                    ErrorCode.INTERNAL_ERROR, 500,
+                    "failed to persist object to local storage: " + ex.getMessage(),
+                    true
+                );
+            }
+        } else {
+            log.debug("storage_put_object_inmem bucket={} key={} bytes={}",
+                bucket, objectKey, bytes.length);
+        }
+        return new StorageObject(
+            bucket, objectKey, bytes.length, sha256, null, OffsetDateTime.now()
+        );
     }
 
     private String objectUrl(String bucket, String objectKey) {

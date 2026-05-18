@@ -347,6 +347,13 @@ class AudioUploadApplicationServiceTest {
             files.add(file);
             return file;
         }
+
+        @Override
+        public java.util.Optional<MeetingFile> findById(String tenantId, String fileId) {
+            return files.stream()
+                .filter(f -> f.tenantId().equals(tenantId) && f.fileId().equals(fileId))
+                .findFirst();
+        }
     }
 
     private static final class FakeStorage implements ObjectStorageGateway {
@@ -376,6 +383,14 @@ class AudioUploadApplicationServiceTest {
 
         @Override
         public void deleteObject(String bucket, String objectKey) {
+        }
+
+        @Override
+        public StorageObject putObject(
+            String bucket, String objectKey, byte[] bytes,
+            String contentType, String sha256
+        ) {
+            return new StorageObject(bucket, objectKey, bytes.length, sha256, "etag_put", OffsetDateTime.now(CLOCK));
         }
     }
 

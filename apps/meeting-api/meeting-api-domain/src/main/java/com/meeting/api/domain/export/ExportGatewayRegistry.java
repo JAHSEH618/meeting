@@ -1,27 +1,28 @@
-package com.meeting.api.infrastructure.gateway.export;
+package com.meeting.api.domain.export;
 
-import com.meeting.api.client.enums.ExportFormat;
-import com.meeting.api.domain.export.ExportGateway;
-import com.meeting.api.domain.export.ExportInputInvalidException;
 import com.meeting.api.client.common.ErrorCode;
-import java.util.List;
+import com.meeting.api.client.enums.ExportFormat;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.Map;
-import org.springframework.stereotype.Component;
 
 /**
- * Spring-managed registry that routes a render call by
- * {@link ExportFormat} to the right {@link ExportGateway}
- * implementation. Throws {@link ExportInputInvalidException} for
- * formats that have no registered gateway — the queue consumer will
- * mark the job FAILED without retry.
+ * Routes a render call by {@link ExportFormat} to the right
+ * {@link ExportGateway} implementation. Throws
+ * {@link ExportInputInvalidException} for formats that have no registered
+ * gateway — the queue consumer will mark the job FAILED without retry.
+ *
+ * <p>Pure domain POJO; framework-light by design. Infrastructure wires
+ * a Spring-managed bean by passing in the list of @Component gateways
+ * via a configuration class.
  */
-@Component
-public class ExportGatewayRegistry {
+public final class ExportGatewayRegistry {
 
     private final Map<ExportFormat, ExportGateway> byFormat;
 
-    public ExportGatewayRegistry(List<ExportGateway> gateways) {
-        java.util.Map<ExportFormat, ExportGateway> map = new java.util.EnumMap<>(ExportFormat.class);
+    public ExportGatewayRegistry(Collection<ExportGateway> gateways) {
+        Map<ExportFormat, ExportGateway> map = new EnumMap<>(ExportFormat.class);
         for (ExportGateway gw : gateways) {
             ExportFormat fmt = gw.supportedFormat();
             ExportGateway existing = map.put(fmt, gw);
@@ -33,7 +34,7 @@ public class ExportGatewayRegistry {
                 );
             }
         }
-        this.byFormat = java.util.Collections.unmodifiableMap(map);
+        this.byFormat = Collections.unmodifiableMap(map);
     }
 
     public ExportGateway gateway(ExportFormat format) {

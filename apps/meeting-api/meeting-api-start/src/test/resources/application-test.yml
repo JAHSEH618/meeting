@@ -17,3 +17,8 @@ spring:
 
 server:
   port: 0
+
+meeting:
+  export:
+    consumer:
+      enabled: false   # tests drive ExportQueueConsumer via onMessage() directly
