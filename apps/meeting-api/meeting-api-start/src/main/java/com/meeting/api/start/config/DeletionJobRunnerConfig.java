@@ -5,6 +5,7 @@ import com.meeting.api.app.compliance.DeletionJobRunner;
 import com.meeting.api.client.enums.DeletionScopeType;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.compliance.DeletionCertificateHasher;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository;
 import com.meeting.api.domain.compliance.DeletionExecutorPort;
 import com.meeting.api.domain.compliance.DeletionJobRepository;
 import com.meeting.api.domain.compliance.LegalHoldCheckPort;
@@ -44,6 +45,7 @@ public class DeletionJobRunnerConfig {
         LegalHoldCheckPort legalHoldCheck,
         DeletionExecutorRegistry registry,
         DeletionCertificateHasher hasher,
+        DeletionCertificateRepository certificateRepository,
         TenantScopedTransaction tenantTx,
         AuditEventLogger audit,
         @Value("${meeting.deletion-runner.batch-size:25}") int batchSize,
@@ -54,6 +56,7 @@ public class DeletionJobRunnerConfig {
             legalHoldCheck,
             (DeletionScopeType scope) -> registry.find(scope).map(e -> (DeletionExecutorPort) e),
             hasher,
+            certificateRepository,
             tenantTx,
             audit,
             Clock.systemUTC(),

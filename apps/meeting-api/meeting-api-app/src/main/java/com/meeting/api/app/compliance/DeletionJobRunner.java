@@ -8,6 +8,8 @@ import com.meeting.api.client.enums.LegalHoldScopeType;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
 import com.meeting.api.domain.compliance.DeletionCertificateHasher;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository.DeletionCertificateRecord;
 import com.meeting.api.domain.compliance.DeletionExecutorPort;
 import com.meeting.api.domain.compliance.DeletionExecutorPort.DeletionOutcome;
 import com.meeting.api.domain.compliance.DeletionJob;
@@ -18,6 +20,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +54,7 @@ public class DeletionJobRunner {
     private final LegalHoldCheckPort legalHoldCheck;
     private final Function<com.meeting.api.client.enums.DeletionScopeType, Optional<DeletionExecutorPort>> executorLookup;
     private final DeletionCertificateHasher hasher;
+    private final DeletionCertificateRepository certificateRepository;
     private final TenantScopedTransaction tenantTx;
     private final AuditEventLogger audit;
     private final Clock clock;
@@ -61,6 +65,7 @@ public class DeletionJobRunner {
         LegalHoldCheckPort legalHoldCheck,
         Function<com.meeting.api.client.enums.DeletionScopeType, Optional<DeletionExecutorPort>> executorLookup,
         DeletionCertificateHasher hasher,
+        DeletionCertificateRepository certificateRepository,
         TenantScopedTransaction tenantTx,
         AuditEventLogger audit,
         Clock clock,
@@ -73,6 +78,7 @@ public class DeletionJobRunner {
         this.legalHoldCheck = legalHoldCheck;
         this.executorLookup = executorLookup;
         this.hasher = hasher;
+        this.certificateRepository = certificateRepository;
         this.tenantTx = tenantTx;
         this.audit = audit;
         this.clock = clock;
@@ -178,6 +184,7 @@ public class DeletionJobRunner {
                     );
                 }
                 repo.update(job);
+                persistCertificate(job, outcome, certHash, finishedAt);
                 audit.log(AuditEntry.success(
                     job.tenantId(), "deletion-runner",
                     AuditAction.DELETION_EXECUTE,
@@ -226,6 +233,31 @@ public class DeletionJobRunner {
             case PROJECT -> "PROJECT";
             case USER, TENANT -> null;
         };
+    }
+
+    private void persistCertificate(
+        DeletionJob job, DeletionOutcome outcome, String certHash, OffsetDateTime finishedAt
+    ) {
+        // Convert deletedFiles map → list-of-maps for the certificate
+        // schema. Phase 1 has no file-level sha256 attached, so the
+        // object_hashes_json column stays empty.
+        List<Map<String, Object>> deletedFiles = outcome.deletedFiles().entrySet().stream()
+            .map(e -> (Map<String, Object>) Map.<String, Object>of("key", e.getKey(), "value", e.getValue()))
+            .toList();
+
+        certificateRepository.save(new DeletionCertificateRecord(
+            "cert_" + UUID.randomUUID().toString().replace("-", ""),
+            job.tenantId(),
+            job.id(),
+            job.scopeType(),
+            job.scopeId(),
+            /* objectHashes */ List.of(),
+            outcome.deletedRows(),
+            deletedFiles,
+            outcome.failedItems(),
+            certHash,
+            finishedAt
+        ));
     }
 
     public record RunReport(int claimed, int succeeded, int partialFailed, int failed, int blockedByLegalHold) {}

@@ -6,11 +6,14 @@ import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.common.PageResult;
 import com.meeting.api.client.compliance.CreateDeletionJobCommand;
 import com.meeting.api.client.compliance.DeletionJobDTO;
+import com.meeting.api.client.compliance.DeletionJobFacade.DeletionCertificateDTO;
 import com.meeting.api.client.enums.AuditAction;
 import com.meeting.api.client.enums.AuditResult;
 import com.meeting.api.client.enums.DeletionJobStatus;
 import com.meeting.api.client.enums.DeletionScopeType;
 import com.meeting.api.domain.audit.AuditEventLogger;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository.DeletionCertificateRecord;
 import com.meeting.api.domain.compliance.DeletionJob;
 import com.meeting.api.domain.compliance.DeletionJobRepository;
 import com.meeting.api.domain.compliance.LegalHoldCheckPort;
@@ -36,6 +39,7 @@ class DeletionJobApplicationServiceTest {
     private InMemoryDeletionJobRepository repo;
     private ToggleableLegalHoldCheck legalHold;
     private RecordingAuditLogger audit;
+    private InMemoryCertificateRepository certificateRepo;
     private DeletionJobApplicationService service;
 
     @BeforeEach
@@ -43,11 +47,13 @@ class DeletionJobApplicationServiceTest {
         repo = new InMemoryDeletionJobRepository();
         legalHold = new ToggleableLegalHoldCheck();
         audit = new RecordingAuditLogger();
+        certificateRepo = new InMemoryCertificateRepository();
         service = new DeletionJobApplicationService(
             TenantScopedTransaction.immediate(),
             repo,
             legalHold,
             audit,
+            certificateRepo,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -153,5 +159,17 @@ class DeletionJobApplicationServiceTest {
     private static class RecordingAuditLogger implements AuditEventLogger {
         final List<AuditEntry> entries = new ArrayList<>();
         @Override public void log(AuditEntry entry) { entries.add(entry); }
+    }
+
+    private static class InMemoryCertificateRepository implements DeletionCertificateRepository {
+        final Map<String, DeletionCertificateRecord> byJobId = new HashMap<>();
+
+        @Override public void save(DeletionCertificateRecord record) {
+            byJobId.put(record.deletionJobId(), record);
+        }
+        @Override
+        public Optional<DeletionCertificateRecord> findByJobId(String tenantId, String jobId) {
+            return Optional.ofNullable(byJobId.get(jobId));
+        }
     }
 }

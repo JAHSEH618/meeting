@@ -5,11 +5,14 @@ import com.meeting.api.client.common.PageResult;
 import com.meeting.api.client.compliance.CreateDeletionJobCommand;
 import com.meeting.api.client.compliance.DeletionJobDTO;
 import com.meeting.api.client.compliance.DeletionJobFacade;
+import com.meeting.api.client.compliance.DeletionJobFacade.DeletionCertificateDTO;
 import com.meeting.api.client.enums.AuditAction;
 import com.meeting.api.client.enums.DeletionJobStatus;
 import com.meeting.api.client.enums.LegalHoldScopeType;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository.DeletionCertificateRecord;
 import com.meeting.api.domain.compliance.DeletionJob;
 import com.meeting.api.domain.compliance.DeletionJobRepository;
 import com.meeting.api.domain.compliance.LegalHoldCheckPort;
@@ -25,13 +28,14 @@ import org.springframework.stereotype.Service;
 /**
  * Schedules deletion jobs. Phase 7.3 scope: pre-flight legal-hold
  * check + audit log + persist REQUESTED row + return immediately
- * (202 Accepted semantics). The actual executor / certificate
- * generator lands in a follow-up runner PR.
+ * (202 Accepted semantics). The actual execution lives in
+ * {@code DeletionJobRunner}; this service exposes the
+ * read-side {@link #getCertificate} once a certificate row lands.
  *
- * <p>Even though execution is deferred, this service still writes a
- * {@link AuditAction#DELETION_REQUEST} audit row in every code path
- * — including the legal-hold rejection — so the audit trail covers
- * intent even when no row was created.
+ * <p>Even though execution is deferred to the runner, this service
+ * still writes a {@link AuditAction#DELETION_REQUEST} audit row in
+ * every code path — including the legal-hold rejection — so the
+ * audit trail covers intent even when no row was created.
  */
 @Service
 public class DeletionJobApplicationService implements DeletionJobFacade {
@@ -42,15 +46,17 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
     private final DeletionJobRepository repo;
     private final LegalHoldCheckPort legalHoldCheck;
     private final AuditEventLogger auditLogger;
+    private final DeletionCertificateRepository certificateRepository;
     private final Clock clock;
 
     public DeletionJobApplicationService(
         TenantScopedTransaction tenantTx,
         DeletionJobRepository repo,
         LegalHoldCheckPort legalHoldCheck,
-        AuditEventLogger auditLogger
+        AuditEventLogger auditLogger,
+        DeletionCertificateRepository certificateRepository
     ) {
-        this(tenantTx, repo, legalHoldCheck, auditLogger, Clock.systemUTC());
+        this(tenantTx, repo, legalHoldCheck, auditLogger, certificateRepository, Clock.systemUTC());
     }
 
     public DeletionJobApplicationService(
@@ -58,12 +64,14 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
         DeletionJobRepository repo,
         LegalHoldCheckPort legalHoldCheck,
         AuditEventLogger auditLogger,
+        DeletionCertificateRepository certificateRepository,
         Clock clock
     ) {
         this.tenantTx = tenantTx;
         this.repo = repo;
         this.legalHoldCheck = legalHoldCheck;
         this.auditLogger = auditLogger;
+        this.certificateRepository = certificateRepository;
         this.clock = clock;
     }
 
@@ -73,10 +81,6 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
             OffsetDateTime now = OffsetDateTime.now(clock);
             String jobId = "dj_" + UUID.randomUUID().toString().replace("-", "");
 
-            // Pre-flight check. If a hold protects the scope, persist
-            // BLOCKED_BY_LEGAL_HOLD up front so the operator can see why
-            // their request didn't run. The runner runs a second check
-            // when it claims a REQUESTED row (race-condition defence).
             String scopeKey = mapScopeKey(cmd.scopeType());
             boolean blocked = scopeKey != null
                 && legalHoldCheck.isProtected(cmd.tenantId(), scopeKey, cmd.scopeId());
@@ -143,6 +147,12 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
         );
     }
 
+    @Override
+    public Optional<DeletionCertificateDTO> getCertificate(String tenantId, String deletionJobId) {
+        return certificateRepository.findByJobId(tenantId, deletionJobId)
+            .map(DeletionJobApplicationService::toCertificateDto);
+    }
+
     /**
      * Translate {@code DeletionScopeType} to the wire key used by
      * {@link LegalHoldCheckPort} (which matches {@link LegalHoldScopeType}).
@@ -176,6 +186,21 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
             job.errorCode() == null ? null : job.errorCode().name(),
             job.createdAt(),
             job.finishedAt()
+        );
+    }
+
+    private static DeletionCertificateDTO toCertificateDto(DeletionCertificateRecord row) {
+        return new DeletionCertificateDTO(
+            row.id(),
+            row.deletionJobId(),
+            row.scopeType(),
+            row.scopeId(),
+            row.objectHashes(),
+            row.deletedRows(),
+            row.deletedFiles(),
+            row.failedItems(),
+            row.certificateHash(),
+            row.createdAt()
         );
     }
 }

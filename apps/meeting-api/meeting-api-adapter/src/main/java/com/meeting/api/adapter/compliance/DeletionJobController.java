@@ -6,6 +6,7 @@ import com.meeting.api.client.common.PageResult;
 import com.meeting.api.client.compliance.CreateDeletionJobCommand;
 import com.meeting.api.client.compliance.DeletionJobDTO;
 import com.meeting.api.client.compliance.DeletionJobFacade;
+import com.meeting.api.client.compliance.DeletionJobFacade.DeletionCertificateDTO;
 import com.meeting.api.client.enums.DeletionScopeType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -88,6 +89,19 @@ public class DeletionJobController {
     ) {
         DeletionJobDTO dto = facade.get(TenantContextHolder.currentTenantId(), jobId)
             .orElseThrow(() -> new IllegalArgumentException("deletion job not found: " + jobId));
+        return ResponseEntity.ok(ApiResponse.ok(dto, requestId, traceId));
+    }
+
+    @GetMapping("/api/admin/deletion-jobs/{jobId}/certificate")
+    public ResponseEntity<ApiResponse<DeletionCertificateDTO>> getCertificate(
+        @PathVariable String jobId,
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId
+    ) {
+        DeletionCertificateDTO dto = facade.getCertificate(TenantContextHolder.currentTenantId(), jobId)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "deletion certificate not found (job may not have reached a terminal status yet): " + jobId
+            ));
         return ResponseEntity.ok(ApiResponse.ok(dto, requestId, traceId));
     }
 

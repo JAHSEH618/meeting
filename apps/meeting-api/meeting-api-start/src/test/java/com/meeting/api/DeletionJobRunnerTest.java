@@ -8,6 +8,8 @@ import com.meeting.api.client.enums.DeletionJobStatus;
 import com.meeting.api.client.enums.DeletionScopeType;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.compliance.DeletionCertificateHasher;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository;
+import com.meeting.api.domain.compliance.DeletionCertificateRepository.DeletionCertificateRecord;
 import com.meeting.api.domain.compliance.DeletionExecutorPort;
 import com.meeting.api.domain.compliance.DeletionExecutorPort.DeletionOutcome;
 import com.meeting.api.domain.compliance.DeletionJob;
@@ -37,6 +39,7 @@ class DeletionJobRunnerTest {
     private CapturingExecutor executor;
     private RecordingAudit audit;
     private DeterministicHasher hasher;
+    private RecordingCertificateRepo certificateRepo;
     private DeletionJobRunner runner;
 
     @BeforeEach
@@ -46,10 +49,12 @@ class DeletionJobRunnerTest {
         executor = new CapturingExecutor();
         audit = new RecordingAudit();
         hasher = new DeterministicHasher();
+        certificateRepo = new RecordingCertificateRepo();
         runner = new DeletionJobRunner(
             repo, legalHold,
             (scope) -> scope == DeletionScopeType.MEETING ? Optional.of(executor) : Optional.empty(),
             hasher,
+            certificateRepo,
             TenantScopedTransaction.immediate(),
             audit,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
@@ -208,6 +213,16 @@ class DeletionJobRunnerTest {
         @Override
         public String compute(String tenantId, String jobId, DeletionOutcome outcome) {
             return "sha256:" + tenantId + ":" + jobId + ":" + outcome.deletedRows().toString();
+        }
+    }
+
+    private static class RecordingCertificateRepo implements DeletionCertificateRepository {
+        final List<DeletionCertificateRecord> saved = new ArrayList<>();
+
+        @Override public void save(DeletionCertificateRecord record) { saved.add(record); }
+        @Override
+        public Optional<DeletionCertificateRecord> findByJobId(String tenantId, String jobId) {
+            return saved.stream().filter(r -> jobId.equals(r.deletionJobId())).findFirst();
         }
     }
 }
