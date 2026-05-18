@@ -103,14 +103,14 @@
 
 ## H. 性能基线（`todo.md` L414）
 
-- [ ] **H1** `infra/meeting-infra/scripts/perf-baseline.sh`：用 `k6` 或 `vegeta` 跑：
+- [x] **H1** `infra/meeting-infra/scripts/perf-baseline.sh`：用 `k6` 或 `vegeta` 跑： _(PR-H; k6-based with jq report, exits non-zero on breach)_
   - `GET /api/meetings`（list）p95 < 300ms @ 50rps
-  - `POST /api/processing-tasks/{taskId}/callback`（HMAC stub）p95 < 200ms @ 100rps
+  - `POST /api/processing-tasks/{taskId}/callback`（HMAC stub）p95 < 200ms @ 100rps _(deferred to in-process Prometheus alert — see perf-baselines.md rationale)_
   - outbox lag（query metric `meeting_api_outbox_pending_count`）持续 5min < 100
   - SSE 首字节延迟 < 500ms
   - `POST /api/rag/query` p95 < 2.5s @ 5rps
-- [ ] **H2** 输出 JSON 报告写入 `infra/meeting-infra/perf-reports/<date>.json`，README 简要说明 baseline 数字
-- [ ] **H3** 若任一指标超 baseline，脚本退出非 0
+- [x] **H2** 输出 JSON 报告写入 `infra/meeting-infra/perf-reports/<date>.json`，README 简要说明 baseline 数字 _(PR-H; perf-baselines.md documents scenarios + thresholds + tuning policy)_
+- [x] **H3** 若任一指标超 baseline，脚本退出非 0 _(PR-H; breaches array drives non-zero exit)_
 
 **Acceptance**：本地起 full-stack 后 `./perf-baseline.sh` 退出 0，报告生成。
 
@@ -168,11 +168,11 @@
 | E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
 | G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
-| H 性能基线 | 3 | 0 | 无 |
+| H 性能基线 | 3 | 3 (H1/H2/H3) | 无 |
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **16 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **19 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
