@@ -111,6 +111,14 @@ meeting:
     security-level-blocked:
       - CONFIDENTIAL
       - SECRET
+    allow-confidential: false
+  export:
+    download-ttl-hours: 24
+    libreoffice:
+      binary: ${LIBREOFFICE_BINARY:soffice}
+      timeout-seconds: ${LIBREOFFICE_TIMEOUT_SECONDS:60}
+  kms:
+    master-key-id: ${KMS_MASTER_KEY_ID:dev-kms-master-key}
 
 # ── 日志 ──────────────────────────────────────────────────────────
 logging:
