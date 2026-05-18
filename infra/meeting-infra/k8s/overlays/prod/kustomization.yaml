@@ -1,0 +1,35 @@
+# Prod overlay — pinned image tags, full HPA, prod-tier resources.
+# Image tags are placeholders; the deploy pipeline replaces them with
+# the released digest before kustomize build.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: meeting-prod
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Deployment
+      name: meeting-api
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: meeting-web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+images:
+  - name: meeting-api
+    newTag: v0.1.0  # replaced by CI
+  - name: meeting-web
+    newTag: v0.1.0
+  - name: ai-worker
+    newTag: v0.1.0

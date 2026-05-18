@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: meeting-api
+  labels:
+    app.kubernetes.io/name: meeting-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: meeting-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meeting-api-config
+data:
+  # Non-sensitive runtime configuration. Secrets (HMAC, DB creds) live
+  # in the `meeting-api-secret` Secret created out-of-band.
+  STORAGE_TYPE: "minio"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "meeting"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  MINIO_ENDPOINT: "http://minio:9000"
+  AI_WORKER_BASE_URL: "http://ai-worker:8090"
+  CHUNK_STRATEGY_VERSION: "v1"
+  LIBREOFFICE_BINARY: "soffice"
+  LIBREOFFICE_TIMEOUT_SECONDS: "60"
+  JAVA_OPTS: "-XX:MaxRAMPercentage=70.0"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: meeting-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: meeting-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: meeting-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meeting-api

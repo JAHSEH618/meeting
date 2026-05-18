@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-worker
+  labels:
+    app.kubernetes.io/name: ai-worker
+spec:
+  serviceName: ai-worker
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8090"
+        prometheus.io/path: /metrics
+    spec:
+      # GPU nodes only — Cluster admin keeps the label / taint pair.
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: ai-worker
+          image: ai-worker:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: ai-worker-config
+            - secretRef:
+                name: ai-worker-secret
+          readinessProbe:
+            httpGet:
+              path: /internal/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /internal/health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 60
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "4000m"
+              memory: "16Gi"
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: models
+              mountPath: /opt/models
+              readOnly: true
+            - name: artifacts
+              mountPath: /app/.artifacts
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ai-worker-models
+        - name: artifacts
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-worker
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ai-worker
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-worker-config
+data:
+  AI_WORKER_USE_FAKE_RUNTIME: "false"
+  AI_WORKER_BGE_M3_MODELS_DIR: "/opt/models/bge-m3"
+  AI_WORKER_BGE_RERANKER_MODELS_DIR: "/opt/models/bge-reranker-v2-m3"
+  AI_WORKER_RABBITMQ_HOST: "rabbitmq"
+  AI_WORKER_RABBITMQ_PORT: "5672"
+  AI_WORKER_RABBITMQ_USERNAME: "meeting"
+  AI_WORKER_MEETING_API_BASE_URL: "http://meeting-api:8080"

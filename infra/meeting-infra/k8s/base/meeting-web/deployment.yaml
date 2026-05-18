@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meeting-web
+  labels:
+    app.kubernetes.io/name: meeting-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meeting-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meeting-web
+    spec:
+      containers:
+        - name: meeting-web
+          image: meeting-web:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false  # nginx writes a tmp pid file
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meeting-web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: meeting-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
