@@ -70,7 +70,7 @@ describe("types consistency with contracts enums.yaml", () => {
 
   it("taskEventType must match contracts", () => {
     const expected = enumFromYaml("taskEventType");
-    expect(["TASK_SNAPSHOT", "TASK_STARTED", "TASK_STEP_UPDATED", "TASK_HEARTBEAT", "TRANSCRIPT_READY", "TASK_FAILED", "TASK_COMPLETED", "TASK_CANCELLED"]).toEqual(expected);
+    expect(["TASK_SNAPSHOT", "TASK_STARTED", "TASK_STEP_UPDATED", "TASK_HEARTBEAT", "TRANSCRIPT_READY", "TASK_FAILED", "TASK_COMPLETED", "TASK_CANCELLED", "EXPORT_STATUS_CHANGED"]).toEqual(expected);
   });
 
   it("sourceType must match contracts", () => {
