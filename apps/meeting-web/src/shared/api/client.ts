@@ -895,3 +895,43 @@ export async function rejectBreakGlassRequest(requestId: string, reason: string)
     generateId("reject-break-glass"),
   );
 }
+
+// ── Audit events (Phase 7.5 query) ────────────────────────────────
+
+export interface AuditEventT {
+  auditEventId: string;
+  actorUserId: string | null;
+  actorType: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  result: string;
+  reason: string | null;
+  traceId: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AuditQueryParams {
+  actorUserId?: string;
+  resourceType?: string;
+  resourceId?: string;
+  action?: string;
+  result?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function listAuditEvents(params: AuditQueryParams = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== "") qs.append(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request<{ items: AuditEventT[]; page?: { cursor?: string | null; hasMore?: boolean } }>(
+    "GET",
+    `/admin/audit-events${suffix}`,
+  );
+}

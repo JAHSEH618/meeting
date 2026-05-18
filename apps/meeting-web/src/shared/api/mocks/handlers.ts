@@ -95,6 +95,49 @@ interface MockBreakGlassRequest {
 }
 const breakGlassRequests: MockBreakGlassRequest[] = [];
 
+// Phase 7.5 audit events mock state (read-only seed for UI tests).
+interface MockAuditEvent {
+  auditEventId: string;
+  actorUserId: string | null;
+  actorType: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  result: string;
+  reason: string | null;
+  traceId: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+const mockAuditEvents: MockAuditEvent[] = [
+  {
+    auditEventId: "audit_mock_01",
+    actorUserId: "user_compliance",
+    actorType: "USER",
+    action: "LEGAL_HOLD_PLACE",
+    resourceType: "LEGAL_HOLD",
+    resourceId: "lh_mock_01",
+    result: "SUCCESS",
+    reason: null,
+    traceId: "trace_mock_01",
+    payload: { scopeType: "MEETING", scopeId: "mtg_mock_01" },
+    createdAt: "2026-05-17T10:00:00Z",
+  },
+  {
+    auditEventId: "audit_mock_02",
+    actorUserId: "user_compliance",
+    actorType: "USER",
+    action: "DELETION_REQUEST",
+    resourceType: "DELETION_JOB",
+    resourceId: "dj_mock_01",
+    result: "BLOCKED",
+    reason: "blocked by legal hold",
+    traceId: "trace_mock_02",
+    payload: {},
+    createdAt: "2026-05-17T11:30:00Z",
+  },
+];
+
 const uploadSession: AudioUploadSession = {
   uploadId: "upl_01",
   meetingId: "mtg_01",
@@ -1061,6 +1104,30 @@ export const handlers = [
     return HttpResponse.json<ApiResponse>({
       success: true,
       data: breakGlassRequests[idx],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  // ── Audit events (phase 7.5) ────────────────────────────────
+  http.get("/api/admin/audit-events", ({ request: req }) => {
+    const url = new URL(req.url);
+    const actorUserId = url.searchParams.get("actorUserId");
+    const resourceType = url.searchParams.get("resourceType");
+    const action = url.searchParams.get("action");
+    const result = url.searchParams.get("result");
+
+    const matches = mockAuditEvents.filter((e) => {
+      if (actorUserId && e.actorUserId !== actorUserId) return false;
+      if (resourceType && e.resourceType !== resourceType) return false;
+      if (action && e.action !== action) return false;
+      if (result && e.result !== result) return false;
+      return true;
+    });
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: { items: matches },
       error: null,
       requestId: "r",
       traceId: "t",

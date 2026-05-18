@@ -17,6 +17,7 @@ import { ExportsPage } from "@features/exports/ExportsPage";
 import { LegalHoldsPage } from "@features/admin/LegalHoldsPage";
 import { DeletionJobsPage } from "@features/admin/DeletionJobsPage";
 import { BreakGlassPage } from "@features/admin/BreakGlassPage";
+import { AuditEventsPage } from "@features/admin/AuditEventsPage";
 import { TaskProgressPage } from "@features/tasks/TaskProgressPage";
 
 export function App() {
@@ -43,6 +44,7 @@ export function App() {
           <Route path="/admin/legal-holds" element={<LegalHoldsPage />} />
           <Route path="/admin/deletion-jobs" element={<DeletionJobsPage />} />
           <Route path="/admin/break-glass" element={<BreakGlassPage />} />
+          <Route path="/admin/audit-events" element={<AuditEventsPage />} />
           <Route path="/speakers" element={<Navigate to="/speaker-profiles" replace />} />
           <Route path="/exports" element={<Navigate to="/meetings" replace />} />
         </Route>
