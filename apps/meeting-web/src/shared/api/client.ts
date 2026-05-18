@@ -827,3 +827,71 @@ export async function createDeletionJob(input: CreateDeletionJobInput) {
 export async function getDeletionJob(deletionJobId: string) {
   return request<DeletionJob>("GET", `/admin/deletion-jobs/${deletionJobId}`);
 }
+
+// ── Break-glass (Phase 7.4) ───────────────────────────────────────
+
+export type BreakGlassStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "EXPIRED"
+  | "REVOKED";
+
+export interface BreakGlassRequestT {
+  breakGlassRequestId: string;
+  requesterId: string;
+  scopeType: string;
+  scopeId: string;
+  reason: string;
+  status: BreakGlassStatus;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  approverId?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectReason?: string | null;
+  revokedAt?: string | null;
+  revokedBy?: string | null;
+  createdAt: string;
+}
+
+export interface CreateBreakGlassInput {
+  scopeType: string;
+  scopeId: string;
+  reason: string;
+}
+
+export async function listBreakGlassRequests(status?: BreakGlassStatus) {
+  const q = status ? `?status=${status}` : "";
+  return request<{ items: BreakGlassRequestT[]; page?: { cursor?: string | null; hasMore?: boolean } }>(
+    "GET",
+    `/admin/break-glass/requests${q}`,
+  );
+}
+
+export async function createBreakGlassRequest(input: CreateBreakGlassInput) {
+  return request<BreakGlassRequestT>(
+    "POST",
+    "/admin/break-glass/requests",
+    input,
+    generateId("create-break-glass"),
+  );
+}
+
+export async function approveBreakGlassRequest(requestId: string) {
+  return request<BreakGlassRequestT>(
+    "POST",
+    `/admin/break-glass/requests/${requestId}/approve`,
+    {},
+    generateId("approve-break-glass"),
+  );
+}
+
+export async function rejectBreakGlassRequest(requestId: string, reason: string) {
+  return request<BreakGlassRequestT>(
+    "POST",
+    `/admin/break-glass/requests/${requestId}/reject`,
+    { reason },
+    generateId("reject-break-glass"),
+  );
+}

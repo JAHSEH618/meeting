@@ -75,6 +75,26 @@ interface MockDeletionJob {
 }
 const deletionJobs: MockDeletionJob[] = [];
 
+// Phase 7.4 break-glass mock state.
+interface MockBreakGlassRequest {
+  breakGlassRequestId: string;
+  requesterId: string;
+  scopeType: string;
+  scopeId: string;
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "REVOKED";
+  validFrom: string | null;
+  validUntil: string | null;
+  approverId: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  createdAt: string;
+}
+const breakGlassRequests: MockBreakGlassRequest[] = [];
+
 const uploadSession: AudioUploadSession = {
   uploadId: "upl_01",
   meetingId: "mtg_01",
@@ -941,6 +961,110 @@ export const handlers = [
       );
     }
     return HttpResponse.json<ApiResponse>({ success: true, data: found, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  // ── Break-glass (phase 7.4) ─────────────────────────────────
+  http.get("/api/admin/break-glass/requests", ({ request: req }) => {
+    const url = new URL(req.url);
+    const status = url.searchParams.get("status");
+    const items = status
+      ? breakGlassRequests.filter((r) => r.status === status)
+      : breakGlassRequests.slice();
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: { items },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/admin/break-glass/requests", async ({ request }) => {
+    const body = (await request.json()) as {
+      scopeType: string;
+      scopeId: string;
+      reason: string;
+    };
+    const now = new Date().toISOString();
+    const next: MockBreakGlassRequest = {
+      breakGlassRequestId: `bg_mock_${breakGlassRequests.length + 1}`,
+      requesterId: "user_requester_mock",
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      reason: body.reason,
+      status: "PENDING",
+      validFrom: null,
+      validUntil: null,
+      approverId: null,
+      approvedAt: null,
+      rejectedAt: null,
+      rejectReason: null,
+      revokedAt: null,
+      revokedBy: null,
+      createdAt: now,
+    };
+    breakGlassRequests.unshift(next);
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: next,
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    }, { status: 201 });
+  }),
+
+  http.post("/api/admin/break-glass/requests/:requestId/approve", ({ params }) => {
+    const id = String(params.requestId);
+    const idx = breakGlassRequests.findIndex((r) => r.breakGlassRequestId === id);
+    if (idx < 0) {
+      return HttpResponse.json(
+        { success: false, data: null, error: { code: "VALIDATION_FAILED", message: "not found", retryable: false, details: {} }, requestId: "r", traceId: "t" },
+        { status: 404 },
+      );
+    }
+    const now = new Date();
+    const validUntil = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    breakGlassRequests[idx] = {
+      ...breakGlassRequests[idx]!,
+      status: "APPROVED",
+      approverId: "user_admin_mock",
+      approvedAt: now.toISOString(),
+      validFrom: now.toISOString(),
+      validUntil: validUntil.toISOString(),
+    };
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: breakGlassRequests[idx],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/admin/break-glass/requests/:requestId/reject", async ({ params, request }) => {
+    const id = String(params.requestId);
+    const body = (await request.json()) as { reason: string };
+    const idx = breakGlassRequests.findIndex((r) => r.breakGlassRequestId === id);
+    if (idx < 0) {
+      return HttpResponse.json(
+        { success: false, data: null, error: { code: "VALIDATION_FAILED", message: "not found", retryable: false, details: {} }, requestId: "r", traceId: "t" },
+        { status: 404 },
+      );
+    }
+    breakGlassRequests[idx] = {
+      ...breakGlassRequests[idx]!,
+      status: "REJECTED",
+      approverId: "user_admin_mock",
+      rejectedAt: new Date().toISOString(),
+      rejectReason: body.reason,
+    };
+    return HttpResponse.json<ApiResponse>({
+      success: true,
+      data: breakGlassRequests[idx],
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
   }),
 
   http.post("/api/rag/query", async ({ request }) => {
