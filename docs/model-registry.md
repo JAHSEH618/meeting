@@ -38,14 +38,21 @@
 
 ## 模型 Checksum（待填充——需等权重实际下载后生成）
 
-| 模型 | SHA256 |
-|---|---|
-| Qwen3-ASR-1.7B | `<pending — download weights first>` |
-| Qwen3-ForcedAligner-0.6B | `<pending>` |
-| pyannote/speaker-diarization-3.1 | `<pending>` |
-| 3D-Speaker CAM++ | `<pending>` |
-| BAAI/bge-m3 | `<pending>` |
-| BAAI/bge-reranker-v2-m3 | `<pending>` |
+权重 checksum 计算方法（Phase 8.4.1.b）：
+1. 将权重文件全部解压到 `/opt/models/<model>/<version>/` 目录；
+2. 在 ai-worker 容器中调用 `python -c "from ai_worker.observability.model_checksum import compute_checksum; print(compute_checksum('/opt/models/<model>/<version>'))"`，或者本地 `cd apps/ai-worker && uv run python -c '...'`；
+3. 将结果（形如 `sha256:abcd…`）粘贴到对应行；
+4. 同步写入 `model_registry` 表（启动时 seed migration）；
+5. 上线后通过 `GET /internal/models` 校验 ai-worker 进程的 in-memory checksum 与本表一致——不一致即拒绝 ready。
+
+| 模型 | SHA256 | 计算时间 | 计算人 |
+|---|---|---|---|
+| Qwen3-ASR-1.7B | `<pending — download weights first>` | — | — |
+| Qwen3-ForcedAligner-0.6B | `<pending>` | — | — |
+| pyannote/speaker-diarization-3.1 | `<pending>` | — | — |
+| 3D-Speaker CAM++ | `<pending>` | — | — |
+| BAAI/bge-m3 | `<pending>` | — | — |
+| BAAI/bge-reranker-v2-m3 | `<pending>` | — | — |
 
 ## 内网制品路径（模板）
 

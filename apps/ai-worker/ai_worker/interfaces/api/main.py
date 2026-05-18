@@ -18,6 +18,8 @@ from ai_worker.model_runtime.rerank import (
     BgeRerankerRuntime,
     BgeRerankerRuntimeError,
 )
+from ai_worker.observability.gpu_metrics import refresh_gpu_metrics
+from ai_worker.observability.model_checksum import compute_checksum
 
 
 def _error_response(
@@ -47,9 +49,10 @@ def _error_response(
 def _model_info(runtime: BgeM3Runtime | BgeRerankerRuntime, name: str) -> dict:
     """Project a runtime into a `ModelInfo` matching ai-worker-internal-api.yaml.
 
-    `checksum` is reserved for post-M5-0 work: once weights are pinned to
-    docs/model-registry.md, this will surface the loaded file's SHA-256.
-    `modelsDir` is populated when a local snapshot was used (real-mode path).
+    `checksum` is now computed lazily from the on-disk weight files
+    when ``modelsDir`` is set (Phase 8.4.1.b). Falls back to ``None``
+    for fake-mode and HF-fallback paths so callers can still tell
+    "we don't know" from "this is the pinned hash".
     """
     models_dir: str | None = None
     if isinstance(runtime, BgeM3Runtime):
@@ -62,7 +65,7 @@ def _model_info(runtime: BgeM3Runtime | BgeRerankerRuntime, name: str) -> dict:
         "status": runtime.status,
         "device": runtime.device,
         "useFake": runtime.use_fake,
-        "checksum": None,
+        "checksum": compute_checksum(models_dir),
         "modelsDir": models_dir,
         "lastError": runtime.last_error,
     }
@@ -116,6 +119,9 @@ def create_app() -> FastAPI:
 
     @app.get("/metrics")
     def metrics() -> PlainTextResponse:
+        # Snapshot GPU gauges right before scrape so Prometheus reads
+        # fresh values without us running a separate refresh thread.
+        refresh_gpu_metrics()
         return PlainTextResponse(
             content=generate_latest(),
             media_type=CONTENT_TYPE_LATEST,
