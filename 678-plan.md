@@ -1,5 +1,30 @@
 # Phase 6 / 7 / 8 执行计划（细化版）
 
+> **v3 trailer · 2026-05-19** — Phase 6 / 7 / 8 的全部 checkbox 已在
+> 2026-05-18 → 05-19 落地，签收 PRs 见下表。继续追踪状态请改读
+> `final-check.md` 与 `todo.md` —— 本文件保留为历史 PR 计划归档，
+> 不再更新具体 checkbox。
+>
+> | Phase / Block | 落地 commits | 说明 |
+> |---|---|---|
+> | 6 (Export) | b083f26 / 51918c0 / 8443b40 / bcf7276 / de63dd5 / 6151957 / b8c75b4 / e339dd4 / b1a7e52 / b0130a8 / 7951910 / 854a85f / e2cdb5f / de96d73 / 35b0e1e | export 链路 + SSE channel + IT + schema gate |
+> | 7 (Compliance) | f239dd9 / 9ea919f / d90aabe / 933a051 / 0955a36 / 9062e18 / 4210714 / 7bb43b7 / e28d18b / b8ebdd3 / 03f9f0b / 9341078 / f7eabb5 / d661d2e / d651bd9 / 82f09e6 / 00182a2 | legal hold / deletion / break-glass / audit / DELETE endpoint |
+> | 8 (Hardening) | 54784a5 / 1fb23dc / 8e12ee8 / f120e12 / 3e9f196 / 7cb6e9d / d9c12be / 4315bd4 / f2daf10 / c5c28b3 / b096084 / 80002d0 / 09e1a08 / 7160159 / 08faa53 | metrics / health / Dockerfiles / K8s / E2E / model runtime / supply chain |
+>
+> 余下未做的项分两类：
+>
+> 1. **Phase J 验收** — 需要 staging 环境实际跑一遍 9 个 acceptance check；
+>    runbook 在 `docs/runbooks/phase-j-acceptance.md`，结果回填到
+>    `final-check.md` §J 与 `todo.md`。
+> 2. **真实模型权重** — `docs/model-registry.md` 中的 SHA-256 占位项
+>    在权重首次上传 nexus 后填实数；`AI_WORKER_USE_FAKE_*_RUNTIME=false`
+>    才完整切换。模型 runtime 代码已 ready（PR 7160159）。
+>
+> 历史 v2 内容保留如下——请按当时的 PR 计划阅读，**勿把 checkbox 状态
+> 当作当前事实源**。
+>
+> ---
+>
 > v2 · 2026-05-18 · 在 v1 基础上把每个 checkbox 细化到"工程师拿到就能开 PR"的粒度。文件路径、类签名、测试用例、验收命令都已列出。
 >
 > **基线代码模板**（每个 PR 都应当对照这些已落地实现，不要重新发明）：

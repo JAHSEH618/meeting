@@ -433,7 +433,33 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] 增加 Dockerfile：meeting-api、meeting-web、ai-worker；meeting-api 镜像超过 1.5GB 时重新评估 export runtime 拆分。 _(三份 Dockerfile + 三份 `.dockerignore`；meeting-api 仅装 libreoffice-writer + Noto CJK 保持 < 1.5 GB，3e9f196 + 854a85f)_
 - [x] 增加 K8s base / dev overlay：deployment、service、configmap、servicemonitor、GPU node selector、PDB / HPA。 _(`k8s/base/{meeting-api,meeting-web,ai-worker}` + `overlays/{dev,prod}` + `terraform/main.tf` 3 个资源，7cb6e9d)_
 - [x] 增加 Prometheus rules：outbox backlog、RabbitMQ DLQ、callback auth fail、RAG rerank 降级、KMS 失败、GPU OOM、export 失败。
-- [ ] 确保真实密钥不进入 git，部署只使用 `.env`、K8s Secret 或密钥管理系统注入。 _(K8s manifest 声明 `meeting-api-secret` / `ai-worker-secret` 由 Vault 等外部系统注入；CI 层面的 git-leaks / pre-commit 扫描留待 Phase 9)_
+- [x] 确保真实密钥不进入 git，部署只使用 `.env`、K8s Secret 或密钥管理系统注入。 _(K8s manifest 声明 `meeting-api-secret` / `ai-worker-secret` 由 Vault 等外部系统注入；CI 加 `secret-scan` (gitleaks) + `k8s-lint` (kubeconform) 两个 job + 仓库根 `.gitleaks.toml` allowlist，09e1a08)_
+
+## 阶段 7 收尾完成（2026-05-19）
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| `DELETE /api/meetings/{id}` legal-hold 闭环 | `MeetingApplicationService.delete` + `MeetingController` (00182a2) | first-line LegalHoldCheckPort, AuditAction.DELETE on success/blocked, 6 unit tests |
+| Legal-hold lifecycle smoke | `infra/meeting-infra/scripts/legal-hold-lifecycle-smoke.sh` (82f09e6) | create → place → DELETE 423 → release → DELETE 200 → GET 404 |
+| Phase 7.8 acceptance runbook | `docs/runbooks/phase7-acceptance.md` (82f09e6) | 6 + 1 step-by-step checks linked from final-check.md E2 |
+
+## 阶段 8 收尾完成（2026-05-19）
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| RAG phase 计时 + 429 限流 | `RagQueryApplicationService` + `RagRateLimiter` (c5c28b3) | metric `rag.query.phase.duration{phase=...}`, 60 rpm + 10 burst per (tenant,user) → 429 RAG_RATE_LIMITED |
+| SafeMarkdown XSS 防御 | `apps/meeting-web/src/shared/components/SafeMarkdown.tsx` (b096084) | react-markdown + rehype-sanitize, 25 payload + 3 sanity 测试 |
+| Export SSE channel | `ExportSseController` + ExportsPage EventSource (de96d73) | snapshot-on-open emits EXPORT_STATUS_CHANGED, polling fallback |
+| Export job IT + outbox schema gate | `JdbcExportJobRepositoryIT` + `ExportJobMessageValidator` (35b0e1e) | RLS smoke / claim mutex IT + 11 schema-shape unit tests |
+| Real ASR + diarization runtime | `model_runtime/asr/qwen3_asr_runtime.py` + `diarization/pyannote_runtime.py` (7160159) | Protocol-conforming with fake fallback; /internal/models lists 4 entries |
+| Perf baseline harness | `infra/meeting-infra/scripts/perf-baseline.sh` + `perf-baselines.md` (80002d0) | k6 + jq report, exits non-zero on breach, 5 scenarios |
+| Playwright E2E expansion | `e2e/tests/{main-flow,stale,legal-hold}.spec.ts` (08faa53) | 5 tests / 3 files; CI job `meeting-web-e2e` boots full-stack + uploads trace artifact |
+| CI supply chain | `.github/workflows/ci.yml` + `.gitleaks.toml` (09e1a08) | gitleaks-action@v2 + kustomize/kubeconform on dev+prod overlays |
+
+剩余阻塞项：
+- A2.3（完整 DeletionJob-driven hard delete + certificate flow，已通过 `POST /admin/deletion-jobs` 等价覆盖）
+- 真实模型权重 sha256 在 prod 上线后填入 `docs/model-registry.md`
+- Phase J 9 项验收 — 参见 `docs/runbooks/phase-j-acceptance.md`
 
 ## 持续性工程任务
 

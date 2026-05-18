@@ -132,7 +132,9 @@
 
 ## J. Phase 8 最终验收清单（`678-plan.md` 8.8）
 
-> A–I 全部完成后跑一遍，相当于一期 GA gate。
+> A–I 全部完成后跑一遍，相当于一期 GA gate. **Runbook**：
+> [`docs/runbooks/phase-j-acceptance.md`](docs/runbooks/phase-j-acceptance.md)
+> — 9 项均需在 staging 实际执行才能勾选；保留 `[ ]` 直到 staging 验收通过。
 
 - [ ] **J1** Staging 起 full-stack（K8s `dev` overlay 或 compose `--profile full-stack`）→ 所有 6 个 HealthIndicator UP；Prometheus rules 加载；Grafana 5 个 dashboard 全部有数据
 - [ ] **J2** Prod profile fail-fast 验收：故意删 `AI_WORKER_CALLBACK_HMAC_SECRET` env → 启动失败 + 日志包含 `prod profile requires meeting.callback.hmac-secret to be a non-demo value`
@@ -150,30 +152,34 @@
 
 ## K. 文档收尾
 
-- [ ] **K1** `todo.md` 阶段 2 / 5 / 6 / 7 / 8 末尾追加 `阶段 X 收尾完成（YYYY-MM-DD）` 段落，勾选所有项
-- [ ] **K2** `678-plan.md` v3：把已落地项打勾或注明 commit；剩余项归档到 v3 backlog（如未来再做的 audit 导出 CSV、redacted 数据边界 mode）
-- [ ] **K3** `README.md` 顶部 status badge 从 "MVP-2 in progress" 改为 "v1 ready"
-- [ ] **K4** `CLAUDE.md` MVP 切片更新到 v1 closeout
+- [x] **K1** `todo.md` 阶段 2 / 5 / 6 / 7 / 8 末尾追加 `阶段 X 收尾完成（YYYY-MM-DD）` 段落，勾选所有项 _(PR-J+K; "阶段 7 收尾完成（2026-05-19）" + "阶段 8 收尾完成（2026-05-19）" tables added with PR + commit references; ongoing engineering tasks left as `[ ]` because they are durable disciplines, not deliverables)_
+- [x] **K2** `678-plan.md` v3：把已落地项打勾或注明 commit；剩余项归档到 v3 backlog（如未来再做的 audit 导出 CSV、redacted 数据边界 mode） _(PR-J+K; v3 trailer block at the top of 678-plan.md routes future tracking to final-check.md + todo.md; PR commit matrix per phase preserved for archaeology)_
+- [x] **K3** `README.md` 顶部 status badge 从 "MVP-2 in progress" 改为 "v1 ready" _(PR-J+K; quoted block now reads "v1 code-complete — pending staging acceptance (Phase J)" with links to final-check.md + phase-j-acceptance.md)_
+- [x] **K4** `CLAUDE.md` MVP 切片更新到 v1 closeout _(PR-J+K; MVP-2 line rewritten as "code-complete 2026-05-19, pending staging acceptance" with the full feature set inlined and Phase J runbook referenced)_
 
 ---
 
-## 状态汇总（2026-05-18）
+## 状态汇总（2026-05-19）
 
 | 区块 | 任务数 | 完成 | 依赖 |
 |---|---|---|---|
 | A 阻塞 | 12 | 11 (A1.1–A1.7 + A2.1/A2.2/A2.4/A2.5) | A2.3 → admin deletion-job 流程（freeze） |
-| B RAG | 4 | 3 (B1/B2/B3) | 无 |
-| C 集成测试 | 3 | 2 (C1/C3) | 无 |
-| D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
-| E Compliance smoke | 2 | 2 (E1/E2) | E2 已可执行（A2 落地） |
-| F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
-| G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
-| H 性能基线 | 3 | 3 (H1/H2/H3) | 无 |
-| I E2E 扩面 | 5 | 5 (I1–I5) | 无 |
-| J 最终验收 | 9 | 0 | 依赖 A–I |
-| K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **35 / 53** | 关键路径 A → I → J → K |
+| B RAG | 4 | 3 (B1/B2/B3) | B4 covered by PR-I rag-flow expansion candidate |
+| C 集成测试 | 3 | 2 (C1/C3) | C2 deferred to Phase J IT batch |
+| D Export SSE | 4 | 3 (D1/D2/D3) | D4 Vitest deferred — jsdom lacks EventSource |
+| E Compliance smoke | 2 | 2 (E1/E2) | — |
+| F 前端安全 | 3 | 3 (F1/F2/F3) | — |
+| G CI 供应链 | 4 | 3 (G1/G2/G3) | G4 husky optional |
+| H 性能基线 | 3 | 3 (H1/H2/H3) | — |
+| I E2E 扩面 | 5 | 5 (I1–I5) | — |
+| J 最终验收 | 9 | 0 | 需 staging — runbook `docs/runbooks/phase-j-acceptance.md` |
+| K 文档 | 4 | 4 (K1–K4) | — |
+| **合计** | **53 项** | **39 / 53** | 关键路径 A → I → J → K |
 
-**最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
+剩余 14 项构成：J 9（staging 验收）+ A2.3 / B4 / C2 / D4 / G4（明确
+defer / non-blocking）。代码层面 v1 已 ready；只待在 staging 跑通 J1–J9
+即可发布。
 
-按当前节奏 A1 大约 1 周（模型权重 + 内网制品 + 集成测试），A2 < 2 天，B–H 并行 1–2 周，I 1 周，J + K 2-3 天。**预计 ~4-5 周可全部 close。**
+**最短关键路径**：~~A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。~~ **已完成**（A → I + K）；剩余 J 需 staging。
+
+历史预估 A1 ~1 周 / A2 < 2 天 / B–H 1–2 周 / I 1 周 / J+K 2–3 天 ≈ 4–5 周；实际代码层面合计在 2 天内于 master 上一次性收紧（commits 00182a2 → 08faa53），J 接 staging 即可发布。

@@ -206,7 +206,7 @@ Each workspace `SPEC.md` declares the same incremental ladder. Don't park new wo
 
 - **MVP-0** (done): auth + meetings + processing tasks + SSE/polling + worker fake pipeline + callback idempotency.
 - **MVP-1** (largely done): audio multipart upload + transcript + minutes/items + STALE cascade + speaker enrollment/confirmation + documents (partial).
-- **MVP-2** (in progress): RAG (chunk strategy, pgvector + permission recheck, rerank, citation, coverage) → exports (async, version-bound, short-link revoke) → compliance (legal hold, deletion jobs, deletion certificates, break-glass) → observability/security/perf hardening. Playwright E2E, per-app Dockerfiles, and K8s base+overlays have landed (commits 8.5–8.7); Terraform is a stub.
+- **MVP-2** (code-complete 2026-05-19, pending staging acceptance): RAG (chunk strategy, pgvector + permission recheck, rerank, citation, coverage), exports (async, version-bound, short-link revoke, SSE channel), compliance (legal hold + DELETE endpoint, deletion jobs, deletion certificates, break-glass, audit query), observability/security/perf hardening (RAG phase timers + 429, SafeMarkdown XSS, gitleaks + kubeconform CI, perf-baseline harness, real Qwen3-ASR + pyannote runtime scaffolds, Playwright legal-hold + STALE + upload→SSE→RAG→PDF specs). Remaining work: Phase J staging acceptance — see `docs/runbooks/phase-j-acceptance.md`.
 
 `todo.md` is the live progress ledger — check it before starting work in any phase to avoid duplicating completed items.
 

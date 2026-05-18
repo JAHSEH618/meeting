@@ -1,5 +1,9 @@
 # 本地会议智能系统 · Meeting Intelligence
 
+> **Status (2026-05-19): v1 code-complete — pending staging acceptance (Phase J).**
+> 详细收尾清单见 [`final-check.md`](final-check.md)；剩余 9 项 staging
+> acceptance 走 [`docs/runbooks/phase-j-acceptance.md`](docs/runbooks/phase-j-acceptance.md)。
+>
 > 将会议音频转化为结构化知识资产：**上传 → 转写 → 说话人分离 → 声纹识别 → 纪要生成 → 知识库 → RAG 问答 → 导出**。
 >
 > 一期目标：本地 GPU 完成 AI Pipeline，第三方 LLM 仅用于纪要 / 抽取 / 问答；多租户 + RLS + 审计 + 信封加密；模块化单体先行，按需拆分。
