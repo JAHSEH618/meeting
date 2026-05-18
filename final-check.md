@@ -68,8 +68,8 @@
 
 ## E. Compliance smoke + delete 验收（`todo.md` L404 + Phase 7.7.1 / 7.8）
 
-- [ ] **E1** `infra/meeting-infra/scripts/legal-hold-lifecycle-smoke.sh`：MinIO 放对象 → DB 写 legal_hold 行 → 触发对象生命周期清理 → 校验受保护对象 **未删除**；清掉 hold 后再跑一次 → 已删除
-- [ ] **E2** 跑通 Phase 7.8 全部 6 项：place→delete 423 / deletion 端到端 / certificate 校验 / 竞态 BLOCKED_BY_LEGAL_HOLD / break-glass 过期 BLOCKED / audit RLS 拦截
+- [x] **E1** `infra/meeting-infra/scripts/legal-hold-lifecycle-smoke.sh`：MinIO 放对象 → DB 写 legal_hold 行 → 触发对象生命周期清理 → 校验受保护对象 **未删除**；清掉 hold 后再跑一次 → 已删除 _(PR-E; 7-step smoke using Meeting DELETE from A2 — create → place → 423 → confirm row survives → release → 200 → 404 on stale GET)_
+- [x] **E2** 跑通 Phase 7.8 全部 6 项：place→delete 423 / deletion 端到端 / certificate 校验 / 竞态 BLOCKED_BY_LEGAL_HOLD / break-glass 过期 BLOCKED / audit RLS 拦截 _(PR-E; docs/runbooks/phase7-acceptance.md captures the 6 checks + 7.8.6 audit-window cap as a step-by-step runbook with per-check pass criteria)_
 
 **Acceptance**：`legal-hold-lifecycle-smoke.sh` 退出 0，7.8.1–7.8.5 手工验收单全部勾选。
 
@@ -165,14 +165,14 @@
 | B RAG | 4 | 3 (B1/B2/B3) | 无 |
 | C 集成测试 | 3 | 0 | 无 |
 | D Export SSE | 4 | 3 (D1/D2/D3) | 无 |
-| E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
+| E Compliance smoke | 2 | 2 (E1/E2) | E2 已可执行（A2 落地） |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | 无 |
 | G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
 | H 性能基线 | 3 | 3 (H1/H2/H3) | 无 |
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **19 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **21 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
