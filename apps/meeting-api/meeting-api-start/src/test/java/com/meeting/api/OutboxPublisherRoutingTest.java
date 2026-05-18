@@ -81,6 +81,17 @@ class OutboxPublisherRoutingTest {
         assertThat(publisher.routingKey(record)).isEqualTo("task.llm");
     }
 
+    @Test
+    void exportJobCreatedRoutesToExportQueue() {
+        OutboxPublisher publisher = newPublisher();
+        OutboxEventRecord record = record("ExportJobCreatedEvent",
+            "{\"tenantId\":\"tenant_01\",\"exportId\":\"exp_xxx\","
+                + "\"meetingId\":\"mtg_01\",\"format\":\"PDF\","
+                + "\"expectedInputVersion\":{\"transcriptVersion\":3}}");
+
+        assertThat(publisher.routingKey(record)).isEqualTo("task.export");
+    }
+
     private static OutboxPublisher newPublisher() {
         return new OutboxPublisher(
             Mockito.mock(OutboxEventStore.class),

@@ -22,6 +22,7 @@ public record ExportJobCreatedEvent(
     Integer inputMinutesVersion,
     long sequenceNo,
     OffsetDateTime occurredAt,
+    String traceId,
     Map<String, Object> payload
 ) implements DomainEvent {
 
@@ -36,10 +37,33 @@ public record ExportJobCreatedEvent(
         long sequenceNo,
         OffsetDateTime occurredAt
     ) {
+        this(eventId, tenantId, exportId, meetingId, format,
+             inputTranscriptVersion, inputMinutesVersion, sequenceNo, occurredAt,
+             /* traceId */ eventId);
+    }
+
+    public ExportJobCreatedEvent(
+        String eventId,
+        String tenantId,
+        String exportId,
+        String meetingId,
+        ExportFormat format,
+        int inputTranscriptVersion,
+        Integer inputMinutesVersion,
+        long sequenceNo,
+        OffsetDateTime occurredAt,
+        String traceId
+    ) {
         this(
             eventId, tenantId, exportId, meetingId, format,
             inputTranscriptVersion, inputMinutesVersion, sequenceNo, occurredAt,
-            buildPayload(tenantId, exportId, meetingId, format, inputTranscriptVersion, inputMinutesVersion)
+            traceId == null || traceId.isBlank() ? eventId : traceId,
+            buildPayload(
+                tenantId, exportId, meetingId, format,
+                inputTranscriptVersion, inputMinutesVersion,
+                traceId == null || traceId.isBlank() ? eventId : traceId,
+                occurredAt
+            )
         );
     }
 
@@ -49,7 +73,9 @@ public record ExportJobCreatedEvent(
         String meetingId,
         ExportFormat format,
         int inputTranscriptVersion,
-        Integer inputMinutesVersion
+        Integer inputMinutesVersion,
+        String traceId,
+        OffsetDateTime occurredAt
     ) {
         Map<String, Object> expectedInputVersion = new LinkedHashMap<>();
         expectedInputVersion.put("transcriptVersion", inputTranscriptVersion);
@@ -62,6 +88,8 @@ public record ExportJobCreatedEvent(
         body.put("meetingId", meetingId);
         body.put("format", format.name());
         body.put("expectedInputVersion", expectedInputVersion);
+        body.put("traceId", traceId);
+        body.put("createdAt", occurredAt == null ? null : occurredAt.toString());
         return body;
     }
 

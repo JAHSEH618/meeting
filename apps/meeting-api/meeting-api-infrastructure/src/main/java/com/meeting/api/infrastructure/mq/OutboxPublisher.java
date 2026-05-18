@@ -76,7 +76,8 @@ public class OutboxPublisher {
      * so a TEXT_EMBEDDING task ({@code pipelineSteps=["RAG_INDEXING"]}) lands on
      * {@code task.embed}, an audio task lands on {@code task.audio-cpu}, etc.
      * Worker-phase + minutes/extraction events keep their legacy {@code task.llm}
-     * routing. Visible for tests.
+     * routing. {@code ExportJobCreatedEvent} goes to the {@code task.export}
+     * binding which the {@code export-queue} consumer drains. Visible for tests.
      */
     public String routingKey(OutboxEventRecord record) {
         String eventType = record.eventType();
@@ -91,6 +92,9 @@ public class OutboxPublisher {
                 }
             }
             return "task.audio-cpu";
+        }
+        if ("ExportJobCreatedEvent".equals(eventType)) {
+            return "task.export";
         }
         if (eventType.startsWith("WorkerPhase")) {
             return "task.llm";

@@ -88,6 +88,16 @@ class ExportApplicationServiceTest {
         assertThat(event).isInstanceOf(ExportJobCreatedEvent.class);
         assertThat(event.eventType()).isEqualTo("ExportJobCreatedEvent");
         assertThat(event.aggregateId()).isEqualTo(dto.exportId());
+
+        // export-job-message.schema.json requires `traceId` and `createdAt`
+        // alongside the meeting/format/expectedInputVersion body; the
+        // outbox publisher hands payload() to RabbitMQ verbatim, so the
+        // schema-required keys must already be in the event payload.
+        Map<String, Object> payload = event.payload();
+        assertThat(payload).containsKeys("tenantId", "exportId", "meetingId",
+            "format", "expectedInputVersion", "traceId", "createdAt");
+        assertThat(payload.get("traceId")).isEqualTo("req_test_01");
+        assertThat(payload.get("createdAt")).isNotNull();
     }
 
     @Test

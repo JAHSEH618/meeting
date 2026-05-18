@@ -165,7 +165,8 @@ public class ExportApplicationService implements ExportFacade {
                 meeting.transcriptVersion(),
                 meeting.minutesVersion() == 0 ? null : meeting.minutesVersion(),
                 /* sequenceNo placeholder — set by the publisher when the row is acquired */ 1L,
-                now
+                now,
+                cmd.requestId()
             ));
 
             log.info(
