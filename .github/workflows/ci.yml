@@ -169,3 +169,48 @@ jobs:
             echo "Applying $(basename "$f")..."
             PGPASSWORD=meeting_ci psql -h localhost -U meeting -d meeting_ci -f "$f" -v ON_ERROR_STOP=1
           done
+
+  # ── Secret 扫描 (G1/G2) ───────────────────────────────────────
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can scan all commits in PRs
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ── K8s 清单 lint (G3) ────────────────────────────────────────
+  k8s-lint:
+    name: K8s Manifests Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+          kustomize version
+
+      - name: Install kubeconform
+        run: |
+          curl -sLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Lint dev overlay
+        run: |
+          kustomize build infra/meeting-infra/k8s/overlays/dev \
+            | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0
+
+      - name: Lint prod overlay
+        run: |
+          kustomize build infra/meeting-infra/k8s/overlays/prod \
+            | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0

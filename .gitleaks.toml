@@ -1,0 +1,67 @@
+# Gitleaks configuration — extends the default rule set bundled with
+# the gitleaks-action runner. Anything matched here is treated as a
+# false positive and does NOT fail CI.
+#
+# Add a new allowlist entry only when:
+#   1. The string is unambiguously a placeholder / demo value, or
+#   2. The file is auto-generated codegen output, or
+#   3. The "secret" is a test fixture that pairs with mock infrastructure.
+#
+# Real secrets must never be checked in. Production secrets are injected
+# at deploy time via K8s Secrets / Vault — see infra/meeting-infra/k8s/.
+
+title = "meeting repo gitleaks config"
+
+[extend]
+# Include all default rules. We only add allowlist exceptions below.
+useDefault = true
+
+[allowlist]
+description = "Allowlisted paths and patterns for the meeting monorepo"
+
+paths = [
+    # Env template — contains placeholder values only (e.g. "change-me",
+    # "demo-secret"). Real .env files are .gitignored.
+    '''\.env\.example$''',
+
+    # Documentation often references example tokens / illustrative
+    # secrets ("Authorization: Bearer abc123..."). They are not real.
+    '''^docs/.*\.md$''',
+    '''^README\.md$''',
+    '''^CLAUDE\.md$''',
+    '''^final-check\.md$''',
+    '''^todo\.md$''',
+    '''^678-plan\.md$''',
+
+    # Codegen output — pinned by the contracts package, regenerated
+    # in CI via `npm run codegen`. Any string here came from the
+    # OpenAPI / JSON Schema input.
+    '''^apps/meeting-api/meeting-api-client/generated/''',
+    '''^apps/ai-worker/ai_worker/generated/''',
+    '''^apps/meeting-web/src/shared/api/types\.gen\.ts$''',
+
+    # Fixture payloads that pair with mock infra; never touch prod.
+    '''^packages/meeting-contracts/fixtures/''',
+    '''^apps/.*/__tests__/''',
+    '''^apps/.*/src/test/''',
+    '''^apps/.*/src/main/resources/db/migration/V.*\.sql$''',
+    '''^apps/meeting-web/e2e/fixtures/''',
+
+    # Lock files do not contain executable secrets, only digests.
+    '''package-lock\.json$''',
+    '''uv\.lock$''',
+    '''pnpm-lock\.yaml$''',
+]
+
+# Common placeholder tokens used by spec / example payloads. These will
+# never be valid against any real provider; allowlisting them keeps the
+# default high-entropy rule from flagging documentation.
+regexes = [
+    '''(?i)example[_-]?(token|secret|key|password)''',
+    '''(?i)demo[_-]?(token|secret|key|password)''',
+    '''(?i)change[_-]?me''',
+    '''(?i)your[_-]?(token|secret|key|here)''',
+    # The phrase "JWT_SECRET" / "HMAC_SECRET" as a *placeholder name* in
+    # docs/.env.example, not a value.
+    '''\$\{.*(SECRET|TOKEN|KEY|PASSWORD).*\}''',
+]

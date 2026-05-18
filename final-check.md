@@ -91,9 +91,9 @@
 
 ## G. CI / 供应链（`todo.md` L436 + Phase 8.6.7.a）
 
-- [ ] **G1** `.github/workflows/ci.yml` 新增 job `secret-scan`：用 [gitleaks](https://github.com/gitleaks/gitleaks) Action 扫描全仓库，发现 hit → fail
-- [ ] **G2** 仓库根新增 `.gitleaks.toml`（或用默认规则），把 `.env.example` `docs/` 加入 allowlist
-- [ ] **G3** `.github/workflows/ci.yml` 新增 job `k8s-lint`：`kustomize build infra/meeting-infra/k8s/overlays/dev | kubeval --strict`；prod overlay 同样
+- [x] **G1** `.github/workflows/ci.yml` 新增 job `secret-scan`：用 [gitleaks](https://github.com/gitleaks/gitleaks) Action 扫描全仓库，发现 hit → fail _(PR-G; gitleaks-action@v2 + full history)_
+- [x] **G2** 仓库根新增 `.gitleaks.toml`（或用默认规则），把 `.env.example` `docs/` 加入 allowlist _(PR-G; extends default, allowlist for env.example/docs/codegen/fixtures/lockfiles + placeholder regexes)_
+- [x] **G3** `.github/workflows/ci.yml` 新增 job `k8s-lint`：`kustomize build infra/meeting-infra/k8s/overlays/dev | kubeval --strict`；prod overlay 同样 _(PR-G; uses kubeconform — actively-maintained kubeval successor — against dev + prod overlays)_
 - [ ] **G4**（可选）`apps/meeting-web` 加 `pre-commit` 钩子或 husky 命令本地预扫
 
 **Acceptance**：PR 时 CI 多 2 个 job 全绿；故意往代码塞 `AKIA...` → CI fail。
@@ -166,12 +166,12 @@
 | D Export SSE | 4 | 0 | 无 |
 | E Compliance smoke | 2 | 0 | E2 已可执行（A2 落地） |
 | F 前端安全 | 3 | 0 | 无 |
-| G CI 供应链 | 4 | 0 | 无 |
+| G CI 供应链 | 4 | 3 (G1/G2/G3) | 无 |
 | H 性能基线 | 3 | 0 | 无 |
 | I E2E 扩面 | 5 | 0 | I3 已可执行（A2 落地）；I1 待 A1 |
 | J 最终验收 | 9 | 0 | 依赖 A–I |
 | K 文档 | 4 | 0 | 依赖 A–J |
-| **合计** | **53 项** | **4 / 53** | 关键路径 A → I → J → K |
+| **合计** | **53 项** | **7 / 53** | 关键路径 A → I → J → K |
 
 **最短关键路径**：A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。
 
