@@ -214,3 +214,68 @@ jobs:
         run: |
           kustomize build infra/meeting-infra/k8s/overlays/prod \
             | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0
+
+  # ── Playwright E2E (I5) ───────────────────────────────────────
+  meeting-web-e2e:
+    name: Meeting Web E2E (Playwright)
+    runs-on: ubuntu-24.04
+    # The full-stack compose pulls multiple service images; do not block
+    # PR merges on transient image-pull issues. Re-enable as required:
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/meeting-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/meeting-web/package-lock.json
+
+      - name: Install web deps
+        run: npm ci
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Boot full-stack (postgres + rabbit + minio + meeting-api)
+        working-directory: .
+        run: |
+          docker compose --profile full-stack \
+              -f infra/meeting-infra/docker/compose/docker-compose.yml \
+              up -d --quiet-pull
+          # Give meeting-api up to 3 min to apply Flyway + start the SSE channel.
+          for i in $(seq 1 36); do
+            if curl -fsSL http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "meeting-api up after ${i} attempts"
+              break
+            fi
+            sleep 5
+          done
+          curl -fsSL http://localhost:8080/actuator/health || (echo "meeting-api never came up"; exit 1)
+
+      - name: Run vite dev server
+        run: |
+          npm run dev -- --host 0.0.0.0 &
+          for i in $(seq 1 24); do
+            if curl -fsSL http://localhost:5173 > /dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      - name: Run E2E
+        env:
+          E2E_BASE_URL: http://localhost:5173
+          E2E_API_BASE: http://localhost:8080
+        run: npm run e2e
+
+      - name: Upload Playwright trace + HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/meeting-web/playwright-report
+            apps/meeting-web/test-results
+          retention-days: 14
