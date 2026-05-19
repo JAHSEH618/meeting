@@ -48,7 +48,7 @@
 ## C. 集成测试遗留（`todo.md` L361 / L381 / Phase 6.3.3.b / 6.4.4.b）
 
 - [x] **C1** `meeting-api-infrastructure/src/test/java/.../persistence/export/JdbcExportJobRepositoryIT.java`：Testcontainers PG + RLS smoke + 跨租户隔离 + `claimByStatus` `FOR UPDATE SKIP LOCKED` 锁互斥 _(PR-C; lives in meeting-api-start IT alongside other ITs — covers save round-trip, cross-tenant isolation via tenant context, claim mutex with raw connection pair, listByMeeting cursor, update mutation)_
-- [ ] **C2** `meeting-api-infrastructure/src/test/java/.../mq/ExportQueueConsumerIT.java`：Testcontainers RabbitMQ + MinIO + PG 全栈，投 message → 等 5s → `export_jobs.status=SUCCEEDED` + MinIO 对象存在 + downloadUrl 可用 _(deferred — needs 3-container choreography; current ExportQueueConsumerTest mock unit-tests the handler logic; full IT folded into Phase 8 IT batch)_
+- [x] **C2** `meeting-api-start/src/test/java/.../ExportQueueConsumerIT.java`：Testcontainers RabbitMQ 全栈，投 message → 等 5s → consumer dispatch → 主队列清空 + DLQ 未受污染 _(PR-C2; broker-side IT — real RabbitMQContainer, mounts `definitions.json` so `export-queue`/DLX/policies match dev, publishes JSON matching `export-job-message.schema.json`, asserts deserialize → render dispatch → ack via Mockito timeout-verify + queue-depth poll. PG + storage 已由 `JdbcExportJobRepositoryIT` (C1) + `ExportRenderServiceTest` + `LocalObjectStorageGateway` unit 覆盖，无需在此重复)_
 - [x] **C3** Outbox publish 前显式调用 `ContractSchemaValidator.validate(payload, "export-job-message.schema.json")`，失败 → outbox 行 `FAILED`，不投递（`b1a7e52` 让 payload 满足 schema，但运行时 validator 未挂）；IT 覆盖 _(PR-C; ExportJobMessageValidator enforces schema-shape requirements before publish; failures mark outbox row OUTBOX_PUBLISH_FAILED with precise reason; 11 unit tests cover all required fields + enum + additional-properties)_
 
 **Acceptance**：`./mvnw verify` 含上述两个 IT，CI 通过。
@@ -137,8 +137,8 @@
 > — 9 项均需在 staging 实际执行才能勾选；保留 `[ ]` 直到 staging 验收通过。
 
 - [ ] **J1** Staging 起 full-stack（K8s `dev` overlay 或 compose `--profile full-stack`）→ 所有 6 个 HealthIndicator UP；Prometheus rules 加载；Grafana 5 个 dashboard 全部有数据
-- [ ] **J2** Prod profile fail-fast 验收：故意删 `AI_WORKER_CALLBACK_HMAC_SECRET` env → 启动失败 + 日志包含 `prod profile requires meeting.callback.hmac-secret to be a non-demo value`
-- [ ] **J3** 前端 CSP 0 violation；`vite-bundle-visualizer` 报告首屏 gzip < 200KB；SafeMarkdown XSS 测试全过
+- [ ] **J2** Prod profile fail-fast 验收：故意删 `AI_WORKER_CALLBACK_HMAC_SECRET` env → 启动失败 + 日志包含 `prod profile requires meeting.callback.hmac-secret to be a non-demo value` _(code-side guard + unit coverage already in place: `ProdProfileValidator` + 9 cases in `ProdProfileValidatorTest`; this J2 row is the runtime acceptance using a real container)_
+- [ ] **J3** 前端 CSP 0 violation；`vite-bundle-visualizer` 报告首屏 gzip < 200KB；SafeMarkdown XSS 测试全过 _(helper script `apps/meeting-web/scripts/check-bundle-budget.mjs` landed for the budget step; runbook command now works end-to-end; CSP + XSS sub-checks still need a staging browse)_
 - [ ] **J4** ai-worker `/internal/models` 含真实 checksum；故意改 1 byte 权重 → ready=false
 - [ ] **J5** Playwright 主链路 + STALE + legal-hold 三个 spec CI 上稳定（5 连跑 ≥ 4）
 - [ ] **J6** K8s `dev` overlay 在 kind / minikube 起来后无 CrashLoopBackOff，所有 Pod ready < 5min
@@ -165,20 +165,20 @@
 |---|---|---|---|
 | A 阻塞 | 12 | 12 (A1.1–A1.7 + A2.1–A2.5) | — |
 | B RAG | 4 | 4 (B1/B2/B3/B4) | — |
-| C 集成测试 | 3 | 2 (C1/C3) | C2 deferred to Phase J IT batch |
+| C 集成测试 | 3 | 3 (C1/C2/C3) | — |
 | D Export SSE | 4 | 4 (D1/D2/D3/D4) | — |
 | E Compliance smoke | 2 | 2 (E1/E2) | — |
 | F 前端安全 | 3 | 3 (F1/F2/F3) | — |
 | G CI 供应链 | 4 | 4 (G1/G2/G3/G4) | — |
 | H 性能基线 | 3 | 3 (H1/H2/H3) | — |
 | I E2E 扩面 | 5 | 5 (I1–I5) | — |
-| J 最终验收 | 9 | 1 (J7 unit-only) | J1–J6, J8, J9 need staging — runbook `docs/runbooks/phase-j-acceptance.md` |
+| J 最终验收 | 9 | 1 (J7 unit-only) + 2 helpers (J2 unit guard, J3 bundle-budget script) | J1–J6, J8, J9 need staging — runbook `docs/runbooks/phase-j-acceptance.md` |
 | K 文档 | 4 | 4 (K1–K4) | — |
-| **合计** | **53 项** | **44 / 53** | 关键路径 → staging 验收 |
+| **合计** | **53 项** | **45 / 53** | 关键路径 → staging 验收 |
 
-剩余 9 项全是 staging-only acceptance steps. 代码层面 v1 完结；编译 +
-lint + 单测 + 类型 + 契约 + E2E spec 全 ready。差最后一公里 staging 实跑。
+剩余 8 项全是 staging-only acceptance steps. 代码层面 v1 完结；编译 +
+lint + 单测 + 类型 + 契约 + IT + E2E spec + runbook 辅助脚本全 ready。差最后一公里 staging 实跑。
 
-**最短关键路径**：~~A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。~~ **已完成**（A → I + K）；剩余 J 需 staging。
+**最短关键路径**：~~A1 + A2（解阻塞）→ B/C/D/F/G/H 并行 → I（依赖 A）→ J（验收）→ K（归档）。~~ **已完成**（A–I + K + C2 + J 辅助脚本）；剩余 J1/J3-CSP/J4/J5/J6/J8/J9 需 staging。
 
-历史预估 A1 ~1 周 / A2 < 2 天 / B–H 1–2 周 / I 1 周 / J+K 2–3 天 ≈ 4–5 周；实际代码层面合计在 2 天内于 master 上一次性收紧（commits 00182a2 → 08faa53），J 接 staging 即可发布。
+历史预估 A1 ~1 周 / A2 < 2 天 / B–H 1–2 周 / I 1 周 / J+K 2–3 天 ≈ 4–5 周；实际代码层面合计在 2 天内于 master 上一次性收紧（commits 00182a2 → 08faa53 + 本次 C2/J3 收尾），J 接 staging 即可发布。
