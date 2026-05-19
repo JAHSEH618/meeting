@@ -1,0 +1,213 @@
+"""D7 — production ReferenceEmbeddingSupplier that calls Java's
+/internal/speakers/reference-embeddings over HMAC.
+
+Cache + redaction:
+* Short TTL in-memory cache keyed by (tenantId, sorted person_ids); default
+  ≤60s so a single meeting's matching pass doesn't repeatedly decrypt the
+  same centroids on Java side.
+* Plaintext vectors NEVER touch structlog / print. Failure logging only
+  reports counts + the SHA hash of the response payload.
+* On 4xx → ``SpeakerReferenceUnavailable`` (worker matching step decides
+  whether to degrade); on 5xx → bounded retry then ``SpeakerReferenceUnavailable``.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import logging
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Mapping
+
+import httpx
+
+from ai_worker.common.config import settings
+
+_log = logging.getLogger(__name__)
+
+_DEFAULT_TIMEOUT = 5.0
+_DEFAULT_TTL_SECONDS = 60
+_MAX_RETRIES = 3
+_BASE_BACKOFF_SECONDS = 0.2
+
+
+class SpeakerReferenceUnavailable(Exception):
+    """Raised when the worker cannot obtain reference centroids — matcher
+    must decide whether to degrade or fail-fast."""
+
+
+@dataclass
+class _CacheEntry:
+    expires_at: float
+    by_person: dict[str, list[float]]
+
+
+class JavaSpeakerReferenceClient:
+    """Outbound client to Java's /internal/speakers/reference-embeddings."""
+
+    def __init__(
+        self,
+        base_url: str,
+        secret: str,
+        *,
+        timeout: float = _DEFAULT_TIMEOUT,
+        ttl_seconds: float = _DEFAULT_TTL_SECONDS,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not base_url:
+            raise RuntimeError("base_url is required (set AI_WORKER_MEETING_API_BASE_URL)")
+        if not secret or secret == "dev-internal-secret":
+            # Soft check — production deploys must set a real secret. We log
+            # a warning at construction time rather than hard-fail because
+            # the worker boot path may run before secrets land.
+            _log.warning("JavaSpeakerReferenceClient initialized with default/dev secret")
+        self._base_url = base_url.rstrip("/")
+        self._secret = secret
+        self._timeout = timeout
+        self._ttl_seconds = ttl_seconds
+        self._cache: dict[tuple[str, tuple[str, ...]], _CacheEntry] = {}
+        self._owned_client = http_client is None
+        self._client = http_client or httpx.AsyncClient(timeout=timeout)
+
+    async def close(self) -> None:
+        if self._owned_client:
+            await self._client.aclose()
+
+    def evict_cache(self) -> None:
+        """Operator hook + ``process exit`` cleanup; clears all centroids."""
+        self._cache.clear()
+
+    async def reference_embedding(
+        self,
+        tenant_id: str,
+        participant_id: str,
+        dimension: int,
+    ) -> list[float]:
+        """ReferenceEmbeddingSupplier protocol — single-id convenience wrapper."""
+        result = await self.batch(tenant_id, [participant_id])
+        vector = result.get(participant_id)
+        if vector is None:
+            raise SpeakerReferenceUnavailable(f"no centroid for participant {participant_id}")
+        if dimension and len(vector) != dimension:
+            raise SpeakerReferenceUnavailable(
+                f"dimension mismatch: expected {dimension} got {len(vector)}"
+            )
+        return vector
+
+    async def batch(self, tenant_id: str, person_ids: list[str]) -> dict[str, list[float]]:
+        if not person_ids:
+            return {}
+        key = (tenant_id, tuple(sorted(set(person_ids))))
+        cached = self._cache.get(key)
+        if cached and cached.expires_at > time.time():
+            # cache hit — return a *copy* to keep callers from mutating the cached vector
+            return {pid: list(v) for pid, v in cached.by_person.items() if pid in person_ids}
+
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                payload = await self._call(tenant_id, list(key[1]))
+                self._cache[key] = _CacheEntry(
+                    expires_at=time.time() + self._ttl_seconds,
+                    by_person=payload,
+                )
+                return {pid: list(v) for pid, v in payload.items() if pid in person_ids}
+            except _Retryable as exc:
+                last_exc = exc
+                wait = _BASE_BACKOFF_SECONDS * (2 ** attempt)
+                _log.warning(
+                    "speaker_reference_retry attempt=%d wait=%.2f reason=%s",
+                    attempt + 1, wait, exc,
+                )
+                time.sleep(wait)
+            except SpeakerReferenceUnavailable:
+                raise
+        raise SpeakerReferenceUnavailable(
+            f"speaker reference request failed after {_MAX_RETRIES} attempts: {last_exc}"
+        )
+
+    async def _call(
+        self, tenant_id: str, person_ids: list[str]
+    ) -> dict[str, list[float]]:
+        import json
+        body_dict = {"tenantId": tenant_id, "personIds": person_ids}
+        body_bytes = json.dumps(body_dict, separators=(",", ":")).encode("utf-8")
+        timestamp = _utc_iso_now()
+        nonce = uuid.uuid4().hex
+        # Worker path INCLUDES /internal — the signing string must mirror Java's view.
+        path = "/internal/speakers/reference-embeddings"
+        url = self._base_url + path
+        signature = _sign(self._secret, "POST", path, body_bytes, timestamp, nonce)
+        headers: Mapping[str, str] = {
+            "Content-Type": "application/json",
+            "X-Request-Id": uuid.uuid4().hex,
+            "X-Trace-Id": uuid.uuid4().hex,
+            "X-Tenant-Id": tenant_id,
+            "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
+            "X-Signature": signature,
+        }
+        response = await self._client.post(url, headers=dict(headers), content=body_bytes)
+        if response.status_code == 401:
+            raise SpeakerReferenceUnavailable("HMAC rejected by Java (401)")
+        if 500 <= response.status_code < 600:
+            raise _Retryable(f"server error {response.status_code}")
+        if response.status_code >= 400:
+            raise SpeakerReferenceUnavailable(
+                f"Java rejected request: {response.status_code}"
+            )
+        envelope = response.json()
+        if not envelope.get("success"):
+            err = (envelope.get("error") or {}).get("code", "UNKNOWN")
+            raise SpeakerReferenceUnavailable(f"Java envelope error: {err}")
+        items = (envelope.get("data") or {}).get("items") or []
+        by_person: dict[str, list[float]] = {}
+        for item in items:
+            person_id = item.get("personId")
+            values = item.get("values")
+            if isinstance(person_id, str) and isinstance(values, list):
+                by_person[person_id] = [float(x) for x in values]
+        # Hash for debug logs without leaking plaintext.
+        person_hash = hashlib.sha256(",".join(sorted(by_person.keys())).encode()).hexdigest()[:12]
+        _log.info(
+            "speaker_reference_resolved tenant=%s requested=%d resolved=%d hash=%s",
+            tenant_id, len(person_ids), len(by_person), person_hash,
+        )
+        return by_person
+
+
+class _Retryable(Exception):
+    pass
+
+
+def _sign(secret: str, method: str, path: str, body: bytes, timestamp: str, nonce: str) -> str:
+    body_hash = hashlib.sha256(body).hexdigest()
+    signing = f"{timestamp}\n{nonce}\n{method}\n{path}\n{body_hash}"
+    mac = hmac.new(secret.encode("utf-8"), signing.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"hmac-sha256={mac}"
+
+
+def _utc_iso_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def build_default_client() -> JavaSpeakerReferenceClient:
+    base = settings.meeting_api_base_url
+    secret = settings.internal_api_hmac_secret
+    return JavaSpeakerReferenceClient(base_url=base, secret=secret)
+
+
+__all__ = [
+    "JavaSpeakerReferenceClient",
+    "SpeakerReferenceUnavailable",
+    "build_default_client",
+]
+
+
+# Silence unused import warning while keeping base64 reserved for future
+# embedding-bytes encoding work without re-import churn.
+_ = base64

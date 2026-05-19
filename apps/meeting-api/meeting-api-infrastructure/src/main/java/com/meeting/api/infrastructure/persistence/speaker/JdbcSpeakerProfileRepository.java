@@ -103,6 +103,27 @@ public class JdbcSpeakerProfileRepository implements SpeakerProfileRepository {
     }
 
     @Override
+    public List<SpeakerProfile> findByPersonIds(String tenantId, List<String> personIds) {
+        if (personIds == null || personIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(personIds.size(), "?"));
+        Object[] params = new Object[personIds.size() + 1];
+        params[0] = tenantId;
+        for (int i = 0; i < personIds.size(); i++) {
+            params[i + 1] = personIds.get(i);
+        }
+        return jdbcTemplate.query(
+            "SELECT id, tenant_id, person_id, display_name_snapshot, consent_status, consent_source, consent_version,"
+                + " enrolled_by, revoked_at, deleted_at, created_at, updated_at"
+                + " FROM speaker_profiles WHERE tenant_id = ? AND person_id IN (" + placeholders + ")"
+                + " AND consent_status = 'ACTIVE' AND deleted_at IS NULL",
+            (rs, n) -> mapRow(rs),
+            params
+        );
+    }
+
+    @Override
     public void updateConsentStatus(String tenantId, String profileId, String consentStatus,
                                      OffsetDateTime revokedAt, OffsetDateTime deletedAt, OffsetDateTime updatedAt) {
         jdbcTemplate.update(
