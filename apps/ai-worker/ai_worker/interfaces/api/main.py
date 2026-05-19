@@ -28,7 +28,6 @@ from ai_worker.model_runtime.rerank import (
 from ai_worker.observability.gpu_metrics import refresh_gpu_metrics
 from ai_worker.observability.model_checksum import compute_checksum
 
-
 def _error_response(
     status_code: int,
     code: str,
@@ -421,7 +420,31 @@ def create_app() -> FastAPI:
     return app
 
 
+def _mount_admin_router(app: FastAPI) -> None:
+    """Phase 9 workstation BFF — included only when ``java_api_base_url`` is configured.
+
+    Tests for the admin module construct their own router via
+    :func:`ai_worker.admin.build_admin_router` with a mocked Java client; in
+    production, this is invoked from :func:`create_app` when the env is wired.
+    """
+    if not settings.java_api_base_url:
+        return
+    from ai_worker.admin import build_admin_router
+    from ai_worker.admin.session_store import enrollment_session_store
+
+    app.include_router(build_admin_router())
+
+    @app.on_event("startup")
+    async def _start_session_cleanup() -> None:
+        await enrollment_session_store.start_cleanup_loop()
+
+    @app.on_event("shutdown")
+    async def _stop_session_cleanup() -> None:
+        await enrollment_session_store.stop_cleanup_loop()
+
+
 app = create_app()
+_mount_admin_router(app)
 
 
 def run() -> None:

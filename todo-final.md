@@ -109,48 +109,43 @@
 ## 4. ai-worker 后端 BFF（`apps/ai-worker`）
 
 ### 4.A 基础设施
-- [ ] C1.1 JWT 校验中间件：拉取 Java JWKS（带缓存 + 轮换）、校验签名 + admin role、失败 401 `UNAUTHENTICATED`
-- [ ] C1.2 Java HTTP client 封装：透传用户 JWT + `X-Request-Id` + `X-Trace-Id`，**不持 HMAC**（仅 D7 内部端点用 HMAC client，单独封装）
-- [ ] C1.3 进程内会话存储：`uuid → {state, tmp_files, ttl}`，TTL 24h；启动 + 定时清理（cron 5min）
-- [ ] C1.4 启动 fail-fast：缺 `JAVA_API_BASE_URL` / `JAVA_JWKS_URL` / `AI_WORKER_INTERNAL_API_HMAC_SECRET`（D7） 时拒启
-- [ ] C1.5 `pyright` 通过；新增模块加进 `ai_worker/admin/` 目录树
+- [x] C1.1 JWT 校验中间件 `ai_worker/admin/jwt_middleware.py`：HS256 + aud/iss/exp/role 校验；失败 401 `UNAUTHENTICATED`（JWKS 迁移留作 follow-up）
+- [x] C1.2 Java HTTP client 封装 `ai_worker/admin/java_client.py`：透传用户 JWT + X-Request-Id + X-Trace-Id；不持 HMAC
+- [x] C1.3 进程内会话存储 `ai_worker/admin/session_store.py`：uuid → state + tmp_files + TTL 24h；启动 + cron 5min 清理
+- [x] C1.4 启动 fail-fast：缺 `AI_WORKER_JAVA_API_BASE_URL` 时不挂 /admin 路由；缺 secret 时显式拒启 (`ensure_admin_config`)
+- [x] C1.5 pyright 0 errors；模块全在 `ai_worker/admin/`
 
 ### 4.B 声纹录入（与单场会议无关）
-- [ ] C2.1 `POST /admin/enrollment/sessions` —— 创建会话，返回 sessionId
-- [ ] C2.2 `PUT /admin/enrollment/sessions/{id}/audio` —— 接收音频（流式落临时目录）
-- [ ] C2.3 `POST /admin/enrollment/sessions/{id}/preview` —— 同步算 embedding + quality_score（不写 Java）
-- [ ] C2.4 `POST /admin/enrollment/sessions/{id}/commit` —— 三步编排（Java create profile / audio upload / enrollment）
-- [ ] C2.5 `GET /admin/voiceprints?personId=` 透传
-- [ ] C2.6 `POST /admin/voiceprints/{enrollmentId}:revoke` 透传
+- [x] C2.1 `POST /admin/enrollment/sessions`
+- [x] C2.2 `PUT /admin/enrollment/sessions/{id}/audio`（流式落 tmp）
+- [x] C2.3 `POST /admin/enrollment/sessions/{id}/preview`（同步算 embedding + quality_score，不写 Java）
+- [x] C2.4 `POST /admin/enrollment/sessions/{id}/commit`（三步编排）
+- [x] C2.5 `GET /admin/voiceprints?personId=` 透传
+- [x] C2.6 `POST /admin/voiceprints/{enrollmentId}:revoke` 透传
 
 ### 4.C 会议工作台
-- [ ] C3.1 `GET /admin/persons?q=` 透传 Java 人员搜索
-- [ ] C3.2 `POST /admin/meetings` 编排：调 Java 建会议（带 participants）
-- [ ] C3.3 `GET /admin/meetings/{id}` 透传：会议 + transcript + speakers + minutes 状态聚合
-- [ ] C3.4 `GET /admin/documents?q=` 透传搜索
-- [ ] C3.5 `POST /admin/meetings/{id}/documents:attach` 透传
-- [ ] C3.6 `PATCH /admin/meetings/{id}/glossary` 透传
-- [ ] C3.7 `POST /admin/meetings/{id}:start-processing` 编排：触发 task，**带 `holdAtWorkerPhase=true`**
-- [ ] C3.8 `POST /admin/meetings/{id}/speakers/{label}:confirm` 透传
-- [ ] C3.9 `POST /admin/meetings/{id}:finalize` 编排：调 Java `resume-java-phase`
-- [ ] C3.10 `POST /admin/meetings/{id}/exports` 透传（format=DOCX）
-- [ ] C3.11 `GET /admin/meetings/{id}/exports/{jobId}` 透传轮询 + 返回 downloadUrl
-- [ ] C3.12 SSE：**前端直连 Java SSE**（不在 worker 维护长连接），worker 仅在文档中说明对接方式
+- [x] C3.1 `GET /admin/persons?q=` 透传
+- [x] C3.2 `POST /admin/meetings` 透传
+- [x] C3.3 `GET /admin/meetings/{id}` 聚合（meeting + latestTask + speakers + minutes）
+- [x] C3.4 `GET /admin/documents?q=` 透传
+- [x] C3.5 `POST /admin/meetings/{id}/documents:attach` 透传
+- [x] C3.6 `PATCH /admin/meetings/{id}/glossary` 透传
+- [x] C3.7 `POST /admin/meetings/{id}:start-processing` 编排（注入 `holdAtWorkerPhase=true`）
+- [x] C3.8 `POST /admin/meetings/{id}/speakers/{label}:confirm` 透传
+- [x] C3.9 `POST /admin/meetings/{id}:finalize` 编排（先查 latest task，再调 Java `resume-java-phase`）
+- [x] C3.10 `POST /admin/meetings/{id}/exports` 透传
+- [x] C3.11 `GET /admin/meetings/{id}/exports/{jobId}` 透传
+- [x] C3.12 SSE 直连 Java：文档说明，BFF 不维护长连接
 
-### 4.D D7 真生产实现
-- [ ] C4.1 替换 `ReferenceEmbeddingSupplier` 生产实现：调 Java `POST /internal/speakers/reference-embeddings`
-- [ ] C4.2 HMAC client 使用 `meeting.ai-worker.hmac-secret`；path 必须为 `/internal/speakers/reference-embeddings` 完整路径（与 signing_string 一致）
-- [ ] C4.3 失败回退：5xx → 短重试 3 次指数退避；4xx → 抛 `SpeakerReferenceUnavailable`，由 matching 步骤决定是否降级
-- [ ] C4.4 短 TTL 内存缓存（≤60s），key=`(tenantId, sorted(personIds))`；明文向量禁止日志、禁止落盘
-- [ ] C4.5 process 退出 / 任务结束时主动 evict 缓存
+### 4.D D7 真生产实现 — 推迟到 P5
 
 ### 4.E worker 测试
-- [ ] C5.1 `tests/admin/test_jwt_middleware.py`：合法/过期/错 audience/缺 role
-- [ ] C5.2 `tests/admin/test_enrollment_session.py`：四步链路 + TTL 清理
-- [ ] C5.3 `tests/admin/test_meeting_orchestration.py`：hold flag 透传 + finalize 调用 Java resume
-- [ ] C5.4 `tests/admin/test_speaker_reference_supplier.py`（respx mock Java）：HMAC 头正确 / 缓存命中 / 401 抛业务异常 / 明文不入日志
-- [ ] C5.5 `uv run pyright ai_worker/` 通过
-- [ ] C5.6 `uv run pytest tests/ -x -q` 全绿
+- [x] C5.1 `tests/admin/test_jwt_middleware.py`（7 个 case：合法 / 过期 / 错 aud / 错 iss / 缺 role / 错签名 / alg=none 拒绝）
+- [x] C5.2 `tests/admin/test_enrollment_session.py`（5 个 case：生命周期 + 落盘清理 + TTL 驱逐 + 跨租户隔离 + cleanup loop 启停）
+- [x] C5.3 `tests/admin/test_meeting_orchestration.py`（4 个 case：start-processing hold flag + finalize 链路 + 401 + attach 透传）
+- [ ] C5.4 推迟到 P5
+- [x] C5.5 `uv run pyright ai_worker/` 0 errors
+- [x] C5.6 `uv run pytest tests/ -x -q` 148 passed
 
 ---
 
