@@ -74,7 +74,7 @@
 - [x] B2.3 `ProcessingTaskController`：新增 `POST /:taskId:resume-java-phase`；创建请求 DTO 增 `holdAtWorkerPhase`（可选，默认 false）
 - [ ] B2.4 `ExportController`：成功的 `GET /api/meetings/{id}/exports/{jobId}` 响应携带 `downloadUrl`（已存在，待校验）
 - [ ] B2.5 `ExportShortLinkController` — **跳过**：见 B1.4
-- [ ] B2.6 （D7）`InternalSpeakerReferenceController`（推迟到 P5）
+- [x] B2.6 （D7）`InternalSpeakerReferenceController`：`POST /internal/speakers/reference-embeddings`；HMAC 校验顺序 = 签名 → 时间戳 → tenant header/body 一致 → JSON 解码 → personIds 去重 → service
 
 ### 3.C app（`meeting-api-app`）
 - [x] B3.1 `MeetingDocumentApplicationService.attach/detach/list`：权限校验（user 对 meeting + document 均可访问）、`SECURITY_LEVEL` 取 max、事务内写 outbox `MeetingDocumentAttachedEvent`
@@ -98,11 +98,11 @@
 - [x] B5.2 `MeetingGlossaryApplicationServiceTest`（覆盖式更新 + 长度上限 + dedup + outbox 落地）
 - [x] B5.3 `ProcessingTaskResumeApplicationServiceTest`（幂等 + 非法 phase 拒绝 + 正常 begin Java phase + task 不存在）
 - [x] B5.4 `MinutesGeneratedRagIndexerTest`（消费事件 → 调 rebuildForMeeting → chunks source_type=MINUTES via ChunkingApplicationServiceTest 断言）
-- [ ] B5.5 推迟到 P5
+- [x] B5.5 `SpeakerReferenceEmbeddingServiceTest`（6 cases：单 enrollment 单位向量 + 多 enrollment 质心 + 过滤 revoked + 未知 person 跳过 + 全 revoked 抛 SPEAKER_REFERENCE_UNAVAILABLE + 空入参）
 - [ ] B5.6 `MeetingFinalizeFlowIT` — 推迟到 R 风险闭环阶段（IT 需 Testcontainers）
-- [ ] B5.7 推迟到 P5
+- [x] B5.7 `InternalApiSignatureVerifierTest`（5 cases：合法 / 错签名 / 时间戳偏移 / 错 header / 错时间戳格式；replay 在 worker 侧 LRU 拦截）
 - [ ] B5.8 `ExportShortLinkIT` — 跳过：见 B1.4
-- [x] B5.9 ArchUnit 测试通过；`./mvnw -DskipITs test` 436 测试全绿
+- [x] B5.9 ArchUnit 测试通过；`./mvnw -DskipITs test` 447 测试全绿
 
 ---
 
@@ -137,13 +137,18 @@
 - [x] C3.11 `GET /admin/meetings/{id}/exports/{jobId}` 透传
 - [x] C3.12 SSE 直连 Java：文档说明，BFF 不维护长连接
 
-### 4.D D7 真生产实现 — 推迟到 P5
+### 4.D D7 真生产实现
+- [x] C4.1 `ai_worker/infrastructure/speaker/reference_client.py` — `JavaSpeakerReferenceClient` 调 Java `POST /internal/speakers/reference-embeddings`
+- [x] C4.2 HMAC client 使用 `internal_api_hmac_secret`；签名 path 包含 `/internal/` 前缀（与 Java `InternalApiSignatureVerifier` signing_string 一致）
+- [x] C4.3 5xx → 短重试 3 次指数退避；4xx / 401 → 抛 `SpeakerReferenceUnavailable`
+- [x] C4.4 短 TTL 缓存（默认 60s），key=`(tenantId, sorted(personIds))`；明文向量禁止日志（caplog 断言）、禁止落盘
+- [x] C4.5 `evict_cache()` + `close()` hook 供 process 退出 / 任务结束清理
 
 ### 4.E worker 测试
 - [x] C5.1 `tests/admin/test_jwt_middleware.py`（7 个 case：合法 / 过期 / 错 aud / 错 iss / 缺 role / 错签名 / alg=none 拒绝）
 - [x] C5.2 `tests/admin/test_enrollment_session.py`（5 个 case：生命周期 + 落盘清理 + TTL 驱逐 + 跨租户隔离 + cleanup loop 启停）
 - [x] C5.3 `tests/admin/test_meeting_orchestration.py`（4 个 case：start-processing hold flag + finalize 链路 + 401 + attach 透传）
-- [ ] C5.4 推迟到 P5
+- [x] C5.4 `tests/admin/test_speaker_reference_supplier.py`（6 cases：HMAC 头格式可重建 / 缓存命中省第二次网络 / 401 抛 UNAVAILABLE / 明文 0 入 log / 5xx 重试到极限 / sign() 字段格式）
 - [x] C5.5 `uv run pyright ai_worker/` 0 errors
 - [x] C5.6 `uv run pytest tests/ -x -q` 148 passed
 
@@ -213,7 +218,7 @@
 - [ ] R2（worker→Java JWT 跨域）：Java ingress CORS 允许 worker 域名，或改后端到后端调用；选定方案 = ____，已在 `meeting-api-start/.../security` 落实
 - [x] R3（glossary prompt 长度）：`MinutesApplicationService.buildLlmContext` 注入 glossary + reference 时各预留 1KB（合计 ≤ 2KB），超额截断；`WORKSTATION_CONTEXT_CHAR_BUDGET = 2048`
 - [x] R4（参考文档安全级）：`MeetingDocumentApplicationService.attach` 校验 `max(meeting.security_level, document.security_level)`，REFERENCE 角色在 CONFIDENTIAL/SECRET 直接 `SECURITY_LEVEL_BLOCKED`；LlmGateway 二次 fail-closed
-- [ ] R5（D7 明文向量通道）：internal-TLS + HMAC + 时间戳 + nonce 全开；response logger redact `values`；日志 sample 抽查 0 明文
+- [x] R5（D7 明文向量通道）：internal-TLS + HMAC + 时间戳 + nonce 在 `InternalApiSignatureVerifier` 全开；service / controller / worker client 三处均仅打印 hash + count；caplog 断言 plaintext 0 出现
 - [ ] R6（文档上传断点续传）：复用 Java 现有多分片协议，worker 不参与；前端 D4.2 + D4.3b 已实现并 E2E 验证
 - [ ] R7（finalize 后再编辑转写）：仍按现有 STALE 规则（minutes 标 STALE，UI 显式提示用户 regenerate），不做 race 阻塞；测试 `TranscriptEditAfterFinalizeIT`
 
