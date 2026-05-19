@@ -3,6 +3,7 @@ package com.meeting.api.app.task;
 import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.client.enums.DocumentRole;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.task.CancelTaskCommand;
@@ -12,6 +13,8 @@ import com.meeting.api.client.task.ProcessingTaskFacade;
 import com.meeting.api.client.task.ResumeJavaPhaseCommand;
 import com.meeting.api.client.task.RetryTaskCommand;
 import com.meeting.api.domain.meeting.Meeting;
+import com.meeting.api.domain.meeting.MeetingDocumentRepository;
+import com.meeting.api.domain.meeting.MeetingGlossaryRepository;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -19,6 +22,7 @@ import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +77,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     private final MessagePublisher messagePublisher;
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
+    private final MeetingGlossaryRepository glossaryRepository;
+    private final MeetingDocumentRepository meetingDocumentRepository;
 
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -80,7 +86,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         MessagePublisher messagePublisher,
         TenantScopedTransaction tenantScopedTransaction
     ) {
-        this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction, Clock.systemUTC());
+        this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
+            Clock.systemUTC(), null, null);
     }
 
     public ProcessingTaskApplicationService(
@@ -90,11 +97,26 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         TenantScopedTransaction tenantScopedTransaction,
         Clock clock
     ) {
+        this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
+            clock, null, null);
+    }
+
+    public ProcessingTaskApplicationService(
+        ProcessingTaskRepository taskRepository,
+        MeetingRepository meetingRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        Clock clock,
+        MeetingGlossaryRepository glossaryRepository,
+        MeetingDocumentRepository meetingDocumentRepository
+    ) {
         this.taskRepository = taskRepository;
         this.meetingRepository = meetingRepository;
         this.messagePublisher = messagePublisher;
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.clock = clock;
+        this.glossaryRepository = glossaryRepository;
+        this.meetingDocumentRepository = meetingDocumentRepository;
     }
 
     @Override
@@ -315,11 +337,41 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion());
         payload.put("options", command.options() == null ? Map.of() : command.options());
         payload.put("traceId", command.traceId() == null ? "" : command.traceId());
+        addWorkstationContext(payload, task.tenantId(), task.meetingId());
         if (task.holdAtWorkerPhase()) {
             // Worker MUST NOT branch on this; Java reads it on the WORKER_PHASE_COMPLETED listener.
             payload.put("controlFlags", Map.of("holdAtWorkerPhase", true));
         }
         return payload;
+    }
+
+    /**
+     * Workstation D1 / D2 — append meeting-scoped glossary + REFERENCE document ids to
+     * the task message so ai-worker can (optionally) bias hot-words and so the Java
+     * minutes generation can pull the same set deterministically. If either repository
+     * is unwired (legacy tests), this is a no-op.
+     */
+    private void addWorkstationContext(Map<String, Object> payload, String tenantId, String meetingId) {
+        if (meetingId == null) return;
+        if (glossaryRepository != null) {
+            glossaryRepository.findByMeetingId(tenantId, meetingId).ifPresent(terms -> {
+                if (!terms.isEmpty()) {
+                    payload.put("glossaryTerms",
+                        terms.stream().map(MeetingGlossaryRepository.GlossaryTerm::term).toList());
+                }
+            });
+        }
+        if (meetingDocumentRepository != null) {
+            List<String> referenceDocIds = new ArrayList<>();
+            for (var row : meetingDocumentRepository.listByMeeting(tenantId, meetingId)) {
+                if (row.role() == DocumentRole.REFERENCE) {
+                    referenceDocIds.add(row.documentId());
+                }
+            }
+            if (!referenceDocIds.isEmpty()) {
+                payload.put("referenceDocumentIds", referenceDocIds);
+            }
+        }
     }
 
     private Map<String, Object> phase2TaskMessagePayload(
@@ -331,33 +383,37 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         long fileSizeBytes,
         String traceId
     ) {
-        return Map.ofEntries(
-            Map.entry("taskId", task.taskId()),
-            Map.entry("taskType", task.taskType()),
-            Map.entry("tenantId", task.tenantId()),
-            Map.entry("meetingId", task.meetingId()),
-            Map.entry("securityLevel", "INTERNAL"),
-            Map.entry("attemptNo", task.attemptNo()),
-            Map.entry("pipelineSteps", PHASE2_WORKER_STEPS.stream().map(Enum::name).toList()),
-            Map.entry("expectedInputVersion", Map.of("chunkStrategyVersion", "v1")),
-            Map.entry("language", meeting.language()),
-            Map.entry("channelMap", Map.of("channelCount", 1, "layout", "mono")),
-            Map.entry("knownParticipants", knownParticipantIds(meeting)),
-            Map.entry("minSpeakers", 1),
-            Map.entry("maxSpeakers", 4),
-            Map.entry("audioFileId", fileId),
-            Map.entry("audioUri", audioUri),
-            Map.entry("options", Map.of(
-                "enableAsr", true,
-                "enableDiarization", true,
-                "enableSpeakerRecognition", false,
-                "enableRagIndexing", false,
-                "enableAlignment", false,
-                "inputAudioSha256", fileSha256,
-                "inputAudioSizeBytes", fileSizeBytes
-            )),
-            Map.entry("traceId", traceId == null || traceId.isBlank() ? "trace_" + task.taskId() : traceId)
-        );
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("taskId", task.taskId());
+        payload.put("taskType", task.taskType());
+        payload.put("tenantId", task.tenantId());
+        payload.put("meetingId", task.meetingId());
+        payload.put("securityLevel", "INTERNAL");
+        payload.put("attemptNo", task.attemptNo());
+        payload.put("pipelineSteps", PHASE2_WORKER_STEPS.stream().map(Enum::name).toList());
+        payload.put("expectedInputVersion", Map.of("chunkStrategyVersion", "v1"));
+        payload.put("language", meeting.language());
+        payload.put("channelMap", Map.of("channelCount", 1, "layout", "mono"));
+        payload.put("knownParticipants", knownParticipantIds(meeting));
+        payload.put("minSpeakers", 1);
+        payload.put("maxSpeakers", 4);
+        payload.put("audioFileId", fileId);
+        payload.put("audioUri", audioUri);
+        payload.put("options", Map.of(
+            "enableAsr", true,
+            "enableDiarization", true,
+            "enableSpeakerRecognition", false,
+            "enableRagIndexing", false,
+            "enableAlignment", false,
+            "inputAudioSha256", fileSha256,
+            "inputAudioSizeBytes", fileSizeBytes
+        ));
+        payload.put("traceId", traceId == null || traceId.isBlank() ? "trace_" + task.taskId() : traceId);
+        addWorkstationContext(payload, task.tenantId(), task.meetingId());
+        if (task.holdAtWorkerPhase()) {
+            payload.put("controlFlags", Map.of("holdAtWorkerPhase", true));
+        }
+        return payload;
     }
 
     private Map<String, Object> speakerEnrollmentMessagePayload(

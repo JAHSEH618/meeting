@@ -81,7 +81,11 @@
 - [x] B3.2 `MeetingGlossaryApplicationService.update/read`：事务内更新 `meetings.glossary_terms`，写 outbox `MeetingGlossaryUpdatedEvent`；term 数量上限 ≤200 + 单 term 长度 ≤64
 - [x] B3.3 `WorkerPhaseCompletedListener` 增加 hold 分支
 - [x] B3.4 `ProcessingTaskResumeApplicationService.resumeJavaPhase(taskId)`：幂等、校验 phase=WORKER_DAG_DONE
-- [ ] B3.5–B3.10 推迟到 P2 / P5
+- [x] B3.5 `ProcessingTaskApplicationService.create` + `createForCompletedAudioUpload`：构造 task message 时把 `glossaryTerms` + `referenceDocumentIds` 透传进 MQ payload
+- [x] B3.6 `MinutesApplicationService.generateForTask`：拼 prompt 时拉 glossary（按 2k char 预算截断，R3）+ 拉 reference document 内容；SECURITY_LEVEL=CONFIDENTIAL/SECRET 由 LlmGateway fail-closed
+- [x] B3.7 `MinutesApplicationService.generateForTask` 末尾：事务内写 outbox `MinutesGeneratedEvent` + ApplicationEventPublisher 触发
+- [x] B3.8 `MinutesGeneratedRagIndexer`（独立 listener）：消费 `MinutesGeneratedEvent` → 调 `ChunkingApplicationService.rebuildForMeeting`；chunks 落库时 `source_type=MINUTES`
+- [ ] B3.9–B3.10 推迟到 P5
 
 ### 3.D infrastructure（`meeting-api-infrastructure`）
 - [x] B4.1 `JdbcMeetingDocumentRepository` / `JdbcMeetingGlossaryRepository`（D5 已有 `JdbcExportJobRepository`）
@@ -93,9 +97,12 @@
 - [x] B5.1 `MeetingDocumentApplicationServiceTest`（attach/detach/list + 权限拒绝 + 安全级 max + REFERENCE on CONFIDENTIAL fail-closed）
 - [x] B5.2 `MeetingGlossaryApplicationServiceTest`（覆盖式更新 + 长度上限 + dedup + outbox 落地）
 - [x] B5.3 `ProcessingTaskResumeApplicationServiceTest`（幂等 + 非法 phase 拒绝 + 正常 begin Java phase + task 不存在）
-- [ ] B5.4–B5.7 推迟到 P2 / P5
+- [x] B5.4 `MinutesGeneratedRagIndexerTest`（消费事件 → 调 rebuildForMeeting → chunks source_type=MINUTES via ChunkingApplicationServiceTest 断言）
+- [ ] B5.5 推迟到 P5
+- [ ] B5.6 `MeetingFinalizeFlowIT` — 推迟到 R 风险闭环阶段（IT 需 Testcontainers）
+- [ ] B5.7 推迟到 P5
 - [ ] B5.8 `ExportShortLinkIT` — 跳过：见 B1.4
-- [x] B5.9 ArchUnit 测试通过；`./mvnw -DskipITs test` 433 测试全绿
+- [x] B5.9 ArchUnit 测试通过；`./mvnw -DskipITs test` 436 测试全绿
 
 ---
 
@@ -209,8 +216,8 @@
 
 - [x] R1（docx 渲染）：P0.1 摸底完成 → 现状已确认 = Apache POI XWPF (`DocxExportGateway`)；本期改动 = 不动渲染栈，仅在 `MinutesApplicationService` 注入 glossary + reference document 摘要
 - [ ] R2（worker→Java JWT 跨域）：Java ingress CORS 允许 worker 域名，或改后端到后端调用；选定方案 = ____，已在 `meeting-api-start/.../security` 落实
-- [ ] R3（glossary prompt 长度）：`MinutesApplicationService` 注入 glossary 时预留 token 预算（建议 ≤2k tokens），超额按 term 权重截断；测试 `MinutesGlossaryTokenBudgetTest`
-- [ ] R4（参考文档安全级）：`MeetingDocumentApplicationService.attach` 校验 `max(meeting.security_level, document.security_level)` ≤ 调 LLM 允许等级；SECRET fail-closed；IT 覆盖
+- [x] R3（glossary prompt 长度）：`MinutesApplicationService.buildLlmContext` 注入 glossary + reference 时各预留 1KB（合计 ≤ 2KB），超额截断；`WORKSTATION_CONTEXT_CHAR_BUDGET = 2048`
+- [x] R4（参考文档安全级）：`MeetingDocumentApplicationService.attach` 校验 `max(meeting.security_level, document.security_level)`，REFERENCE 角色在 CONFIDENTIAL/SECRET 直接 `SECURITY_LEVEL_BLOCKED`；LlmGateway 二次 fail-closed
 - [ ] R5（D7 明文向量通道）：internal-TLS + HMAC + 时间戳 + nonce 全开；response logger redact `values`；日志 sample 抽查 0 明文
 - [ ] R6（文档上传断点续传）：复用 Java 现有多分片协议，worker 不参与；前端 D4.2 + D4.3b 已实现并 E2E 验证
 - [ ] R7（finalize 后再编辑转写）：仍按现有 STALE 规则（minutes 标 STALE，UI 显式提示用户 regenerate），不做 race 阻塞；测试 `TranscriptEditAfterFinalizeIT`

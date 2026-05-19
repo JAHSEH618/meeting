@@ -173,7 +173,7 @@ public class ChunkingApplicationService {
                             .id(newChunkId("min"))
                             .tenantId(tenantId)
                             .meetingId(meetingId)
-                            .sourceType(KnowledgeSourceType.AI_SUMMARY)
+                            .sourceType(KnowledgeSourceType.MINUTES)
                             .sourceId(minutes.id() + ":sec_" + sectionIdx + ":itm_" + itemIdx + "#" + sub)
                             .content(piece)
                             .contentHash(sha256(piece))

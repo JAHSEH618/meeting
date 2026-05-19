@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.client.enums.DocumentRole;
 import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.minutes.MinutesDTO;
@@ -12,22 +13,29 @@ import com.meeting.api.client.minutes.MinutesFacade;
 import com.meeting.api.client.minutes.MinutesItemDTO;
 import com.meeting.api.client.minutes.MinutesSectionDTO;
 import com.meeting.api.client.minutes.RegenerateMinutesCommand;
+import com.meeting.api.domain.document.DocumentChunkRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.meeting.Meeting;
+import com.meeting.api.domain.meeting.MeetingDocumentRepository;
+import com.meeting.api.domain.meeting.MeetingGlossaryRepository;
 import com.meeting.api.domain.meeting.MeetingRepository;
+import com.meeting.api.domain.minutes.MinutesGeneratedEvent;
 import com.meeting.api.domain.minutes.MinutesRepository;
+import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.transcript.TranscriptRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -50,6 +58,14 @@ public class MinutesApplicationService implements MinutesFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
+    private final MessagePublisher messagePublisher;
+    private final MeetingGlossaryRepository glossaryRepository;
+    private final MeetingDocumentRepository meetingDocumentRepository;
+    private final DocumentChunkRepository documentChunkRepository;
+
+    /** Token budget for glossary + reference document snippets (~2k chars, R3). */
+    static final int WORKSTATION_CONTEXT_CHAR_BUDGET = 2048;
 
     public MinutesApplicationService(
         MeetingRepository meetingRepository,
@@ -59,7 +75,8 @@ public class MinutesApplicationService implements MinutesFacade {
         TenantScopedTransaction tenantScopedTransaction,
         ObjectMapper objectMapper
     ) {
-        this(meetingRepository, minutesRepository, transcriptRepository, llmGateway, tenantScopedTransaction, objectMapper, Clock.systemUTC());
+        this(meetingRepository, minutesRepository, transcriptRepository, llmGateway,
+            tenantScopedTransaction, objectMapper, Clock.systemUTC(), null, null, null, null, null);
     }
 
     public MinutesApplicationService(
@@ -71,6 +88,40 @@ public class MinutesApplicationService implements MinutesFacade {
         ObjectMapper objectMapper,
         Clock clock
     ) {
+        this(meetingRepository, minutesRepository, transcriptRepository, llmGateway,
+            tenantScopedTransaction, objectMapper, clock, null, null, null, null, null);
+    }
+
+    public MinutesApplicationService(
+        MeetingRepository meetingRepository,
+        MinutesRepository minutesRepository,
+        TranscriptRepository transcriptRepository,
+        LlmGateway llmGateway,
+        TenantScopedTransaction tenantScopedTransaction,
+        ObjectMapper objectMapper,
+        Clock clock,
+        ApplicationEventPublisher applicationEventPublisher,
+        MessagePublisher messagePublisher
+    ) {
+        this(meetingRepository, minutesRepository, transcriptRepository, llmGateway,
+            tenantScopedTransaction, objectMapper, clock, applicationEventPublisher, messagePublisher,
+            null, null, null);
+    }
+
+    public MinutesApplicationService(
+        MeetingRepository meetingRepository,
+        MinutesRepository minutesRepository,
+        TranscriptRepository transcriptRepository,
+        LlmGateway llmGateway,
+        TenantScopedTransaction tenantScopedTransaction,
+        ObjectMapper objectMapper,
+        Clock clock,
+        ApplicationEventPublisher applicationEventPublisher,
+        MessagePublisher messagePublisher,
+        MeetingGlossaryRepository glossaryRepository,
+        MeetingDocumentRepository meetingDocumentRepository,
+        DocumentChunkRepository documentChunkRepository
+    ) {
         this.meetingRepository = meetingRepository;
         this.minutesRepository = minutesRepository;
         this.transcriptRepository = transcriptRepository;
@@ -78,6 +129,11 @@ public class MinutesApplicationService implements MinutesFacade {
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.applicationEventPublisher = applicationEventPublisher;
+        this.messagePublisher = messagePublisher;
+        this.glossaryRepository = glossaryRepository;
+        this.meetingDocumentRepository = meetingDocumentRepository;
+        this.documentChunkRepository = documentChunkRepository;
     }
 
     @Override
@@ -143,11 +199,7 @@ public class MinutesApplicationService implements MinutesFacade {
             CAPABILITY,
             TASK_NAME,
             meeting.securityLevel(),
-            Map.of(
-                "meetingTitle", meeting.title(),
-                "meetingId", command.meetingId(),
-                "transcript", renderTranscript(segments)
-            ),
+            buildLlmContext(meeting, command, segments),
             null,
             null
         ));
@@ -177,7 +229,105 @@ public class MinutesApplicationService implements MinutesFacade {
         minutesRepository.save(record);
         minutesRepository.incrementMeetingMinutesVersion(command.tenantId(), command.meetingId(), newMinutesVersion);
         log.info("minutes_regenerated tenant={} meeting={} minutesVersion={}", command.tenantId(), command.meetingId(), newMinutesVersion);
+        publishMinutesGenerated(command.tenantId(), command.meetingId(), minutesId, newMinutesVersion, currentTranscriptVersion, now);
         return toDto(record);
+    }
+
+    private void publishMinutesGenerated(
+        String tenantId,
+        String meetingId,
+        String minutesId,
+        int minutesVersion,
+        int transcriptVersion,
+        OffsetDateTime now
+    ) {
+        MinutesGeneratedEvent event = new MinutesGeneratedEvent(
+            "evt_" + UUID.randomUUID().toString().replace("-", ""),
+            tenantId, meetingId, minutesId, minutesVersion, transcriptVersion,
+            1L, now
+        );
+        // In-process: MinutesGeneratedRagIndexer @TransactionalEventListener(AFTER_COMMIT)
+        // picks this up to trigger chunking + embed-task dispatch (D4).
+        if (applicationEventPublisher != null) {
+            applicationEventPublisher.publishEvent(event);
+        }
+        // Outbox: downstream analytics / SSE finalize signal consumers.
+        if (messagePublisher != null) {
+            messagePublisher.publish(event);
+        }
+    }
+
+    private Map<String, Object> buildLlmContext(
+        Meeting meeting,
+        RegenerateMinutesCommand command,
+        List<TranscriptRepository.TranscriptSegmentRecord> segments
+    ) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("meetingTitle", meeting.title());
+        context.put("meetingId", command.meetingId());
+        context.put("transcript", renderTranscript(segments));
+
+        // Workstation D2 — glossary terms (token-budget capped, R3).
+        String glossaryBlock = glossaryBlockFor(command.tenantId(), command.meetingId());
+        if (!glossaryBlock.isEmpty()) {
+            context.put("glossary", glossaryBlock);
+        }
+        // Workstation D1 — REFERENCE document summaries.
+        // The LlmGateway already fail-closes on CONFIDENTIAL / SECRET meetings, so we don't need
+        // to re-check here. If the gateway lets the call through, the meeting is PUBLIC / INTERNAL
+        // and references with effectively-elevated security were rejected at attach time (R4).
+        String referenceBlock = referenceBlockFor(command.tenantId(), command.meetingId());
+        if (!referenceBlock.isEmpty()) {
+            context.put("referenceDocuments", referenceBlock);
+        }
+        return context;
+    }
+
+    private String glossaryBlockFor(String tenantId, String meetingId) {
+        if (glossaryRepository == null) return "";
+        var stored = glossaryRepository.findByMeetingId(tenantId, meetingId);
+        if (stored.isEmpty() || stored.get().isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int budget = WORKSTATION_CONTEXT_CHAR_BUDGET / 2;
+        for (var term : stored.get()) {
+            String line = term.term()
+                + (term.definition() != null && !term.definition().isBlank()
+                    ? ": " + term.definition() : "")
+                + (term.aliases() != null && !term.aliases().isEmpty()
+                    ? " (aka " + String.join(", ", term.aliases()) + ")" : "")
+                + "\n";
+            if (sb.length() + line.length() > budget) {
+                sb.append("…\n");
+                break;
+            }
+            sb.append(line);
+        }
+        return sb.toString();
+    }
+
+    private String referenceBlockFor(String tenantId, String meetingId) {
+        if (meetingDocumentRepository == null || documentChunkRepository == null) return "";
+        var links = meetingDocumentRepository.listByMeeting(tenantId, meetingId);
+        if (links.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int budget = WORKSTATION_CONTEXT_CHAR_BUDGET / 2;
+        for (var link : links) {
+            if (link.role() != DocumentRole.REFERENCE) continue;
+            sb.append("## ").append(link.documentTitle() == null ? link.documentId() : link.documentTitle()).append("\n");
+            var chunks = documentChunkRepository.findByDocument(tenantId, link.documentId());
+            for (var chunk : chunks) {
+                if (chunk.content() == null || chunk.content().isBlank()) continue;
+                if (sb.length() >= budget) {
+                    sb.append("…\n");
+                    return sb.toString();
+                }
+                int remaining = budget - sb.length();
+                String content = chunk.content().strip();
+                sb.append(content.length() > remaining ? content.substring(0, remaining) + "…" : content);
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
     }
 
     private static String renderTranscript(List<TranscriptRepository.TranscriptSegmentRecord> segments) {

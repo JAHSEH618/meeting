@@ -12,6 +12,7 @@ package com.meeting.api.domain.rag;
 public enum KnowledgeSourceType {
     PRIMARY_TRANSCRIPT,
     AI_SUMMARY,
+    MINUTES,
     DECISION,
     ACTION_ITEM,
     RISK,

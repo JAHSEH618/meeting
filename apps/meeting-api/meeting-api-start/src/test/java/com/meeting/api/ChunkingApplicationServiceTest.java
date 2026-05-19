@@ -66,7 +66,7 @@ class ChunkingApplicationServiceTest {
 
         var bySourceType = groupBySourceType(fx.chunks.saved);
         assertThat(bySourceType.get(KnowledgeSourceType.PRIMARY_TRANSCRIPT)).hasSize(2);
-        assertThat(bySourceType.get(KnowledgeSourceType.AI_SUMMARY)).hasSize(1);
+        assertThat(bySourceType.get(KnowledgeSourceType.MINUTES)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.ACTION_ITEM)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.DECISION)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.RISK)).hasSize(1);
@@ -83,7 +83,7 @@ class ChunkingApplicationServiceTest {
         assertThat(transcriptChunk.createdAt()).isEqualTo(NOW);
         assertThat(transcriptChunk.contentHash()).hasSize(64);
 
-        var summaryChunk = bySourceType.get(KnowledgeSourceType.AI_SUMMARY).get(0);
+        var summaryChunk = bySourceType.get(KnowledgeSourceType.MINUTES).get(0);
         assertThat(summaryChunk.minutesVersion()).isEqualTo(2);
         assertThat(summaryChunk.transcriptVersion()).isEqualTo(3);
         assertThat(summaryChunk.sourceId()).startsWith("min_01:sec_0:itm_0");
