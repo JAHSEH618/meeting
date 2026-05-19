@@ -37,7 +37,7 @@ class ProcessingTaskControllerTest {
             "req_01",
             "trace_01",
             "idem_01",
-            new ProcessingTaskController.CreateTaskRequest("MEETING_FULL_PIPELINE", Map.of("enableAsr", true), Map.of("chunkStrategyVersion", "v1"))
+            new ProcessingTaskController.CreateTaskRequest("MEETING_FULL_PIPELINE", Map.of("enableAsr", true), Map.of("chunkStrategyVersion", "v1"), null)
         );
 
         assertThat(response.success()).isTrue();
@@ -107,6 +107,11 @@ class ProcessingTaskControllerTest {
 
         @Override
         public ProcessingTaskDTO cancel(CancelTaskCommand command) {
+            return task;
+        }
+
+        @Override
+        public ProcessingTaskDTO resumeJavaPhase(com.meeting.api.client.task.ResumeJavaPhaseCommand command) {
             return task;
         }
     }

@@ -26,7 +26,7 @@ class WorkerPhaseCompletedListenerTest {
     void meetingFullPipelineTransitionsToJavaLlmRunning() {
         InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
 
         listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
 
@@ -36,10 +36,24 @@ class WorkerPhaseCompletedListenerTest {
     }
 
     @Test
+    void meetingFullPipelineStaysHeldWhenHoldFlagSet() {
+        InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true, true);
+        TaskStepProgressService progress = service(tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+
+        listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
+
+        ProcessingTask task = tasks.findById("tenant_01", "task_01").orElseThrow();
+        // hold_at_worker_phase=true keeps the task at WORKER_DAG_DONE.
+        assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_DONE);
+        assertThat(task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+    }
+
+    @Test
     void speakerEnrollmentTransitionsDirectlyToTerminalSucceeded() {
         InMemoryTaskRepository tasks = workerDagDoneTask("SPEAKER_ENROLLMENT", false);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
 
         listener.onWorkerPhaseCompleted(workerEvent("SPEAKER_ENROLLMENT", ProcessingTaskStatus.SUCCEEDED));
 
@@ -52,7 +66,7 @@ class WorkerPhaseCompletedListenerTest {
     void textEmbeddingTransitionsDirectlyToTerminalPartialSucceeded() {
         InMemoryTaskRepository tasks = workerDagDoneTask("TEXT_EMBEDDING", false);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
 
         listener.onWorkerPhaseCompleted(workerEvent("TEXT_EMBEDDING", ProcessingTaskStatus.PARTIAL_SUCCEEDED));
 
@@ -65,7 +79,7 @@ class WorkerPhaseCompletedListenerTest {
     void listenerSwallowsExceptionsFromService() {
         InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
 
         // Fire on an unknown task; service throws but listener must not propagate.
         listener.onWorkerPhaseCompleted(new WorkerPhaseCompletedEvent(
@@ -108,6 +122,10 @@ class WorkerPhaseCompletedListenerTest {
     }
 
     private static InMemoryTaskRepository workerDagDoneTask(String taskType, boolean withJavaSteps) {
+        return workerDagDoneTask(taskType, withJavaSteps, false);
+    }
+
+    private static InMemoryTaskRepository workerDagDoneTask(String taskType, boolean withJavaSteps, boolean hold) {
         List<ProcessingStep> steps = withJavaSteps
             ? List.of(
                 ProcessingStep.AUDIO_UPLOAD,
@@ -118,7 +136,7 @@ class WorkerPhaseCompletedListenerTest {
                 ProcessingStep.EXTRACTION
             )
             : List.of(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING);
-        ProcessingTask task = ProcessingTask.create("task_01", "tenant_01", "meeting_01", taskType, steps, NOW);
+        ProcessingTask task = ProcessingTask.create("task_01", "tenant_01", "meeting_01", taskType, steps, NOW, hold);
         if (withJavaSteps) {
             task.markJavaStepSucceeded(ProcessingStep.AUDIO_UPLOAD, NOW);
         }

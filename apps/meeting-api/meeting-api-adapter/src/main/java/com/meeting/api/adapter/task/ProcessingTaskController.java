@@ -6,6 +6,7 @@ import com.meeting.api.client.task.CancelTaskCommand;
 import com.meeting.api.client.task.CreateProcessingTaskCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.client.task.ProcessingTaskFacade;
+import com.meeting.api.client.task.ResumeJavaPhaseCommand;
 import com.meeting.api.client.task.RetryTaskCommand;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -42,7 +42,8 @@ public class ProcessingTaskController {
             TenantContextHolder.currentUserId(),
             idempotencyKey,
             requestId,
-            traceId
+            traceId,
+            request.holdAtWorkerPhase() != null && request.holdAtWorkerPhase()
         ));
         return ApiResponse.ok(task, requestId, traceId);
     }
@@ -107,7 +108,34 @@ public class ProcessingTaskController {
         return ApiResponse.ok(task, requestId, traceId);
     }
 
-    public record CreateTaskRequest(String taskType, Map<String, Object> options, Map<String, Object> expectedInputVersion) {
+    /**
+     * Workstation D3 — promote a task held at {@code WORKER_DAG_DONE} into the Java LLM phase.
+     * Path uses OpenAPI's colon convention {@code {taskId}:resume-java-phase}.
+     */
+    @PostMapping("/api/processing-tasks/{taskId}:resume-java-phase")
+    public ApiResponse<ProcessingTaskDTO> resumeJavaPhase(
+        @PathVariable String taskId,
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId,
+        @RequestHeader("Idempotency-Key") String idempotencyKey
+    ) {
+        ProcessingTaskDTO task = processingTaskFacade.resumeJavaPhase(new ResumeJavaPhaseCommand(
+            TenantContextHolder.currentTenantId(),
+            taskId,
+            TenantContextHolder.currentUserId(),
+            idempotencyKey,
+            requestId,
+            traceId
+        ));
+        return ApiResponse.ok(task, requestId, traceId);
+    }
+
+    public record CreateTaskRequest(
+        String taskType,
+        Map<String, Object> options,
+        Map<String, Object> expectedInputVersion,
+        Boolean holdAtWorkerPhase
+    ) {
     }
 
     public record RetryRequest(String reason) {

@@ -1,7 +1,10 @@
 package com.meeting.api.app.task;
 
 import com.meeting.api.client.enums.ProcessingTaskStatus;
+import com.meeting.api.domain.task.ProcessingTask;
+import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -13,8 +16,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * Reacts to {@link WorkerPhaseCompletedEvent} after the callback transaction commits.
  *
  * <ul>
- *   <li>{@code MEETING_FULL_PIPELINE}: open Java LLM phase via {@link TaskStepProgressService#beginJavaPhase}.
- *       Follow-up minutes/extraction services will pick up the {@code JAVA_LLM_RUNNING} task.</li>
+ *   <li>{@code MEETING_FULL_PIPELINE}: open Java LLM phase via {@link TaskStepProgressService#beginJavaPhase}
+ *       unless the task was created with {@code hold_at_worker_phase=true} (workstation D3 gate),
+ *       in which case the task stays at {@code WORKER_DAG_DONE} awaiting an explicit
+ *       {@code resume-java-phase} call from the user.</li>
  *   <li>Other task types ({@code SPEAKER_ENROLLMENT}, {@code TEXT_EMBEDDING}, {@code RAG_REINDEX}): no
  *       Java-owned step exists, so the task moves directly to {@code TERMINAL} with the worker's terminal status.</li>
  * </ul>
@@ -29,9 +34,14 @@ public class WorkerPhaseCompletedListener {
     public static final String MEETING_FULL_PIPELINE = "MEETING_FULL_PIPELINE";
 
     private final TaskStepProgressService taskStepProgressService;
+    private final ProcessingTaskRepository taskRepository;
 
-    public WorkerPhaseCompletedListener(TaskStepProgressService taskStepProgressService) {
+    public WorkerPhaseCompletedListener(
+        TaskStepProgressService taskStepProgressService,
+        ProcessingTaskRepository taskRepository
+    ) {
         this.taskStepProgressService = taskStepProgressService;
+        this.taskRepository = taskRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -39,6 +49,14 @@ public class WorkerPhaseCompletedListener {
     public void onWorkerPhaseCompleted(WorkerPhaseCompletedEvent event) {
         try {
             if (MEETING_FULL_PIPELINE.equals(event.taskType())) {
+                Optional<ProcessingTask> taskOpt = taskRepository.findById(event.tenantId(), event.taskId());
+                if (taskOpt.isPresent() && taskOpt.get().holdAtWorkerPhase()) {
+                    log.info(
+                        "worker_phase_completed_held task={} tenant={} waiting_for_resume",
+                        event.taskId(), event.tenantId()
+                    );
+                    return;
+                }
                 taskStepProgressService.beginJavaPhase(event.tenantId(), event.taskId());
                 log.info("worker_phase_completed_started_java_llm task={} tenant={}", event.taskId(), event.tenantId());
                 return;

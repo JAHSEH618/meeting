@@ -30,6 +30,7 @@ public final class ProcessingTask {
     private OffsetDateTime heartbeatAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private boolean holdAtWorkerPhase;
 
     private ProcessingTask(
         String taskId,
@@ -56,6 +57,7 @@ public final class ProcessingTask {
         }
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+        this.holdAtWorkerPhase = false;
     }
 
     public static ProcessingTask create(
@@ -66,6 +68,18 @@ public final class ProcessingTask {
         List<ProcessingStep> stepNames,
         OffsetDateTime now
     ) {
+        return create(taskId, tenantId, meetingId, taskType, stepNames, now, false);
+    }
+
+    public static ProcessingTask create(
+        String taskId,
+        String tenantId,
+        String meetingId,
+        String taskType,
+        List<ProcessingStep> stepNames,
+        OffsetDateTime now,
+        boolean holdAtWorkerPhase
+    ) {
         requireText(taskType, "taskType");
         Objects.requireNonNull(stepNames, "stepNames");
         if (stepNames.isEmpty()) {
@@ -74,7 +88,7 @@ public final class ProcessingTask {
         List<ProcessingTaskStep> steps = stepNames.stream()
             .map(step -> ProcessingTaskStep.pending(step, defaultSourceFor(step)))
             .toList();
-        return new ProcessingTask(
+        ProcessingTask task = new ProcessingTask(
             taskId,
             tenantId,
             meetingId,
@@ -86,6 +100,8 @@ public final class ProcessingTask {
             now,
             now
         );
+        task.holdAtWorkerPhase = holdAtWorkerPhase;
+        return task;
     }
 
     public static ProcessingTask restore(
@@ -106,6 +122,30 @@ public final class ProcessingTask {
         OffsetDateTime updatedAt,
         List<ProcessingTaskStep> steps
     ) {
+        return restore(taskId, tenantId, meetingId, taskType, status, phase, attemptNo,
+            currentStep, lastErrorCode, retryable, leaseOwner, leaseExpiresAt,
+            heartbeatAt, createdAt, updatedAt, steps, false);
+    }
+
+    public static ProcessingTask restore(
+        String taskId,
+        String tenantId,
+        String meetingId,
+        String taskType,
+        ProcessingTaskStatus status,
+        ProcessingTaskPhase phase,
+        int attemptNo,
+        String currentStep,
+        String lastErrorCode,
+        boolean retryable,
+        String leaseOwner,
+        OffsetDateTime leaseExpiresAt,
+        OffsetDateTime heartbeatAt,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt,
+        List<ProcessingTaskStep> steps,
+        boolean holdAtWorkerPhase
+    ) {
         ProcessingTask task = new ProcessingTask(
             taskId,
             tenantId,
@@ -124,6 +164,7 @@ public final class ProcessingTask {
         task.leaseOwner = leaseOwner;
         task.leaseExpiresAt = leaseExpiresAt;
         task.heartbeatAt = heartbeatAt;
+        task.holdAtWorkerPhase = holdAtWorkerPhase;
         return task;
     }
 
@@ -430,6 +471,7 @@ public final class ProcessingTask {
     public OffsetDateTime heartbeatAt() { return heartbeatAt; }
     public OffsetDateTime createdAt() { return createdAt; }
     public OffsetDateTime updatedAt() { return updatedAt; }
+    public boolean holdAtWorkerPhase() { return holdAtWorkerPhase; }
 
     private java.util.Optional<ProcessingTaskStep> currentWorkerStep() {
         return steps.values().stream()

@@ -34,10 +34,11 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             INSERT INTO processing_tasks (
               id, tenant_id, meeting_id, task_type, status, phase, progress,
               current_step, attempt_count, lease_owner, lease_expires_at,
-              heartbeat_at, last_error_code, trace_id, created_at
+              heartbeat_at, last_error_code, trace_id, created_at,
+              hold_at_worker_phase
             )
             VALUES (?, ?, ?, ?, ?::task_status, ?::task_phase, ?, ?::processing_step,
-                    ?, ?, ?, ?, ?, NULL, ?)
+                    ?, ?, ?, ?, ?, NULL, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               status = EXCLUDED.status,
               phase = EXCLUDED.phase,
@@ -47,7 +48,8 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
               lease_owner = EXCLUDED.lease_owner,
               lease_expires_at = EXCLUDED.lease_expires_at,
               heartbeat_at = EXCLUDED.heartbeat_at,
-              last_error_code = EXCLUDED.last_error_code
+              last_error_code = EXCLUDED.last_error_code,
+              hold_at_worker_phase = EXCLUDED.hold_at_worker_phase
             """,
             task.taskId(),
             task.tenantId(),
@@ -62,7 +64,8 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             toTimestamp(task.leaseExpiresAt()),
             toTimestamp(task.heartbeatAt()),
             task.lastErrorCode(),
-            toTimestamp(task.createdAt())
+            toTimestamp(task.createdAt()),
+            task.holdAtWorkerPhase()
         );
         for (ProcessingTaskStep step : task.steps()) {
             saveStep(task, step);
@@ -76,7 +79,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             """
             SELECT id, tenant_id, meeting_id, task_type, status, phase, current_step,
                    attempt_count, lease_owner, lease_expires_at, heartbeat_at,
-                   last_error_code, created_at, updated_at
+                   last_error_code, created_at, updated_at, hold_at_worker_phase
               FROM processing_tasks
              WHERE tenant_id = ? AND id = ?
             """,
@@ -93,7 +96,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             """
             SELECT id, tenant_id, meeting_id, task_type, status, phase, current_step,
                    attempt_count, lease_owner, lease_expires_at, heartbeat_at,
-                   last_error_code, created_at, updated_at
+                   last_error_code, created_at, updated_at, hold_at_worker_phase
               FROM processing_tasks
              WHERE tenant_id = ? AND meeting_id = ?
              ORDER BY created_at DESC, id DESC
@@ -189,7 +192,8 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             toOffsetDateTime(rs.getTimestamp("heartbeat_at")),
             toOffsetDateTime(rs.getTimestamp("created_at")),
             toOffsetDateTime(rs.getTimestamp("updated_at")),
-            steps
+            steps,
+            rs.getBoolean("hold_at_worker_phase")
         );
     }
 

@@ -1,11 +1,15 @@
 package com.meeting.api.app.task;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.ProcessingStep;
+import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.task.CancelTaskCommand;
 import com.meeting.api.client.task.CreateProcessingTaskCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.client.task.ProcessingTaskFacade;
+import com.meeting.api.client.task.ResumeJavaPhaseCommand;
 import com.meeting.api.client.task.RetryTaskCommand;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
@@ -15,6 +19,7 @@ import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -108,7 +113,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
                 command.meetingId(),
                 command.taskType(),
                 MVP0_STEPS,
-                now
+                now,
+                command.holdAtWorkerPhase()
             );
             task.markJavaStepSucceeded(ProcessingStep.AUDIO_UPLOAD, now);
             task.enqueue(now);
@@ -273,19 +279,47 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         });
     }
 
+    @Override
+    public ProcessingTaskDTO resumeJavaPhase(ResumeJavaPhaseCommand command) {
+        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+            ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
+                .orElseThrow(() -> new ApplicationException(
+                    ErrorCode.TASK_NOT_FOUND, 404,
+                    "task not found: " + command.taskId(), false
+                ));
+            ProcessingTaskPhase phase = task.phase();
+            if (phase == ProcessingTaskPhase.JAVA_LLM_RUNNING || phase == ProcessingTaskPhase.TERMINAL) {
+                // Idempotent: already past the gate.
+                return ProcessingTaskAssembler.toDto(task);
+            }
+            if (phase != ProcessingTaskPhase.WORKER_DAG_DONE) {
+                throw new ApplicationException(
+                    ErrorCode.INVALID_TASK_PHASE, 422,
+                    "task phase is " + phase + ", expected WORKER_DAG_DONE", false
+                );
+            }
+            task.beginJavaLlm(OffsetDateTime.now(clock));
+            return ProcessingTaskAssembler.toDto(taskRepository.save(task));
+        });
+    }
+
     private Map<String, Object> processingTaskMessagePayload(CreateProcessingTaskCommand command, ProcessingTask task) {
-        return Map.of(
-            "taskId", task.taskId(),
-            "taskType", task.taskType(),
-            "tenantId", task.tenantId(),
-            "meetingId", task.meetingId(),
-            "securityLevel", "INTERNAL",
-            "attemptNo", task.attemptNo(),
-            "pipelineSteps", MVP0_WORKER_STEPS.stream().map(Enum::name).toList(),
-            "expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion(),
-            "options", command.options() == null ? Map.of() : command.options(),
-            "traceId", command.traceId() == null ? "" : command.traceId()
-        );
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("taskId", task.taskId());
+        payload.put("taskType", task.taskType());
+        payload.put("tenantId", task.tenantId());
+        payload.put("meetingId", task.meetingId());
+        payload.put("securityLevel", "INTERNAL");
+        payload.put("attemptNo", task.attemptNo());
+        payload.put("pipelineSteps", MVP0_WORKER_STEPS.stream().map(Enum::name).toList());
+        payload.put("expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion());
+        payload.put("options", command.options() == null ? Map.of() : command.options());
+        payload.put("traceId", command.traceId() == null ? "" : command.traceId());
+        if (task.holdAtWorkerPhase()) {
+            // Worker MUST NOT branch on this; Java reads it on the WORKER_PHASE_COMPLETED listener.
+            payload.put("controlFlags", Map.of("holdAtWorkerPhase", true));
+        }
+        return payload;
     }
 
     private Map<String, Object> phase2TaskMessagePayload(
