@@ -1,0 +1,149 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: #1f2933;
+  background: #f7f8fb;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.layout__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e1e4ec;
+}
+
+.layout__nav a {
+  color: #3b5bdb;
+  margin-right: 16px;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.layout__nav a.active {
+  text-decoration: underline;
+}
+
+.layout__main {
+  flex: 1;
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e1e4ec;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.button {
+  background: #3b5bdb;
+  color: #fff;
+  border: 0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.button:disabled {
+  background: #aab2c8;
+  cursor: not-allowed;
+}
+
+.button--secondary {
+  background: #fff;
+  color: #3b5bdb;
+  border: 1px solid #3b5bdb;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #cdd2dd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.error {
+  color: #c92a2a;
+  margin-top: 8px;
+}
+
+.stepper {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.stepper__item {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  border-bottom: 3px solid #cdd2dd;
+  color: #6b7280;
+}
+
+.stepper__item--active {
+  border-color: #3b5bdb;
+  color: #3b5bdb;
+  font-weight: 600;
+}
+
+.stepper__item--done {
+  border-color: #2f9e44;
+  color: #2f9e44;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  background: #e7ecff;
+  color: #3b5bdb;
+  padding: 4px 8px;
+  margin: 2px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.chip__remove {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  margin-left: 4px;
+}
