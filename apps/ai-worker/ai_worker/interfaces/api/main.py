@@ -443,8 +443,27 @@ def _mount_admin_router(app: FastAPI) -> None:
         await enrollment_session_store.stop_cleanup_loop()
 
 
+def _mount_admin_ui(app: FastAPI) -> None:
+    """Phase 9 P6 / E1.2 — mount the workstation SPA at ``/workstation/`` when
+    a build artefact dir is configured. Kept separate from ``/admin/*`` so the
+    BFF routes don't collide with the static file handler.
+    """
+    if not settings.admin_ui_dist_path:
+        return
+    from os.path import isdir
+    if not isdir(settings.admin_ui_dist_path):
+        return
+    from fastapi.staticfiles import StaticFiles
+    app.mount(
+        "/workstation",
+        StaticFiles(directory=settings.admin_ui_dist_path, html=True),
+        name="workstation-ui",
+    )
+
+
 app = create_app()
 _mount_admin_router(app)
+_mount_admin_ui(app)
 
 
 def run() -> None:

@@ -137,6 +137,53 @@ services:
       start_period: 60s
       retries: 3
 
+  # ── ai-worker (Phase 9 P6 / E1.7) ──────────────────────────────
+  # CPU fake-mode build of ai-worker that also serves the workstation
+  # SPA at /workstation/* and the BFF at /admin/*. Bring up the full
+  # workstation stack with:
+  #     docker compose --profile workstation up -d
+  ai-worker:
+    image: ai-worker:dev
+    container_name: ai-worker
+    profiles: ["workstation"]
+    build:
+      # The Dockerfile expects the repo root as context so the SPA build
+      # stage can COPY apps/ai-worker-web/.
+      context: ../../../../
+      dockerfile: apps/ai-worker/Dockerfile
+      args:
+        BASE: python:3.11-slim
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      meeting-api:
+        condition: service_healthy
+    environment:
+      AI_WORKER_USE_FAKE_RUNTIME: "true"
+      AI_WORKER_USE_FAKE_ASR_RUNTIME: "true"
+      AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME: "true"
+      AI_WORKER_RABBITMQ_HOST: rabbitmq
+      AI_WORKER_RABBITMQ_PORT: "5672"
+      AI_WORKER_RABBITMQ_USERNAME: ${RABBITMQ_USER:-meeting}
+      AI_WORKER_RABBITMQ_PASSWORD: ${RABBITMQ_PASS:-meeting_dev}
+      AI_WORKER_MEETING_API_BASE_URL: http://meeting-api:8080
+      AI_WORKER_JAVA_API_BASE_URL: http://meeting-api:8080
+      AI_WORKER_CALLBACK_HMAC_SECRET: ${AI_WORKER_CALLBACK_HMAC_SECRET:-change-me-callback-fallback-secret}
+      AI_WORKER_INTERNAL_API_HMAC_SECRET: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:-change-me-internal-fallback-secret}
+      AI_WORKER_ADMIN_JWT_SECRET: ${AI_WORKER_ADMIN_JWT_SECRET:-dev-admin-secret-32-bytes-fixed}
+      AI_WORKER_ADMIN_JWT_AUDIENCE: ai-worker-admin
+      AI_WORKER_ADMIN_JWT_ISSUER: meeting-api
+      AI_WORKER_ENROLLMENT_TMP_DIR: /var/lib/ai-worker/enrollment
+      AI_WORKER_ADMIN_UI_DIST_PATH: /app/admin-ui
+    ports:
+      - "${AI_WORKER_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8090/internal/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
   # ── 可观测性（本地开发可选）────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0

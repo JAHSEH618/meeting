@@ -139,6 +139,52 @@ jobs:
       - name: Unit Tests
         run: npm test
 
+  # ── 工作站 SPA (Phase 9 P6 / E1.8) ───────────────────────────
+  ai-worker-web:
+    name: AI Worker Web (Node 20)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/ai-worker-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/ai-worker-web/package-lock.json
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Type Check
+        run: npx tsc --noEmit
+
+      - name: Unit Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright happy-path
+        run: npm run e2e
+        env:
+          CI: "true"
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-worker-web-playwright
+          path: |
+            apps/ai-worker-web/playwright-report
+            apps/ai-worker-web/test-results
+          retention-days: 14
+
   # ── DDL 语法校验 ──────────────────────────────────────────────
   ddl-check:
     name: DDL Syntax Check

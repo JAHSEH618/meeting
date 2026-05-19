@@ -1,4 +1,22 @@
 # syntax=docker/dockerfile:1.6
+#
+# ai-worker multi-stage build (Phase 9 P6 — todo-final.md E1.1):
+#   1. web-build  — builds the workstation SPA (apps/ai-worker-web/dist/)
+#   2. runtime    — CUDA + Python 3.11 + uv + the FastAPI app, COPYing the
+#                   SPA bundle into /app/admin-ui/ so the FastAPI static-files
+#                   mount serves it at /workstation/*.
+#
+# The build context expected for this Dockerfile is the REPO ROOT (so it
+# can see both apps/ai-worker and apps/ai-worker-web). Compose/k8s build
+# pipelines must run with `context: ../../..` relative to apps/ai-worker.
+
+# ----- web build stage -------------------------------------------------------
+FROM node:20-alpine AS web-build
+WORKDIR /web
+COPY apps/ai-worker-web/package.json apps/ai-worker-web/package-lock.json* ./
+RUN npm ci --ignore-scripts
+COPY apps/ai-worker-web/ ./
+RUN npm run build && ls -la dist
 
 # ----- runtime stage ---------------------------------------------------------
 # CUDA 12.2 + Ubuntu 22.04 matches the torch 2.5 wheels we use for the
@@ -16,7 +34,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # image flag is the default; per-deployment overrides should set it
     # to "0" only in air-gapped staging when a mirror is configured.
     HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    # Phase 9 — points FastAPI's StaticFiles mount at the COPYed dist.
+    AI_WORKER_ADMIN_UI_DIST_PATH=/app/admin-ui
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -35,17 +55,18 @@ WORKDIR /app
 # Cache deps separately from source. uv sync --frozen requires uv.lock
 # to be present alongside pyproject.toml — the dev workflow keeps both
 # checked in.
-COPY pyproject.toml ./
-COPY uv.lock* ./
+COPY apps/ai-worker/pyproject.toml ./
+COPY apps/ai-worker/uv.lock* ./
 RUN uv sync --frozen --no-dev || uv sync --no-dev
 
-COPY ai_worker ./ai_worker
+COPY apps/ai-worker/ai_worker ./ai_worker
+COPY --from=web-build /web/dist /app/admin-ui
 
 # Non-root user; the model weights mount is expected to be readable
 # by uid 1001 (set via the StatefulSet's fsGroup).
 RUN useradd --uid 1001 --create-home --shell /bin/false ai-worker \
-    && mkdir -p /opt/models /app/.artifacts \
-    && chown -R ai-worker:ai-worker /app /opt/models
+    && mkdir -p /opt/models /app/.artifacts /var/lib/ai-worker/enrollment \
+    && chown -R ai-worker:ai-worker /app /opt/models /var/lib/ai-worker
 USER ai-worker
 
 EXPOSE 8090

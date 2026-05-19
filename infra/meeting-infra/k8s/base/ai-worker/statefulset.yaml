@@ -65,12 +65,25 @@ spec:
               readOnly: true
             - name: artifacts
               mountPath: /app/.artifacts
+            # Phase 9 P6 / E1.6 — enrollment audio scratch dir. Sized small
+            # because audio is dropped on commit / TTL eviction.
+            - name: enrollment-tmp
+              mountPath: /var/lib/ai-worker/enrollment
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: ai-worker-models
         - name: artifacts
           emptyDir: {}
+  # Phase 9 P6 / E1.6 — enrollment session staging volume.
+  volumeClaimTemplates:
+    - metadata:
+        name: enrollment-tmp
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
 ---
 apiVersion: v1
 kind: Service
@@ -85,6 +98,35 @@ spec:
       port: 8090
       targetPort: http
 ---
+# Phase 9 P6 / E1.5 — internal-only Ingress for /admin/* + /workstation/*.
+# IP whitelist + TLS are overlay-specific; the base just declares the routing.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-worker-workstation
+  annotations:
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: workstation.meeting.internal
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-worker
+                port:
+                  number: 8090
+          - path: /workstation
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-worker
+                port:
+                  number: 8090
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -97,3 +139,22 @@ data:
   AI_WORKER_RABBITMQ_PORT: "5672"
   AI_WORKER_RABBITMQ_USERNAME: "meeting"
   AI_WORKER_MEETING_API_BASE_URL: "http://meeting-api:8080"
+  # Phase 9 P6 / E1.3 — workstation BFF wiring.
+  AI_WORKER_JAVA_API_BASE_URL: "http://meeting-api:8080"
+  AI_WORKER_ENROLLMENT_TMP_DIR: "/var/lib/ai-worker/enrollment"
+  AI_WORKER_ADMIN_UI_DIST_PATH: "/app/admin-ui"
+  AI_WORKER_ADMIN_JWT_AUDIENCE: "ai-worker-admin"
+  AI_WORKER_ADMIN_JWT_ISSUER: "meeting-api"
+  AI_WORKER_ADMIN_JWT_REQUIRED_ROLE: "ADMIN"
+---
+# Phase 9 P6 / E1.4 — workstation BFF secrets. Values are placeholders;
+# overlays must replace via Sealed Secrets or an external secret manager.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-worker-secret
+type: Opaque
+stringData:
+  AI_WORKER_INTERNAL_API_HMAC_SECRET: "replace-me-internal-secret"
+  AI_WORKER_CALLBACK_HMAC_SECRET: "replace-me-callback-secret"
+  AI_WORKER_ADMIN_JWT_SECRET: "replace-me-admin-jwt-secret-32-bytes"

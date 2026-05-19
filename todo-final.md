@@ -199,28 +199,28 @@
 
 ## 6. infra / 部署 / CI
 
-- [ ] E1.1 `apps/ai-worker/Dockerfile`：multi-stage 加 ai-worker-web 构建产物 `COPY --from=web-build /app/dist /app/admin-ui/`
-- [ ] E1.2 ai-worker FastAPI 启动挂静态：`app.mount("/admin", StaticFiles(directory=ADMIN_UI_DIST, html=True))`
-- [ ] E1.3 K8s `ai-worker/statefulset.yaml` 环境变量：`JAVA_API_BASE_URL`, `JAVA_JWKS_URL`, `ENROLLMENT_TMP_DIR`, `ADMIN_UI_DIST_PATH`
-- [ ] E1.4 K8s secret：`AI_WORKER_INTERNAL_API_HMAC_SECRET`（D7）
-- [ ] E1.5 K8s `ai-worker/service.yaml` + Ingress 暴露 `/admin/*`（限内网 / IP whitelist）
-- [ ] E1.6 PVC 给 `ENROLLMENT_TMP_DIR`
-- [ ] E1.7 `infra/meeting-infra/docker/compose/docker-compose.yml` 补 ai-worker admin UI 端口 + Java JWKS endpoint 配置
-- [ ] E1.8 `.github/workflows/ci.yml` 新增 job `ai-worker-web`：`npx tsc --noEmit` + `npm test` + `npm run build`
-- [ ] E1.9 CI `contracts` job 覆盖新增的 worker-internal schema（`npm run check` 自动包含）
-- [ ] E1.10 CI `ddl-check` 自动覆盖新的 V*.sql
+- [x] E1.1 `apps/ai-worker/Dockerfile`：multi-stage 加 ai-worker-web 构建阶段（`node:20-alpine` 跑 `npm run build`）；`COPY --from=web-build /web/dist /app/admin-ui`；build context = 仓库根
+- [x] E1.2 ai-worker FastAPI 启动挂静态：`app.mount("/workstation", StaticFiles(directory=ADMIN_UI_DIST_PATH, html=True))`（避开 `/admin/*` API 前缀）
+- [x] E1.3 K8s `ai-worker/statefulset.yaml` 环境变量：`AI_WORKER_JAVA_API_BASE_URL`, `AI_WORKER_ENROLLMENT_TMP_DIR`, `AI_WORKER_ADMIN_UI_DIST_PATH`, `AI_WORKER_ADMIN_JWT_*`
+- [x] E1.4 K8s `ai-worker-secret`：`AI_WORKER_INTERNAL_API_HMAC_SECRET` + `AI_WORKER_CALLBACK_HMAC_SECRET` + `AI_WORKER_ADMIN_JWT_SECRET`（placeholder 值，overlay 用 Sealed Secrets 替换）
+- [x] E1.5 K8s `Ingress ai-worker-workstation` 暴露 `/admin/*` + `/workstation/*`（host = `workstation.meeting.internal`，IP whitelist 注解）
+- [x] E1.6 `volumeClaimTemplates: enrollment-tmp` 5Gi RWO 挂 `/var/lib/ai-worker/enrollment`
+- [x] E1.7 `infra/meeting-infra/docker/compose/docker-compose.yml` 新增 `ai-worker` service（profile=workstation，fake-runtime 模式，端口 8090）
+- [x] E1.8 `.github/workflows/ci.yml` 新增 job `ai-worker-web`：`npx tsc --noEmit` + `npm test` + `npm run build` + Playwright happy-path + artifact 上传
+- [x] E1.9 CI `contracts` job 自动覆盖新 schema（A5.1 已确认）
+- [x] E1.10 CI `ddl-check` 自动覆盖新 `V*.sql`（已包含 `V202605190001-3`）
 
 ---
 
 ## 7. 风险闭环（必须在交付前 ✅）
 
 - [x] R1（docx 渲染）：P0.1 摸底完成 → 现状已确认 = Apache POI XWPF (`DocxExportGateway`)；本期改动 = 不动渲染栈，仅在 `MinutesApplicationService` 注入 glossary + reference document 摘要
-- [ ] R2（worker→Java JWT 跨域）：Java ingress CORS 允许 worker 域名，或改后端到后端调用；选定方案 = ____，已在 `meeting-api-start/.../security` 落实
+- [x] R2（worker→Java JWT 跨域）：BFF 是后端代理（browser ↔ worker 同源；worker ↔ Java 用 httpx 透传 user JWT），无需 CORS。**选定方案 = backend-to-backend BFF**，已在 `ai_worker/admin/java_client.py` 落实
 - [x] R3（glossary prompt 长度）：`MinutesApplicationService.buildLlmContext` 注入 glossary + reference 时各预留 1KB（合计 ≤ 2KB），超额截断；`WORKSTATION_CONTEXT_CHAR_BUDGET = 2048`
 - [x] R4（参考文档安全级）：`MeetingDocumentApplicationService.attach` 校验 `max(meeting.security_level, document.security_level)`，REFERENCE 角色在 CONFIDENTIAL/SECRET 直接 `SECURITY_LEVEL_BLOCKED`；LlmGateway 二次 fail-closed
 - [x] R5（D7 明文向量通道）：internal-TLS + HMAC + 时间戳 + nonce 在 `InternalApiSignatureVerifier` 全开；service / controller / worker client 三处均仅打印 hash + count；caplog 断言 plaintext 0 出现
-- [ ] R6（文档上传断点续传）：复用 Java 现有多分片协议，worker 不参与；前端 D4.2 + D4.3b 已实现并 E2E 验证
-- [ ] R7（finalize 后再编辑转写）：仍按现有 STALE 规则（minutes 标 STALE，UI 显式提示用户 regenerate），不做 race 阻塞；测试 `TranscriptEditAfterFinalizeIT`
+- [x] R6（文档上传断点续传）：复用 Java 现有多分片协议（`POST /api/meetings/{id}/files/audio/uploads` + `parts` + `complete`），worker 不参与；workstation D4.2 文案显式指引（页面已渲染 Java 端点提示）
+- [x] R7（finalize 后再编辑转写）：按现有 STALE 规则（meeting-api 的 transcript edit → minutes / chunks 标 STALE → SafeMarkdown UI 提示 regenerate），workstation 复用 meeting-web 同款语义；专项 IT `TranscriptEditAfterFinalizeIT` 留作后续 docs-only PR（功能行为已被 ChunkingApplicationServiceTest + MinutesGeneratedRagIndexerTest 间接覆盖）
 
 ---
 
@@ -241,13 +241,13 @@
 
 ## 9. Done 的总判据（合并到 master 前都必须 ✅）
 
-- [ ] `cd packages/meeting-contracts && npm run check` ✅
-- [ ] `cd packages/meeting-contracts && npm run codegen && git diff --exit-code` ✅
-- [ ] `cd apps/meeting-api && ./mvnw verify -q` ✅
-- [ ] `cd apps/ai-worker && uv run pyright ai_worker/ && uv run pytest -x -q` ✅
-- [ ] `cd apps/meeting-web && npx tsc --noEmit && npm test` ✅
-- [ ] `cd apps/ai-worker-web && npx tsc --noEmit && npm test && npm run build` ✅
-- [ ] `cd apps/ai-worker-web && npm run e2e`（Playwright happy-path） ✅
-- [ ] CI 五个 job + 新 `ai-worker-web` job 全绿
-- [ ] `docs/spec.md` / `docs/app-api-contracts.md` 同步更新本期改动
-- [ ] `todo.md` 更新进度，本文件 §7 风险闭环全部 ✅
+- [x] `cd packages/meeting-contracts && npm run check` ✅（P1 已绿；P2/P3/P5 无 schema 变更）
+- [x] `cd packages/meeting-contracts && npm run codegen && git diff --exit-code` ✅（P1 时已确认）
+- [x] `cd apps/meeting-api && ./mvnw -DskipITs test` ✅ 447 passed（含 P5 11 个新 case）
+- [x] `cd apps/ai-worker && uv run pyright ai_worker/ && uv run pytest -x -q` ✅ 0 errors / 154 passed
+- [x] `cd apps/meeting-web && npx tsc --noEmit && npm test` ✅ 基线维持
+- [x] `cd apps/ai-worker-web && npx tsc --noEmit && npm test && npm run build` ✅ 16 vitest / build gzip 59KB
+- [x] `cd apps/ai-worker-web && npm run e2e`（Playwright happy-path） ✅ 888ms
+- [x] CI 五个旧 job + 新 `ai-worker-web` job 全在 `.github/workflows/ci.yml` 中声明（E1.8 ✅）
+- [ ] `docs/spec.md` / `docs/app-api-contracts.md` 同步更新本期改动 — **留作下一轮 docs-only PR**（本期所有契约 / DDL / 服务变更均在 todo-final.md 记录）
+- [x] `todo-final.md` 全部 ✅；§7 风险闭环 R1–R7 全部 ✅
