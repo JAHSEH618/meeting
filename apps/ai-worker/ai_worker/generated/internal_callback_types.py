@@ -84,6 +84,7 @@ class PlainSpeakerEmbedding(BaseModel):
 class SourceType(Enum):
     PRIMARY_TRANSCRIPT = 'PRIMARY_TRANSCRIPT'
     AI_SUMMARY = 'AI_SUMMARY'
+    MINUTES = 'MINUTES'
     DECISION = 'DECISION'
     ACTION_ITEM = 'ACTION_ITEM'
     RISK = 'RISK'

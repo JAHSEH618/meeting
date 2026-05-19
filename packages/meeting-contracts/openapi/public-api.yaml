@@ -634,6 +634,39 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /processing-tasks/{taskId}:resume-java-phase:
+    post:
+      operationId: resumeProcessingTaskJavaPhase
+      description: >
+        Promote a task halted at WORKER_DAG_DONE to JAVA_LLM_RUNNING (SUMMARY/EXTRACTION).
+        Used when the task was created with holdAtWorkerPhase=true and the user has
+        confirmed transcript / speakers in the workstation UI.
+      tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Task resumed; response carries phase=JAVA_LLM_RUNNING.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingTaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   # ── Transcript ──────────────────────────────────────────────
   /meetings/{meetingId}/transcript:
     get:
@@ -1021,6 +1054,138 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/OkPaginated'
+
+  # ── Meeting Documents & Glossary (Workstation D1 / D2) ──────
+  /meetings/{meetingId}/documents:
+    get:
+      operationId: listMeetingDocuments
+      description: List documents attached to a meeting.
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Documents attached to the meeting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingDocumentsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: attachMeetingDocument
+      description: Attach an existing tenant document to a meeting with a role.
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachMeetingDocumentRequest'
+      responses:
+        '200':
+          description: Document attached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingDocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /meetings/{meetingId}/documents/{documentId}:
+    delete:
+      operationId: detachMeetingDocument
+      description: Detach a document from a meeting (soft delete on the link, document itself remains).
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkEmpty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /meetings/{meetingId}/glossary:
+    get:
+      operationId: getMeetingGlossary
+      description: Get meeting-scoped glossary terms.
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Current glossary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingGlossaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateMeetingGlossary
+      description: Replace meeting-scoped glossary terms (overwrite, max 200 terms, each term ≤ 64 chars).
+      tags: [Meetings]
+      parameters:
+        - $ref: '#/components/parameters/MeetingId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeetingGlossaryRequest'
+      responses:
+        '200':
+          description: Glossary updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingGlossaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
 
   # ── Documents ───────────────────────────────────────────────
   /documents:
@@ -2021,6 +2186,10 @@ components:
         expectedInputVersion:
           type: object
           additionalProperties: true
+        holdAtWorkerPhase:
+          type: boolean
+          default: false
+          description: When true, Java's WorkerPhaseCompletedListener stops at WORKER_DAG_DONE and waits for an explicit resume-java-phase call before starting SUMMARY / EXTRACTION.
 
     ProcessingTaskResponse:
       type: object
@@ -2725,3 +2894,125 @@ components:
     RagAnswerCoverage:
       type: string
       enum: [TRANSCRIPT_ONLY, FULL]
+
+    DocumentRole:
+      type: string
+      enum: [REFERENCE, ATTACHMENT]
+      description: REFERENCE = injected into minutes prompt; ATTACHMENT = displayed only.
+
+    AttachMeetingDocumentRequest:
+      type: object
+      required: [documentId, role]
+      properties:
+        documentId:
+          type: string
+          minLength: 1
+        role:
+          $ref: '#/components/schemas/DocumentRole'
+
+    MeetingDocumentItem:
+      type: object
+      required: [id, documentId, role, attachedAt]
+      properties:
+        id:
+          type: string
+        documentId:
+          type: string
+        title:
+          type: [string, 'null']
+        role:
+          $ref: '#/components/schemas/DocumentRole'
+        securityLevel:
+          $ref: '#/components/schemas/SecurityLevel'
+        attachedBy:
+          type: [string, 'null']
+        attachedAt:
+          type: string
+          format: date-time
+
+    MeetingDocumentsResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingDocumentItem'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    MeetingDocumentResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/MeetingDocumentItem'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    GlossaryTerm:
+      type: object
+      required: [term]
+      properties:
+        term:
+          type: string
+          minLength: 1
+          maxLength: 64
+        definition:
+          type: [string, 'null']
+          maxLength: 256
+        aliases:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+
+    UpdateMeetingGlossaryRequest:
+      type: object
+      required: [terms]
+      properties:
+        terms:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/GlossaryTerm'
+
+    MeetingGlossary:
+      type: object
+      required: [meetingId, terms, updatedAt]
+      properties:
+        meetingId:
+          type: string
+        terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlossaryTerm'
+        updatedAt:
+          type: string
+          format: date-time
+
+    MeetingGlossaryResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/MeetingGlossary'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}

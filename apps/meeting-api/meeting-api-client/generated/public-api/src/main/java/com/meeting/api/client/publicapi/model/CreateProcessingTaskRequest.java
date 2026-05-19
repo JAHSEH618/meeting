@@ -117,6 +117,11 @@ public class CreateProcessingTaskRequest {
   @javax.annotation.Nullable
   private Map<String, Object> expectedInputVersion = new HashMap<>();
 
+  public static final String SERIALIZED_NAME_HOLD_AT_WORKER_PHASE = "holdAtWorkerPhase";
+  @SerializedName(SERIALIZED_NAME_HOLD_AT_WORKER_PHASE)
+  @javax.annotation.Nullable
+  private Boolean holdAtWorkerPhase = false;
+
   public CreateProcessingTaskRequest() {
   }
 
@@ -193,6 +198,25 @@ public class CreateProcessingTaskRequest {
   }
 
 
+  public CreateProcessingTaskRequest holdAtWorkerPhase(@javax.annotation.Nullable Boolean holdAtWorkerPhase) {
+    this.holdAtWorkerPhase = holdAtWorkerPhase;
+    return this;
+  }
+
+  /**
+   * When true, Java&#39;s WorkerPhaseCompletedListener stops at WORKER_DAG_DONE and waits for an explicit resume-java-phase call before starting SUMMARY / EXTRACTION.
+   * @return holdAtWorkerPhase
+   */
+  @javax.annotation.Nullable
+  public Boolean getHoldAtWorkerPhase() {
+    return holdAtWorkerPhase;
+  }
+
+  public void setHoldAtWorkerPhase(@javax.annotation.Nullable Boolean holdAtWorkerPhase) {
+    this.holdAtWorkerPhase = holdAtWorkerPhase;
+  }
+
+
 
   @Override
   public boolean equals(Object o) {
@@ -205,12 +229,13 @@ public class CreateProcessingTaskRequest {
     CreateProcessingTaskRequest createProcessingTaskRequest = (CreateProcessingTaskRequest) o;
     return Objects.equals(this.taskType, createProcessingTaskRequest.taskType) &&
         Objects.equals(this.options, createProcessingTaskRequest.options) &&
-        Objects.equals(this.expectedInputVersion, createProcessingTaskRequest.expectedInputVersion);
+        Objects.equals(this.expectedInputVersion, createProcessingTaskRequest.expectedInputVersion) &&
+        Objects.equals(this.holdAtWorkerPhase, createProcessingTaskRequest.holdAtWorkerPhase);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(taskType, options, expectedInputVersion);
+    return Objects.hash(taskType, options, expectedInputVersion, holdAtWorkerPhase);
   }
 
   @Override
@@ -220,6 +245,7 @@ public class CreateProcessingTaskRequest {
     sb.append("    taskType: ").append(toIndentedString(taskType)).append("\n");
     sb.append("    options: ").append(toIndentedString(options)).append("\n");
     sb.append("    expectedInputVersion: ").append(toIndentedString(expectedInputVersion)).append("\n");
+    sb.append("    holdAtWorkerPhase: ").append(toIndentedString(holdAtWorkerPhase)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -238,7 +264,7 @@ public class CreateProcessingTaskRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("taskType", "options", "expectedInputVersion"));
+    openapiFields = new HashSet<String>(Arrays.asList("taskType", "options", "expectedInputVersion", "holdAtWorkerPhase"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("taskType"));

@@ -210,6 +210,7 @@ taskEventType:
 sourceType:
   - PRIMARY_TRANSCRIPT
   - AI_SUMMARY
+  - MINUTES
   - DECISION
   - ACTION_ITEM
   - RISK
@@ -291,4 +292,10 @@ transcriptSegmentSpeakerMatchStatus:
   - CANDIDATE
   - CONFIRMED
   - REJECTED
+
+# ── Phase 9 工作站（D1 / D7） ─────────────────────────────────────
+# meeting_documents.role — REFERENCE 文档被注入纪要 prompt；ATTACHMENT 仅展示。
+documentRole:
+  - REFERENCE
+  - ATTACHMENT
 

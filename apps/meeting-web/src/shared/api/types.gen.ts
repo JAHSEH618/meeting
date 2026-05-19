@@ -314,6 +314,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/processing-tasks/{taskId}:resume-java-phase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Promote a task halted at WORKER_DAG_DONE to JAVA_LLM_RUNNING (SUMMARY/EXTRACTION). Used when the task was created with holdAtWorkerPhase=true and the user has confirmed transcript / speakers in the workstation UI. */
+        post: operations["resumeProcessingTaskJavaPhase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/meetings/{meetingId}/transcript": {
         parameters: {
             query?: never;
@@ -620,6 +637,59 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/meetings/{meetingId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List documents attached to a meeting. */
+        get: operations["listMeetingDocuments"];
+        put?: never;
+        /** @description Attach an existing tenant document to a meeting with a role. */
+        post: operations["attachMeetingDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/meetings/{meetingId}/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Detach a document from a meeting (soft delete on the link, document itself remains). */
+        delete: operations["detachMeetingDocument"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/meetings/{meetingId}/glossary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get meeting-scoped glossary terms. */
+        get: operations["getMeetingGlossary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Replace meeting-scoped glossary terms (overwrite, max 200 terms, each term ≤ 64 chars). */
+        patch: operations["updateMeetingGlossary"];
         trace?: never;
     };
     "/documents": {
@@ -1179,6 +1249,11 @@ export interface components {
             expectedInputVersion?: {
                 [key: string]: unknown;
             };
+            /**
+             * @description When true, Java's WorkerPhaseCompletedListener stops at WORKER_DAG_DONE and waits for an explicit resume-java-phase call before starting SUMMARY / EXTRACTION.
+             * @default false
+             */
+            holdAtWorkerPhase: boolean;
         };
         ProcessingTaskResponse: {
             success: boolean;
@@ -1617,6 +1692,60 @@ export interface components {
         ProcessingStepUpdateSource: "JAVA_TASK_SERVICE" | "AI_WORKER_CALLBACK";
         /** @enum {string} */
         RagAnswerCoverage: "TRANSCRIPT_ONLY" | "FULL";
+        /**
+         * @description REFERENCE = injected into minutes prompt; ATTACHMENT = displayed only.
+         * @enum {string}
+         */
+        DocumentRole: "REFERENCE" | "ATTACHMENT";
+        AttachMeetingDocumentRequest: {
+            documentId: string;
+            role: components["schemas"]["DocumentRole"];
+        };
+        MeetingDocumentItem: {
+            id: string;
+            documentId: string;
+            title?: string | null;
+            role: components["schemas"]["DocumentRole"];
+            securityLevel?: components["schemas"]["SecurityLevel"];
+            attachedBy?: string | null;
+            /** Format: date-time */
+            attachedAt: string;
+        };
+        MeetingDocumentsResponse: {
+            success: boolean;
+            data: components["schemas"]["MeetingDocumentItem"][];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        MeetingDocumentResponse: {
+            success: boolean;
+            data: components["schemas"]["MeetingDocumentItem"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        GlossaryTerm: {
+            term: string;
+            definition?: string | null;
+            aliases?: string[];
+        };
+        UpdateMeetingGlossaryRequest: {
+            terms: components["schemas"]["GlossaryTerm"][];
+        };
+        MeetingGlossary: {
+            meetingId: string;
+            terms: components["schemas"]["GlossaryTerm"][];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MeetingGlossaryResponse: {
+            success: boolean;
+            data: components["schemas"]["MeetingGlossary"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
     };
     responses: {
         /** @description Standard success response */
@@ -2377,6 +2506,38 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    resumeProcessingTaskJavaPhase: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task resumed; response carries phase=JAVA_LLM_RUNNING. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcessingTaskResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     getTranscript: {
         parameters: {
             query?: never;
@@ -2821,6 +2982,154 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["OkPaginated"];
+        };
+    };
+    listMeetingDocuments: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                meetingId: components["parameters"]["MeetingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documents attached to the meeting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDocumentsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    attachMeetingDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                meetingId: components["parameters"]["MeetingId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttachMeetingDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Document attached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDocumentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    detachMeetingDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                meetingId: components["parameters"]["MeetingId"];
+                documentId: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["OkEmpty"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getMeetingGlossary: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                meetingId: components["parameters"]["MeetingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current glossary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingGlossaryResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateMeetingGlossary: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                meetingId: components["parameters"]["MeetingId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeetingGlossaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Glossary updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingGlossaryResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listDocuments: {

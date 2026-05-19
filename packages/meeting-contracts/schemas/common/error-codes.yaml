@@ -464,3 +464,23 @@ errorCodes:
     userMessage: 服务内部错误
     i18nKey: errors.INTERNAL_ERROR
     opsTags: [internal]
+
+  # ── Workstation (D3 / D7) ─────────────────────────────────────
+  - code: INVALID_TASK_PHASE
+    step: TASK
+    retryable: false
+    userMessage: 任务当前阶段不允许该操作
+    i18nKey: errors.INVALID_TASK_PHASE
+    opsTags: [task, phase]
+  - code: SPEAKER_REFERENCE_UNAVAILABLE
+    step: SPEAKER_MATCHING
+    retryable: true
+    userMessage: 声纹参考向量暂不可用
+    i18nKey: errors.SPEAKER_REFERENCE_UNAVAILABLE
+    opsTags: [speaker, reference]
+  - code: SPEAKER_REFERENCE_STALE
+    step: SPEAKER_MATCHING
+    retryable: false
+    userMessage: 声纹参考向量已过期，请重新录入
+    i18nKey: errors.SPEAKER_REFERENCE_STALE
+    opsTags: [speaker, reference, stale]

@@ -83,6 +83,24 @@ class Options(BaseModel):
     exportFormat: Optional[ExportFormat] = None
 
 
+class GlossaryTerm(BaseModel):
+    __root__: constr(min_length=1)
+
+
+class ReferenceDocumentId(BaseModel):
+    __root__: constr(min_length=1)
+
+
+class ControlFlags(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    holdAtWorkerPhase: Optional[bool] = Field(
+        False,
+        description="Java-side routing flag. Worker MUST NOT branch on this — when true, Java's WorkerPhaseCompletedListener stops at WORKER_DAG_DONE awaiting an explicit resume-java-phase call.",
+    )
+
+
 class ProcessingTaskMessage(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -108,3 +126,14 @@ class ProcessingTaskMessage(BaseModel):
     options: Options
     traceId: constr(min_length=1)
     createdAt: Optional[datetime] = None
+    glossaryTerms: Optional[List[GlossaryTerm]] = Field(
+        [],
+        description='Optional meeting-scoped glossary terms; worker ignores if hot-word bias unimplemented.',
+        max_items=200,
+    )
+    referenceDocumentIds: Optional[List[ReferenceDocumentId]] = Field(
+        [],
+        description='Optional list of attached REFERENCE document ids; worker may use for RAG context, Java side uses for prompt enrichment.',
+        max_items=32,
+    )
+    controlFlags: Optional[ControlFlags] = None

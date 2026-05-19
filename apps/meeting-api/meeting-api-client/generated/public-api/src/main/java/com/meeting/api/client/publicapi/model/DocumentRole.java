@@ -1,6 +1,6 @@
 /*
- * AI Worker Internal API
- * Internal API for synchronous AI inference calls from meeting-api, protected by HMAC authentication.
+ * Meeting Public API
+ * Meeting Intelligence Platform Public API
  *
  * The version of the OpenAPI document: 0.1.0
  * Contact: api@meeting.dev
@@ -11,7 +11,7 @@
  */
 
 
-package com.meeting.api.client.workerinternal.model;
+package com.meeting.api.client.publicapi.model;
 
 import java.util.Objects;
 import com.google.gson.annotations.SerializedName;
@@ -24,28 +24,18 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 
 /**
- * Gets or Sets SourceType
+ * REFERENCE &#x3D; injected into minutes prompt; ATTACHMENT &#x3D; displayed only.
  */
-@JsonAdapter(SourceType.Adapter.class)
-public enum SourceType {
+@JsonAdapter(DocumentRole.Adapter.class)
+public enum DocumentRole {
   
-  PRIMARY_TRANSCRIPT("PRIMARY_TRANSCRIPT"),
+  REFERENCE("REFERENCE"),
   
-  AI_SUMMARY("AI_SUMMARY"),
-  
-  MINUTES("MINUTES"),
-  
-  DECISION("DECISION"),
-  
-  ACTION_ITEM("ACTION_ITEM"),
-  
-  RISK("RISK"),
-  
-  DOCUMENT("DOCUMENT");
+  ATTACHMENT("ATTACHMENT");
 
   private String value;
 
-  SourceType(String value) {
+  DocumentRole(String value) {
     this.value = value;
   }
 
@@ -58,8 +48,8 @@ public enum SourceType {
     return String.valueOf(value);
   }
 
-  public static SourceType fromValue(String value) {
-    for (SourceType b : SourceType.values()) {
+  public static DocumentRole fromValue(String value) {
+    for (DocumentRole b : DocumentRole.values()) {
       if (b.value.equals(value)) {
         return b;
       }
@@ -67,22 +57,22 @@ public enum SourceType {
     throw new IllegalArgumentException("Unexpected value '" + value + "'");
   }
 
-  public static class Adapter extends TypeAdapter<SourceType> {
+  public static class Adapter extends TypeAdapter<DocumentRole> {
     @Override
-    public void write(final JsonWriter jsonWriter, final SourceType enumeration) throws IOException {
+    public void write(final JsonWriter jsonWriter, final DocumentRole enumeration) throws IOException {
       jsonWriter.value(enumeration.getValue());
     }
 
     @Override
-    public SourceType read(final JsonReader jsonReader) throws IOException {
+    public DocumentRole read(final JsonReader jsonReader) throws IOException {
       String value = jsonReader.nextString();
-      return SourceType.fromValue(value);
+      return DocumentRole.fromValue(value);
     }
   }
 
   public static void validateJsonElement(JsonElement jsonElement) throws IOException {
     String value = jsonElement.getAsString();
-    SourceType.fromValue(value);
+    DocumentRole.fromValue(value);
   }
 }
 

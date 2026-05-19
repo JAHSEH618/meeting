@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field, confloat, conint, constr
 class SourceType(Enum):
     PRIMARY_TRANSCRIPT = 'PRIMARY_TRANSCRIPT'
     AI_SUMMARY = 'AI_SUMMARY'
+    MINUTES = 'MINUTES'
     DECISION = 'DECISION'
     ACTION_ITEM = 'ACTION_ITEM'
     RISK = 'RISK'
@@ -94,6 +96,36 @@ class EmbedResponse(BaseModel):
     vectors: List[List[float]]
 
 
+class PersonId(BaseModel):
+    __root__: constr(min_length=1)
+
+
+class SpeakerReferenceEmbeddingRequest(BaseModel):
+    tenantId: str
+    personIds: List[PersonId] = Field(..., max_items=64, min_items=1)
+    asOf: Optional[datetime] = Field(
+        None, description='Optional point-in-time anchor; defaults to server clock.'
+    )
+
+
+class SpeakerReferenceEmbeddingItem(BaseModel):
+    personId: str
+    values: List[float] = Field(
+        ...,
+        description='L2-normalized centroid of active enrollments. Plaintext — do not log.',
+    )
+    dim: conint(ge=1)
+    hash: str = Field(
+        ...,
+        description='SHA256 of the source enrollment ids the centroid was built from.',
+    )
+    computedAt: datetime
+
+
+class SpeakerReferenceEmbeddingResponse(BaseModel):
+    items: List[SpeakerReferenceEmbeddingItem]
+
+
 class ErrorInfo(BaseModel):
     code: str
     message: str
@@ -117,7 +149,13 @@ class RerankResponse(BaseModel):
 class ApiResponse(BaseModel):
     success: bool
     data: Optional[
-        Union[RerankResponse, ListModelsResponse, WarmupResponse, EmbedResponse]
+        Union[
+            RerankResponse,
+            ListModelsResponse,
+            WarmupResponse,
+            EmbedResponse,
+            SpeakerReferenceEmbeddingResponse,
+        ]
     ]
     error: Optional[ErrorInfo]
     requestId: str

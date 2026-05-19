@@ -23,7 +23,8 @@ import com.meeting.api.client.workerinternal.model.EmbedResponse;
 import com.meeting.api.client.workerinternal.model.ListModelsResponse;
 import com.meeting.api.client.workerinternal.model.ModelInfo;
 import com.meeting.api.client.workerinternal.model.RerankResponse;
-import com.meeting.api.client.workerinternal.model.RerankResultItem;
+import com.meeting.api.client.workerinternal.model.SpeakerReferenceEmbeddingItem;
+import com.meeting.api.client.workerinternal.model.SpeakerReferenceEmbeddingResponse;
 import com.meeting.api.client.workerinternal.model.WarmupResponse;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -82,6 +83,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             final TypeAdapter<ListModelsResponse> adapterListModelsResponse = gson.getDelegateAdapter(this, TypeToken.get(ListModelsResponse.class));
             final TypeAdapter<WarmupResponse> adapterWarmupResponse = gson.getDelegateAdapter(this, TypeToken.get(WarmupResponse.class));
             final TypeAdapter<EmbedResponse> adapterEmbedResponse = gson.getDelegateAdapter(this, TypeToken.get(EmbedResponse.class));
+            final TypeAdapter<SpeakerReferenceEmbeddingResponse> adapterSpeakerReferenceEmbeddingResponse = gson.getDelegateAdapter(this, TypeToken.get(SpeakerReferenceEmbeddingResponse.class));
 
             return (TypeAdapter<T>) new TypeAdapter<ApiResponseData>() {
                 @Override
@@ -115,7 +117,13 @@ public class ApiResponseData extends AbstractOpenApiSchema {
                         elementAdapter.write(out, element);
                         return;
                     }
-                    throw new IOException("Failed to serialize as the type doesn't match anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse");
+                    // check if the actual instance is of the type `SpeakerReferenceEmbeddingResponse`
+                    if (value.getActualInstance() instanceof SpeakerReferenceEmbeddingResponse) {
+                        JsonElement element = adapterSpeakerReferenceEmbeddingResponse.toJsonTree((SpeakerReferenceEmbeddingResponse)value.getActualInstance());
+                        elementAdapter.write(out, element);
+                        return;
+                    }
+                    throw new IOException("Failed to serialize as the type doesn't match anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse");
                 }
 
                 @Override
@@ -178,6 +186,19 @@ public class ApiResponseData extends AbstractOpenApiSchema {
                         errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for EmbedResponse failed with `%s`.", e.getMessage()));
                         log.log(Level.FINER, "Input data does not match schema 'EmbedResponse'", e);
                     }
+                    // deserialize SpeakerReferenceEmbeddingResponse
+                    try {
+                        // validate the JSON object to see if any exception is thrown
+                        SpeakerReferenceEmbeddingResponse.validateJsonElement(jsonElement);
+                        actualAdapter = adapterSpeakerReferenceEmbeddingResponse;
+                        ApiResponseData ret = new ApiResponseData();
+                        ret.setActualInstance(actualAdapter.fromJsonTree(jsonElement));
+                        return ret;
+                    } catch (Exception e) {
+                        // deserialization failed, continue
+                        errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for SpeakerReferenceEmbeddingResponse failed with `%s`.", e.getMessage()));
+                        log.log(Level.FINER, "Input data does not match schema 'SpeakerReferenceEmbeddingResponse'", e);
+                    }
 
                     throw new IOException(String.format(java.util.Locale.ROOT, "Failed deserialization for ApiResponseData: no class matches result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
                 }
@@ -202,6 +223,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
         schemas.put("ListModelsResponse", ListModelsResponse.class);
         schemas.put("WarmupResponse", WarmupResponse.class);
         schemas.put("EmbedResponse", EmbedResponse.class);
+        schemas.put("SpeakerReferenceEmbeddingResponse", SpeakerReferenceEmbeddingResponse.class);
     }
 
     @Override
@@ -212,7 +234,7 @@ public class ApiResponseData extends AbstractOpenApiSchema {
     /**
      * Set the instance that matches the anyOf child schema, check
      * the instance parameter is valid against the anyOf child schemas:
-     * EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse
+     * EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse
      *
      * It could be an instance of the 'anyOf' schemas.
      */
@@ -243,14 +265,19 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             return;
         }
 
-        throw new RuntimeException("Invalid instance type. Must be EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse");
+        if (instance instanceof SpeakerReferenceEmbeddingResponse) {
+            super.setActualInstance(instance);
+            return;
+        }
+
+        throw new RuntimeException("Invalid instance type. Must be EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse");
     }
 
     /**
      * Get the actual instance, which can be the following:
-     * EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse
+     * EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse
      *
-     * @return The actual instance (EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse)
+     * @return The actual instance (EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse)
      */
     @SuppressWarnings("unchecked")
     @Override
@@ -303,6 +330,17 @@ public class ApiResponseData extends AbstractOpenApiSchema {
     }
 
     /**
+     * Get the actual instance of `SpeakerReferenceEmbeddingResponse`. If the actual instance is not `SpeakerReferenceEmbeddingResponse`,
+     * the ClassCastException will be thrown.
+     *
+     * @return The actual instance of `SpeakerReferenceEmbeddingResponse`
+     * @throws ClassCastException if the instance is not `SpeakerReferenceEmbeddingResponse`
+     */
+    public SpeakerReferenceEmbeddingResponse getSpeakerReferenceEmbeddingResponse() throws ClassCastException {
+        return (SpeakerReferenceEmbeddingResponse)super.getActualInstance();
+    }
+
+    /**
      * Validates the JSON Element and throws an exception if issues found
      *
      * @param jsonElement JSON Element
@@ -343,7 +381,15 @@ public class ApiResponseData extends AbstractOpenApiSchema {
             errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for EmbedResponse failed with `%s`.", e.getMessage()));
             // continue to the next one
         }
-        throw new IOException(String.format(java.util.Locale.ROOT, "The JSON string is invalid for ApiResponseData with anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, WarmupResponse. no class match the result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
+        // validate the json string with SpeakerReferenceEmbeddingResponse
+        try {
+            SpeakerReferenceEmbeddingResponse.validateJsonElement(jsonElement);
+            return;
+        } catch (Exception e) {
+            errorMessages.add(String.format(java.util.Locale.ROOT, "Deserialization for SpeakerReferenceEmbeddingResponse failed with `%s`.", e.getMessage()));
+            // continue to the next one
+        }
+        throw new IOException(String.format(java.util.Locale.ROOT, "The JSON string is invalid for ApiResponseData with anyOf schemas: EmbedResponse, ListModelsResponse, RerankResponse, SpeakerReferenceEmbeddingResponse, WarmupResponse. no class match the result, expected at least 1. Detailed failure message for anyOf schemas: %s. JSON: %s", errorMessages, jsonElement.toString()));
     }
 
     /**

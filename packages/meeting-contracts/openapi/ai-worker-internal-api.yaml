@@ -148,6 +148,45 @@ paths:
           $ref: '#/components/responses/AuthFailed'
         '503':
           $ref: '#/components/responses/EmbeddingUnavailable'
+  /speakers/reference-embeddings:
+    post:
+      operationId: getSpeakerReferenceEmbeddings
+      tags: [Internal]
+      summary: Resolve current speaker reference embeddings by person id.
+      description: >
+        Synchronous internal endpoint called only by ai-worker during the
+        SPEAKER_MATCHING step. Returns the L2-normalized centroid of each
+        person's active speaker enrollments (decrypted from KMS envelope on
+        demand). Plaintext vectors travel over internal-TLS + HMAC only and
+        MUST NOT be logged or persisted by either side. Missing or revoked
+        person ids are omitted from `items` — the worker decides whether to
+        downgrade SPEAKER_MATCHING or fail.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeakerReferenceEmbeddingRequest'
+      responses:
+        '200':
+          description: Reference embeddings wrapped in ApiResponse envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/AuthFailed'
+        '503':
+          $ref: '#/components/responses/SpeakerReferenceUnavailable'
 components:
   parameters:
     RequestId:
@@ -194,6 +233,7 @@ components:
       enum:
         - PRIMARY_TRANSCRIPT
         - AI_SUMMARY
+        - MINUTES
         - DECISION
         - ACTION_ITEM
         - RISK
@@ -356,6 +396,51 @@ components:
             type: array
             items:
               type: number
+    SpeakerReferenceEmbeddingRequest:
+      type: object
+      required: [tenantId, personIds]
+      properties:
+        tenantId:
+          type: string
+        personIds:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: string
+            minLength: 1
+        asOf:
+          type: string
+          format: date-time
+          description: Optional point-in-time anchor; defaults to server clock.
+    SpeakerReferenceEmbeddingItem:
+      type: object
+      required: [personId, values, dim, hash, computedAt]
+      properties:
+        personId:
+          type: string
+        values:
+          type: array
+          items:
+            type: number
+          description: L2-normalized centroid of active enrollments. Plaintext — do not log.
+        dim:
+          type: integer
+          minimum: 1
+        hash:
+          type: string
+          description: SHA256 of the source enrollment ids the centroid was built from.
+        computedAt:
+          type: string
+          format: date-time
+    SpeakerReferenceEmbeddingResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerReferenceEmbeddingItem'
     ApiResponse:
       type: object
       required: [success, data, error, requestId, traceId]
@@ -367,6 +452,7 @@ components:
             - $ref: '#/components/schemas/ListModelsResponse'
             - $ref: '#/components/schemas/WarmupResponse'
             - $ref: '#/components/schemas/EmbedResponse'
+            - $ref: '#/components/schemas/SpeakerReferenceEmbeddingResponse'
             - type: 'null'
         error:
           anyOf:
@@ -411,6 +497,12 @@ components:
             $ref: '#/components/schemas/ApiResponse'
     EmbeddingUnavailable:
       description: Embedding model or runtime unavailable. meeting-api MUST NOT silently downgrade — RAG query embedding has no equivalent fallback — and should record EMBEDDING_UNAVAILABLE for the user-facing 503.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    SpeakerReferenceUnavailable:
+      description: Speaker reference resolution failed (KMS / DB / signal-quality). ai-worker may degrade SPEAKER_MATCHING or fail-fast.
       content:
         application/json:
           schema:

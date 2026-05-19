@@ -450,7 +450,7 @@ components:
         embeddingBatchId: {type: string}
         sourceType:
           type: string
-          enum: [PRIMARY_TRANSCRIPT, AI_SUMMARY, DECISION, ACTION_ITEM, RISK, DOCUMENT]
+          enum: [PRIMARY_TRANSCRIPT, AI_SUMMARY, MINUTES, DECISION, ACTION_ITEM, RISK, DOCUMENT]
         embeddingModelVersion: {type: string}
         chunkStrategyVersion: {type: string}
         items:
