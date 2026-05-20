@@ -79,6 +79,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     private final Clock clock;
     private final MeetingGlossaryRepository glossaryRepository;
     private final MeetingDocumentRepository meetingDocumentRepository;
+    private final JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator;
 
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -87,7 +88,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         TenantScopedTransaction tenantScopedTransaction
     ) {
         this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
-            Clock.systemUTC(), null, null);
+            Clock.systemUTC(), null, null, null);
     }
 
     public ProcessingTaskApplicationService(
@@ -98,7 +99,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         Clock clock
     ) {
         this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
-            clock, null, null);
+            clock, null, null, null);
     }
 
     public ProcessingTaskApplicationService(
@@ -110,6 +111,20 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         MeetingGlossaryRepository glossaryRepository,
         MeetingDocumentRepository meetingDocumentRepository
     ) {
+        this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
+            clock, glossaryRepository, meetingDocumentRepository, null);
+    }
+
+    public ProcessingTaskApplicationService(
+        ProcessingTaskRepository taskRepository,
+        MeetingRepository meetingRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        Clock clock,
+        MeetingGlossaryRepository glossaryRepository,
+        MeetingDocumentRepository meetingDocumentRepository,
+        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator
+    ) {
         this.taskRepository = taskRepository;
         this.meetingRepository = meetingRepository;
         this.messagePublisher = messagePublisher;
@@ -117,6 +132,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         this.clock = clock;
         this.glossaryRepository = glossaryRepository;
         this.meetingDocumentRepository = meetingDocumentRepository;
+        this.javaLlmPhaseOrchestrator = javaLlmPhaseOrchestrator;
     }
 
     @Override
@@ -303,7 +319,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
 
     @Override
     public ProcessingTaskDTO resumeJavaPhase(ResumeJavaPhaseCommand command) {
-        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+        ProcessingTaskDTO gated = tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
             ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
                 .orElseThrow(() -> new ApplicationException(
                     ErrorCode.TASK_NOT_FOUND, 404,
@@ -321,8 +337,13 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
                 );
             }
             task.beginJavaLlm(OffsetDateTime.now(clock));
-            return ProcessingTaskAssembler.toDto(taskRepository.save(task));
+            taskRepository.save(task);
+            return ProcessingTaskAssembler.toDto(task);
         });
+        if (javaLlmPhaseOrchestrator != null && gated.phase() == ProcessingTaskPhase.JAVA_LLM_RUNNING) {
+            return javaLlmPhaseOrchestrator.run(command.tenantId(), command.taskId());
+        }
+        return gated;
     }
 
     private Map<String, Object> processingTaskMessagePayload(CreateProcessingTaskCommand command, ProcessingTask task) {

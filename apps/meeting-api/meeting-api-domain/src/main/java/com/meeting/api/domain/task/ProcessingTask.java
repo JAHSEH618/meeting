@@ -231,10 +231,13 @@ public final class ProcessingTask {
             }
         }
         boolean anyFailed = steps.values().stream().anyMatch(s -> s.status() == StepStatus.FAILED);
+        boolean summaryFailed = steps.values().stream().anyMatch(s ->
+            s.stepName() == ProcessingStep.SUMMARY && s.status() == StepStatus.FAILED
+        );
         boolean anySkipped = steps.values().stream().anyMatch(s -> s.status() == StepStatus.SKIPPED);
         ProcessingTaskStatus terminalStatus;
         String terminalErrorCode = null;
-        if (anyFailed) {
+        if (summaryFailed) {
             terminalStatus = ProcessingTaskStatus.FAILED;
             terminalErrorCode = steps.values().stream()
                 .filter(s -> s.status() == StepStatus.FAILED)
@@ -242,8 +245,14 @@ public final class ProcessingTask {
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(lastErrorCode);
-        } else if (anySkipped) {
+        } else if (anyFailed || anySkipped) {
             terminalStatus = ProcessingTaskStatus.PARTIAL_SUCCEEDED;
+            terminalErrorCode = steps.values().stream()
+                .filter(s -> s.status() == StepStatus.FAILED)
+                .map(ProcessingTaskStep::errorCode)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(lastErrorCode);
         } else {
             terminalStatus = ProcessingTaskStatus.SUCCEEDED;
         }

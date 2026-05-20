@@ -104,6 +104,20 @@ class TaskStepProgressServiceTest {
     }
 
     @Test
+    void completeJavaPhaseWithExtractionFailedKeepsSummaryAsPartialSuccess() {
+        InMemoryTaskRepository tasks = workerDagDoneTask();
+        TaskStepProgressService service = service(tasks);
+        service.beginJavaPhase("tenant_01", "task_01");
+        service.markStepSucceeded("tenant_01", "task_01", ProcessingStep.SUMMARY);
+        service.markStepFailed("tenant_01", "task_01", ProcessingStep.EXTRACTION, "ITEM_EXTRACTION_TIMEOUT");
+
+        var dto = service.completeJavaPhase("tenant_01", "task_01");
+
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.PARTIAL_SUCCEEDED);
+        assertThat(dto.lastErrorCode()).isEqualTo("ITEM_EXTRACTION_TIMEOUT");
+    }
+
+    @Test
     void completeJavaPhaseRejectsPendingJavaStep() {
         InMemoryTaskRepository tasks = workerDagDoneTask();
         TaskStepProgressService service = service(tasks);

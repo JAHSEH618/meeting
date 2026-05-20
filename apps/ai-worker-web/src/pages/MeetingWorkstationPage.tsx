@@ -20,6 +20,10 @@ import type {
 } from "@/shared/api/types";
 import { Stepper } from "@/features/wizard/Stepper";
 import { useWizard } from "@/features/wizard/useWizard";
+import { SafeMarkdown } from "@/shared/markdown/SafeMarkdown";
+import { VirtualList } from "@/shared/list/VirtualList";
+
+const VIRTUALIZE_THRESHOLD = 50;
 
 export function MeetingWorkstationPage() {
   const { state, step, patch, goNext, order } = useWizard();
@@ -208,14 +212,30 @@ export function MeetingWorkstationPage() {
             onChange={(e) => void handleDocSearch(e.target.value)}
             aria-label="document search"
           />
-          <ul>
-            {docResults.map((d) => (
-              <li key={d.documentId}>
-                {d.title} <small>({d.securityLevel})</small>
-                <button className="button button--secondary" disabled={attachedDocs.includes(d.documentId) || busy} onClick={() => void handleAttachDoc(d.documentId)}>关联</button>
-              </li>
-            ))}
-          </ul>
+          {docResults.length > VIRTUALIZE_THRESHOLD ? (
+            <VirtualList
+              items={docResults}
+              rowHeight={40}
+              height={320}
+              keyOf={(d) => d.documentId}
+              testId="doc-results-virtual"
+              renderRow={(d) => (
+                <div>
+                  {d.title} <small>({d.securityLevel})</small>
+                  <button className="button button--secondary" disabled={attachedDocs.includes(d.documentId) || busy} onClick={() => void handleAttachDoc(d.documentId)}>关联</button>
+                </div>
+              )}
+            />
+          ) : (
+            <ul>
+              {docResults.map((d) => (
+                <li key={d.documentId}>
+                  {d.title} <small>({d.securityLevel})</small>
+                  <button className="button button--secondary" disabled={attachedDocs.includes(d.documentId) || busy} onClick={() => void handleAttachDoc(d.documentId)}>关联</button>
+                </li>
+              ))}
+            </ul>
+          )}
           <p>已关联: {attachedDocs.length}</p>
           <button className="button" onClick={() => goNext()}>下一步：开始处理</button>
         </section>
@@ -238,22 +258,46 @@ export function MeetingWorkstationPage() {
           <h2>确认说话人</h2>
           <button className="button button--secondary" onClick={() => void handleLoadAggregate()}>刷新候选人</button>
           {aggregate?.speakers?.data?.length ? (
-            <ul>
-              {aggregate.speakers.data.map((sp) => (
-                <li key={sp.label}>
-                  {sp.label} — {sp.displayName} ({sp.verificationStatus})
-                  {sp.candidates.map((c) => (
-                    <button
-                      key={c.personId}
-                      className="button button--secondary"
-                      onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
-                    >
-                      认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
-                    </button>
-                  ))}
-                </li>
-              ))}
-            </ul>
+            (aggregate.speakers.data.length > VIRTUALIZE_THRESHOLD ? (
+              <VirtualList
+                items={aggregate.speakers.data}
+                rowHeight={56}
+                height={420}
+                keyOf={(sp) => sp.label}
+                testId="speakers-virtual"
+                renderRow={(sp) => (
+                  <div>
+                    {sp.label} — {sp.displayName} ({sp.verificationStatus})
+                    {sp.candidates.map((c) => (
+                      <button
+                        key={c.personId}
+                        className="button button--secondary"
+                        onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
+                      >
+                        认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
+                      </button>
+                    ))}
+                  </div>
+                )}
+              />
+            ) : (
+              <ul>
+                {aggregate.speakers.data.map((sp) => (
+                  <li key={sp.label}>
+                    {sp.label} — {sp.displayName} ({sp.verificationStatus})
+                    {sp.candidates.map((c) => (
+                      <button
+                        key={c.personId}
+                        className="button button--secondary"
+                        onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
+                      >
+                        认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
+                      </button>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            ))
           ) : (
             <p>暂无候选人，请等待 worker 输出后再刷新。</p>
           )}
@@ -268,7 +312,18 @@ export function MeetingWorkstationPage() {
             {state.finalized ? "已 finalize" : "确认 → resume Java phase"}
           </button>
           {state.finalized && (
-            <button className="button button--secondary" onClick={() => goNext()}>下一步：下载</button>
+            <>
+              <button className="button button--secondary" onClick={() => void handleLoadAggregate()}>刷新纪要</button>
+              {aggregate?.minutes?.data?.markdown ? (
+                <article className="card" aria-labelledby="minutes-h">
+                  <h3 id="minutes-h">{aggregate.minutes.data.title || "会议纪要"}</h3>
+                  <SafeMarkdown source={aggregate.minutes.data.markdown} testId="minutes-md" />
+                </article>
+              ) : (
+                <p>纪要尚未生成，请稍后刷新。</p>
+              )}
+              <button className="button button--secondary" onClick={() => goNext()}>下一步：下载</button>
+            </>
           )}
         </section>
       )}

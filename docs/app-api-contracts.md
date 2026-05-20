@@ -18,7 +18,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 | `meeting-web` | `meeting-api` | HTTPS JSON / SSE | 登录、会议、上传、任务进度、转录、纪要、RAG、导出、管理 |
 | `meeting-api` | RabbitMQ | JSON message | 投递音频处理、重建、导出等异步任务 |
 | `meeting-api` | `ai-worker` | Internal HTTPS JSON + HMAC | RAG query-time rerank，仅发送已授权候选 chunk |
-| `ai-worker` | `meeting-api` | Internal HTTPS JSON callback | 回写任务步骤、产物、转录、声纹候选和 worker phase 完成状态 |
+| `ai-worker` | `meeting-api` | Internal HTTPS JSON + HMAC / callback | 回写任务步骤、产物、转录、声纹候选和 worker phase 完成状态；在 `SPEAKER_MATCHING` 前同步拉取当前 active 声纹参考向量 |
 | `ai-worker` | TOS | TOS URI / SDK | 读取音频，写入中间 JSON、模型产物、导出中间件 |
 | `meeting-api` | TOS | TOS URI / SDK | 上传签名、文件元信息、导出文件、下载签名 |
 | `meeting-api` | DashScope | OpenAI-compatible API | 纪要、待办、决策、风险、RAG 答案生成 |
@@ -459,9 +459,12 @@ POST /api/meetings/{meetingId}/processing-tasks
     "enableDiarization": true,
     "enableSpeakerRecognition": true,
     "enableRagIndexing": true
-  }
+  },
+  "holdAtWorkerPhase": true
 }
 ```
+
+`holdAtWorkerPhase=true` 用于工作站人工确认链路：worker 完成 `WORKER_DAG` 后 Java 停在 `WORKER_DAG_DONE`，等待用户确认转录 / speaker，再调用 resume 接口进入 `SUMMARY` / `EXTRACTION`。默认值为 `false`，普通后台任务由 Java listener 自动推进。
 
 响应：
 
@@ -535,6 +538,20 @@ GET /api/processing-tasks/{taskId}
   "traceId": "trace_001"
 }
 ```
+
+恢复 Java LLM phase：
+
+```http
+POST /api/processing-tasks/{taskId}:resume-java-phase
+```
+
+语义：
+
+1. 仅接受 `WORKER_DAG_DONE` 或幂等的 `JAVA_LLM_RUNNING` / `TERMINAL`。
+2. 当前实现会同步运行 Java-owned `SUMMARY` 和 `EXTRACTION`，成功后 task 进入 `TERMINAL/SUCCEEDED`；失败时写入对应 step error code 并以 `PARTIAL_SUCCEEDED` 或 `FAILED` 收敛。
+3. `SUMMARY` 成功会发布 `MinutesGeneratedEvent`，由 RAG indexer 重建 `sourceType=MINUTES` 的 chunks。
+
+响应同 `ProcessingTaskResponse`。
 
 ### 4.7 任务事件 SSE
 
@@ -657,6 +674,47 @@ PATCH /api/meetings/{meetingId}/transcript/segments/{segmentId}
   "traceId": "trace_001"
 }
 ```
+
+### 4.8.1 会议工作站上下文
+
+会议级参考文档：
+
+```http
+GET    /api/meetings/{meetingId}/documents
+POST   /api/meetings/{meetingId}/documents
+DELETE /api/meetings/{meetingId}/documents/{documentId}
+```
+
+`POST` 请求：
+
+```json
+{
+  "documentId": "doc_001",
+  "role": "REFERENCE"
+}
+```
+
+Java 使用 `meeting_documents` 软删除关联表保存引用关系；同一会议未删除的 `(meetingId, documentId)` 唯一。创建处理任务时，`REFERENCE` 文档 ID 会进入 task payload 的 `referenceDocumentIds`，纪要生成时再读取文档 chunks 并按约 2k 字符预算放入 LLM context。
+
+会议级术语：
+
+```http
+GET   /api/meetings/{meetingId}/glossary
+PATCH /api/meetings/{meetingId}/glossary
+```
+
+`PATCH` 请求：
+
+```json
+{
+  "terms": [
+    {"term": "CMDB", "aliases": ["配置管理数据库"]},
+    {"term": "RTO", "aliases": ["恢复时间目标"]}
+  ]
+}
+```
+
+`terms` 最大 200 条，单个 `term` 不超过 64 字符；落库字段为 `meetings.glossary_terms jsonb`，创建处理任务时同步进入 task payload 的 `glossaryTerms`。
 
 ### 4.9 确认 speaker
 
@@ -892,6 +950,14 @@ GET /api/exports/{exportId}
   "traceId": "trace_001"
 }
 ```
+
+`downloadUrl` 是 TOS 预签名 URL，`downloadUrlExpiresAt` 由 `export_jobs.download_expires_at` 派生。撤销短链使用既有：
+
+```http
+POST /api/exports/{exportId}/revoke-link
+```
+
+撤销后再次查询导出时不再返回可用 `downloadUrl`，`revoked=true`。
 
 ### 4.13 高频写操作补充样例
 
@@ -1340,6 +1406,47 @@ POST /internal/processing-tasks/{taskId}/embeddings
   "traceId": "trace_001"
 }
 ```
+
+### 6.5.1 获取 speaker reference embedding
+
+```http
+POST /internal/speakers/reference-embeddings
+```
+
+该接口由 `ai-worker` 在 `SPEAKER_MATCHING` 步骤同步调用 `meeting-api`，按 personId 获取当前 active enrollment 的 L2 归一化质心向量。请求使用 internal TLS + HMAC，必带 `X-Tenant-Id`、`X-Timestamp`、`X-Nonce`、`X-Signature`、`X-Request-Id`、`X-Trace-Id`。
+
+请求：
+
+```json
+{
+  "tenantId": "t_001",
+  "personIds": ["person_001", "person_002"]
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "personId": "person_001",
+        "dimension": 192,
+        "values": [0.012, -0.034, 0.056],
+        "hash": "sha256:reference_centroid_hash",
+        "computedAt": "2026-05-20T01:00:00Z"
+      }
+    ]
+  },
+  "error": null,
+  "requestId": "req_internal_001",
+  "traceId": "trace_001"
+}
+```
+
+校验顺序固定为：签名 → 时间戳窗口 → header/body tenant 一致 → JSON 解码 → personIds 去重 → service。未知、已撤销或全 revoked 的 personId 默认省略；全量不可用返回稳定错误码 `SPEAKER_REFERENCE_UNAVAILABLE`。Java 侧只允许日志输出 count 与 hash，明文向量在调用结束后清零；worker 侧最多缓存 60 秒。
 
 ### 6.6 标记 worker 阶段完成
 

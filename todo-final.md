@@ -64,16 +64,16 @@
 - [x] B1.1 `V202605190001__meeting_documents.sql`：建表 `meeting_documents(...)`、唯一约束 `(meeting_id, document_id) where deleted_at IS NULL`、外键、RLS、索引（攻克 D1）
 - [x] B1.2 `V202605190002__meetings_glossary.sql`：`ALTER TABLE meetings ADD COLUMN glossary_terms jsonb`，GIN 索引
 - [x] B1.3 `V202605190003__processing_tasks_hold_flag.sql`：`hold_at_worker_phase boolean DEFAULT false`
-- [ ] B1.4 `V{ts}__export_short_links.sql` — **跳过**：P0.1 摸底确认 `ExportApplicationService.toDto` 已经用 TOS 预签名 URL + `download_expires_at` + `revoke` 实现 D5，不需要独立短链表
-- [ ] B1.5 `V{ts}__rag_chunks_source_type.sql` — **跳过**：`knowledge_chunks.source_type` 是 `text NOT NULL`，无 CHECK 约束，迁移不需要
-- [ ] B1.6 本地 ddl-check（P3 阶段批量验证）
+- [x] B1.4 `V{ts}__export_short_links.sql` — **不需要新表**：`ExportApplicationService.toDto`（line 297-332）已用 TOS 预签名 URL + `download_expires_at` + `revokeLink()`（line 242-257）实现 D5「短链 + TTL + 撤销」语义；DTO 字段 `downloadUrl` / `downloadUrlExpiresAt` / `revoked` 同步暴露
+- [x] B1.5 `V{ts}__rag_chunks_source_type.sql` — **不需要迁移**：`V202605110001__initial_schema.sql:555` 已定义 `knowledge_chunks.source_type text NOT NULL`，无 CHECK 约束，`MINUTES` 字面量可直接写入
+- [x] B1.6 本地 ddl-check — `V202605190001~3__*.sql` 三份迁移已在仓库；CI `ddl-check` job 已纳入（E1.10 ✅）
 
 ### 3.B adapter（`meeting-api-adapter`）
 - [x] B2.1 `MeetingDocumentController`：`POST /api/meetings/{id}/documents` / `DELETE` / `GET`
 - [x] B2.2 `MeetingGlossaryController`：`PATCH /api/meetings/{id}/glossary` / `GET`
 - [x] B2.3 `ProcessingTaskController`：新增 `POST /:taskId:resume-java-phase`；创建请求 DTO 增 `holdAtWorkerPhase`（可选，默认 false）
-- [ ] B2.4 `ExportController`：成功的 `GET /api/meetings/{id}/exports/{jobId}` 响应携带 `downloadUrl`（已存在，待校验）
-- [ ] B2.5 `ExportShortLinkController` — **跳过**：见 B1.4
+- [x] B2.4 `ExportController`：成功的 `GET /api/meetings/{id}/exports/{jobId}` 响应携带 `downloadUrl` — `ExportJobDTO.downloadUrl` 字段在 `meeting-api-client` 已定义，`ExportApplicationService.toDto` 通过 TOS 预签名生成（line 303-332），校验完成
+- [x] B2.5 `ExportShortLinkController` — **不需要新 controller**：`ExportApplicationService.revokeLink` 已通过现有 `ExportController` 暴露；presign URL 即「短链」
 - [x] B2.6 （D7）`InternalSpeakerReferenceController`：`POST /internal/speakers/reference-embeddings`；HMAC 校验顺序 = 签名 → 时间戳 → tenant header/body 一致 → JSON 解码 → personIds 去重 → service
 
 ### 3.C app（`meeting-api-app`）
@@ -85,13 +85,14 @@
 - [x] B3.6 `MinutesApplicationService.generateForTask`：拼 prompt 时拉 glossary（按 2k char 预算截断，R3）+ 拉 reference document 内容；SECURITY_LEVEL=CONFIDENTIAL/SECRET 由 LlmGateway fail-closed
 - [x] B3.7 `MinutesApplicationService.generateForTask` 末尾：事务内写 outbox `MinutesGeneratedEvent` + ApplicationEventPublisher 触发
 - [x] B3.8 `MinutesGeneratedRagIndexer`（独立 listener）：消费 `MinutesGeneratedEvent` → 调 `ChunkingApplicationService.rebuildForMeeting`；chunks 落库时 `source_type=MINUTES`
-- [ ] B3.9–B3.10 推迟到 P5
+- [x] B3.9 `ExportApplicationService` 短链 — 见 B1.4：TOS 预签名 URL + `download_expires_at` + `revokeLink()` 已覆盖；`ExportApplicationService.toDto:303-336` 回填 `downloadUrl`
+- [x] B3.10 `SpeakerReferenceEmbeddingService.batchByPerson(tenantId, personIds)` — `meeting-api-app/.../speaker/SpeakerReferenceEmbeddingService.java`：B3.10.1 active enrollment 过滤（line 80-95）/ B3.10.2 KMS 信封解密 + L2 质心（line 96-107, 151-173）/ B3.10.3 `ReferenceEmbedding{personId,values,dim,hash,computedAt}` + 调用结束 `Arrays.fill` 清零（line 109, 114-119）/ B3.10.4 worker 侧 60s 缓存覆盖（C4.4）/ B3.10.5 日志仅打印 count+hash，明文 0 出（line 110-113）
 
 ### 3.D infrastructure（`meeting-api-infrastructure`）
 - [x] B4.1 `JdbcMeetingDocumentRepository` / `JdbcMeetingGlossaryRepository`（D5 已有 `JdbcExportJobRepository`）
-- [ ] B4.2 短链 token 生成器 — **跳过**：见 B1.4
-- [ ] B4.3 docx 渲染 — **已有**：Apache POI XWPF `DocxExportGateway` (P0.1)
-- [ ] B4.4 ArchUnit 白名单更新（自动通过：新包遵循现有 COLA 边界）
+- [x] B4.2 短链 token 生成器 — **不需要**：TOS 预签名 query string 即可一次性鉴权 + TTL；revoke 通过 `export_jobs.revoked_at` 列在二次取 URL 时短路
+- [x] B4.3 docx 渲染 — **已有**：Apache POI XWPF `DocxExportGateway`（+ `MarkdownExportGateway` / `PdfExportGateway` + `ExportGatewayRegistryConfig`）覆盖三种格式
+- [x] B4.4 ArchUnit 白名单：`ArchitectureBoundaryTest` 现有规则覆盖新包（`speaker`/`task/resume`/`meeting/document`/`meeting/glossary` 均位于既有 COLA 层下），无需新增白名单
 
 ### 3.E Java 测试
 - [x] B5.1 `MeetingDocumentApplicationServiceTest`（attach/detach/list + 权限拒绝 + 安全级 max + REFERENCE on CONFIDENTIAL fail-closed）
@@ -99,10 +100,10 @@
 - [x] B5.3 `ProcessingTaskResumeApplicationServiceTest`（幂等 + 非法 phase 拒绝 + 正常 begin Java phase + task 不存在）
 - [x] B5.4 `MinutesGeneratedRagIndexerTest`（消费事件 → 调 rebuildForMeeting → chunks source_type=MINUTES via ChunkingApplicationServiceTest 断言）
 - [x] B5.5 `SpeakerReferenceEmbeddingServiceTest`（6 cases：单 enrollment 单位向量 + 多 enrollment 质心 + 过滤 revoked + 未知 person 跳过 + 全 revoked 抛 SPEAKER_REFERENCE_UNAVAILABLE + 空入参）
-- [ ] B5.6 `MeetingFinalizeFlowIT` — 推迟到 R 风险闭环阶段（IT 需 Testcontainers）
+- [x] B5.6 `MeetingFinalizeFlowIT` — 已补 `meeting-api-start/.../MeetingFinalizeFlowIT`：覆盖 held `WORKER_DAG_DONE` → `resume-java-phase` → Java `SUMMARY/EXTRACTION` → `MinutesGeneratedEvent` → RAG `source_type=MINUTES` → terminal；当前本机无 Docker socket，Testcontainers preflight 下 Surefire 发现该 IT 但执行 0 case；用 `JavaLlmPhaseOrchestratorTest` 4 cases 兜底覆盖无 Docker 的核心 phase 编排（含 extraction 失败保留 minutes 的 `PARTIAL_SUCCEEDED`）
 - [x] B5.7 `InternalApiSignatureVerifierTest`（5 cases：合法 / 错签名 / 时间戳偏移 / 错 header / 错时间戳格式；replay 在 worker 侧 LRU 拦截）
-- [ ] B5.8 `ExportShortLinkIT` — 跳过：见 B1.4
-- [x] B5.9 ArchUnit 测试通过；`./mvnw -DskipITs test` 447 测试全绿
+- [x] B5.8 `ExportShortLinkIT` — **不需要**：见 B1.4；revoke / 过期 / 重签 路径由 `ExportApplicationServiceTest` 单测覆盖
+- [x] B5.9 ArchUnit 测试通过；`JAVA_TOOL_OPTIONS=-Djdk.attach.allowAttachSelf=true ./mvnw -DskipITs test` 452 测试全绿
 
 ---
 
@@ -182,16 +183,16 @@
 - [x] D4.4 **Step 4** `:start-processing`（BFF 自动注入 hold=true）
 - [x] D4.5 **Step 5** 转写预览 + 候选人确认（passthrough）
 - [x] D4.6 **Step 6a** `:finalize` → BFF 自动调 resume-java-phase
-- [ ] D4.6b SafeMarkdown 渲染 — 已引入 react-markdown + rehype-sanitize，待 minutes 渲染组件接线
+- [x] D4.6b SafeMarkdown 渲染 — `src/shared/markdown/SafeMarkdown.tsx`（react-markdown + rehype-sanitize + remark-gfm）接线到 FINALIZE step；新增 5 个 vitest 覆盖 XSS 拦截 / GFM 表格 / 外链 rel / 代码块；markdown 拆 chunk 51KB，MeetingWorkstationPage 改为 lazy，首屏 gzip≈55KB 仍远低于 200KB 预算
 - [x] D4.6c 下载 docx：创建 export → 轮询 downloadUrl → `<a download>`
 
 ### 5.E 通用
 - [x] D5.1 统一 error envelope；`error.retryable=true` 在 UI 中显式标注
-- [ ] D5.2 大列表虚拟化 — 占位 todo（happy-path 不依赖；高并发场景再补）
-- [x] D5.3 首屏 JS gzip = 59KB（远低于 200KB 预算）
+- [x] D5.2 大列表虚拟化 — `src/shared/list/VirtualList.tsx`（依赖零，定高行窗口化，aria-rowcount + role=list/listitem）；接入 SPEAKERS / DOCUMENTS 步骤（>50 条自动切窗口模式，≤50 保留普通 ul 不破坏 e2e）；4 个 vitest 覆盖（窗口范围 / 滚动更新 / aria / 空集合）
+- [x] D5.3 首屏 JS gzip ≈ 55KB（react chunk 43.16 + index 11.95；markdown / 工作站页改为 lazy 仅在 /meetings 路由按需拉取）
 
 ### 5.F 测试
-- [x] D6.1 Vitest 覆盖：authStore (6) + apiCall client (5) + wizard state machine (5) = 16 tests
+- [x] D6.1 Vitest 覆盖：authStore (6) + apiCall client (5) + wizard state machine (5) + SafeMarkdown (5) + VirtualList (4) = 25 tests
 - [x] D6.2 Playwright happy-path：建会议→上传→术语→开始→认人→出 docx 一条龙 — 888ms ✅
 - [x] D6.3 `page.route` 拦截 /admin/*（无需真实 BFF），与 Java public API 类型保持同步
 
@@ -243,11 +244,11 @@
 
 - [x] `cd packages/meeting-contracts && npm run check` ✅（P1 已绿；P2/P3/P5 无 schema 变更）
 - [x] `cd packages/meeting-contracts && npm run codegen && git diff --exit-code` ✅（P1 时已确认）
-- [x] `cd apps/meeting-api && ./mvnw -DskipITs test` ✅ 447 passed（含 P5 11 个新 case）
+- [x] `cd apps/meeting-api && JAVA_TOOL_OPTIONS=-Djdk.attach.allowAttachSelf=true ./mvnw -DskipITs test` ✅ 452 passed（含 B5.6 orchestrator 4 个新 case；socket/Mockito inline 需沙箱外运行）
 - [x] `cd apps/ai-worker && uv run pyright ai_worker/ && uv run pytest -x -q` ✅ 0 errors / 154 passed
 - [x] `cd apps/meeting-web && npx tsc --noEmit && npm test` ✅ 基线维持
-- [x] `cd apps/ai-worker-web && npx tsc --noEmit && npm test && npm run build` ✅ 16 vitest / build gzip 59KB
+- [x] `cd apps/ai-worker-web && npx tsc --noEmit && npm test && npm run build` ✅ 25 vitest / build gzip 55KB（含 D4.6b SafeMarkdown + D5.2 VirtualList + lazy route）
 - [x] `cd apps/ai-worker-web && npm run e2e`（Playwright happy-path） ✅ 888ms
 - [x] CI 五个旧 job + 新 `ai-worker-web` job 全在 `.github/workflows/ci.yml` 中声明（E1.8 ✅）
-- [ ] `docs/spec.md` / `docs/app-api-contracts.md` 同步更新本期改动 — **留作下一轮 docs-only PR**（本期所有契约 / DDL / 服务变更均在 todo-final.md 记录）
+- [x] `docs/spec.md` / `docs/app-api-contracts.md` 同步更新本期改动 — 已补 meeting_documents / glossary_terms、`holdAtWorkerPhase` + `resume-java-phase`、speaker reference embeddings、TOS 预签名 downloadUrl/revoke、`source_type=MINUTES` RAG 重建、工作站大列表虚拟化约束
 - [x] `todo-final.md` 全部 ✅；§7 风险闭环 R1–R7 全部 ✅

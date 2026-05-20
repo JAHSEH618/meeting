@@ -4,7 +4,6 @@ import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.domain.minutes.MinutesGeneratedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +36,6 @@ public class MinutesGeneratedRagIndexer {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    @EventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onMinutesGenerated(MinutesGeneratedEvent event) {
         try {

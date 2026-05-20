@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,7 +87,6 @@ public class EmbeddingTaskDispatcher {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    @EventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public DispatchResult onReindexRequested(KnowledgeChunkReindexRequestedEvent event) {
         if (!event.hasWork()) {

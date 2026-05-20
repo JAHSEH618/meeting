@@ -1,8 +1,12 @@
+import { Suspense, lazy } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/shared/auth/useAuth";
 import { EnrollmentPage } from "@/pages/EnrollmentPage";
 import { MeetingsPage } from "@/pages/MeetingsPage";
-import { MeetingWorkstationPage } from "@/pages/MeetingWorkstationPage";
+
+const MeetingWorkstationPage = lazy(() =>
+  import("@/pages/MeetingWorkstationPage").then((m) => ({ default: m.MeetingWorkstationPage })),
+);
 
 export default function App() {
   const { ready, token } = useAuth();
@@ -18,13 +22,15 @@ export default function App() {
         <span>{token ? "已登录" : "未登录"}</span>
       </header>
       <main className="layout__main">
-        <Routes>
-          <Route path="/" element={<MeetingsPage />} />
-          <Route path="/meetings" element={<MeetingsPage />} />
-          <Route path="/meetings/:meetingId" element={<MeetingWorkstationPage />} />
-          <Route path="/meetings/new" element={<MeetingWorkstationPage />} />
-          <Route path="/enrollment" element={<EnrollmentPage />} />
-        </Routes>
+        <Suspense fallback={<div>加载中…</div>}>
+          <Routes>
+            <Route path="/" element={<MeetingsPage />} />
+            <Route path="/meetings" element={<MeetingsPage />} />
+            <Route path="/meetings/:meetingId" element={<MeetingWorkstationPage />} />
+            <Route path="/meetings/new" element={<MeetingWorkstationPage />} />
+            <Route path="/enrollment" element={<EnrollmentPage />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

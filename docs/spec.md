@@ -502,6 +502,7 @@ POST /api/meetings/{meetingId}/processing-tasks
 GET  /api/meetings/{meetingId}/processing-tasks/latest
 GET  /api/processing-tasks/{taskId}
 GET  /api/processing-tasks/{taskId}/events
+POST /api/processing-tasks/{taskId}:resume-java-phase
 POST /api/processing-tasks/{taskId}/retry
 POST /api/processing-tasks/{taskId}/cancel
 ```
@@ -550,6 +551,11 @@ GET    /api/documents
 GET    /api/documents/{documentId}
 DELETE /api/documents/{documentId}
 POST   /api/documents/{documentId}/reindex
+GET    /api/meetings/{meetingId}/documents
+POST   /api/meetings/{meetingId}/documents
+DELETE /api/meetings/{meetingId}/documents/{documentId}
+GET    /api/meetings/{meetingId}/glossary
+PATCH  /api/meetings/{meetingId}/glossary
 ```
 
 ### 5.9 RAG
@@ -620,6 +626,7 @@ GET  /api/admin/break-glass/audit
 | `POST /api/meetings/{meetingId}/processing-tasks` | Bearer | `task:create` | Yes, key + input version | `write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
 | `GET /api/processing-tasks/{taskId}` | Bearer | `task:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
 | `GET /api/processing-tasks/{taskId}/events` | Bearer | `task:read` | SSE | `sse concurrency` | 200 | 401, 403, 404, 410, 429 | 500, 503 |
+| `POST /api/processing-tasks/{taskId}:resume-java-phase` | Bearer | `task:update` | Yes, key | `write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500, 503 |
 | `POST /api/processing-tasks/{taskId}/retry` | Bearer | `task:retry` | Yes, key + attempt | `write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
 | `POST /api/processing-tasks/{taskId}/cancel` | Bearer | `task:cancel` | Yes, key | `write QPS` | 202 | 400, 401, 403, 404, 409 | 500 |
 | `GET /api/meetings/{meetingId}/transcript` | Bearer | `transcript:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
@@ -631,6 +638,7 @@ GET  /api/admin/break-glass/audit
 | `/api/meetings/{meetingId}/action-items*` | Bearer | `action-item:read` / `action-item:edit` | 写操作需 key + version | `read/write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
 | `/api/meetings/{meetingId}/decisions|risks` | Bearer | `minutes:read` | Safe | `read QPS` | 200 | 401, 403, 404 | 500 |
 | `/api/documents*` | Bearer | `document:read` / `document:manage` | 写操作需 key + file hash | `upload/admin QPS` | 200, 201, 202 | 400, 401, 403, 404, 409, 413, 415, 422, 423 | 500, 503 |
+| `/api/meetings/{meetingId}/documents*` / `/api/meetings/{meetingId}/glossary` | Bearer | `meeting:update` / `document:read` | 写操作需 key | `write QPS` | 200 | 400, 401, 403, 404, 409, 422 | 500 |
 | `POST /api/rag/query` | Bearer | `rag:query` | No | `rag QPS` | 200 | 400, 401, 403, 404, 422, 429 | 500, 503 |
 | `/api/rag/reindex/*` | Bearer | `rag:reindex` | Yes, key + source version | `admin write QPS` | 202 | 400, 401, 403, 404, 409, 422 | 500, 503 |
 | `/api/meetings/{meetingId}/exports*` / `/api/exports*` | Bearer | `export:read` / `export:create` / `export:manage` | 写操作需 key + input versions | `export QPS` | 200, 202 | 400, 401, 403, 404, 409, 422, 423 | 500, 503 |
@@ -691,6 +699,7 @@ POST  /internal/processing-tasks/{taskId}/speaker-candidates
 POST  /internal/processing-tasks/{taskId}/embeddings
 POST  /internal/processing-tasks/{taskId}/complete
 POST  /internal/processing-tasks/{taskId}/fail
+POST  /internal/speakers/reference-embeddings
 ```
 
 Endpoint 语义：
@@ -704,6 +713,7 @@ Endpoint 语义：
 | `POST /embeddings` | 回写文本 chunk embedding 批次结果，供 Java 写入 `knowledge_chunks` / pgvector | rag |
 | `POST /complete` | 标记 task 终态成功或部分成功，并触发 outbox 事件 | task |
 | `POST /fail` | 标记 task 失败，保存稳定 `error_code` 和可重试信息 | task |
+| `POST /internal/speakers/reference-embeddings` | ai-worker 在 `SPEAKER_MATCHING` 前按 personId 拉取当前 active 声纹参考向量；Java 侧完成 HMAC、tenant 一致性、KMS 解密、L2 质心计算和明文清零 | speaker |
 
 Callback 必须携带：
 
@@ -791,6 +801,7 @@ roles
 user_roles
 persons
 meetings
+meeting_documents
 meeting_files
 meeting_participants
 processing_tasks
@@ -830,6 +841,7 @@ domain_events_outbox
 | 表 | 一期要求 | 语义 |
 |---|---|---|
 | `user_person_links` | 必建 | 账号 user 与现实人员 person 的绑定，避免 user/person/speaker_profile 混用 |
+| `meeting_documents` | 必建 | 会议与租户文档的软删除关联表；`(meeting_id, document_id)` 在未删除记录上唯一，用于工作站引用资料 |
 | `knowledge_chunk_acl` | 可空预留 | materialized ACL 缓存表，只能作为性能优化，不能作为权限事实来源；一期 RAG 权限实时计算，不使用该缓存 |
 | `evaluation_runs` | schema 预留 | ASR、Diarization、RAG、数据边界和导出评测运行记录 |
 | `human_feedback` | schema 预留 | 用户对纪要、RAG 答案、speaker 匹配的反馈 |
@@ -840,6 +852,8 @@ domain_events_outbox
 | `legal_holds` | 必建 | 法定保全、审计保全和 break-glass 保全范围，阻止生命周期删除 |
 | `artifact_manifests` | 必建 | AI 产物血缘，记录输入、输出、模型、Prompt、配置、代码版本 |
 | `domain_events_outbox` | 必建 | 业务状态变更与事件发布同事务提交，避免 DB commit 后 MQ 丢事件 |
+
+`meetings.glossary_terms` 保存会议级术语 JSONB，最大 200 个 term、单 term ≤ 64 字符；创建处理任务时 Java 将术语和 `meeting_documents(role=REFERENCE)` 的 documentId 一并放入 task payload，纪要生成时按约 2k 字符预算拼入 LLM context。
 
 ### 7.2 RLS 要求
 
@@ -1028,6 +1042,7 @@ stateDiagram-v2
 | `ORPHANED -> QUEUED` | Java task scheduler | `attempt_count < max_attempts` 时重新投递；`attempt_no` 自增 |
 | `ORPHANED -> FAILED` | Java task scheduler | 重试耗尽；写 `WORKER_LEASE_EXPIRED`；发送 `TASK_FAILED` |
 | `RUNNING, WORKER_DAG_RUNNING -> RUNNING, WORKER_DAG_DONE` | ai-worker `/complete phase=WORKER_DAG` callback | 写 `WORKER_PHASE_COMPLETED` outbox；callback 响应不等待 LLM；由 Java app listener 后续推进 `SUMMARY` / `EXTRACTION` 或非 LLM task 终态 |
+| `WORKER_DAG_DONE -> JAVA_LLM_RUNNING -> TERMINAL` | Java listener 或 `POST /api/processing-tasks/{taskId}:resume-java-phase` | 未设置 `holdAtWorkerPhase` 时 listener 自动运行 `SUMMARY` / `EXTRACTION`；设置 hold 时停在 `WORKER_DAG_DONE`，由工作站人工确认转录 / speaker 后显式 resume。Java LLM phase 成功后写纪要、抽取事项，并触发 `MinutesGeneratedEvent` 重建 `source_type=MINUTES` 的 RAG chunks |
 | `RUNNING, WORKER_DAG_RUNNING -> RUNNING, WORKER_DAG_DONE` | ai-worker `/complete phase=WORKER_DAG status=PARTIAL_SUCCEEDED` callback | 标记 worker phase partial 和 optional worker step；task 不进入终态，终态由 Java 在后续 phase 规则中确定 |
 | `RUNNING -> FAILED` | ai-worker `/fail` callback | 保存稳定错误码、artifact manifest、retryable；按错误码决定是否重试 |
 | `RUNNING -> CANCEL_PENDING` | 用户取消 | 写取消请求审计；callback 到 worker 或等待 lease 过期 |
@@ -1238,6 +1253,7 @@ LLM 失败与 task 终态关系：
 ```text
 PRIMARY_TRANSCRIPT
 AI_SUMMARY
+MINUTES
 DECISION
 ACTION_ITEM
 RISK
@@ -1273,7 +1289,7 @@ deleted_at
 | 来源 | 切块策略 |
 |---|---|
 | PRIMARY_TRANSCRIPT | 默认 `300 tokens` / overlap `50 tokens`，同时按时间窗和 speaker 连续性切块，保留 segment_id 列表、start/end timestamp、transcript_version |
-| AI_SUMMARY | 按章节或小节入库，不把完整纪要粗暴等长切块 |
+| AI_SUMMARY / MINUTES | 按章节或小节入库，不把完整纪要粗暴等长切块；当前 Java 纪要生成事件落库使用 `source_type=MINUTES` |
 | DECISION | 按单条决策入库，必须保存 evidence_text_snapshot |
 | ACTION_ITEM | 按单条待办入库，必须保存 owner、due_date、evidence_text_snapshot |
 | RISK | 按单条风险入库，必须保存 severity、evidence_text_snapshot |
@@ -1369,6 +1385,7 @@ React 前端至少包含：
 2. citation 点击回放必须处理音频已归档、权限已撤销、segment 已拆分、timestamp_precision 从 WORD 降级到 SEGMENT 四类退化。
 3. 任务进度不得伪装成线性百分比；必须展示当前 step、step 状态、可重试状态和 error_code。
 4. 导出短链必须可撤销；高敏等级预留水印、外发审批和下载审计。
+5. 工作站中的文档搜索、speaker 候选等可能超过 50 条的列表必须启用窗口化渲染；小列表保留普通语义列表，确保首屏 JS gzip 预算不因虚拟列表库膨胀。
 
 ## 11. 部署规格
 
