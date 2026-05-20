@@ -3,6 +3,13 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 export default defineConfig({
+  // The workstation SPA is served under /workstation/ both in dev and
+  // in prod (FastAPI mounts the StaticFiles at /workstation/). Anything
+  // other than "/workstation/" causes the built index.html to emit
+  // ``/assets/...`` absolute paths that 404 once mounted under the
+  // sub-path; keep this in sync with ``BrowserRouter basename`` and the
+  // K8s Ingress prefix in infra/meeting-infra/k8s/base/ai-worker.
+  base: "/workstation/",
   plugins: [react()],
   resolve: {
     alias: {

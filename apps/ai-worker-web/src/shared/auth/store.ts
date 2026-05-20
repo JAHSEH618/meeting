@@ -44,6 +44,14 @@ export function consumeFragmentToken(hash: string = window.location.hash): boole
 }
 
 export function redirectToLogin(): void {
+  // Java login lives on a different host whenever the workstation SPA is
+  // routed through the ai-worker Ingress (which only fronts /admin and
+  // /workstation — see infra/meeting-infra/k8s/base/ai-worker). Default
+  // to the legacy same-host path so dev / single-host setups keep
+  // working; deployments that need to bounce the user to meeting-api
+  // set VITE_AUTH_LOGIN_URL at build time.
+  const loginUrl = import.meta.env.VITE_AUTH_LOGIN_URL ?? "/auth/login";
   const redirect = encodeURIComponent(window.location.href);
-  window.location.assign(`/auth/login?redirect=${redirect}`);
+  const sep = loginUrl.includes("?") ? "&" : "?";
+  window.location.assign(`${loginUrl}${sep}redirect=${redirect}`);
 }

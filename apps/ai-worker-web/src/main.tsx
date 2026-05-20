@@ -9,7 +9,10 @@ if (!rootEl) throw new Error("missing #root element");
 
 createRoot(rootEl).render(
   <StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter
+      basename="/workstation"
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <App />
     </BrowserRouter>
   </StrictMode>,

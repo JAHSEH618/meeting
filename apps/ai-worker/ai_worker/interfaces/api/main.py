@@ -189,16 +189,35 @@ def _mount_admin_ui(app: FastAPI) -> None:
     """Phase 9 P6 / E1.2 — mount the workstation SPA at ``/workstation/`` when
     a build artefact dir is configured. Kept separate from ``/admin/*`` so the
     BFF routes don't collide with the static file handler.
+
+    Uses a small ``StaticFiles`` subclass that falls back to ``index.html``
+    on 404 — without it, BrowserRouter routes like ``/workstation/meetings/new``
+    return 404 on a hard reload (Phase J UX fix).
     """
     if not settings.admin_ui_dist_path:
         return
     if not isdir(settings.admin_ui_dist_path):
         return
     from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    class SpaStaticFiles(StaticFiles):
+        async def get_response(self, path, scope):  # type: ignore[override]
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                # Asset 404s (missing JS / CSS) intentionally fall through to
+                # index.html too: it's the same behaviour Vite preview / a
+                # typical static CDN produces, and it keeps a single rule
+                # for "any unknown path under /workstation/" instead of
+                # trying to guess what is an asset vs a SPA route.
+                if exc.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                raise
 
     app.mount(
         "/workstation",
-        StaticFiles(directory=settings.admin_ui_dist_path, html=True),
+        SpaStaticFiles(directory=settings.admin_ui_dist_path, html=True),
         name="workstation-ui",
     )
 
