@@ -92,3 +92,51 @@ Dockerfile 已注入 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`，因此
 2. 由基础设施 owner 下载所有模型权重，生成 SHA256，上传内网制品库。
 3. 由合规负责人逐模型完成 license 审批并在本文件中更新审批状态。
 4. 审批完成后，将每条模型记录同步写入 `model_registry` 表。
+
+---
+
+## Staging Fixtures（仅用于 Phase J 验收，不是生产准入）
+
+> ⚠️ **本节为 staging-only。** 下表里的 SHA-256 来自 `apps/ai-worker/scripts/stage_mock_weights.py`
+> 生成的确定性 mock 权重文件，**不是**真实模型权重的 hash，**不能**被填进上面的"模型 Checksum"生产表。
+> 真实权重 + 真实 hash 必须等基础设施 owner 完成下载、审批、上传内网制品库后再录入生产表。
+
+用途：让 `docs/runbooks/phase-j-acceptance.md` §J4（checksum guard）可以在没有真实权重的开发机或 CI
+节点上完整跑通——包括"故意改一个字节 → `/internal/ready` 返回 503"这一项。
+
+### 生成步骤
+
+```bash
+cd apps/ai-worker
+# 默认 staging root：<repo>/.cache/staging-models（已在 .gitignore 中）
+# 也可显式指定，例如 sudo install -d -o $USER /opt/models 后传 --root /opt/models
+uv run python scripts/stage_mock_weights.py --format shell    # 给 shell 用
+uv run python scripts/stage_mock_weights.py --format dotenv   # 给 .env 用
+uv run python scripts/stage_mock_weights.py --format table    # 给本文档用
+```
+
+脚本会:
+
+1. 在 `<root>/{bge-m3,bge-reranker-v2-m3,qwen3-asr-1.7b,pyannote}/...` 下生成确定性 mock 权重文件;
+2. 对每个目录调用 `compute_checksum()`（与 ai-worker 运行时使用同一函数）;
+3. 输出可直接 `eval` / `source` 的 `AI_WORKER_*_MODELS_DIR` + `AI_WORKER_*_EXPECTED_CHECKSUM` 对。
+
+设好 env 后启动 ai-worker，`/internal/models` 的 checksum 字段应与下表完全一致，`/internal/ready`
+返回 200。改任一权重文件一个字节再重启，`/internal/models` 对应模型 `status=ERROR` + `lastError`
+说明 checksum 不匹配，`/internal/ready` 返回 503。
+
+### 当前 mock checksums（`scripts/stage_mock_weights.py` 输出，2026-05-20 重算可复现）
+
+| 模型 | 相对路径 | SHA256 (staging mock) |
+|---|---|---|
+| bge-m3 | `bge-m3/v1` | `sha256:e298897bddb95005b53acf3664c0a57947ec58d6313ef6d769acd31d0fd0afe6` |
+| bge-reranker-v2-m3 | `bge-reranker-v2-m3/v1` | `sha256:794d3b4b6f9b2991ab0c8f7e3790fea6b5f70d3a233939547716daaf91b56f5d` |
+| qwen3-asr-1.7b | `qwen3-asr-1.7b/v2026.05.1` | `sha256:41b21abe05af064ba0737ab5622152443495c114a1a73a5b1d494bba656dc0e3` |
+| pyannote/speaker-diarization-3.1 | `pyannote/v3.1` | `sha256:b434841f09abc5ac194e04daf5e56e72bdba21c1fcaf5852df02d52136eb6165` |
+
+### 不在 staging 清单里的模型
+
+`Qwen3-ForcedAligner-0.6B` 和 `3D-Speaker CAM++` 仍按本文档前述章节的 license 流程走，但因为
+`apps/ai-worker/ai_worker/common/config.py` 还没有它们的 `*_models_dir` env，
+`apps/ai-worker/ai_worker/interfaces/api/main.py:_all_model_infos` 也不会枚举它们，所以这一版
+Phase J 验收不为它们生成 staging hash。等 alignment / speaker-matching runtime 真正接入后再补。

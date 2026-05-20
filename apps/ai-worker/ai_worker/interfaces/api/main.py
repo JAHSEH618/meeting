@@ -1,3 +1,7 @@
+from contextlib import asynccontextmanager
+from os.path import isdir
+from typing import AsyncIterator
+
 from fastapi import BackgroundTasks, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -28,6 +32,12 @@ from ai_worker.model_runtime.rerank import (
 from ai_worker.observability.gpu_metrics import refresh_gpu_metrics
 from ai_worker.observability.model_checksum import compute_checksum
 
+
+RuntimeLike = (
+    BgeM3Runtime | BgeRerankerRuntime | Qwen3AsrRuntime | PyannoteDiarizationRuntime
+)
+
+
 def _error_response(
     status_code: int,
     code: str,
@@ -52,35 +62,65 @@ def _error_response(
     )
 
 
-def _model_info(
-    runtime: BgeM3Runtime | BgeRerankerRuntime | Qwen3AsrRuntime | PyannoteDiarizationRuntime,
-    name: str,
-) -> dict:
-    """Project a runtime into a `ModelInfo` matching ai-worker-internal-api.yaml.
-
-    `checksum` is now computed lazily from the on-disk weight files
-    when ``modelsDir`` is set (Phase 8.4.1.b). Falls back to ``None``
-    for fake-mode and HF-fallback paths so callers can still tell
-    "we don't know" from "this is the pinned hash".
-    """
-    models_dir: str | None = None
+def _models_dir_for(runtime: RuntimeLike) -> str | None:
     if isinstance(runtime, BgeM3Runtime):
-        models_dir = settings.bge_m3_models_dir
-    elif isinstance(runtime, BgeRerankerRuntime):
-        models_dir = settings.bge_reranker_models_dir
-    elif isinstance(runtime, Qwen3AsrRuntime):
-        models_dir = settings.qwen3_asr_models_dir
-    elif isinstance(runtime, PyannoteDiarizationRuntime):
-        models_dir = settings.pyannote_models_dir
+        return settings.bge_m3_models_dir
+    if isinstance(runtime, BgeRerankerRuntime):
+        return settings.bge_reranker_models_dir
+    if isinstance(runtime, Qwen3AsrRuntime):
+        return settings.qwen3_asr_models_dir
+    if isinstance(runtime, PyannoteDiarizationRuntime):
+        return settings.pyannote_models_dir
+    return None
+
+
+def _expected_checksum_for(runtime: RuntimeLike) -> str | None:
+    if isinstance(runtime, BgeM3Runtime):
+        return settings.bge_m3_expected_checksum
+    if isinstance(runtime, BgeRerankerRuntime):
+        return settings.bge_reranker_expected_checksum
+    if isinstance(runtime, Qwen3AsrRuntime):
+        return settings.qwen3_asr_expected_checksum
+    if isinstance(runtime, PyannoteDiarizationRuntime):
+        return settings.pyannote_expected_checksum
+    return None
+
+
+def _model_info(runtime: RuntimeLike, name: str) -> dict:
+    """Project a runtime into ``ModelInfo`` per ai-worker-internal-api.yaml.
+
+    Two layered concerns:
+      1. ``checksum`` is computed lazily from on-disk weight files when
+         ``modelsDir`` is set (Phase 8.4.1.b). Falls back to ``None`` for
+         fake mode / HF-fallback paths so callers can tell "we don't know"
+         from "this is the pinned hash".
+      2. Phase J4 checksum guard: when ``AI_WORKER_*_EXPECTED_CHECKSUM``
+         is configured, mismatch (or missing weights when the guard is
+         armed) forces ``status=ERROR`` with a ``lastError`` describing
+         the divergence — without mutating the shared runtime singleton.
+         Readiness logic in ``/internal/ready`` rolls these per-model
+         statuses up into the probe verdict.
+    """
+    models_dir = _models_dir_for(runtime)
+    actual = compute_checksum(models_dir)
+    expected = _expected_checksum_for(runtime)
+
+    status = runtime.status
+    last_error = runtime.last_error
+    if expected is not None and actual != expected:
+        status = "ERROR"
+        observed = actual or "<no weights found>"
+        last_error = f"checksum mismatch: expected {expected} got {observed}"
+
     return {
         "name": name,
         "version": runtime.model_version,
-        "status": runtime.status,
+        "status": status,
         "device": runtime.device,
         "useFake": runtime.use_fake,
-        "checksum": compute_checksum(models_dir),
+        "checksum": actual,
         "modelsDir": models_dir,
-        "lastError": runtime.last_error,
+        "lastError": last_error,
     }
 
 
@@ -93,12 +133,10 @@ def _all_model_infos() -> list[dict]:
     ]
 
 
-async def _safe_ensure_loaded(
-    runtime: BgeM3Runtime | BgeRerankerRuntime,
-) -> None:
+async def _safe_ensure_loaded(runtime: BgeM3Runtime | BgeRerankerRuntime) -> None:
     """Background-task wrapper that swallows load failures.
 
-    Errors are surfaced via `runtime.status == "ERROR"` and `last_error`
+    Errors are surfaced via ``runtime.status == "ERROR"`` and ``last_error``
     so the next request can return a 503 with full context — we just don't
     want an unhandled exception to escape the background task.
     """
@@ -108,11 +146,74 @@ async def _safe_ensure_loaded(
         pass
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Phase J — replaces deprecated ``@app.on_event``.
+
+    The enrollment session cleanup loop is only wired when the workstation
+    BFF is enabled (``AI_WORKER_JAVA_API_BASE_URL`` set); otherwise the
+    admin module isn't mounted and starting a cleanup task would be dead
+    weight.
+    """
+    cleanup_started = False
+    if settings.java_api_base_url:
+        from ai_worker.admin.session_store import enrollment_session_store
+
+        await enrollment_session_store.start_cleanup_loop()
+        cleanup_started = True
+    try:
+        yield
+    finally:
+        if cleanup_started:
+            from ai_worker.admin.session_store import enrollment_session_store
+
+            await enrollment_session_store.stop_cleanup_loop()
+
+
+def _mount_admin_router(app: FastAPI) -> None:
+    """Phase 9 workstation BFF — mounted only when ``java_api_base_url`` is set.
+
+    Tests for the admin module construct their own router via
+    :func:`ai_worker.admin.build_admin_router` with a mocked Java client;
+    in production this is invoked from :func:`create_app` when the env
+    is wired. Lifecycle hooks live in :func:`lifespan` (Phase J).
+    """
+    if not settings.java_api_base_url:
+        return
+    from ai_worker.admin import build_admin_router
+
+    app.include_router(build_admin_router())
+
+
+def _mount_admin_ui(app: FastAPI) -> None:
+    """Phase 9 P6 / E1.2 — mount the workstation SPA at ``/workstation/`` when
+    a build artefact dir is configured. Kept separate from ``/admin/*`` so the
+    BFF routes don't collide with the static file handler.
+    """
+    if not settings.admin_ui_dist_path:
+        return
+    if not isdir(settings.admin_ui_dist_path):
+        return
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount(
+        "/workstation",
+        StaticFiles(directory=settings.admin_ui_dist_path, html=True),
+        name="workstation-ui",
+    )
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="ai-worker", version="0.1.0")
+    app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
     @app.get("/internal/health")
     def health() -> dict:
+        """Liveness only — does not look at model state.
+
+        The K8s livenessProbe targets this endpoint. We deliberately keep it
+        decoupled from checksum / readiness so a transient model-load failure
+        doesn't trigger an infinite restart loop.
+        """
         return {
             "status": "UP",
             "workerId": settings.worker_id,
@@ -124,6 +225,34 @@ def create_app() -> FastAPI:
                 "meetingApiCallback": "UNKNOWN",
             },
         }
+
+    @app.get("/internal/ready")
+    def ready() -> JSONResponse:
+        """Phase J — readiness probe with model checksum guard.
+
+        A model contributes ``ready=false`` only when ``_model_info`` flags
+        it ``status=ERROR`` (checksum mismatch is the only failure mode the
+        guard adds; other ERRORs come from the runtime itself). Models with
+        no expected checksum and no loading attempts (status NOT_LOADED /
+        LOADING / READY) are treated as healthy from the probe's POV — we
+        don't want a cold runtime to block kubelet from routing traffic
+        that will trigger the first lazy load.
+        """
+        models = _all_model_infos()
+        failed = [m for m in models if m["status"] == "ERROR"]
+        ok = not failed
+        body = {
+            "ready": ok,
+            "models": [
+                {
+                    "name": m["name"],
+                    "status": m["status"],
+                    "lastError": m["lastError"],
+                }
+                for m in models
+            ],
+        }
+        return JSONResponse(status_code=200 if ok else 503, content=body)
 
     @app.get("/internal/workflows/{task_id}")
     def workflow(task_id: str) -> dict:
@@ -417,53 +546,12 @@ def create_app() -> FastAPI:
             },
         )
 
+    _mount_admin_router(app)
+    _mount_admin_ui(app)
     return app
 
 
-def _mount_admin_router(app: FastAPI) -> None:
-    """Phase 9 workstation BFF — included only when ``java_api_base_url`` is configured.
-
-    Tests for the admin module construct their own router via
-    :func:`ai_worker.admin.build_admin_router` with a mocked Java client; in
-    production, this is invoked from :func:`create_app` when the env is wired.
-    """
-    if not settings.java_api_base_url:
-        return
-    from ai_worker.admin import build_admin_router
-    from ai_worker.admin.session_store import enrollment_session_store
-
-    app.include_router(build_admin_router())
-
-    @app.on_event("startup")
-    async def _start_session_cleanup() -> None:
-        await enrollment_session_store.start_cleanup_loop()
-
-    @app.on_event("shutdown")
-    async def _stop_session_cleanup() -> None:
-        await enrollment_session_store.stop_cleanup_loop()
-
-
-def _mount_admin_ui(app: FastAPI) -> None:
-    """Phase 9 P6 / E1.2 — mount the workstation SPA at ``/workstation/`` when
-    a build artefact dir is configured. Kept separate from ``/admin/*`` so the
-    BFF routes don't collide with the static file handler.
-    """
-    if not settings.admin_ui_dist_path:
-        return
-    from os.path import isdir
-    if not isdir(settings.admin_ui_dist_path):
-        return
-    from fastapi.staticfiles import StaticFiles
-    app.mount(
-        "/workstation",
-        StaticFiles(directory=settings.admin_ui_dist_path, html=True),
-        name="workstation-ui",
-    )
-
-
 app = create_app()
-_mount_admin_router(app)
-_mount_admin_ui(app)
 
 
 def run() -> None:

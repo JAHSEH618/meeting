@@ -39,8 +39,13 @@ spec:
             - secretRef:
                 name: ai-worker-secret
           readinessProbe:
+            # Phase J — /internal/ready rolls up per-model checksum guards.
+            # A corrupted weight (mismatch vs *_EXPECTED_CHECKSUM) flips
+            # readiness to false so the pod stops receiving traffic; the
+            # livenessProbe stays on /internal/health (live-only) so a
+            # checksum mismatch never triggers an infinite restart loop.
             httpGet:
-              path: /internal/health
+              path: /internal/ready
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15

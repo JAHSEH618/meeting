@@ -80,3 +80,7 @@ todo.md
 skills-lock.json
 **/SPEC.md
 docs/spec*.md
+
+# Phase J — local staging weight fixtures (deterministic mocks generated
+# by apps/ai-worker/scripts/stage_mock_weights.py; not real model weights).
+.cache/

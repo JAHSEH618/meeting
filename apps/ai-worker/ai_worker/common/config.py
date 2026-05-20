@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     pyannote_models_dir: str | None = None
     # Device autodetect happens in the runtime; "auto" → cuda > mps > cpu.
     model_device: str = "auto"
+    # ── Phase J — checksum guard (J4) ───────────────────────────────────
+    # When set, /internal/models compares the live compute_checksum() of
+    # the corresponding *_models_dir against the expected hash and forces
+    # ``status=ERROR`` + ``lastError`` on mismatch, regardless of the
+    # runtime's own loading state. Leave unset to disable the guard for
+    # that model (default for dev / CI / fake mode).
+    #
+    # Format: full ``compute_checksum()`` output, i.e. ``sha256:<hex>``.
+    bge_m3_expected_checksum: str | None = None
+    bge_reranker_expected_checksum: str | None = None
+    qwen3_asr_expected_checksum: str | None = None
+    pyannote_expected_checksum: str | None = None
     # ── Phase 9 workstation BFF (P3) ──────────────────────────────────────
     # Workstation admin UI is hosted same-process under /admin/*. The BFF
     # validates JWTs minted by meeting-api and proxies to Java public API.

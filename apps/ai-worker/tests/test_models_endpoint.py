@@ -5,6 +5,7 @@ import hmac
 import json
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -169,3 +170,144 @@ def test_get_models_reports_models_dir_when_configured(
     by_name = {m["name"]: m for m in response.json()["data"]["models"]}
     assert by_name["bge-m3"]["modelsDir"] == "/data/models/bge-m3/v1"
     assert by_name["bge-reranker-v2-m3"]["modelsDir"] == "/data/models/bge-reranker/v1"
+
+
+def _stage_weight(tmp_path: Path, sub: str) -> Path:
+    target = tmp_path / sub
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "model.safetensors").write_bytes(b"phase-j-test-bytes")
+    return target
+
+
+def test_get_models_flags_checksum_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Phase J — expected checksum != actual should surface as ERROR.
+
+    The runtime is fake-mode (READY), so the only way the model can flip
+    to ERROR is the checksum guard. We point ``bge_m3_models_dir`` at a
+    real directory with a known hash and pin an obviously-wrong expected
+    value; the response must still echo the actual hash so operators can
+    diff the two by eye.
+    """
+    weight_dir = _stage_weight(tmp_path, "bge-m3/v1")
+    monkeypatch.setattr(settings, "bge_m3_models_dir", str(weight_dir))
+    monkeypatch.setattr(
+        settings,
+        "bge_m3_expected_checksum",
+        "sha256:" + "0" * 64,
+    )
+    registry.reset_for_tests()
+
+    client = TestClient(create_app())
+    headers = _auth_headers("GET", "/internal/models", b"")
+
+    response = client.get("/internal/models", headers=headers)
+    assert response.status_code == 200
+
+    by_name = {m["name"]: m for m in response.json()["data"]["models"]}
+    bge = by_name["bge-m3"]
+    assert bge["status"] == "ERROR"
+    assert bge["lastError"] is not None
+    assert "checksum mismatch" in bge["lastError"]
+    # Other guards are not configured, so the rest stay READY.
+    assert by_name["bge-reranker-v2-m3"]["status"] == "READY"
+
+
+def test_get_models_passes_when_checksum_matches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    weight_dir = _stage_weight(tmp_path, "bge-m3/v1")
+    monkeypatch.setattr(settings, "bge_m3_models_dir", str(weight_dir))
+    registry.reset_for_tests()
+
+    # Resolve the expected hash via the same helper the runtime uses, then
+    # pin it back as the expected env var — the guard should accept it.
+    from ai_worker.observability.model_checksum import compute_checksum
+
+    actual = compute_checksum(str(weight_dir))
+    assert actual is not None
+    monkeypatch.setattr(settings, "bge_m3_expected_checksum", actual)
+
+    client = TestClient(create_app())
+    headers = _auth_headers("GET", "/internal/models", b"")
+    response = client.get("/internal/models", headers=headers)
+    assert response.status_code == 200
+
+    by_name = {m["name"]: m for m in response.json()["data"]["models"]}
+    bge = by_name["bge-m3"]
+    assert bge["status"] == "READY"
+    assert bge["checksum"] == actual
+    assert bge["lastError"] is None
+
+
+def test_get_models_flags_mismatch_when_weights_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expected set + models_dir absent → still mismatch, with a clear hint."""
+    monkeypatch.setattr(
+        settings, "bge_m3_models_dir", "/tmp/definitely-does-not-exist"
+    )
+    monkeypatch.setattr(
+        settings, "bge_m3_expected_checksum", "sha256:" + "f" * 64
+    )
+    registry.reset_for_tests()
+
+    client = TestClient(create_app())
+    headers = _auth_headers("GET", "/internal/models", b"")
+    response = client.get("/internal/models", headers=headers)
+    assert response.status_code == 200
+
+    by_name = {m["name"]: m for m in response.json()["data"]["models"]}
+    bge = by_name["bge-m3"]
+    assert bge["status"] == "ERROR"
+    assert bge["lastError"] is not None
+    assert "<no weights found>" in bge["lastError"]
+
+
+def test_ready_endpoint_returns_200_in_fake_mode() -> None:
+    """No expected checksums configured → ready regardless of fake/real."""
+    client = TestClient(create_app())
+    response = client.get("/internal/ready")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is True
+    assert {m["name"] for m in body["models"]} == {
+        "bge-m3",
+        "bge-reranker-v2-m3",
+        "qwen3-asr",
+        "pyannote-diarization",
+    }
+
+
+def test_ready_endpoint_returns_503_on_checksum_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    weight_dir = _stage_weight(tmp_path, "pyannote/v3.1")
+    monkeypatch.setattr(settings, "pyannote_models_dir", str(weight_dir))
+    monkeypatch.setattr(
+        settings, "pyannote_expected_checksum", "sha256:" + "0" * 64
+    )
+    registry.reset_for_tests()
+
+    client = TestClient(create_app())
+    response = client.get("/internal/ready")
+
+    # 503 so kubelet stops routing traffic; livenessProbe is unaffected.
+    assert response.status_code == 503
+    body = response.json()
+    assert body["ready"] is False
+    failed = [m for m in body["models"] if m["status"] == "ERROR"]
+    assert any(m["name"] == "pyannote-diarization" for m in failed)
+    assert any(
+        m["lastError"] and "checksum mismatch" in m["lastError"] for m in failed
+    )
+
+
+def test_ready_endpoint_does_not_require_hmac() -> None:
+    """Kubelet probe path — must not carry HMAC headers."""
+    client = TestClient(create_app())
+    response = client.get("/internal/ready")
+    # Either 200 or 503 is fine here; what we are asserting is the absence
+    # of a 401/422 (auth/header validation) response.
+    assert response.status_code in (200, 503)
