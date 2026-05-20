@@ -151,15 +151,17 @@ data:
   AI_WORKER_ADMIN_JWT_AUDIENCE: "ai-worker-admin"
   AI_WORKER_ADMIN_JWT_ISSUER: "meeting-api"
   AI_WORKER_ADMIN_JWT_REQUIRED_ROLE: "ADMIN"
----
-# Phase 9 P6 / E1.4 — workstation BFF secrets. Values are placeholders;
-# overlays must replace via Sealed Secrets or an external secret manager.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ai-worker-secret
-type: Opaque
-stringData:
-  AI_WORKER_INTERNAL_API_HMAC_SECRET: "replace-me-internal-secret"
-  AI_WORKER_CALLBACK_HMAC_SECRET: "replace-me-callback-secret"
-  AI_WORKER_ADMIN_JWT_SECRET: "replace-me-admin-jwt-secret-32-bytes"
+# Phase J — ai-worker-secret was previously declared here as a placeholder.
+# kubectl-applying the kustomize bundle silently overwrote any pre-existing
+# Secret an operator (or deploy.sh) had just created with real values,
+# leading to "callback signature invalid" / "JWT secret mismatch" outages.
+#
+# The Secret is now overlay / operator responsibility:
+#   * dev:      deploy/deploy.sh k8s-dev creates ai-worker-secret with dev
+#               literals BEFORE applying kustomize.
+#   * staging:  inject via ExternalSecret / Sealed Secrets in the overlay.
+#   * prod:     ditto, with rotation policy.
+#
+# The StatefulSet above keeps ``secretRef: ai-worker-secret`` so the pod
+# fails to start (and stays in CreateContainerConfigError) until the Secret
+# is present — that's the desired fail-loud behaviour.

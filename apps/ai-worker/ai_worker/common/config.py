@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     admin_session_ttl_seconds: int = 24 * 60 * 60
     admin_session_cleanup_interval_seconds: int = 5 * 60
     admin_ui_dist_path: str | None = None
+    # Workstation runtime config — served at GET /workstation/runtime-config.js
+    # so the SPA can read window.__WORKSTATION_CONFIG__ at runtime and we can
+    # flip the Java login URL per environment without rebuilding the image.
+    # ``None`` falls through to the SPA's build-time / same-host default.
+    auth_login_url: str | None = None
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")
 
 

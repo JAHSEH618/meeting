@@ -102,3 +102,68 @@ def test_root_assets_still_404_when_workstation_mounted(
     response = client.get("/assets/index.js")
 
     assert response.status_code == 404
+
+
+def test_workstation_missing_asset_returns_404_not_html(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A 404 on a missing JS / CSS must NOT degrade into index.html.
+
+    Earlier the SpaStaticFiles fallback was too aggressive and returned
+    index.html for every 404 under /workstation/*. The browser would then
+    try to execute the HTML as a JS module and fail with an obscure parse
+    error. Phase J tightens the rule so anything under ``assets/`` or with
+    a known asset extension keeps its real 404.
+    """
+    dist = _build_spa_dist(tmp_path)
+    monkeypatch.setattr(settings, "admin_ui_dist_path", str(dist))
+
+    client = _fresh_app()
+
+    response = client.get("/workstation/assets/missing-bundle.js")
+    assert response.status_code == 404
+
+    # Asset extension outside /assets/ (e.g., favicon, source map) — same rule.
+    fav = client.get("/workstation/favicon.ico")
+    assert fav.status_code == 404
+
+
+def test_workstation_runtime_config_serves_javascript(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``/workstation/runtime-config.js`` must serve a JS body that sets the
+    global config — and the explicit route must shadow the StaticFiles mount
+    even if a ``runtime-config.js`` happens to be present in the dist dir
+    (as is the case in dev where the file is shipped from ``public/``)."""
+    dist = _build_spa_dist(tmp_path)
+    (dist / "runtime-config.js").write_text(
+        "window.__WORKSTATION_CONFIG__ = { stale: true };\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(settings, "admin_ui_dist_path", str(dist))
+    monkeypatch.setattr(settings, "auth_login_url", None)
+
+    client = _fresh_app()
+    response = client.get("/workstation/runtime-config.js")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/javascript")
+    body = response.text
+    assert "window.__WORKSTATION_CONFIG__" in body
+    # FastAPI route wins over the dist/ copy — the stale flag from the
+    # static fixture must NOT leak through.
+    assert "stale" not in body
+
+
+def test_workstation_runtime_config_reflects_auth_login_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dist = _build_spa_dist(tmp_path)
+    monkeypatch.setattr(settings, "admin_ui_dist_path", str(dist))
+    monkeypatch.setattr(
+        settings, "auth_login_url", "https://meeting-api.internal/auth/login"
+    )
+
+    client = _fresh_app()
+    body = client.get("/workstation/runtime-config.js").text
+
+    assert '"authLoginUrl": "https://meeting-api.internal/auth/login"' in body

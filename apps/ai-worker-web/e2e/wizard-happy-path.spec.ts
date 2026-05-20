@@ -72,8 +72,11 @@ test("workstation wizard end-to-end", async ({ page }) => {
     return json(null);
   });
 
-  // Skip the auth bounce
-  await page.goto("/meetings/new?playwright-skip-auth=1");
+  // Skip the auth bounce. The SPA is mounted under /workstation/ in both
+  // dev (vite base) and prod (FastAPI StaticFiles), so the test must use
+  // the prefixed path — bare /meetings/new would land outside BrowserRouter
+  // basename and render an empty page.
+  await page.goto("/workstation/meetings/new?playwright-skip-auth=1");
 
   // STEP 1 — meeting metadata
   await page.getByLabel("meeting title").fill("E2E Meeting");
