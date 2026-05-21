@@ -16,18 +16,31 @@ const LABELS: Record<WizardStep, string> = {
   EXPORT: "6c. 下载",
 };
 
+/**
+ * Visual progress indicator. The items are not interactive — clicking does
+ * nothing — so we expose them as an ordered list (``<ol>``) rather than
+ * ``role="navigation"`` which screen readers announce as a link target.
+ * ``aria-current="step"`` marks the active row per WAI-ARIA wizard pattern.
+ */
 export function Stepper({ step, order }: Props) {
   const idx = order.indexOf(step);
   return (
-    <div className="stepper" role="navigation" aria-label="wizard steps">
+    <ol className="stepper" aria-label="向导进度">
       {order.map((s, i) => {
         const cls = i === idx ? "stepper__item--active" : i < idx ? "stepper__item--done" : "";
+        const status = i === idx ? "进行中" : i < idx ? "已完成" : "待处理";
         return (
-          <div key={s} className={`stepper__item ${cls}`} data-testid={`step-${s}`}>
+          <li
+            key={s}
+            className={`stepper__item ${cls}`}
+            data-testid={`step-${s}`}
+            aria-current={i === idx ? "step" : undefined}
+          >
+            <span className="visually-hidden">{status}: </span>
             {LABELS[s]}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }

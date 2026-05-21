@@ -138,8 +138,16 @@ metadata:
   name: ai-worker-config
 data:
   AI_WORKER_USE_FAKE_RUNTIME: "false"
-  AI_WORKER_BGE_M3_MODELS_DIR: "/opt/models/bge-m3"
-  AI_WORKER_BGE_RERANKER_MODELS_DIR: "/opt/models/bge-reranker-v2-m3"
+  AI_WORKER_USE_FAKE_ASR_RUNTIME: "false"
+  AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME: "false"
+  # Phase J — model dirs must include the version subdirectory so the
+  # checksum guard in /internal/ready can locate the pinned weights.
+  # Keep these in sync with docs/model-registry.md and the
+  # AI_WORKER_*_EXPECTED_CHECKSUM env vars in ai-worker-secret.
+  AI_WORKER_BGE_M3_MODELS_DIR: "/opt/models/bge-m3/v1"
+  AI_WORKER_BGE_RERANKER_MODELS_DIR: "/opt/models/bge-reranker-v2-m3/v1"
+  AI_WORKER_QWEN3_ASR_MODELS_DIR: "/opt/models/qwen3-asr-1.7b/v2026.05.1"
+  AI_WORKER_PYANNOTE_MODELS_DIR: "/opt/models/pyannote/v3.1"
   AI_WORKER_RABBITMQ_HOST: "rabbitmq"
   AI_WORKER_RABBITMQ_PORT: "5672"
   AI_WORKER_RABBITMQ_USERNAME: "meeting"

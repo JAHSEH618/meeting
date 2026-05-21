@@ -16,8 +16,8 @@ import { apiCall, apiUpload } from "@/shared/api/client";
 const API = "/admin";
 
 /** Persons search (public API passthrough). */
-export const searchPersons = (q?: string) =>
-  apiCall<PersonDTO[]>(`${API}/persons`, { query: { q } });
+export const searchPersons = (q?: string, opts: { signal?: AbortSignal } = {}) =>
+  apiCall<PersonDTO[]>(`${API}/persons`, { query: { q }, signal: opts.signal });
 
 /** Voiceprint enrollment 4-step ritual. */
 export const createEnrollmentSession = (personId: string | null) =>
@@ -55,8 +55,8 @@ export const createMeeting = (body: {
 export const getMeetingAggregate = (meetingId: string) =>
   apiCall<MeetingAggregateDTO>(`${API}/meetings/${encodeURIComponent(meetingId)}`);
 
-export const searchDocuments = (q?: string) =>
-  apiCall<DocumentSummaryDTO[]>(`${API}/documents`, { query: { q } });
+export const searchDocuments = (q?: string, opts: { signal?: AbortSignal } = {}) =>
+  apiCall<DocumentSummaryDTO[]>(`${API}/documents`, { query: { q }, signal: opts.signal });
 
 export const attachMeetingDocument = (meetingId: string, body: { documentId: string; role: "REFERENCE" | "ATTACHMENT" }) =>
   apiCall<MeetingDocumentItemDTO>(

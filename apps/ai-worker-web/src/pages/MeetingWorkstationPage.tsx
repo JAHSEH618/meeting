@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import {
   attachMeetingDocument,
@@ -20,13 +21,25 @@ import type {
 } from "@/shared/api/types";
 import { Stepper } from "@/features/wizard/Stepper";
 import { useWizard } from "@/features/wizard/useWizard";
+import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { SafeMarkdown } from "@/shared/markdown/SafeMarkdown";
 import { VirtualList } from "@/shared/list/VirtualList";
 
 const VIRTUALIZE_THRESHOLD = 50;
+const GLOSSARY_MAX_LENGTH = 64;
+const GLOSSARY_MAX_TERMS = 200;
 
 export function MeetingWorkstationPage() {
-  const { state, step, patch, goNext, order } = useWizard();
+  // Deep links land on /workstation/meetings/:meetingId — without reading
+  // the route param the wizard started from META and ignored the meeting
+  // the user was actually trying to view. useWizard already supports an
+  // initial meetingId (starts at AUDIO), we just had to plumb it through.
+  const params = useParams<{ meetingId?: string }>();
+  const routeMeetingId =
+    params.meetingId && params.meetingId !== "new" ? params.meetingId : undefined;
+  const { state, step, patch, goNext, order } = useWizard(
+    routeMeetingId ? { meetingId: routeMeetingId } : undefined,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -48,14 +61,30 @@ export function MeetingWorkstationPage() {
 
   // STEP 3a — glossary
   const [glossaryDraft, setGlossaryDraft] = useState("");
+  const [glossaryError, setGlossaryError] = useState<string | null>(null);
   const [terms, setTerms] = useState<GlossaryTermDTO[]>([]);
   const addTerm = () => {
     const t = glossaryDraft.trim();
-    if (!t || terms.length >= 200 || terms.some((x) => x.term.toLowerCase() === t.toLowerCase())) {
+    if (!t) return;
+    if (t.length > GLOSSARY_MAX_LENGTH) {
+      setGlossaryError(`单个 term 不能超过 ${GLOSSARY_MAX_LENGTH} 字符（当前 ${t.length}）`);
+      return;
+    }
+    if (terms.length >= GLOSSARY_MAX_TERMS) {
+      setGlossaryError(`术语数已达上限 ${GLOSSARY_MAX_TERMS}`);
+      return;
+    }
+    if (terms.some((x) => x.term.toLowerCase() === t.toLowerCase())) {
+      setGlossaryError(`已存在术语「${t}」`);
       return;
     }
     setTerms([...terms, { term: t, aliases: [] }]);
     setGlossaryDraft("");
+    setGlossaryError(null);
+  };
+  const removeTerm = (term: string) => {
+    setTerms(terms.filter((x) => x.term !== term));
+    setGlossaryError(null);
   };
   const saveGlossary = run(async () => {
     if (!state.meetingId) return;
@@ -63,13 +92,15 @@ export function MeetingWorkstationPage() {
     goNext();
   });
 
-  // STEP 3b — documents
-  const [docResults, setDocResults] = useState<DocumentSummaryDTO[]>([]);
+  // STEP 3b — documents (debounced + abortable search to avoid lost-update
+  // races where a slow response for "A" lands after the user has typed "ABC").
+  const searchDocumentsFetcher = useCallback(
+    (q: string, signal: AbortSignal) => searchDocuments(q, { signal }),
+    [],
+  );
+  const docSearch = useDebouncedSearch<DocumentSummaryDTO>(searchDocumentsFetcher);
+  const docResults = docSearch.results ?? [];
   const [attachedDocs, setAttachedDocs] = useState<string[]>([]);
-  const handleDocSearch = run(async (q: string) => {
-    const r = await searchDocuments(q);
-    setDocResults(r);
-  });
   const handleAttachDoc = run(async (documentId: string) => {
     if (!state.meetingId) return;
     await attachMeetingDocument(state.meetingId, { documentId, role: "REFERENCE" });
@@ -91,6 +122,20 @@ export function MeetingWorkstationPage() {
     const agg = await getMeetingAggregate(state.meetingId);
     setAggregate(agg);
   });
+
+  // When opened via deep link (/workstation/meetings/{id}) the user expects
+  // to see existing speakers / minutes immediately, not the empty SPEAKERS
+  // shell. Auto-load the aggregate once on mount; subsequent loads use the
+  // explicit "刷新" buttons so we don't pummel the Java side.
+  useEffect(() => {
+    if (!routeMeetingId) return;
+    void handleLoadAggregate();
+    // handleLoadAggregate is recreated on each render but the auto-load
+    // is intentionally fire-once on mount; lint disable + deps comment
+    // makes the intent explicit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeMeetingId]);
+
   const handleConfirmSpeaker = run(async (label: string, personId: string) => {
     if (!state.meetingId) return;
     await confirmSpeaker(state.meetingId, label, personId);
@@ -173,7 +218,7 @@ export function MeetingWorkstationPage() {
         <section className="card">
           <h2>上传录音</h2>
           <p>多分片上传请直连 Java：<code>POST /api/meetings/{state.meetingId}/files/audio/uploads</code></p>
-          <button className="button" onClick={() => goNext()}>跳到术语</button>
+          <button className="button" disabled={busy} onClick={() => goNext()}>跳到术语</button>
         </section>
       )}
 
@@ -184,18 +229,36 @@ export function MeetingWorkstationPage() {
             <input
               className="input"
               value={glossaryDraft}
-              onChange={(e) => setGlossaryDraft(e.target.value)}
+              maxLength={GLOSSARY_MAX_LENGTH}
+              onChange={(e) => {
+                setGlossaryDraft(e.target.value);
+                if (glossaryError) setGlossaryError(null);
+              }}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTerm(); } }}
               aria-label="term draft"
-              placeholder="按 Enter 添加，单 term ≤ 64 字符，最多 200"
+              aria-invalid={glossaryError ? true : undefined}
+              aria-describedby={glossaryError ? "glossary-error" : undefined}
+              placeholder={`按 Enter 添加，单 term ≤ ${GLOSSARY_MAX_LENGTH} 字符，最多 ${GLOSSARY_MAX_TERMS}`}
             />
             <button className="button button--secondary" onClick={addTerm} disabled={!glossaryDraft.trim()}>+ 添加</button>
           </div>
+          {glossaryError && (
+            <p id="glossary-error" className="error" role="alert" data-testid="glossary-error">
+              {glossaryError}
+            </p>
+          )}
           <div>
             {terms.map((t) => (
               <span key={t.term} className="chip">
                 {t.term}
-                <button className="chip__remove" onClick={() => setTerms(terms.filter((x) => x.term !== t.term))}>×</button>
+                <button
+                  className="chip__remove"
+                  type="button"
+                  onClick={() => removeTerm(t.term)}
+                  aria-label={`删除术语 ${t.term}`}
+                >
+                  ×
+                </button>
               </span>
             ))}
           </div>
@@ -209,9 +272,10 @@ export function MeetingWorkstationPage() {
           <input
             className="input"
             placeholder="搜索文档…"
-            onChange={(e) => void handleDocSearch(e.target.value)}
+            onChange={(e) => docSearch.search(e.target.value)}
             aria-label="document search"
           />
+          {docSearch.loading && <p>搜索中…</p>}
           {docResults.length > VIRTUALIZE_THRESHOLD ? (
             <VirtualList
               items={docResults}
@@ -237,7 +301,7 @@ export function MeetingWorkstationPage() {
             </ul>
           )}
           <p>已关联: {attachedDocs.length}</p>
-          <button className="button" onClick={() => goNext()}>下一步：开始处理</button>
+          <button className="button" disabled={busy} onClick={() => goNext()}>下一步：开始处理</button>
         </section>
       )}
 
@@ -248,7 +312,7 @@ export function MeetingWorkstationPage() {
             {state.startedProcessing ? "已开始" : "开始处理（hold=true）"}
           </button>
           {state.startedProcessing && (
-            <button className="button button--secondary" onClick={() => goNext()}>下一步：认人</button>
+            <button className="button button--secondary" disabled={busy} onClick={() => goNext()}>下一步：认人</button>
           )}
         </section>
       )}
@@ -256,7 +320,7 @@ export function MeetingWorkstationPage() {
       {step === "SPEAKERS" && (
         <section className="card">
           <h2>确认说话人</h2>
-          <button className="button button--secondary" onClick={() => void handleLoadAggregate()}>刷新候选人</button>
+          <button className="button button--secondary" disabled={busy} onClick={() => void handleLoadAggregate()}>刷新候选人</button>
           {aggregate?.speakers?.data?.length ? (
             (aggregate.speakers.data.length > VIRTUALIZE_THRESHOLD ? (
               <VirtualList
@@ -272,6 +336,7 @@ export function MeetingWorkstationPage() {
                       <button
                         key={c.personId}
                         className="button button--secondary"
+                        disabled={busy}
                         onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
                       >
                         认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
@@ -289,6 +354,7 @@ export function MeetingWorkstationPage() {
                       <button
                         key={c.personId}
                         className="button button--secondary"
+                        disabled={busy}
                         onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
                       >
                         认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
@@ -301,7 +367,7 @@ export function MeetingWorkstationPage() {
           ) : (
             <p>暂无候选人，请等待 worker 输出后再刷新。</p>
           )}
-          <button className="button" onClick={() => goNext()}>跳到生成纪要</button>
+          <button className="button" disabled={busy} onClick={() => goNext()}>跳到生成纪要</button>
         </section>
       )}
 
@@ -313,7 +379,7 @@ export function MeetingWorkstationPage() {
           </button>
           {state.finalized && (
             <>
-              <button className="button button--secondary" onClick={() => void handleLoadAggregate()}>刷新纪要</button>
+              <button className="button button--secondary" disabled={busy} onClick={() => void handleLoadAggregate()}>刷新纪要</button>
               {aggregate?.minutes?.data?.markdown ? (
                 <article className="card" aria-labelledby="minutes-h">
                   <h3 id="minutes-h">{aggregate.minutes.data.title || "会议纪要"}</h3>
@@ -322,7 +388,7 @@ export function MeetingWorkstationPage() {
               ) : (
                 <p>纪要尚未生成，请稍后刷新。</p>
               )}
-              <button className="button button--secondary" onClick={() => goNext()}>下一步：下载</button>
+              <button className="button button--secondary" disabled={busy} onClick={() => goNext()}>下一步：下载</button>
             </>
           )}
         </section>

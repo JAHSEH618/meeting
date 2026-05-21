@@ -12,8 +12,15 @@
       is populated by the time shared/auth/store.ts reads it. FastAPI serves
       this path in prod with values from AI_WORKER_AUTH_LOGIN_URL etc.;
       public/runtime-config.js is the dev fallback (empty object).
+
+      %BASE_URL% expands to ``base`` (i.e. /workstation/) at build time, so
+      the script resolves to /workstation/runtime-config.js regardless of
+      how deep the SPA route is. A relative URL here would 404 on
+      /workstation/meetings/new and silently fall back to /auth/login
+      same-host bounce — bad on K8s where the Ingress only routes
+      /admin and /workstation.
     -->
-    <script src="./runtime-config.js"></script>
+    <script src="%BASE_URL%runtime-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

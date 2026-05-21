@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   commitEnrollment,
   createEnrollmentSession,
@@ -8,26 +8,23 @@ import {
 } from "@/shared/api/endpoints";
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
 import { ApiError } from "@/shared/api/client";
+import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 
 const QUALITY_THRESHOLD = 0.5;
 
 export function EnrollmentPage() {
-  const [persons, setPersons] = useState<PersonDTO[]>([]);
   const [personId, setPersonId] = useState<string | null>(null);
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const handleSearch = async (q: string) => {
-    setError(null);
-    try {
-      const result = await searchPersons(q);
-      setPersons(result);
-    } catch (e) {
-      setError(formatError(e));
-    }
-  };
+  const searchPersonsFetcher = useCallback(
+    (q: string, signal: AbortSignal) => searchPersons(q, { signal }),
+    [],
+  );
+  const personSearch = useDebouncedSearch<PersonDTO>(searchPersonsFetcher);
+  const persons = personSearch.results ?? [];
 
   const handleStart = async () => {
     setBusy(true);
@@ -79,9 +76,10 @@ export function EnrollmentPage() {
         <input
           className="input"
           placeholder="按姓名 / 邮箱搜索…"
-          onChange={(e) => void handleSearch(e.target.value)}
+          onChange={(e) => personSearch.search(e.target.value)}
           aria-label="搜索人员"
         />
+        {personSearch.loading && <p>搜索中…</p>}
         <ul>
           {persons.map((p) => (
             <li key={p.id}>
@@ -106,12 +104,19 @@ export function EnrollmentPage() {
           创建录入会话
         </button>
         {session && <p data-testid="session-id">会话: {session.sessionId} · 状态: {session.state}</p>}
-        <input
-          type="file"
-          accept="audio/*"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          disabled={!session}
-        />
+        {/* Native <label htmlFor> gives screen readers an unambiguous name
+            for the file picker — the visual title above the card isn't
+            programmatically associated with the input. */}
+        <label htmlFor="enrollment-audio-file" className="enrollment__file-label">
+          上传录入音频
+          <input
+            id="enrollment-audio-file"
+            type="file"
+            accept="audio/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            disabled={!session}
+          />
+        </label>
         <button
           className="button"
           onClick={() => void handleUploadAndPreview()}
@@ -138,7 +143,11 @@ export function EnrollmentPage() {
         </button>
       </div>
 
-      {error && <div className="error" role="alert">{error}</div>}
+      {(error || personSearch.error) ? (
+        <div className="error" role="alert">
+          {error ?? formatError(personSearch.error)}
+        </div>
+      ) : null}
     </div>
   );
 }

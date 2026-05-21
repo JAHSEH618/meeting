@@ -108,6 +108,26 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 24px;
+  /* <ol> default list-style + padding would render bullet points / indents
+     that don't suit the horizontal step pattern. Strip them so the
+     ordered-list semantics stay (for SR users) without visual regression. */
+  list-style: none;
+  padding: 0;
+}
+
+/* WCAG-friendly visually-hidden helper. Lets us tag stepper items with
+   "已完成" / "进行中" / "待处理" status text that screen readers announce
+   without leaking into the visual layout. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .stepper__item {
