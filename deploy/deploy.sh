@@ -93,8 +93,14 @@ build_images() {
     log_ok "meeting-web 镜像构建完成"
 
     log_info "构建 ai-worker (CUDA) 镜像...（可选，用于 GPU 生产环境）"
+    # UV_EXTRAS=real-models 让 CUDA 镜像装齐 FlagEmbedding/funasr/pyannote.audio。
+    # 若漏掉，AI_WORKER_USE_FAKE_*_RUNTIME=false 的 Pod 会在首个真实任务时炸。
+    # K8s base statefulset 默认期望 ``ai-worker:cuda`` tag —— 见
+    # infra/meeting-infra/k8s/base/ai-worker/statefulset.yaml。
     docker build \
         -t ai-worker:cuda \
+        -t ai-worker:cuda-v0.1.0 \
+        --build-arg UV_EXTRAS=real-models \
         -f "${REPO_ROOT}/apps/ai-worker/Dockerfile" \
         "${REPO_ROOT}" 2>/dev/null || log_warn "CUDA 镜像构建跳过（需要 NVIDIA 基础镜像）"
 }

@@ -140,21 +140,27 @@ class PyannoteDiarizationRuntime:
     async def diarize(
         self, audio_path: Path, metadata: AudioMetadata
     ) -> list[SpeakerTurn]:
+        """Per-device semaphore wraps the call so DIAR + ASR + embed/rerank
+        share a single-GPU host predictably; see qwen3_asr_runtime for the
+        same pattern."""
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
         if metadata.duration_ms <= 0:
             raise PyannoteDiarizationRuntimeError(
                 "DIARIZATION_EMPTY_TURNS", "audio duration is empty"
             )
-        if self._use_fake:
-            return await self._fake.diarize(audio_path, metadata)
-        if self._status != "READY" or self._pipeline is None:
-            raise PyannoteDiarizationRuntimeError(
-                "DIARIZATION_FAILED",
-                "pyannote runtime is not loaded; call await ensure_loaded() first",
+        async with get_device_semaphore(self._device):
+            if self._use_fake:
+                return await self._fake.diarize(audio_path, metadata)
+            if self._status != "READY" or self._pipeline is None:
+                raise PyannoteDiarizationRuntimeError(
+                    "DIARIZATION_FAILED",
+                    "pyannote runtime is not loaded; call await ensure_loaded() first",
+                )
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, self._diarize_blocking, audio_path
             )
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, self._diarize_blocking, audio_path
-        )
 
     def _diarize_blocking(self, audio_path: Path) -> list[SpeakerTurn]:
         kwargs: dict[str, Any] = {}

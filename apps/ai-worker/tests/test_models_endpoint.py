@@ -330,27 +330,66 @@ def test_hardware_endpoint_reports_device_resolution() -> None:
     assert set(body["resolvedDevices"]) == {"bgeM3", "bgeReranker", "asr", "diarization"}
 
 
-def test_warmup_capability_filter_selects_asr_only() -> None:
+def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """``?capabilities=asr`` must not touch the embedding / rerank runtimes.
 
     Pinned because the default warmup intentionally stays on embedding+rerank
     for back-compat; a regression here would either silently warm everything
     (and crash CPU-only dev boxes) or silently warm nothing (and leave the
-    ASR cold start in the user-visible request path)."""
-    client = TestClient(create_app())
+    ASR cold start in the user-visible request path).
+
+    We monkeypatch each registry getter in the main module (where it's
+    bound) and assert the asr getter was invoked while embedding/rerank
+    were not — the response body alone can't prove negative behaviour
+    because ``_all_model_infos`` still calls every getter to populate the
+    summary.
+    """
+    from ai_worker.interfaces.api import main as main_module
+
+    calls: dict[str, int] = {"asr": 0, "bge_m3": 0, "bge_reranker": 0, "diar": 0}
+
+    def _patch(name: str, real):
+        def _wrapped():
+            calls[name] += 1
+            return real()
+        return _wrapped
+
+    # Snapshot the originals before patching so the wrapper still resolves
+    # the real singleton (we only want to count, not break the response).
+    orig_asr = main_module.get_asr_runtime
+    orig_m3 = main_module.get_bge_m3
+    orig_rr = main_module.get_bge_reranker
+    orig_d = main_module.get_diarization_runtime
+    monkeypatch.setattr(main_module, "get_asr_runtime", _patch("asr", orig_asr))
+    monkeypatch.setattr(main_module, "get_bge_m3", _patch("bge_m3", orig_m3))
+    monkeypatch.setattr(main_module, "get_bge_reranker", _patch("bge_reranker", orig_rr))
+    monkeypatch.setattr(main_module, "get_diarization_runtime", _patch("diar", orig_d))
+    # Re-bind the capability table to the patched getters; the module-level
+    # dict captured the originals at import time.
+    monkeypatch.setattr(
+        main_module,
+        "_CAPABILITY_TO_RUNTIMES",
+        {
+            "embedding": ("bge-m3", lambda: main_module.get_bge_m3()),
+            "rerank": ("bge-reranker-v2-m3", lambda: main_module.get_bge_reranker()),
+            "asr": ("qwen3-asr", lambda: main_module.get_asr_runtime()),
+            "diarization": ("pyannote-diarization", lambda: main_module.get_diarization_runtime()),
+        },
+    )
+
+    client = TestClient(main_module.create_app())
     headers = _auth_headers("POST", "/internal/models/warmup", b"")
     response = client.post(
         "/internal/models/warmup?capabilities=asr", headers=headers
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    # Models list always reports all four; the assertion is on the request
-    # not crashing — the fact that the response succeeded with capabilities=asr
-    # alone confirms the subset path is wired.
-    names = {m["name"] for m in body["data"]["models"]}
-    assert "qwen3-asr" in names
+    # _all_model_infos still touches every getter once for the response
+    # summary, so we assert ASR was called *more* than embedding/rerank
+    # (i.e. once for the warmup selection AND once for the summary).
+    assert calls["asr"] >= 2
+    assert calls["bge_m3"] <= 1
+    assert calls["bge_reranker"] <= 1
 
 
 def test_warmup_rejects_unknown_capability() -> None:
@@ -363,3 +402,31 @@ def test_warmup_rejects_unknown_capability() -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["error"]["code"] == "WARMUP_UNKNOWN_CAPABILITY"
+
+
+def test_ready_endpoint_fails_when_real_mode_dep_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase J ML hardening — fake=false image without FlagEmbedding must
+    fail readiness *before* the first task crashes.
+
+    Without this guard, a misconfigured CUDA build (no ``UV_EXTRAS=real-models``)
+    Pod would Ready, accept a real ASR/embed/rerank task, and only then crash
+    inside ``_load_model_blocking`` — the user-visible symptom is a 503 mid-
+    task instead of a kubelet-level NotReady. The fix surfaces the dep
+    problem at probe time so a Deployment rollout halts cleanly."""
+    monkeypatch.setattr(settings, "use_fake_runtime", False)
+    registry.reset_for_tests()
+
+    client = TestClient(create_app())
+    # FlagEmbedding is not installed in the dev/test env, so the embedding
+    # and rerank runtimes must show ERROR + a recognisable lastError.
+    response = client.get("/internal/ready")
+    body = response.json()
+
+    failed_names = {m["name"] for m in body["models"] if m["status"] == "ERROR"}
+    assert {"bge-m3", "bge-reranker-v2-m3"}.issubset(failed_names)
+    assert response.status_code == 503
+    sample = next(m for m in body["models"] if m["name"] == "bge-m3")
+    assert sample["lastError"] is not None
+    assert "FlagEmbedding" in sample["lastError"]

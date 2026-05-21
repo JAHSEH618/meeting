@@ -19,20 +19,23 @@ COPY apps/ai-worker-web/ ./
 RUN npm run build && ls -la dist
 
 # ----- runtime stage ---------------------------------------------------------
-# Base image must match the CUDA major version `uv.lock` pulls under torch
-# 2.12 (currently CUDA 13 via the `nvidia-cuda-runtime` 13.0.x deps). Override
-# at build time via `--build-arg BASE=...` when you've pinned torch to a
-# different wheel; CPU-only dev boxes can build with
-# `--build-arg BASE=python:3.11-slim` and AI_WORKER_USE_FAKE_RUNTIME=true.
+# Base image notes (Phase J ML hardening):
+#   * Default base is ``nvidia/cuda:13.0-cudnn-runtime-ubuntu22.04``. We stay
+#     on Ubuntu 22.04 (jammy) because the apt step below installs
+#     ``python3.11``, which is in jammy's standard repo but NOT in noble's
+#     (Ubuntu 24.04 ships python3.12 by default). CUDA 13 supports both
+#     22.04 and 24.04 — see the NVIDIA install guide.
+#   * Override at build time with ``--build-arg BASE=...`` to switch wheels;
+#     CPU-only dev boxes use ``BASE=python:3.11-slim``.
 #
-# `UV_EXTRAS` controls which optional extras are installed in the image:
+# ``UV_EXTRAS`` controls which optional extras are installed in the image:
 #   <empty>           — runtime + workstation BFF only (fake ML mode)
 #   real-bge          — embedding + reranker box
 #   real-asr          — Qwen3-ASR box
 #   real-diarization  — pyannote diarization box
 #   real-models       — single-host all-GPU box (everything)
 # Multiple extras can be passed comma-separated, e.g. `real-bge,real-asr`.
-ARG BASE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+ARG BASE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04
 ARG UV_EXTRAS=""
 FROM ${BASE}
 ARG UV_EXTRAS

@@ -168,26 +168,34 @@ class Qwen3AsrRuntime:
         behaviour as before this runtime existed). Real mode requires
         ``await ensure_loaded()`` to have completed; otherwise raises
         ``ASR_RUNTIME_ERROR``.
+
+        Acquires the per-device async semaphore so a single-GPU host
+        serializes ASR/DIAR/embed/rerank calls instead of OOM'ing under
+        bursty load. Fake mode's ``device=="fake"`` semaphore is wide
+        open, so this stays a no-op for tests.
         """
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
         if metadata.duration_ms <= 0:
             raise Qwen3AsrRuntimeError("ASR_EMPTY_RESULT", "audio duration is empty")
-        if self._use_fake:
-            return await self._fake.transcribe(audio_path, metadata, language)
-        if self._status != "READY" or self._model is None:
-            raise Qwen3AsrRuntimeError(
-                "ASR_RUNTIME_ERROR",
-                "qwen3-asr runtime is not loaded; call await ensure_loaded() first",
+        async with get_device_semaphore(self._device):
+            if self._use_fake:
+                return await self._fake.transcribe(audio_path, metadata, language)
+            if self._status != "READY" or self._model is None:
+                raise Qwen3AsrRuntimeError(
+                    "ASR_RUNTIME_ERROR",
+                    "qwen3-asr runtime is not loaded; call await ensure_loaded() first",
+                )
+            # funasr's `generate` is sync + CPU-bound (or GPU-bound); push
+            # to an executor so the FastAPI event loop stays responsive.
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None,
+                self._transcribe_blocking,
+                audio_path,
+                metadata,
+                language,
             )
-        # funasr's `generate` is sync + CPU-bound (or GPU-bound); push
-        # to an executor so the FastAPI event loop stays responsive.
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            self._transcribe_blocking,
-            audio_path,
-            metadata,
-            language,
-        )
 
     def _transcribe_blocking(
         self,

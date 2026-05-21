@@ -87,10 +87,40 @@ def _expected_checksum_for(runtime: RuntimeLike) -> str | None:
     return None
 
 
+def _required_package_for(runtime: RuntimeLike) -> str | None:
+    """Python package the real-mode runtime needs to load weights.
+
+    ``None`` for fake-only paths so callers can shortcut. Mirrors the
+    lazy imports inside each runtime's ``_load_model_blocking`` so this
+    is the single point of truth — if a runtime gains a new dep, add
+    the entry here and the readiness probe picks it up.
+    """
+    if isinstance(runtime, (BgeM3Runtime, BgeRerankerRuntime)):
+        return "FlagEmbedding"
+    if isinstance(runtime, Qwen3AsrRuntime):
+        return "funasr"
+    if isinstance(runtime, PyannoteDiarizationRuntime):
+        return "pyannote.audio"
+    return None
+
+
+def _package_importable(name: str) -> bool:
+    """``importlib.util.find_spec`` raises on dotted names whose parent
+    module is absent (e.g. ``pyannote.audio`` when ``pyannote`` itself
+    isn't installed). Swallow that as "not importable" so readiness can
+    decide without a 500."""
+    from importlib import util
+
+    try:
+        return util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
 def _model_info(runtime: RuntimeLike, name: str) -> dict:
     """Project a runtime into ``ModelInfo`` per ai-worker-internal-api.yaml.
 
-    Two layered concerns:
+    Three layered concerns (later wins):
       1. ``checksum`` is computed lazily from on-disk weight files when
          ``modelsDir`` is set (Phase 8.4.1.b). Falls back to ``None`` for
          fake mode / HF-fallback paths so callers can tell "we don't know"
@@ -99,8 +129,12 @@ def _model_info(runtime: RuntimeLike, name: str) -> dict:
          is configured, mismatch (or missing weights when the guard is
          armed) forces ``status=ERROR`` with a ``lastError`` describing
          the divergence — without mutating the shared runtime singleton.
-         Readiness logic in ``/internal/ready`` rolls these per-model
-         statuses up into the probe verdict.
+      3. Phase J ML hardening: real-mode (``use_fake=False``) runtime
+         whose Python dep (FlagEmbedding / funasr / pyannote.audio) isn't
+         importable forces ``status=ERROR``. This catches the "image
+         built without ``UV_EXTRAS=real-models`` but the ConfigMap flipped
+         fake=false" footgun *before* the first task lands; without it
+         the pod would Ready, accept work, and crash on first inference.
     """
     models_dir = _models_dir_for(runtime)
     actual = compute_checksum(models_dir)
@@ -112,6 +146,16 @@ def _model_info(runtime: RuntimeLike, name: str) -> dict:
         status = "ERROR"
         observed = actual or "<no weights found>"
         last_error = f"checksum mismatch: expected {expected} got {observed}"
+
+    if not runtime.use_fake:
+        required = _required_package_for(runtime)
+        if required and not _package_importable(required):
+            status = "ERROR"
+            last_error = (
+                f"real-mode runtime requires {required} but the package is not "
+                "importable; rebuild the image with UV_EXTRAS=real-models "
+                "(or the matching subset)"
+            )
 
     return {
         "name": name,
@@ -161,6 +205,7 @@ def _hardware_snapshot() -> dict:
     cuda_device_count = 0
     mps_built = False
     mps_available = False
+    probe_error: str | None = None
     try:
         import torch  # type: ignore[import-not-found]
 
@@ -174,17 +219,14 @@ def _hardware_snapshot() -> dict:
             mps_available = bool(mps.is_available())
     except ImportError:
         pass
+    except (OSError, RuntimeError) as exc:
+        # CUDA driver/lib version mismatch raises OSError on dlopen and
+        # RuntimeError on torch.cuda.* — surface the message so operators
+        # can spot it from /internal/hardware without grepping logs.
+        probe_error = f"{type(exc).__name__}: {exc}"
 
     def _pkg_available(name: str) -> bool:
-        from importlib import util
-
-        # ``find_spec("pyannote.audio")`` raises ``ModuleNotFoundError`` when
-        # the parent (``pyannote``) is absent — swallow so the diagnostic
-        # endpoint never 500s on a CPU-only dev box.
-        try:
-            return util.find_spec(name) is not None
-        except (ImportError, ModuleNotFoundError, ValueError):
-            return False
+        return _package_importable(name)
 
     return {
         "torch": {
@@ -192,6 +234,7 @@ def _hardware_snapshot() -> dict:
             "version": torch_version,
             "cuda": {"available": cuda_available, "deviceCount": cuda_device_count},
             "mps": {"built": mps_built, "available": mps_available},
+            "probeError": probe_error,
         },
         "packages": {
             "FlagEmbedding": _pkg_available("FlagEmbedding"),
@@ -470,8 +513,6 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        bge_m3 = get_bge_m3()
-        bge_reranker = get_bge_reranker()
         # Capability-aware warmup. ``?capabilities=asr,diarization`` (comma-
         # separated, case-insensitive) restricts to a subset; absent or
         # ``all`` triggers everything. Embedding + rerank are still the
@@ -578,7 +619,7 @@ def create_app() -> FastAPI:
             )
 
         try:
-            vectors = runtime.embed(embed_req.texts)
+            vectors = await runtime.aembed(embed_req.texts)
         except BgeM3RuntimeError as exc:
             return _error_response(
                 status_code=503,
@@ -664,7 +705,7 @@ def create_app() -> FastAPI:
 
         truncated = list(rerank_req.candidates[: rerank_req.topN])
         try:
-            scores = runtime.rank(rerank_req.query, [c.text for c in truncated])
+            scores = await runtime.arank(rerank_req.query, [c.text for c in truncated])
         except BgeRerankerRuntimeError as exc:
             return _error_response(
                 status_code=503,

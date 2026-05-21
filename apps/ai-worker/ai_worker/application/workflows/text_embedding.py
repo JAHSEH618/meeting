@@ -131,7 +131,7 @@ class TextEmbeddingWorkflow:
 
         texts = [c.content for c in chunks]
         try:
-            vectors = self._bge_m3.embed(texts)
+            vectors = await self._bge_m3.aembed(texts)
         except Exception as exc:  # noqa: BLE001 — keep workflow self-contained
             raise WorkerPipelineError(
                 "RAG_INDEXING",

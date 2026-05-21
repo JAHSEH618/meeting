@@ -121,6 +121,9 @@ class BgeRerankerRuntime:
         each score sits in `[0, 1]`. The order is query-aware.
 
         Empty input → empty output. No model call is dispatched.
+
+        Sync surface — see :meth:`arank` for the production-preferred async
+        wrapper that acquires the per-device semaphore.
         """
         if not query:
             raise BgeRerankerRuntimeError(
@@ -143,3 +146,18 @@ class BgeRerankerRuntime:
         if isinstance(scores, float):
             return [float(scores)]
         return [float(s) for s in scores]
+
+    async def arank(self, query: str, candidates: list[str]) -> list[float]:
+        """Async wrapper — acquires the per-device semaphore and offloads
+        the (GPU-bound on CUDA, CPU-bound otherwise) ``rank`` call so the
+        FastAPI event loop stays responsive and concurrent rerank requests
+        don't compete with ASR / DIAR for the same GPU."""
+        if not candidates:
+            return []
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            if self._use_fake:
+                return self.rank(query, candidates)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.rank, query, candidates)

@@ -28,7 +28,14 @@ spec:
           effect: NoSchedule
       containers:
         - name: ai-worker
-          image: ai-worker:dev
+          # Phase J ML — the base manifest enables real runtimes via the
+          # ConfigMap below (AI_WORKER_USE_FAKE_*_RUNTIME=false), so the
+          # image MUST include FlagEmbedding / funasr / pyannote.audio.
+          # `ai-worker:cuda` is built by `deploy/deploy.sh build` with
+          # `--build-arg UV_EXTRAS=real-models`. Dev clusters that prefer
+          # the lean image must patch this in an overlay AND flip the
+          # ConfigMap flags back to "true".
+          image: ai-worker:cuda
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

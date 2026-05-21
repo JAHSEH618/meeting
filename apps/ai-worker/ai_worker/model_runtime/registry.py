@@ -137,7 +137,12 @@ def _resolve_device(preferred: str, use_fake: bool) -> str:
         mps = getattr(getattr(torch, "backends", None), "mps", None)
         if mps is not None and mps.is_available():
             return "mps"
-    except ImportError:
+    except (ImportError, OSError, RuntimeError):
+        # torch may import but fail on cuda.is_available() if the CUDA
+        # driver lib version doesn't match the wheel (OSError on dlopen,
+        # RuntimeError on CUDA init). Treat as "no GPU available" and
+        # fall through to CPU; /internal/hardware surfaces the real
+        # diagnostic so an operator can fix the underlying issue.
         pass
     return "cpu"
 
@@ -149,9 +154,24 @@ def _resolve_fp16(device: str, dtype_setting: str) -> bool:
     on autocast under ``use_fp16=True``; on MPS several ops still fall
     back to fp32 anyway, but a few (norm / softmax variants) hit numerical
     issues, so we keep MPS on fp32 unless an operator explicitly opts in.
+
+    Explicit values:
+      * ``fp16`` → True
+      * ``fp32`` → False
+      * ``auto`` → CUDA family ⇒ True, else False
+    Any other value raises so operators don't silently get fp32 from a
+    typo (e.g. ``"fp16 "`` with trailing space or ``"bf16"`` which we
+    don't actually support yet).
     """
-    if dtype_setting != "auto":
-        return dtype_setting in ("fp16", "bf16")
+    value = (dtype_setting or "auto").strip().lower()
+    if value == "fp16":
+        return True
+    if value == "fp32":
+        return False
+    if value != "auto":
+        raise ValueError(
+            f"unsupported dtype {dtype_setting!r}; expected auto/fp16/fp32"
+        )
     family = device.split(":", 1)[0]
     return family == "cuda"
 

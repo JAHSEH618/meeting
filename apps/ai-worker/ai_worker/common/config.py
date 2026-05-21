@@ -48,7 +48,10 @@ class Settings(BaseSettings):
     #   CUDA → fp16   (matches FlagEmbedding/funasr defaults)
     #   MPS  → fp32   (fp16 is unstable on many ops, see PyTorch MPS notes)
     #   CPU  → fp32
-    # Allowed values: ``auto`` / ``fp16`` / ``bf16`` / ``fp32``.
+    # Allowed values: ``auto`` / ``fp16`` / ``fp32``. bf16 is NOT supported
+    # because FlagEmbedding's ``use_fp16`` flag is the only knob we expose
+    # — accepting bf16 and mapping it to fp16 would be misleading. Add a
+    # real dtype path before re-introducing the value.
     bge_m3_dtype: str = "auto"
     bge_reranker_dtype: str = "auto"
     # ── Phase J — checksum guard (J4) ───────────────────────────────────

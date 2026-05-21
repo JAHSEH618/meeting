@@ -165,6 +165,11 @@ class BgeM3Runtime:
         In fake mode: pure deterministic, no model state required.
         In real mode: requires `await ensure_loaded()` to have completed.
         Empty input → empty output (no roundtrip to the model).
+
+        Sync surface — kept for tests and synchronous call paths. Production
+        async paths should prefer :meth:`aembed` so the per-device semaphore
+        (CUDA/MPS = 1, CPU = 4) gates concurrent inference and a single-GPU
+        host doesn't OOM when ASR / DIAR / embed run at once.
         """
         if not texts:
             return []
@@ -181,3 +186,22 @@ class BgeM3Runtime:
         dense_vecs = result["dense_vecs"]
         # FlagEmbedding returns a numpy array; coerce to list[list[float]].
         return [list(vec) for vec in dense_vecs.tolist()]
+
+    async def aembed(self, texts: list[str]) -> list[list[float]]:
+        """Async wrapper that acquires the per-device semaphore and offloads
+        the (sync, CPU-bound on CPU; GPU-bound on CUDA) ``embed`` call to a
+        thread executor so the FastAPI event loop stays responsive.
+
+        Fake mode also goes through the semaphore — its ``device=="fake"``
+        family has effectively-unbounded concurrency, so the gate is a
+        no-op except for keeping the gate uniform across call sites.
+        """
+        if not texts:
+            return []
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            if self._use_fake:
+                return self.embed(texts)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.embed, texts)
