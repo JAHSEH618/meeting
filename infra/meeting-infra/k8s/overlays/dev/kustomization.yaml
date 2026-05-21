@@ -2,6 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Dev overlay: 1 replica per app, low resource requests, image tag :dev.
+# Phase J ML — dev clusters (kind/minikube) don't have NVIDIA GPUs, so this
+# overlay strips the GPU nodeSelector/tolerations/resource requests, drops
+# the ai-worker-models PVC mount, and flips the runtime flags back to
+# fake mode. Without these patches the StatefulSet would be Pending forever
+# (no node matches nvidia.com/gpu.present=true) and the readiness probe
+# would 503 on missing FlagEmbedding/funasr/pyannote.audio.
 namespace: meeting-dev
 
 resources:
@@ -32,6 +38,53 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+  # Strip GPU-only scheduling + drop the models PVC mount so the
+  # ai-worker StatefulSet can run on any node. The /opt/models path
+  # becomes an emptyDir since fake mode doesn't read real weights.
+  - target:
+      kind: StatefulSet
+      name: ai-worker
+    patch: |
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
+      - op: remove
+        path: /spec/template/spec/containers/0/resources/requests/nvidia.com~1gpu
+      - op: remove
+        path: /spec/template/spec/containers/0/resources/limits/nvidia.com~1gpu
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests
+        value:
+          cpu: "200m"
+          memory: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits
+        value:
+          cpu: "1000m"
+          memory: "2Gi"
+      - op: replace
+        path: /spec/template/spec/volumes
+        value:
+          - name: models
+            emptyDir: {}
+          - name: artifacts
+            emptyDir: {}
+  # Flip the runtime flags back to fake so the lean ai-worker:dev image
+  # (no real-models extras installed) doesn't trip readiness.
+  - target:
+      kind: ConfigMap
+      name: ai-worker-config
+    patch: |
+      - op: replace
+        path: /data/AI_WORKER_USE_FAKE_RUNTIME
+        value: "true"
+      - op: replace
+        path: /data/AI_WORKER_USE_FAKE_ASR_RUNTIME
+        value: "true"
+      - op: replace
+        path: /data/AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME
+        value: "true"
 
 images:
   - name: meeting-api

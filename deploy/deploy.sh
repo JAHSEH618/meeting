@@ -133,6 +133,20 @@ push_images() {
         docker push "${registry}/${img}:${tag}"
         log_ok "${img}:${tag} 推送完成"
     done
+
+    # Phase J ML — push the CUDA ai-worker too when present locally. K8s
+    # base + prod overlay reference ai-worker:cuda-${tag}; without this
+    # the registry would be missing the image and the prod rollout would
+    # ImagePullBackOff after a fresh build.
+    local cuda_tag="cuda-${tag}"
+    if docker image inspect "ai-worker:${cuda_tag}" >/dev/null 2>&1; then
+        log_info "推送 ai-worker:${cuda_tag}..."
+        docker tag "ai-worker:${cuda_tag}" "${registry}/ai-worker:${cuda_tag}"
+        docker push "${registry}/ai-worker:${cuda_tag}"
+        log_ok "ai-worker:${cuda_tag} 推送完成"
+    else
+        log_warn "本地未找到 ai-worker:${cuda_tag}，跳过 CUDA 镜像推送（先执行 deploy.sh build 构建）"
+    fi
 }
 
 # ── 本地环境 ──────────────────────────────────────────────────────────────────
@@ -201,7 +215,7 @@ wait_for_service() {
     local interval=2
     local elapsed=0
 
-    while [ $elapsed -lt $max_wait ]; do
+    while [ "$elapsed" -lt "$max_wait" ]; do
         if docker compose -f "${INFRA_DIR}/docker/compose/docker-compose.yml" ps "$service" 2>/dev/null | grep -q "healthy\|running"; then
             # 额外检查 — 对有 HTTP 健康端点的服务校验真实就绪状态
             case "$service" in

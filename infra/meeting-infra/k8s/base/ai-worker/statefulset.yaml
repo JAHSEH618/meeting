@@ -19,6 +19,14 @@ spec:
         prometheus.io/port: "8090"
         prometheus.io/path: /metrics
     spec:
+      # The ai-worker image runs as uid 1001 (non-root). fsGroup mounts
+      # PVCs (ai-worker-models, enrollment-tmp) with the same group so
+      # the unprivileged user can read weights and write enrollment
+      # scratch files. Without this, a freshly-provisioned model PVC
+      # often comes up root-owned and ai-worker boot fails with a
+      # `Permission denied` reading the first weight shard.
+      securityContext:
+        fsGroup: 1001
       # GPU nodes only — Cluster admin keeps the label / taint pair.
       nodeSelector:
         nvidia.com/gpu.present: "true"

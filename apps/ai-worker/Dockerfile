@@ -76,9 +76,22 @@ COPY apps/ai-worker/uv.lock* ./
 # so a CUDA box can opt into real-models, real-bge, etc. without changing
 # the Dockerfile. Empty UV_EXTRAS keeps the lean default (fake runtime).
 # POSIX-only loop — works on the base sh in nvidia/cuda + python:3.11-slim.
+#
+# Frozen vs re-resolve policy: any real-* extra installs heavy ML deps
+# whose CUDA-wheel ↔ torch ↔ CUDA-runtime relationship is brittle —
+# silently re-resolving when the lock drifts has produced incompatible
+# wheel sets in past rollouts. So:
+#   * UV_EXTRAS empty (lean dev/CPU image) → soft fallback retained so a
+#     CLAUDE.md tweak doesn't block dev image rebuilds on lock churn.
+#   * UV_EXTRAS set → frozen-only; mismatch fails the build so the lock
+#     gets regenerated locally before a tagged production image ships.
 RUN extras="" \
     && for p in $(echo "$UV_EXTRAS" | tr ',' ' '); do extras="$extras --extra $p"; done \
-    && (uv sync --frozen --no-dev $extras || uv sync --no-dev $extras)
+    && if [ -n "$UV_EXTRAS" ]; then \
+        uv sync --frozen --no-dev $extras; \
+       else \
+        uv sync --frozen --no-dev $extras || uv sync --no-dev $extras; \
+       fi
 
 COPY apps/ai-worker/ai_worker ./ai_worker
 COPY --from=web-build /web/dist /app/admin-ui

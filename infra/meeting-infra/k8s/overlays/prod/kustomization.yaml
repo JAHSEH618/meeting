@@ -32,4 +32,9 @@ images:
   - name: meeting-web
     newTag: v0.1.0
   - name: ai-worker
-    newTag: v0.1.0
+    # Phase J ML — prod runs with AI_WORKER_USE_FAKE_*_RUNTIME=false, so
+    # the image MUST be the CUDA build (deploy.sh builds it with
+    # UV_EXTRAS=real-models). The plain `v0.1.0` tag is the lean
+    # CPU/fake image and would cause /internal/ready to 503 on missing
+    # FlagEmbedding / funasr / pyannote.audio. Keep the `cuda-` prefix.
+    newTag: cuda-v0.1.0
