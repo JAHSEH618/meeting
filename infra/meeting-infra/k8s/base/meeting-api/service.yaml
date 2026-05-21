@@ -18,8 +18,9 @@ kind: ConfigMap
 metadata:
   name: meeting-api-config
 data:
-  # Non-sensitive runtime configuration. Secrets (HMAC, DB creds) live
-  # in the `meeting-api-secret` Secret created out-of-band.
+  # Non-sensitive runtime configuration. Secrets (HMAC, DB creds, KMS
+  # master key, DashScope API key) live in the `meeting-api-secret`
+  # Secret created out-of-band — see DEPLOY.md §5.
   STORAGE_TYPE: "minio"
   POSTGRES_HOST: "postgres"
   POSTGRES_PORT: "5432"
@@ -27,6 +28,12 @@ data:
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   MINIO_ENDPOINT: "http://minio:9000"
+  # LocalObjectStorageGateway reads `meeting.storage.endpoint` directly
+  # for presigned-URL generation; the MINIO_ENDPOINT above is only bound
+  # to `meeting.storage.minio.endpoint` (the MinIO client config). Without
+  # this entry the gateway falls back to http://localhost:9000 and every
+  # generated upload/download URL is broken in-cluster.
+  MEETING_STORAGE_ENDPOINT: "http://minio:9000"
   AI_WORKER_BASE_URL: "http://ai-worker:8090"
   CHUNK_STRATEGY_VERSION: "v1"
   LIBREOFFICE_BINARY: "soffice"

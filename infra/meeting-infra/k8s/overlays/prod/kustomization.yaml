@@ -25,6 +25,24 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 3
+  # ProdProfileValidator activates with `prod` and fail-fasts on any of:
+  # demo HMAC secrets, localhost AI worker base URL, dev KMS key id,
+  # llm.allow-confidential=true, or flyway baseline-on-migrate=true. The
+  # validator only runs when SPRING_PROFILES_ACTIVE=prod is set, so this
+  # patch is the switch that turns it on for the prod overlay. Flyway
+  # baseline override lives here too because application.yml ships
+  # baseline-on-migrate: true (dev-friendly default), but prod must
+  # never silently baseline against an unknown schema state.
+  - target:
+      kind: ConfigMap
+      name: meeting-api-config
+    patch: |
+      - op: add
+        path: /data/SPRING_PROFILES_ACTIVE
+        value: "prod"
+      - op: add
+        path: /data/SPRING_FLYWAY_BASELINE_ON_MIGRATE
+        value: "false"
 
 images:
   - name: meeting-api

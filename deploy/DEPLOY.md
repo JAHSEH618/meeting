@@ -304,7 +304,17 @@ kubectl create secret generic meeting-api-secret \
   --from-literal=RABBITMQ_PASS=meeting_dev \
   --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-secret> \
   --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
-  --from-literal=DASHSCOPE_API_KEY=<key>
+  --from-literal=DASHSCOPE_API_KEY=<key> \
+  --from-literal=KMS_MASTER_KEY_ID=<kms-key-id> \
+  --from-literal=MEETING_KMS_MASTER_KEY_BASE64=<base64-32-bytes>
+# KMS 说明（必读）：
+#   * KMS_MASTER_KEY_ID 是 ProdProfileValidator 检查的字段，不能是
+#     `dev-kms-master-key`，否则 prod profile 启动直接 fail。
+#   * MEETING_KMS_MASTER_KEY_BASE64 是 LocalKmsGateway 实际加解密用的
+#     32 字节 AES-256 master key（base64）。不提供时 LocalKmsGateway 会
+#     启动时生成随机 key —— 仅限 dev/test，prod 重启即失能（说话人
+#     embedding 全部无法解密）。生成方式：`openssl rand -base64 32`。
+#   * 切换到云 KMS 后这个 base64 不再需要，但 ID 仍然要求非 demo 值。
 
 kubectl create secret generic meeting-api-config \
   -n meeting-dev \
@@ -320,7 +330,19 @@ kubectl apply -f deploy/dev-bundle.yaml
 kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
 ```
 
-### 5.5 ai-worker 特殊要求
+### 5.5 meeting-api prod profile 必读
+
+`ProdProfileValidator`（`apps/meeting-api/.../start/config/ProdProfileValidator.java`）只在 `SPRING_PROFILES_ACTIVE=prod` 时启用，启用后会在 Bean 创建阶段 fail-fast。把所有违反项一次列出，避免反复重启排错。
+
+- **触发开关**：prod overlay 已通过 ConfigMap patch 注入 `SPRING_PROFILES_ACTIVE=prod`。dev/staging 不要打这个 flag，否则会被 validator 卡住。
+- **HMAC 双密钥**：`AI_WORKER_CALLBACK_HMAC_SECRET` 与 `AI_WORKER_INTERNAL_API_HMAC_SECRET` 必须为非 demo 值，且彼此不同。
+- **AI worker base URL**：`AI_WORKER_BASE_URL` 不能含 `localhost` / `127.0.0.1`。
+- **KMS key id**：`KMS_MASTER_KEY_ID` 不能是默认的 `dev-kms-master-key`。
+- **Flyway baseline**：prod overlay 同时注入 `SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`，因为 `application.yml` 的 dev-friendly 默认是 `true`，validator 在 prod 拒绝这种隐式 baseline。
+- **存储 endpoint**：`MEETING_STORAGE_ENDPOINT` 必须显式设到集群内的 MinIO/S3 URL。`LocalObjectStorageGateway` 读 `meeting.storage.endpoint`（而不是 `meeting.storage.minio.endpoint`）来生成预签名 URL；不设会默认 `http://localhost:9000`，所有上传/下载链接在集群里都不可用。base ConfigMap 已默认 `http://minio:9000`，运行在 S3 上时由 overlay 覆盖。
+- **KMS master key**：本地实现 (`LocalKmsGateway`) 通过 `MEETING_KMS_MASTER_KEY_BASE64` 读 32 字节 AES-256 master key（base64）。**不设的话每次启动生成随机 key**，重启即丢，所有已加密的 speaker embedding 都会解不开。生成方法：`openssl rand -base64 32`。切换到云 KMS 后此变量可省略。
+
+### 5.6 ai-worker 特殊要求
 
 - **GPU 节点**: 集群需有 `nvidia.com/gpu.present: "true"` 标签的节点
 - **模型卷**: 预创建 `ai-worker-models` PVC 并预置模型权重。挂载路径必须包含版本号子目录，否则 `/internal/ready` 的 checksum guard 无法校验：
@@ -335,7 +357,7 @@ kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
 - **Secret**: `ai-worker-secret` 必须在 kustomize apply 之前创建（dev 由 `deploy.sh k8s-dev` 自动处理；staging/prod 由 SealedSecrets / ExternalSecret 注入）
 - **fsGroup**: `securityContext.fsGroup: 1001` 确保 ai-worker 用户 (uid 1001) 可读取模型
 
-### 5.6 Ingress 配置
+### 5.7 Ingress 配置
 
 ```yaml
 # ai-worker 工作站 Ingress（仅内部 IP）
@@ -370,7 +392,7 @@ spec:
                   number: 8090
 ```
 
-### 5.7 工作站 SPA 路径约定 (Phase J)
+### 5.8 工作站 SPA 路径约定 (Phase J)
 
 - 前端 `vite.config.ts` 设 `base: "/workstation/"`，构建出的 `index.html` 引用 `/workstation/assets/...`。
 - `BrowserRouter basename="/workstation"`，所有 SPA 链接（`/meetings`、`/enrollment`）实际落在 `/workstation/meetings` 等路径下；E2E (`apps/ai-worker-web/e2e/*.spec.ts`) 必须用带前缀的 `page.goto("/workstation/...")`。
