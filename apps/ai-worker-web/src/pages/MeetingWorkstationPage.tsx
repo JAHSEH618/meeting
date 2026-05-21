@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import {
   attachMeetingDocument,
@@ -37,6 +37,7 @@ export function MeetingWorkstationPage() {
   const params = useParams<{ meetingId?: string }>();
   const routeMeetingId =
     params.meetingId && params.meetingId !== "new" ? params.meetingId : undefined;
+  const navigate = useNavigate();
   const { state, step, patch, goNext, order } = useWizard(
     routeMeetingId ? { meetingId: routeMeetingId } : undefined,
   );
@@ -56,7 +57,12 @@ export function MeetingWorkstationPage() {
       participants: [],
     });
     patch({ meetingId: meeting.meetingId });
-    goNext();
+    // Bounce to the canonical URL so a refresh / copy-link keeps the meeting
+    // context. The MeetingWorkstationRoute wrapper keys on the route param,
+    // so this remounts the page; the new instance reads meetingId from the
+    // URL via useWizard initial and starts at AUDIO automatically — no need
+    // for goNext() on the (about-to-unmount) old instance.
+    navigate(`/meetings/${meeting.meetingId}`, { replace: true });
   });
 
   // STEP 3a — glossary

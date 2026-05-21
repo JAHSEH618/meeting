@@ -14,7 +14,9 @@ interface ImportMeta {
 }
 
 /**
- * Runtime config injected by ai-worker FastAPI at ``/workstation/runtime-config.js``.
+ * Runtime config injected by ai-worker FastAPI at
+ * ``/workstation/runtime-config.json`` (fetched by main.tsx at bootstrap
+ * and assigned to ``window.__WORKSTATION_CONFIG__`` before React mounts).
  * Prefer this over ``VITE_AUTH_LOGIN_URL`` for K8s deployments where the
  * Java login URL changes per environment — switching it does not require
  * a SPA rebuild.

@@ -3,6 +3,17 @@
   color: #1f2933;
   background: #f7f8fb;
   font-size: 14px;
+  /* Design tokens. Keep focus-ring contrast >= 3:1 with surface colours
+     for WCAG 2.4.7. The hover/active tints are derived from --accent so
+     all interactive elements share a coherent palette. */
+  --accent: #3b5bdb;
+  --accent-hover: #2f48b3;
+  --accent-active: #25387f;
+  --accent-soft: #e7ecff;
+  --focus-ring: #3b5bdb;
+  --focus-ring-offset: #ffffff;
+  --danger: #c92a2a;
+  --border: #cdd2dd;
 }
 
 * {
@@ -29,14 +40,29 @@ body {
 }
 
 .layout__nav a {
-  color: #3b5bdb;
+  color: var(--accent);
   margin-right: 16px;
   text-decoration: none;
   font-weight: 500;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.layout__nav a:hover {
+  text-decoration: underline;
 }
 
 .layout__nav a.active {
   text-decoration: underline;
+}
+
+/* Keyboard-only focus ring — ``:focus-visible`` skips the outline for
+   mouse clicks (where the visual feedback is already obvious) but keeps
+   it for tab navigation. Per Web Interface Guidelines all interactive
+   elements need this. */
+.layout__nav a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .layout__main {
@@ -56,13 +82,27 @@ body {
 }
 
 .button {
-  background: #3b5bdb;
+  background: var(--accent);
   color: #fff;
   border: 0;
   padding: 8px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .button:disabled {
@@ -72,8 +112,16 @@ body {
 
 .button--secondary {
   background: #fff;
-  color: #3b5bdb;
-  border: 1px solid #3b5bdb;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.button--secondary:active:not(:disabled) {
+  background: #d6dfff;
 }
 
 .input,
@@ -81,9 +129,35 @@ body {
 .select {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #cdd2dd;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
+  background: #fff;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.input:hover:not(:disabled):not(:focus),
+.textarea:hover:not(:disabled):not(:focus),
+.select:hover:not(:disabled):not(:focus) {
+  border-color: #9aa3b8;
+}
+
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  /* Double-ring effect: inner accent + outer translucent ring for AA
+     contrast against both light backgrounds and the input border. */
+  box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.25);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.input[aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(201, 42, 42, 0.25);
 }
 
 .stack {
@@ -166,4 +240,18 @@ body {
   color: inherit;
   cursor: pointer;
   margin-left: 4px;
+  /* Icon-only buttons need a hit area + visible focus state. */
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chip__remove:hover {
+  background: rgba(59, 91, 219, 0.18);
+}
+
+.chip__remove:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }

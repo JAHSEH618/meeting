@@ -591,7 +591,8 @@ AI_WORKER_QWEN3_ASR_EXPECTED_CHECKSUM=sha256:...
 AI_WORKER_PYANNOTE_EXPECTED_CHECKSUM=sha256:...
 
 # Phase J — 工作站 SPA 运行时配置。值会被 ai-worker 在
-# GET /workstation/runtime-config.js 注入到 window.__WORKSTATION_CONFIG__,
+# GET /workstation/runtime-config.json 由 main.tsx 在 bootstrap 时 fetch 并
+# 写入 window.__WORKSTATION_CONFIG__，优先级高于前端构建期的 VITE_AUTH_LOGIN_URL。
 # 优先级高于前端构建期的 VITE_AUTH_LOGIN_URL。当 K8s Ingress 只把 /admin
 # 和 /workstation 路由到 ai-worker、Java 登录在另一台 host 时必须设置。
 AI_WORKER_AUTH_LOGIN_URL=https://meeting-api.internal/auth/login
@@ -620,7 +621,7 @@ AI_WORKER_ADMIN_UI_DIST_PATH=/app/admin-ui
 | ai-worker | `GET /internal/health` | K8s livenessProbe（不看模型状态） |
 | ai-worker | `GET /internal/ready` | K8s readinessProbe（Phase J，触发模型 checksum guard，503 ⇒ NotReady） |
 | ai-worker | `GET /metrics` | Prometheus metrics |
-| ai-worker | `GET /workstation/runtime-config.js` | 注入 `window.__WORKSTATION_CONFIG__`（来自 `AI_WORKER_AUTH_LOGIN_URL` 等）
+| ai-worker | `GET /workstation/runtime-config.json` | 由 SPA bootstrap 拉取，注入 `window.__WORKSTATION_CONFIG__`（来自 `AI_WORKER_AUTH_LOGIN_URL` 等）
 
 ### 10.2 一键健康检查
 

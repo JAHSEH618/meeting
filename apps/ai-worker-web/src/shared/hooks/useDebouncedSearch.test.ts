@@ -11,41 +11,66 @@ import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
  * land after the user typed "ABC" and the UI snaps back to the older
  * result list. The hook eliminates both classes of bug — tests below
  * cover the two failure modes.
+ *
+ * Why every timer-firing act() is async + flushMicrotasks: the hook's
+ * fetcher chain runs setResults / setLoading inside microtasks that
+ * follow the awaited fetch. Without draining those microtasks inside
+ * the act() boundary, React warns about "state update outside act()".
  */
+
+// 5 rounds covers the longest chain in the hook
+// (await fetcher → setResults → finally → setLoading).
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.resolve();
+  }
+}
 
 describe("useDebouncedSearch", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("waits delayMs before firing the fetcher", () => {
+  it("waits delayMs before firing the fetcher", async () => {
     const fetcher = vi.fn(async () => ["x"]);
     const { result } = renderHook(() => useDebouncedSearch<string>(fetcher, 300));
 
     act(() => result.current.search("hello"));
     expect(fetcher).not.toHaveBeenCalled();
 
-    act(() => {
+    await act(async () => {
       vi.advanceTimersByTime(299);
+      await flushMicrotasks();
     });
     expect(fetcher).not.toHaveBeenCalled();
 
-    act(() => {
+    await act(async () => {
       vi.advanceTimersByTime(1);
+      await flushMicrotasks();
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]?.[0]).toBe("hello");
   });
 
-  it("coalesces rapid keystrokes into a single trailing call", () => {
+  it("coalesces rapid keystrokes into a single trailing call", async () => {
     const fetcher = vi.fn(async () => ["x"]);
     const { result } = renderHook(() => useDebouncedSearch<string>(fetcher, 300));
 
     act(() => result.current.search("a"));
-    act(() => vi.advanceTimersByTime(100));
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+      await flushMicrotasks();
+    });
     act(() => result.current.search("ab"));
-    act(() => vi.advanceTimersByTime(100));
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+      await flushMicrotasks();
+    });
     act(() => result.current.search("abc"));
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]?.[0]).toBe("abc");
@@ -65,28 +90,34 @@ describe("useDebouncedSearch", () => {
     const { result } = renderHook(() => useDebouncedSearch<string>(fetcher, 300));
 
     act(() => result.current.search("first"));
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
     act(() => result.current.search("second"));
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
 
     expect(fetcher).toHaveBeenCalledTimes(2);
 
     // Resolve the SECOND query first — UI commits it.
     await act(async () => {
       resolveSecond(["second-result"]);
-      await Promise.resolve();
+      await flushMicrotasks();
     });
     expect(result.current.results).toEqual(["second-result"]);
 
     // Now resolve the older first query — it MUST be ignored.
     await act(async () => {
       resolveFirst(["stale-result"]);
-      await Promise.resolve();
+      await flushMicrotasks();
     });
     expect(result.current.results).toEqual(["second-result"]);
   });
 
-  it("aborts in-flight requests when a new search starts", () => {
+  it("aborts in-flight requests when a new search starts", async () => {
     const signals: AbortSignal[] = [];
     const fetcher = vi.fn((_q: string, signal: AbortSignal) => {
       signals.push(signal);
@@ -96,22 +127,31 @@ describe("useDebouncedSearch", () => {
     const { result } = renderHook(() => useDebouncedSearch<string>(fetcher, 300));
 
     act(() => result.current.search("a"));
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
     act(() => result.current.search("b"));
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
 
     expect(signals.length).toBe(2);
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
   });
 
-  it("reset clears state and cancels pending work", () => {
+  it("reset clears state and cancels pending work", async () => {
     const fetcher = vi.fn(async () => ["x"]);
     const { result } = renderHook(() => useDebouncedSearch<string>(fetcher, 300));
 
     act(() => result.current.search("hi"));
     act(() => result.current.reset());
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await flushMicrotasks();
+    });
 
     expect(fetcher).not.toHaveBeenCalled();
     expect(result.current.results).toBeNull();
