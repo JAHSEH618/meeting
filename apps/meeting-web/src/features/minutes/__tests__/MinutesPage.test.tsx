@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { MinutesPage } from "../MinutesPage";
 import { server } from "@shared/api/mocks/server";
@@ -9,11 +10,11 @@ import type { ApiResponse } from "@shared/api/types";
 describe("MinutesPage", () => {
   it("loads minutes and shows sections with evidence", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/minutes"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/minutes"]}>
         <Routes>
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByText("阶段二上线")).toBeInTheDocument());
@@ -22,11 +23,11 @@ describe("MinutesPage", () => {
 
   it("clicks regenerate and replaces minutes with new version", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/minutes"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/minutes"]}>
         <Routes>
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("阶段二上线");
@@ -58,11 +59,11 @@ describe("MinutesPage", () => {
     );
 
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/minutes"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/minutes"]}>
         <Routes>
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("阶段二上线");
@@ -95,11 +96,11 @@ describe("MinutesPage", () => {
     );
 
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/minutes"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/minutes"]}>
         <Routes>
           <Route path="/meetings/:meetingId/minutes" element={<MinutesPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() =>

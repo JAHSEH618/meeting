@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { ItemsPage } from "../ItemsPage";
 
 describe("ItemsPage", () => {
   it("loads action items, decisions, and risks", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/items"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/items"]}>
         <Routes>
           <Route path="/meetings/:meetingId/items" element={<ItemsPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByText("切换到 GA 后做小流量验证")).toBeInTheDocument());
@@ -21,11 +22,11 @@ describe("ItemsPage", () => {
 
   it("accepts an action item and updates the badge after reload", async () => {
     const { rerender } = render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/items"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/items"]}>
         <Routes>
           <Route path="/meetings/:meetingId/items" element={<ItemsPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     const titleNode = await screen.findByText("切换到 GA 后做小流量验证");
@@ -34,11 +35,11 @@ describe("ItemsPage", () => {
 
     // Re-mount to reset; verify the request did fire (button became disabled then re-enabled).
     rerender(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/items"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/items"]}>
         <Routes>
           <Route path="/meetings/:meetingId/items" element={<ItemsPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText("切换到 GA 后做小流量验证");
   });

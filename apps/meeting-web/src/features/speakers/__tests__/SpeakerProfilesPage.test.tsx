@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { SpeakerProfilesPage } from "../SpeakerProfilesPage";
 
 describe("SpeakerProfilesPage", () => {
   it("lists existing speaker profiles with consent status", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <SpeakerProfilesPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByText("Alice 张")).toBeInTheDocument());
@@ -19,9 +19,9 @@ describe("SpeakerProfilesPage", () => {
 
   it("opens the create form and accepts personId + displayName", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <SpeakerProfilesPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("Alice 张");

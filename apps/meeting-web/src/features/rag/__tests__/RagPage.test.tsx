@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { RagPage } from "../RagPage";
 
 describe("RagPage", () => {
   it("renders the question form with default topN and scope summary", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <RagPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByLabelText("topN")).toBeInTheDocument());
@@ -19,9 +19,9 @@ describe("RagPage", () => {
 
   it("rejects an empty question", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <RagPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "提问" }));
@@ -30,9 +30,9 @@ describe("RagPage", () => {
 
   it("renders the answer with coverage badge and a meeting+document citation", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <RagPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     fireEvent.change(screen.getByLabelText("rag-question-input"), {
@@ -49,9 +49,9 @@ describe("RagPage", () => {
 
   it("shows the degraded notice when the model returns no citations", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <RagPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     fireEvent.change(screen.getByLabelText("rag-question-input"), {
@@ -66,9 +66,9 @@ describe("RagPage", () => {
 
   it("citation meeting link contains startMs deep-link param", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <RagPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     fireEvent.change(screen.getByLabelText("rag-question-input"), {

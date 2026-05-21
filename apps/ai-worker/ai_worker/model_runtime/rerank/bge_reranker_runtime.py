@@ -82,26 +82,33 @@ class BgeRerankerRuntime:
         return self._use_fake
 
     async def ensure_loaded(self) -> None:
-        """Idempotent load; serializes concurrent calls behind asyncio.Lock."""
+        """Idempotent load; serializes concurrent calls behind asyncio.Lock.
+
+        Wrapped in the per-device semaphore so a concurrent cold-start with
+        bge-m3 / ASR / DIAR doesn't double-allocate VRAM on a single-GPU
+        host. See bge_m3_runtime.ensure_loaded for the same pattern."""
         if self._status == "READY":
             return
-        async with self._load_lock:
-            if self._status == "READY":
-                return
-            self._status = "LOADING"
-            try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._load_model_blocking
-                )
-                self._status = "READY"
-                self._last_error = None
-            except Exception as exc:
-                self._status = "ERROR"
-                self._last_error = f"{type(exc).__name__}: {exc}"
-                raise BgeRerankerRuntimeError(
-                    "RERANK_MODEL_LOAD_FAILED",
-                    f"failed to load bge-reranker-v2-m3: {exc}",
-                ) from exc
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            async with self._load_lock:
+                if self._status == "READY":
+                    return
+                self._status = "LOADING"
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._load_model_blocking
+                    )
+                    self._status = "READY"
+                    self._last_error = None
+                except Exception as exc:
+                    self._status = "ERROR"
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    raise BgeRerankerRuntimeError(
+                        "RERANK_MODEL_LOAD_FAILED",
+                        f"failed to load bge-reranker-v2-m3: {exc}",
+                    ) from exc
 
     def _load_model_blocking(self) -> None:
         """Synchronous heavy load. Imports FlagEmbedding lazily."""

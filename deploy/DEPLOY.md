@@ -195,9 +195,11 @@ docker build -t ai-worker:dev \
   --build-arg BASE=python:3.11-slim \
   .
 
-# ai-worker (GPU 真实模型)
+# ai-worker (GPU 真实模型) —— Phase J ML: UV_EXTRAS 必须传，否则 ai-worker:cuda
+# 不会安装 FlagEmbedding / funasr / pyannote.audio，首个真实任务直接 crash。
 docker build -t ai-worker:cuda \
   -f apps/ai-worker/Dockerfile \
+  --build-arg UV_EXTRAS=real-models \
   .
 ```
 
@@ -592,7 +594,9 @@ AI_WORKER_DIARIZATION_DEVICE=auto
 
 # Phase J ML 强化 —— dtype 覆盖。auto 策略：CUDA -> fp16, MPS/CPU -> fp32。
 # 仅在 CUDA 上启用 fp16 是因为 MPS 上 fp16 部分算子（norm/softmax 变体）数值
-# 不稳定，参考 PyTorch MPS 文档。允许值：auto / fp16 / bf16 / fp32。
+# 不稳定，参考 PyTorch MPS 文档。允许值：auto / fp16 / fp32（bf16 暂不支持
+# —— FlagEmbedding 只暴露 use_fp16 开关，没有真实 bf16 通路，未知值会显式 raise
+# 而非静默退化为 fp32）。
 AI_WORKER_BGE_M3_DTYPE=auto
 AI_WORKER_BGE_RERANKER_DTYPE=auto
 

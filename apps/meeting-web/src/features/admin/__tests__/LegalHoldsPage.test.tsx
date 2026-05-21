@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { LegalHoldsPage } from "../LegalHoldsPage";
 
 describe("LegalHoldsPage", () => {
   it("shows empty state when there are no holds", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <LegalHoldsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await waitFor(() => expect(screen.getByText(/暂无法定保全/)).toBeInTheDocument());
   });
 
   it("opens the create form and validates required fields", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <LegalHoldsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无法定保全|保全列表/);
     fireEvent.click(screen.getByTestId("toggle-create-legal-hold"));
@@ -32,9 +32,9 @@ describe("LegalHoldsPage", () => {
 
   it("creates a legal hold and lists it as ACTIVE", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <LegalHoldsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无法定保全|保全列表/);
 

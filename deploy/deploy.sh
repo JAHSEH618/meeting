@@ -97,12 +97,20 @@ build_images() {
     # 若漏掉，AI_WORKER_USE_FAKE_*_RUNTIME=false 的 Pod 会在首个真实任务时炸。
     # K8s base statefulset 默认期望 ``ai-worker:cuda`` tag —— 见
     # infra/meeting-infra/k8s/base/ai-worker/statefulset.yaml。
-    docker build \
+    #
+    # 不再吞 stderr —— CUDA base / torch / FlagEmbedding 这条线最容易失败，隐藏
+    # 日志会让排障无从下手。失败时显示 warning 但不中断 dev 流程（CUDA 镜像在
+    # CPU-only dev box 上构建失败是预期）。
+    if docker build \
         -t ai-worker:cuda \
         -t ai-worker:cuda-v0.1.0 \
         --build-arg UV_EXTRAS=real-models \
         -f "${REPO_ROOT}/apps/ai-worker/Dockerfile" \
-        "${REPO_ROOT}" 2>/dev/null || log_warn "CUDA 镜像构建跳过（需要 NVIDIA 基础镜像）"
+        "${REPO_ROOT}"; then
+        log_ok "ai-worker CUDA 镜像构建完成"
+    else
+        log_warn "CUDA 镜像构建失败（如无 NVIDIA 基础镜像或 CUDA toolchain 可忽略）"
+    fi
 }
 
 # ── 推送镜像 ──────────────────────────────────────────────────────────────────

@@ -112,26 +112,33 @@ class Qwen3AsrRuntime:
         not blocked for the multi-second first-load. Concurrent callers
         serialize behind an asyncio.Lock so the heavy load happens
         exactly once.
+
+        Wrapped in the per-device semaphore so a concurrent cold-start
+        with DIAR / embedding doesn't double-allocate VRAM on a single-
+        GPU host.
         """
         if self._status == "READY":
             return
-        async with self._load_lock:
-            if self._status == "READY":
-                return
-            self._status = "LOADING"
-            try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._load_model_blocking
-                )
-                self._status = "READY"
-                self._last_error = None
-            except Exception as exc:
-                self._status = "ERROR"
-                self._last_error = f"{type(exc).__name__}: {exc}"
-                raise Qwen3AsrRuntimeError(
-                    "ASR_MODEL_TIMEOUT",
-                    f"failed to load qwen3-asr: {exc}",
-                ) from exc
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            async with self._load_lock:
+                if self._status == "READY":
+                    return
+                self._status = "LOADING"
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._load_model_blocking
+                    )
+                    self._status = "READY"
+                    self._last_error = None
+                except Exception as exc:
+                    self._status = "ERROR"
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    raise Qwen3AsrRuntimeError(
+                        "ASR_MODEL_TIMEOUT",
+                        f"failed to load qwen3-asr: {exc}",
+                    ) from exc
 
     def _load_model_blocking(self) -> None:
         """Synchronous heavy load. Called from ensure_loaded's executor.

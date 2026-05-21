@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { AuditEventsPage } from "../AuditEventsPage";
 
 describe("AuditEventsPage", () => {
   it("renders the seed audit events on first load", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <AuditEventsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     const table = await screen.findByTestId("audit-table");
     const tableBody = within(table);
@@ -19,9 +19,9 @@ describe("AuditEventsPage", () => {
 
   it("filters by action via the dropdown", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <AuditEventsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByTestId("audit-table");
 
@@ -40,9 +40,9 @@ describe("AuditEventsPage", () => {
 
   it("filters by actor user id", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <AuditEventsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByTestId("audit-table");
 
@@ -58,9 +58,9 @@ describe("AuditEventsPage", () => {
 
   it("filters by result", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <AuditEventsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByTestId("audit-table");
 

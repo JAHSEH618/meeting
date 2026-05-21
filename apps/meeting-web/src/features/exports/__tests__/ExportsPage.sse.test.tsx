@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, waitFor, fireEvent, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { ExportsPage } from "../ExportsPage";
 
 /**
@@ -52,11 +53,11 @@ class MockEventSource {
 
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <TestRouter initialEntries={[path]}>
       <Routes>
         <Route path="/meetings/:meetingId/exports" element={<ExportsPage />} />
       </Routes>
-    </MemoryRouter>,
+    </TestRouter>,
   );
 }
 

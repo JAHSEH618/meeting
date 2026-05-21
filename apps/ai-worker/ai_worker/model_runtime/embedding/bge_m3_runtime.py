@@ -128,26 +128,34 @@ class BgeM3Runtime:
         executor so the FastAPI event loop is not blocked for the ~5-15s
         first-load. Concurrent callers serialize behind an asyncio.Lock so
         the heavy load happens exactly once.
+
+        The per-device semaphore wraps the load as well, not just inference:
+        on single-GPU hosts a concurrent ASR + embedding cold-start would
+        otherwise both allocate VRAM at the same time and OOM. Fake mode's
+        ``device=="fake"`` family is permissive so tests stay un-serialised.
         """
         if self._status == "READY":
             return
-        async with self._load_lock:
-            if self._status == "READY":
-                return
-            self._status = "LOADING"
-            try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._load_model_blocking
-                )
-                self._status = "READY"
-                self._last_error = None
-            except Exception as exc:
-                self._status = "ERROR"
-                self._last_error = f"{type(exc).__name__}: {exc}"
-                raise BgeM3RuntimeError(
-                    "EMBEDDING_MODEL_LOAD_FAILED",
-                    f"failed to load bge-m3: {exc}",
-                ) from exc
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            async with self._load_lock:
+                if self._status == "READY":
+                    return
+                self._status = "LOADING"
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._load_model_blocking
+                    )
+                    self._status = "READY"
+                    self._last_error = None
+                except Exception as exc:
+                    self._status = "ERROR"
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    raise BgeM3RuntimeError(
+                        "EMBEDDING_MODEL_LOAD_FAILED",
+                        f"failed to load bge-m3: {exc}",
+                    ) from exc
 
     def _load_model_blocking(self) -> None:
         """Synchronous heavy load. Called from ensure_loaded's executor.

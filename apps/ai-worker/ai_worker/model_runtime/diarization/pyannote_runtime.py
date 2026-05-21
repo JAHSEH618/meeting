@@ -99,23 +99,28 @@ class PyannoteDiarizationRuntime:
     async def ensure_loaded(self) -> None:
         if self._status == "READY":
             return
-        async with self._load_lock:
-            if self._status == "READY":
-                return
-            self._status = "LOADING"
-            try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._load_pipeline_blocking
-                )
-                self._status = "READY"
-                self._last_error = None
-            except Exception as exc:
-                self._status = "ERROR"
-                self._last_error = f"{type(exc).__name__}: {exc}"
-                raise PyannoteDiarizationRuntimeError(
-                    "DIARIZATION_FAILED",
-                    f"failed to load pyannote pipeline: {exc}",
-                ) from exc
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        # Per-device semaphore wraps the load to keep cold-start VRAM
+        # allocation serialised with ASR / embedding on a single-GPU host.
+        async with get_device_semaphore(self._device):
+            async with self._load_lock:
+                if self._status == "READY":
+                    return
+                self._status = "LOADING"
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._load_pipeline_blocking
+                    )
+                    self._status = "READY"
+                    self._last_error = None
+                except Exception as exc:
+                    self._status = "ERROR"
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    raise PyannoteDiarizationRuntimeError(
+                        "DIARIZATION_FAILED",
+                        f"failed to load pyannote pipeline: {exc}",
+                    ) from exc
 
     def _load_pipeline_blocking(self) -> None:
         if self._models_dir is None or not self._models_dir.exists():

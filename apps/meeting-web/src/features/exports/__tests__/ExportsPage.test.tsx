@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { ExportsPage } from "../ExportsPage";
 
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <TestRouter initialEntries={[path]}>
       <Routes>
         <Route path="/meetings/:meetingId/exports" element={<ExportsPage />} />
       </Routes>
-    </MemoryRouter>,
+    </TestRouter>,
   );
 }
 

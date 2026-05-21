@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { TranscriptPage } from "../TranscriptPage";
 import { server } from "@shared/api/mocks/server";
@@ -9,11 +10,11 @@ import type { ApiResponse } from "@shared/api/types";
 describe("TranscriptPage", () => {
   it("renders transcript segments and task link", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/transcript"]}>
         <Routes>
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByText("今天先确认阶段二验收范围。")).toBeInTheDocument());
@@ -23,11 +24,11 @@ describe("TranscriptPage", () => {
 
   it("edits a segment and surfaces the downstream STALE banner", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/transcript"]}>
         <Routes>
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     const segmentRow = await screen.findByText("今天先确认阶段二验收范围。");
@@ -66,11 +67,11 @@ describe("TranscriptPage", () => {
     );
 
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/transcript"]}>
         <Routes>
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     const segmentRow = await screen.findByText("今天先确认阶段二验收范围。");
@@ -86,11 +87,11 @@ describe("TranscriptPage", () => {
 
   it("highlights the segment named in the citation deep link", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_01&startMs=0"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_01&startMs=0"]}>
         <Routes>
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     const article = await screen.findByLabelText("segment-seg_01");
@@ -99,11 +100,11 @@ describe("TranscriptPage", () => {
 
   it("surfaces a notice when the citation deep link targets a missing segment", async () => {
     render(
-      <MemoryRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_missing"]}>
+      <TestRouter initialEntries={["/meetings/mtg_01/transcript?segmentId=seg_missing"]}>
         <Routes>
           <Route path="/meetings/:meetingId/transcript" element={<TranscriptPage />} />
         </Routes>
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() =>

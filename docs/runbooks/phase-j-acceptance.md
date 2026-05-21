@@ -91,19 +91,24 @@ npm test -- --run src/shared/components/__tests__/SafeMarkdown.test.tsx
 ## J4 — Model checksum guard
 
 ```bash
-# 1. Stage staging weights, hash them with the helper.
+# 1. Stage staging fixtures (deterministic mock weights). The helper writes
+#    every model dir under apps/ai-worker/.cache/staging-models/ by default
+#    so we never touch /opt/models on a dev box. --format=dotenv prints the
+#    AI_WORKER_*_EXPECTED_CHECKSUM= lines ready to paste into a .env file.
 cd apps/ai-worker
-uv run python -c "
-from ai_worker.observability.model_checksum import compute_checksum
-print(compute_checksum('/opt/models/bge-m3/v1'))
-print(compute_checksum('/opt/models/bge-reranker-v2-m3/v1'))
-print(compute_checksum('/opt/models/qwen3-asr-1.7b/v2026.05.1'))
-print(compute_checksum('/opt/models/pyannote/v3.1'))
-"
-# 2. /internal/models returns these checksums.
+uv run python scripts/stage_mock_weights.py --format=dotenv
+# To hash an already-staged tree elsewhere, point --root at it:
+#   uv run python scripts/stage_mock_weights.py --root /opt/models --force --format=shell
+# To compute a single checksum without staging:
+#   uv run python -c "from ai_worker.observability.model_checksum import compute_checksum; \
+#     print(compute_checksum('/opt/models/bge-m3/v1'))"
+# 2. Export the printed envs (or set in K8s ConfigMap), restart ai-worker,
+#    then verify the guard sees matching hashes.
 hmac-curl GET /internal/models | jq '.data.models[] | {name, checksum, status}'
 # 3. Mutate one byte in a weight file → restart ai-worker → /internal/models
 #    must report status=ERROR + lastError mentioning the mismatch.
+# 4. /internal/ready rolls these up — 503 when any guard fails.
+curl -sf -o /dev/null -w "%{http_code}\n" http://localhost:8090/internal/ready
 ```
 
 **Pass criteria**: corrupted weight ⇒ ready=false; original sha256 ⇒ READY.

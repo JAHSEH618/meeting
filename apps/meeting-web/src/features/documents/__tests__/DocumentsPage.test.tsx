@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { DocumentsPage } from "../DocumentsPage";
 
 describe("DocumentsPage", () => {
   it("lists existing documents with badges", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DocumentsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await waitFor(() => expect(screen.getByText("Roadmap.pdf")).toBeInTheDocument());
@@ -20,9 +20,9 @@ describe("DocumentsPage", () => {
 
   it("opens the create form and posts a new document", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DocumentsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("Roadmap.pdf");
@@ -41,9 +41,9 @@ describe("DocumentsPage", () => {
 
   it("rejects empty title or fileId in the create form", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DocumentsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("Roadmap.pdf");
@@ -58,9 +58,9 @@ describe("DocumentsPage", () => {
   it("confirms before deleting", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DocumentsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("Roadmap.pdf");
@@ -74,9 +74,9 @@ describe("DocumentsPage", () => {
 
   it("triggers reindex on click", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DocumentsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
 
     await screen.findByText("Roadmap.pdf");

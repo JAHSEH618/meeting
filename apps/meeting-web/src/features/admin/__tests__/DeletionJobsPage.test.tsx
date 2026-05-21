@@ -1,23 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { DeletionJobsPage } from "../DeletionJobsPage";
 
 describe("DeletionJobsPage", () => {
   it("shows empty state on first load", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DeletionJobsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await waitFor(() => expect(screen.getByText(/暂无删除任务/)).toBeInTheDocument());
   });
 
   it("opens the create form and validates required fields", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DeletionJobsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无删除任务|删除任务列表/);
     fireEvent.click(screen.getByTestId("toggle-create-deletion-job"));
@@ -32,9 +32,9 @@ describe("DeletionJobsPage", () => {
   it("creates a deletion job after confirm()", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DeletionJobsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无删除任务|删除任务列表/);
 
@@ -52,9 +52,9 @@ describe("DeletionJobsPage", () => {
   it("aborts creation when confirm() is rejected", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DeletionJobsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无删除任务|删除任务列表/);
 
@@ -73,9 +73,9 @@ describe("DeletionJobsPage", () => {
   it("displays BLOCKED_BY_LEGAL_HOLD for scopes containing _protected", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
-      <MemoryRouter>
+      <TestRouter>
         <DeletionJobsPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无删除任务|删除任务列表/);
 

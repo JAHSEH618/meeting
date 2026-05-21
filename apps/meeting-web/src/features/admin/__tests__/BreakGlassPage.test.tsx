@@ -1,23 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { BreakGlassPage } from "../BreakGlassPage";
 
 describe("BreakGlassPage", () => {
   it("shows empty state initially", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <BreakGlassPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await waitFor(() => expect(screen.getByText(/暂无紧急访问申请/)).toBeInTheDocument());
   });
 
   it("creates a request and lists it as PENDING", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <BreakGlassPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无紧急访问申请|申请列表/);
 
@@ -34,9 +34,9 @@ describe("BreakGlassPage", () => {
 
   it("validates required fields", async () => {
     render(
-      <MemoryRouter>
+      <TestRouter>
         <BreakGlassPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无紧急访问申请|申请列表/);
     fireEvent.click(screen.getByTestId("toggle-create-bg"));
@@ -49,9 +49,9 @@ describe("BreakGlassPage", () => {
   it("approves a pending request after confirm()", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
-      <MemoryRouter>
+      <TestRouter>
         <BreakGlassPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无紧急访问申请|申请列表/);
 
@@ -70,9 +70,9 @@ describe("BreakGlassPage", () => {
   it("rejects a pending request when reason is provided via prompt()", async () => {
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("no justification");
     render(
-      <MemoryRouter>
+      <TestRouter>
         <BreakGlassPage />
-      </MemoryRouter>,
+      </TestRouter>,
     );
     await screen.findByText(/暂无紧急访问申请|申请列表/);
 

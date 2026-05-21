@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { server } from "@shared/api/mocks/server";
 import type {
@@ -18,12 +19,12 @@ afterEach(() => {
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/meetings/mtg_01/audio"]}>
+    <TestRouter initialEntries={["/meetings/mtg_01/audio"]}>
       <Routes>
         <Route path="/meetings/:meetingId/audio" element={<AudioUploadPage />} />
         <Route path="/meetings/:meetingId/tasks/:taskId" element={<div>task progress loaded</div>} />
       </Routes>
-    </MemoryRouter>,
+    </TestRouter>,
   );
 }
 

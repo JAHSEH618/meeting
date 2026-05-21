@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { TestRouter } from "@shared/test/TestRouter";
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { server } from "@shared/api/mocks/server";
 import type { ApiResponse, ProcessingTask } from "@shared/api/types";
@@ -8,11 +9,11 @@ import { TaskProgressPage } from "../TaskProgressPage";
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/meetings/mtg_01/tasks/task_01"]}>
+    <TestRouter initialEntries={["/meetings/mtg_01/tasks/task_01"]}>
       <Routes>
         <Route path="/meetings/:meetingId/tasks/:taskId" element={<TaskProgressPage />} />
       </Routes>
-    </MemoryRouter>,
+    </TestRouter>,
   );
 }
 
