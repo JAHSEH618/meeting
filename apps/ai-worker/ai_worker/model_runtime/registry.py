@@ -8,6 +8,21 @@ same instance. Tests that need a fresh registry should call
 
 Device resolution happens here (not in the runtime) so the
 ``AI_WORKER_USE_FAKE_RUNTIME=true`` path never imports torch.
+
+Per-model device + dtype (Phase J ML hardening):
+
+* ``AI_WORKER_BGE_M3_DEVICE`` / ``AI_WORKER_BGE_RERANKER_DEVICE`` /
+  ``AI_WORKER_ASR_DEVICE`` / ``AI_WORKER_DIARIZATION_DEVICE`` override the
+  global ``AI_WORKER_MODEL_DEVICE`` when set. Each defaults to ``auto``
+  which resolves to ``cuda`` > ``mps`` > ``cpu`` after a one-time torch
+  probe. Specific suffixes like ``cuda:1`` are passed through verbatim.
+* dtype follows the device: CUDA → fp16 (FlagEmbedding default); MPS →
+  fp32 (PyTorch MPS docs flag fp16 instability on several ops); CPU →
+  fp32. Override per model with ``AI_WORKER_BGE_M3_DTYPE`` etc.
+
+References:
+  https://docs.pytorch.org/docs/stable/notes/mps
+  https://docs.pytorch.org/docs/main/notes/cuda.html
 """
 
 from __future__ import annotations
@@ -30,12 +45,14 @@ _diarization: PyannoteDiarizationRuntime | None = None
 def get_bge_m3() -> BgeM3Runtime:
     global _bge_m3
     if _bge_m3 is None:
+        device = _resolve_device(settings.bge_m3_device, settings.use_fake_runtime)
         _bge_m3 = BgeM3Runtime(
             use_fake=settings.use_fake_runtime,
             models_dir=Path(settings.bge_m3_models_dir)
             if settings.bge_m3_models_dir
             else None,
-            device=_resolve_device(),
+            device=device,
+            use_fp16=_resolve_fp16(device, settings.bge_m3_dtype),
         )
     return _bge_m3
 
@@ -43,12 +60,14 @@ def get_bge_m3() -> BgeM3Runtime:
 def get_bge_reranker() -> BgeRerankerRuntime:
     global _bge_reranker
     if _bge_reranker is None:
+        device = _resolve_device(settings.bge_reranker_device, settings.use_fake_runtime)
         _bge_reranker = BgeRerankerRuntime(
             use_fake=settings.use_fake_runtime,
             models_dir=Path(settings.bge_reranker_models_dir)
             if settings.bge_reranker_models_dir
             else None,
-            device=_resolve_device(),
+            device=device,
+            use_fp16=_resolve_fp16(device, settings.bge_reranker_dtype),
         )
     return _bge_reranker
 
@@ -57,12 +76,13 @@ def get_asr_runtime() -> Qwen3AsrRuntime:
     """Return the process-wide Qwen3-ASR runtime singleton."""
     global _asr
     if _asr is None:
+        device = _resolve_device(settings.asr_device, settings.use_fake_asr_runtime)
         _asr = Qwen3AsrRuntime(
             use_fake=settings.use_fake_asr_runtime,
             models_dir=Path(settings.qwen3_asr_models_dir)
             if settings.qwen3_asr_models_dir
             else None,
-            device=_resolve_device(),
+            device=device,
         )
     return _asr
 
@@ -71,12 +91,15 @@ def get_diarization_runtime() -> PyannoteDiarizationRuntime:
     """Return the process-wide pyannote diarization runtime singleton."""
     global _diarization
     if _diarization is None:
+        device = _resolve_device(
+            settings.diarization_device, settings.use_fake_diarization_runtime
+        )
         _diarization = PyannoteDiarizationRuntime(
             use_fake=settings.use_fake_diarization_runtime,
             models_dir=Path(settings.pyannote_models_dir)
             if settings.pyannote_models_dir
             else None,
-            device=_resolve_device(),
+            device=device,
         )
     return _diarization
 
@@ -91,15 +114,20 @@ def reset_for_tests() -> None:
     _diarization = None
 
 
-def _resolve_device() -> str:
-    """`auto` → cuda > mps > cpu. Skips the torch probe in fake mode."""
-    if settings.model_device != "auto":
-        return settings.model_device
-    if (
-        settings.use_fake_runtime
-        and settings.use_fake_asr_runtime
-        and settings.use_fake_diarization_runtime
-    ):
+def _resolve_device(preferred: str, use_fake: bool) -> str:
+    """Resolve a per-model device string.
+
+    ``preferred`` is the per-model setting; ``auto`` falls back to the
+    global ``AI_WORKER_MODEL_DEVICE`` (also possibly ``auto``), which then
+    probes torch for CUDA / MPS.
+
+    Fake-mode runtimes skip the torch probe — we don't want a CPU-only dev
+    box to import torch just to satisfy a fake runtime's device label.
+    """
+    requested = preferred if preferred != "auto" else settings.model_device
+    if requested != "auto":
+        return requested
+    if use_fake:
         return "cpu"
     try:
         import torch  # type: ignore[import-not-found]
@@ -112,3 +140,33 @@ def _resolve_device() -> str:
     except ImportError:
         pass
     return "cpu"
+
+
+def _resolve_fp16(device: str, dtype_setting: str) -> bool:
+    """Return whether to ask the embedding/rerank runtime for fp16.
+
+    Default policy: CUDA → fp16, MPS / CPU → fp32. FlagEmbedding flips
+    on autocast under ``use_fp16=True``; on MPS several ops still fall
+    back to fp32 anyway, but a few (norm / softmax variants) hit numerical
+    issues, so we keep MPS on fp32 unless an operator explicitly opts in.
+    """
+    if dtype_setting != "auto":
+        return dtype_setting in ("fp16", "bf16")
+    family = device.split(":", 1)[0]
+    return family == "cuda"
+
+
+def resolve_devices_snapshot() -> dict[str, str]:
+    """Used by ``/internal/hardware`` to expose the effective device the
+    next-loaded singleton would pick. Side-effect free — does not
+    instantiate any runtime."""
+    return {
+        "bgeM3": _resolve_device(settings.bge_m3_device, settings.use_fake_runtime),
+        "bgeReranker": _resolve_device(
+            settings.bge_reranker_device, settings.use_fake_runtime
+        ),
+        "asr": _resolve_device(settings.asr_device, settings.use_fake_asr_runtime),
+        "diarization": _resolve_device(
+            settings.diarization_device, settings.use_fake_diarization_runtime
+        ),
+    }

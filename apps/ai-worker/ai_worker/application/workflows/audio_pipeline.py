@@ -8,6 +8,7 @@ from typing import Any
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact, TaskMessage
 from ai_worker.infrastructure.artifact_store import LocalArtifactStore
+from ai_worker.model_runtime.concurrency import get_device_semaphore
 from ai_worker.pipeline.alignment.transcript_merge import merge_transcript_segments
 from ai_worker.pipeline.asr.runtime import AsrModelRuntime, AsrRuntimeError, AsrSegment, DeterministicAsrRuntime
 from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, FfprobeAudioPreprocessor, PreprocessResult
@@ -107,14 +108,26 @@ class LocalAudioPipelineEngine:
     async def _run_asr(self, context: "_PipelineContext") -> None:
         preprocess = _required_preprocess(context)
         audio_path = _required_audio_path(context)
-        try:
-            context.asr_segments = await self._asr_runtime.transcribe(
-                audio_path,
-                preprocess.metadata,
-                context.task.language,
-            )
-        except AsrRuntimeError as exc:
-            raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
+        # Lazy-load real model weights on first use; fake/deterministic
+        # runtimes don't define ensure_loaded() and stay no-op. We surface
+        # load failures as ASR step errors via the same error_code path
+        # the runtime's own exceptions use.
+        ensure_loaded = getattr(self._asr_runtime, "ensure_loaded", None)
+        if ensure_loaded is not None:
+            try:
+                await ensure_loaded()
+            except AsrRuntimeError as exc:
+                raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
+        device = getattr(self._asr_runtime, "device", "cpu")
+        async with get_device_semaphore(device):
+            try:
+                context.asr_segments = await self._asr_runtime.transcribe(
+                    audio_path,
+                    preprocess.metadata,
+                    context.task.language,
+                )
+            except AsrRuntimeError as exc:
+                raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
         if not context.asr_segments:
             raise WorkerPipelineError("ASR", "ASR_EMPTY_RESULT", "ASR returned no segments", retryable=True)
         ref = await self._write_json_artifact(
@@ -131,10 +144,18 @@ class LocalAudioPipelineEngine:
     async def _run_diarization(self, context: "_PipelineContext") -> None:
         preprocess = _required_preprocess(context)
         audio_path = _required_audio_path(context)
-        try:
-            context.speaker_turns = await self._diarization_runtime.diarize(audio_path, preprocess.metadata)
-        except DiarizationRuntimeError as exc:
-            raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
+        ensure_loaded = getattr(self._diarization_runtime, "ensure_loaded", None)
+        if ensure_loaded is not None:
+            try:
+                await ensure_loaded()
+            except DiarizationRuntimeError as exc:
+                raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
+        device = getattr(self._diarization_runtime, "device", "cpu")
+        async with get_device_semaphore(device):
+            try:
+                context.speaker_turns = await self._diarization_runtime.diarize(audio_path, preprocess.metadata)
+            except DiarizationRuntimeError as exc:
+                raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
         if not context.speaker_turns:
             raise WorkerPipelineError("DIARIZATION", "DIARIZATION_EMPTY_TURNS", "diarization returned no turns", retryable=True)
         ref = await self._write_json_artifact(

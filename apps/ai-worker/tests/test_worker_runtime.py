@@ -129,3 +129,26 @@ async def test_step_callback_failure_records_writeback_failed(callback_client) -
     assert snapshot.errorCode == "WRITEBACK_FAILED"
     callback_client.fail_task.assert_awaited_once()
     assert callback_client.fail_task.await_args.kwargs["error_code"] == "WRITEBACK_FAILED"
+
+
+def test_default_workflow_engine_uses_registry_runtimes() -> None:
+    """Phase J ML hardening — pin the wiring fix.
+
+    Previously ``MvpWorkerRuntime`` constructed ``LocalAudioPipelineEngine``
+    without arguments, which silently fell back to the deterministic / single-
+    speaker fakes regardless of ``AI_WORKER_USE_FAKE_ASR_RUNTIME``. The fix
+    injects the registry-resolved runtimes; this test pins that contract by
+    introspecting the engine's runtimes after default construction.
+    """
+    from ai_worker.application.workflows.audio_pipeline import LocalAudioPipelineEngine
+    from ai_worker.model_runtime.asr import Qwen3AsrRuntime
+    from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
+
+    runtime = MvpWorkerRuntime(callback_client=AsyncMock())
+
+    engine = runtime.workflow_engine
+    assert isinstance(engine, LocalAudioPipelineEngine)
+    # Private attrs by design — the registry-backed singletons stay
+    # internal, but a regression here is exactly what we want to catch.
+    assert isinstance(engine._asr_runtime, Qwen3AsrRuntime)
+    assert isinstance(engine._diarization_runtime, PyannoteDiarizationRuntime)

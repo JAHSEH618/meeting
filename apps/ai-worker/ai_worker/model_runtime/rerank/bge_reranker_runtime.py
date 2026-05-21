@@ -43,10 +43,19 @@ class BgeRerankerRuntime:
         use_fake: bool,
         models_dir: Path | None = None,
         device: str = "cpu",
+        use_fp16: bool | None = None,
     ) -> None:
         self._use_fake = use_fake
         self._models_dir = models_dir
         self._device = "fake" if use_fake else device
+        # Same policy as BgeM3Runtime — see comment there. MPS keeps fp32
+        # by default because pyannote/FlagReranker hit fp16 ops that don't
+        # have stable MPS kernels yet.
+        if use_fp16 is None:
+            family = device.split(":", 1)[0]
+            self._use_fp16 = family == "cuda" and not use_fake
+        else:
+            self._use_fp16 = use_fp16 and not use_fake
         self._model: Any = None
         self._status: ModelStatus = "READY" if use_fake else "NOT_LOADED"
         self._last_error: str | None = None
@@ -99,8 +108,7 @@ class BgeRerankerRuntime:
         from FlagEmbedding import FlagReranker  # type: ignore[import-not-found]
 
         target = str(self._models_dir) if self._models_dir else "BAAI/bge-reranker-v2-m3"
-        use_fp16 = self._device not in ("cpu", "fake")
-        self._model = FlagReranker(target, use_fp16=use_fp16, devices=self._device)
+        self._model = FlagReranker(target, use_fp16=self._use_fp16, devices=self._device)
 
     def rank(self, query: str, candidates: list[str]) -> list[float]:
         """Return one score per candidate; higher = more relevant.

@@ -326,7 +326,9 @@ kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
   - `/opt/models/bge-reranker-v2-m3/v1/`
   - `/opt/models/qwen3-asr-1.7b/v2026.05.1/`
   - `/opt/models/pyannote/v3.1/`
-- **环境变量**: 生产环境必须设 `AI_WORKER_USE_FAKE_RUNTIME=false`, `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`
+- **环境变量**: 生产环境必须设 `AI_WORKER_USE_FAKE_RUNTIME=false`、`AI_WORKER_USE_FAKE_ASR_RUNTIME=false`、`AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false`、`HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1`
+- **镜像构建** (Phase J): Dockerfile 接受 `UV_EXTRAS` build-arg 控制安装哪些可选依赖。常见组合：`real-bge`（仅 embedding + rerank）、`real-asr`（Qwen3-ASR via funasr）、`real-diarization`（pyannote.audio）、`real-models`（单机全 GPU 装载，逗号分隔多个）。CUDA base image 已对齐 `uv.lock`（torch 2.12 + CUDA 13），其他基线需显式 `--build-arg BASE=...`
+- **诊断端点** (Phase J): `GET /internal/hardware`（无需 HMAC）输出 torch/CUDA/MPS 可用性、FlagEmbedding/funasr/pyannote 是否安装、每个模型解析到的 device；`POST /internal/models/warmup?capabilities=embedding,rerank,asr,diarization`（或 `=all`）按能力维度预热
 - **checksum 校验 (Phase J)**: 为每个模型设 `AI_WORKER_*_EXPECTED_CHECKSUM=sha256:...`。`/internal/ready` 在 hash 不匹配时返回 503，readinessProbe 转 NotReady，kubelet 停止路由流量。本地准备 mock 权重见 `docs/model-registry.md` Staging Fixtures 章节或 `apps/ai-worker/scripts/stage_mock_weights.py`
 - **Secret**: `ai-worker-secret` 必须在 kustomize apply 之前创建（dev 由 `deploy.sh k8s-dev` 自动处理；staging/prod 由 SealedSecrets / ExternalSecret 注入）
 - **fsGroup**: `securityContext.fsGroup: 1001` 确保 ai-worker 用户 (uid 1001) 可读取模型
@@ -578,7 +580,21 @@ AI_WORKER_BGE_M3_MODELS_DIR=/opt/models/bge-m3/v1
 AI_WORKER_BGE_RERANKER_MODELS_DIR=/opt/models/bge-reranker-v2-m3/v1
 AI_WORKER_QWEN3_ASR_MODELS_DIR=/opt/models/qwen3-asr-1.7b/v2026.05.1
 AI_WORKER_PYANNOTE_MODELS_DIR=/opt/models/pyannote/v3.1
-AI_WORKER_MODEL_DEVICE=auto            # auto -> cuda > mps > cpu
+AI_WORKER_MODEL_DEVICE=auto            # auto -> cuda > mps > cpu (全局兜底)
+
+# Phase J ML 强化 —— 单模型 device 覆盖（缺省 auto 走全局）。
+# 适用场景：单卡 NVIDIA 想让 ASR/DIAR 串行用 cuda:0、embedding/rerank 用 cpu；
+# 或者 Mac 开发机想强制 MPS / 强制 CPU 排查 fp16 数值问题。
+AI_WORKER_BGE_M3_DEVICE=auto
+AI_WORKER_BGE_RERANKER_DEVICE=auto
+AI_WORKER_ASR_DEVICE=auto
+AI_WORKER_DIARIZATION_DEVICE=auto
+
+# Phase J ML 强化 —— dtype 覆盖。auto 策略：CUDA -> fp16, MPS/CPU -> fp32。
+# 仅在 CUDA 上启用 fp16 是因为 MPS 上 fp16 部分算子（norm/softmax 变体）数值
+# 不稳定，参考 PyTorch MPS 文档。允许值：auto / fp16 / bf16 / fp32。
+AI_WORKER_BGE_M3_DTYPE=auto
+AI_WORKER_BGE_RERANKER_DTYPE=auto
 
 # Phase J — 模型权重 checksum guard。设置后 /internal/models 与 /internal/ready
 # 会比对真实 sha256；不匹配 -> ai-worker readinessProbe 转 NotReady，

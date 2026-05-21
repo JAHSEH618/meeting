@@ -15,7 +15,11 @@ from ai_worker.application.workflows.text_embedding import (
 from ai_worker.domain.task import StepResult, TaskMessage
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
 from ai_worker.infrastructure.task_consumer import consume_and_validate
-from ai_worker.model_runtime.registry import get_bge_m3
+from ai_worker.model_runtime.registry import (
+    get_asr_runtime,
+    get_bge_m3,
+    get_diarization_runtime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +69,18 @@ class MvpWorkerRuntime:
     ) -> None:
         self.callback_client = callback_client or JavaCallbackClient()
         self.state_store = state_store
-        self.workflow_engine = workflow_engine or LocalAudioPipelineEngine(state_store)
+        # Phase J / final-check A1 — when caller doesn't override the engine,
+        # construct LocalAudioPipelineEngine with the registry-resolved ASR
+        # and diarization runtimes so AI_WORKER_USE_FAKE_ASR_RUNTIME=false
+        # and AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false actually take
+        # effect. Previously the default LocalAudioPipelineEngine(state_store)
+        # silently fell back to DeterministicAsrRuntime / SingleSpeaker —
+        # the flag flip had no observable consequence.
+        self.workflow_engine = workflow_engine or LocalAudioPipelineEngine(
+            state_store,
+            asr_runtime=get_asr_runtime(),
+            diarization_runtime=get_diarization_runtime(),
+        )
         self.embedding_workflow = embedding_workflow or TextEmbeddingWorkflow(
             state_store, get_bge_m3()
         )

@@ -35,7 +35,22 @@ class Settings(BaseSettings):
     qwen3_asr_models_dir: str | None = None
     pyannote_models_dir: str | None = None
     # Device autodetect happens in the runtime; "auto" → cuda > mps > cpu.
+    # ``model_device`` is the legacy global default; the per-model env vars
+    # below win when set so deployments can pin e.g. ASR to ``cuda:0`` while
+    # leaving embedding on CPU. Each defaults to ``auto`` so existing single-
+    # GPU / single-MPS boxes don't change behaviour.
     model_device: str = "auto"
+    bge_m3_device: str = "auto"
+    bge_reranker_device: str = "auto"
+    asr_device: str = "auto"
+    diarization_device: str = "auto"
+    # Optional explicit dtype override. ``auto`` resolves per-device:
+    #   CUDA → fp16   (matches FlagEmbedding/funasr defaults)
+    #   MPS  → fp32   (fp16 is unstable on many ops, see PyTorch MPS notes)
+    #   CPU  → fp32
+    # Allowed values: ``auto`` / ``fp16`` / ``bf16`` / ``fp32``.
+    bge_m3_dtype: str = "auto"
+    bge_reranker_dtype: str = "auto"
     # ── Phase J — checksum guard (J4) ───────────────────────────────────
     # When set, /internal/models compares the live compute_checksum() of
     # the corresponding *_models_dir against the expected hash and forces

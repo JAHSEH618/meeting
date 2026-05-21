@@ -19,11 +19,23 @@ COPY apps/ai-worker-web/ ./
 RUN npm run build && ls -la dist
 
 # ----- runtime stage ---------------------------------------------------------
-# CUDA 12.2 + Ubuntu 22.04 matches the torch 2.5 wheels we use for the
-# real model runtimes. CPU-only dev boxes can build with
-# --build-arg BASE=python:3.11-slim and AI_WORKER_USE_FAKE_RUNTIME=true.
-ARG BASE=nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
+# Base image must match the CUDA major version `uv.lock` pulls under torch
+# 2.12 (currently CUDA 13 via the `nvidia-cuda-runtime` 13.0.x deps). Override
+# at build time via `--build-arg BASE=...` when you've pinned torch to a
+# different wheel; CPU-only dev boxes can build with
+# `--build-arg BASE=python:3.11-slim` and AI_WORKER_USE_FAKE_RUNTIME=true.
+#
+# `UV_EXTRAS` controls which optional extras are installed in the image:
+#   <empty>           — runtime + workstation BFF only (fake ML mode)
+#   real-bge          — embedding + reranker box
+#   real-asr          — Qwen3-ASR box
+#   real-diarization  — pyannote diarization box
+#   real-models       — single-host all-GPU box (everything)
+# Multiple extras can be passed comma-separated, e.g. `real-bge,real-asr`.
+ARG BASE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+ARG UV_EXTRAS=""
 FROM ${BASE}
+ARG UV_EXTRAS
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -57,7 +69,13 @@ WORKDIR /app
 # checked in.
 COPY apps/ai-worker/pyproject.toml ./
 COPY apps/ai-worker/uv.lock* ./
-RUN uv sync --frozen --no-dev || uv sync --no-dev
+# Translate the comma-separated UV_EXTRAS build arg into uv's `--extra` flags
+# so a CUDA box can opt into real-models, real-bge, etc. without changing
+# the Dockerfile. Empty UV_EXTRAS keeps the lean default (fake runtime).
+# POSIX-only loop — works on the base sh in nvidia/cuda + python:3.11-slim.
+RUN extras="" \
+    && for p in $(echo "$UV_EXTRAS" | tr ',' ' '); do extras="$extras --extra $p"; done \
+    && (uv sync --frozen --no-dev $extras || uv sync --no-dev $extras)
 
 COPY apps/ai-worker/ai_worker ./ai_worker
 COPY --from=web-build /web/dist /app/admin-ui

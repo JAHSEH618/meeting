@@ -24,6 +24,7 @@ from ai_worker.model_runtime.registry import (
     get_bge_m3,
     get_bge_reranker,
     get_diarization_runtime,
+    resolve_devices_snapshot,
 )
 from ai_worker.model_runtime.rerank import (
     BgeRerankerRuntime,
@@ -133,7 +134,7 @@ def _all_model_infos() -> list[dict]:
     ]
 
 
-async def _safe_ensure_loaded(runtime: BgeM3Runtime | BgeRerankerRuntime) -> None:
+async def _safe_ensure_loaded(runtime: RuntimeLike) -> None:
     """Background-task wrapper that swallows load failures.
 
     Errors are surfaced via ``runtime.status == "ERROR"`` and ``last_error``
@@ -144,6 +145,70 @@ async def _safe_ensure_loaded(runtime: BgeM3Runtime | BgeRerankerRuntime) -> Non
         await runtime.ensure_loaded()
     except Exception:
         pass
+
+
+def _hardware_snapshot() -> dict:
+    """Static-ish snapshot of the host's ML capabilities.
+
+    Used by ``GET /internal/hardware`` so operators can answer
+    "did my Mac MPS get picked up?" / "is funasr installed?" without SSH'ing
+    into the container. Imports torch lazily — fake-mode deployments don't
+    pay the torch import cost just for the health check.
+    """
+    torch_available = False
+    torch_version: str | None = None
+    cuda_available = False
+    cuda_device_count = 0
+    mps_built = False
+    mps_available = False
+    try:
+        import torch  # type: ignore[import-not-found]
+
+        torch_available = True
+        torch_version = torch.__version__
+        cuda_available = bool(torch.cuda.is_available())
+        cuda_device_count = int(torch.cuda.device_count()) if cuda_available else 0
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        if mps is not None:
+            mps_built = bool(getattr(mps, "is_built", lambda: False)())
+            mps_available = bool(mps.is_available())
+    except ImportError:
+        pass
+
+    def _pkg_available(name: str) -> bool:
+        from importlib import util
+
+        # ``find_spec("pyannote.audio")`` raises ``ModuleNotFoundError`` when
+        # the parent (``pyannote``) is absent — swallow so the diagnostic
+        # endpoint never 500s on a CPU-only dev box.
+        try:
+            return util.find_spec(name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            return False
+
+    return {
+        "torch": {
+            "installed": torch_available,
+            "version": torch_version,
+            "cuda": {"available": cuda_available, "deviceCount": cuda_device_count},
+            "mps": {"built": mps_built, "available": mps_available},
+        },
+        "packages": {
+            "FlagEmbedding": _pkg_available("FlagEmbedding"),
+            "funasr": _pkg_available("funasr"),
+            "pyannote.audio": _pkg_available("pyannote.audio"),
+            "pynvml": _pkg_available("pynvml"),
+        },
+        "resolvedDevices": resolve_devices_snapshot(),
+    }
+
+
+_CAPABILITY_TO_RUNTIMES = {
+    "embedding": ("bge-m3", lambda: get_bge_m3()),
+    "rerank": ("bge-reranker-v2-m3", lambda: get_bge_reranker()),
+    "asr": ("qwen3-asr", lambda: get_asr_runtime()),
+    "diarization": ("pyannote-diarization", lambda: get_diarization_runtime()),
+}
 
 
 @asynccontextmanager
@@ -309,6 +374,18 @@ def create_app() -> FastAPI:
         }
         return JSONResponse(status_code=200 if ok else 503, content=body)
 
+    @app.get("/internal/hardware")
+    def hardware() -> JSONResponse:
+        """Phase J ML hardening — diagnostic surface for operators.
+
+        Reports torch / CUDA / MPS / dependency-package availability and
+        the device each model singleton would resolve to with the current
+        environment. Intentionally unauthenticated GET (mirrors
+        ``/internal/health`` + ``/internal/ready``) because the response
+        contains no tenant data — just host capabilities.
+        """
+        return JSONResponse(status_code=200, content=_hardware_snapshot())
+
     @app.get("/internal/workflows/{task_id}")
     def workflow(task_id: str) -> dict:
         snapshot = workflow_state_store.get(task_id)
@@ -395,13 +472,38 @@ def create_app() -> FastAPI:
 
         bge_m3 = get_bge_m3()
         bge_reranker = get_bge_reranker()
+        # Capability-aware warmup. ``?capabilities=asr,diarization`` (comma-
+        # separated, case-insensitive) restricts to a subset; absent or
+        # ``all`` triggers everything. Embedding + rerank are still the
+        # default subset for back-compat with the Java side that hits
+        # this endpoint at boot — keeping it close to the old behaviour
+        # unless a caller explicitly opts into ASR/DIAR warmup (which is
+        # heavy and not worth doing on a CPU-only dev box).
+        requested = request.query_params.get("capabilities", "embedding,rerank")
+        if requested.strip().lower() == "all":
+            wanted = set(_CAPABILITY_TO_RUNTIMES.keys())
+        else:
+            wanted = {c.strip().lower() for c in requested.split(",") if c.strip()}
+        unknown = wanted - set(_CAPABILITY_TO_RUNTIMES.keys())
+        if unknown:
+            return _error_response(
+                status_code=400,
+                code="WARMUP_UNKNOWN_CAPABILITY",
+                message=f"unknown capability: {sorted(unknown)}",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        runtimes_to_warm: list[RuntimeLike] = [
+            _CAPABILITY_TO_RUNTIMES[c][1]() for c in sorted(wanted)
+        ]
         # Snapshot triggered-ness BEFORE adding background tasks so the
         # response reflects whether warmup did anything new. Fake mode
         # starts READY → triggered=False; real mode starts NOT_LOADED
         # the first time → triggered=True.
-        triggered = bge_m3.status == "NOT_LOADED" or bge_reranker.status == "NOT_LOADED"
-        background_tasks.add_task(_safe_ensure_loaded, bge_m3)
-        background_tasks.add_task(_safe_ensure_loaded, bge_reranker)
+        triggered = any(r.status == "NOT_LOADED" for r in runtimes_to_warm)
+        for runtime in runtimes_to_warm:
+            background_tasks.add_task(_safe_ensure_loaded, runtime)
 
         return JSONResponse(
             status_code=200,

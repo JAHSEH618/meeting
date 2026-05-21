@@ -80,11 +80,21 @@ class BgeM3Runtime:
         models_dir: Path | None = None,
         device: str = "cpu",
         batch_size: int = 16,
+        use_fp16: bool | None = None,
     ) -> None:
         self._use_fake = use_fake
         self._models_dir = models_dir
         self._device = "fake" if use_fake else device
         self._batch_size = batch_size
+        # Default policy: CUDA → fp16, MPS / CPU → fp32. Caller can pass
+        # an explicit bool (set by the registry from AI_WORKER_BGE_M3_DTYPE)
+        # to override. Fake mode keeps fp16=False to avoid an empty branch
+        # in tests that introspect the flag.
+        if use_fp16 is None:
+            family = device.split(":", 1)[0]
+            self._use_fp16 = family == "cuda" and not use_fake
+        else:
+            self._use_fp16 = use_fp16 and not use_fake
         self._model: Any = None
         self._status: ModelStatus = "READY" if use_fake else "NOT_LOADED"
         self._last_error: str | None = None
@@ -147,9 +157,7 @@ class BgeM3Runtime:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-not-found]
 
         target = str(self._models_dir) if self._models_dir else "BAAI/bge-m3"
-        # use_fp16=True is faster on GPU/MPS but unstable on CPU; gate it.
-        use_fp16 = self._device not in ("cpu", "fake")
-        self._model = BGEM3FlagModel(target, use_fp16=use_fp16, device=self._device)
+        self._model = BGEM3FlagModel(target, use_fp16=self._use_fp16, device=self._device)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one 1024-dim vector per input text.

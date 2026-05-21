@@ -27,16 +27,43 @@ dev = [
   "ruff>=0.6",
   "pyright>=1.1"
 ]
-# Heavy ML deps for real model runtimes (bge-m3 / bge-reranker-v2-m3).
-# Not installed by default — coding / CI runs with fake runtime via
-# AI_WORKER_USE_FAKE_RUNTIME=true. Enable locally with
-#   uv sync --extra real-models
-# and flip AI_WORKER_USE_FAKE_RUNTIME=false to exercise real weights.
-real-models = [
+# Heavy ML deps grouped by capability. Production deploys install exactly
+# the extras they need (bge-only embedding workers don't pull pyannote;
+# pure-LLM workers skip all of them). Coding / CI uses fake runtimes so
+# none of these are installed by default — flip the corresponding
+# AI_WORKER_USE_FAKE_*_RUNTIME=false and `uv sync --extra <capability>`.
+#
+#   uv sync --extra real-bge            # embedding + reranker
+#   uv sync --extra real-asr            # Qwen3-ASR via funasr
+#   uv sync --extra real-diarization    # pyannote.audio 3.x
+#   uv sync --extra real-models         # everything above (single-host all-GPU box)
+real-bge = [
   "torch>=2.3,<3.0",
   "transformers>=4.44,<5.0",
   "FlagEmbedding>=1.3,<2.0",
   "sentencepiece>=0.2,<1.0",
+]
+real-asr = [
+  "torch>=2.3,<3.0",
+  "funasr>=1.1,<2.0",
+  "modelscope>=1.18,<2.0",
+  "soundfile>=0.12,<1.0",
+]
+real-diarization = [
+  "torch>=2.3,<3.0",
+  "torchaudio>=2.3,<3.0",
+  "pyannote.audio>=3.3,<4.0",
+]
+real-models = [
+  "torch>=2.3,<3.0",
+  "torchaudio>=2.3,<3.0",
+  "transformers>=4.44,<5.0",
+  "FlagEmbedding>=1.3,<2.0",
+  "sentencepiece>=0.2,<1.0",
+  "funasr>=1.1,<2.0",
+  "modelscope>=1.18,<2.0",
+  "soundfile>=0.12,<1.0",
+  "pyannote.audio>=3.3,<4.0",
 ]
 
 [tool.pytest.ini_options]

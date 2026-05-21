@@ -94,19 +94,47 @@ def refresh_gpu_metrics() -> None:
     Designed to be called from a scheduled task (e.g. every 15 s) or from
     the existing ``/metrics`` Prometheus scrape path; both work because
     Prometheus scrapes only see the most recently set gauge value.
+
+    Also samples Apple Silicon MPS memory via ``torch.mps`` when available
+    — utilization isn't exposed by the MPS backend so that gauge stays at
+    zero, but ``ai_worker_gpu_memory_used_bytes{device="mps"}`` lets a
+    Mac dev box still see runaway-memory regressions on the same graph.
     """
-    if pynvml is None:
+    if pynvml is not None:
+        handles = _nvml_handles()
+        for idx, handle in handles:
+            try:
+                mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                GPU_MEMORY_USED.labels(device=str(idx)).set(int(mem.used))
+                GPU_MEMORY_TOTAL.labels(device=str(idx)).set(int(mem.total))
+                GPU_UTILIZATION.labels(device=str(idx)).set(int(util.gpu))
+            except Exception as exc:  # pragma: no cover - env-dependent
+                logger.warning("nvml read failed for device %s: %s", idx, exc)
+    _refresh_mps_metrics()
+
+
+def _refresh_mps_metrics() -> None:
+    """Best-effort MPS memory snapshot. No-op when torch / MPS is absent."""
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ImportError:
         return
-    handles = _nvml_handles()
-    for idx, handle in handles:
-        try:
-            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            GPU_MEMORY_USED.labels(device=str(idx)).set(int(mem.used))
-            GPU_MEMORY_TOTAL.labels(device=str(idx)).set(int(mem.total))
-            GPU_UTILIZATION.labels(device=str(idx)).set(int(util.gpu))
-        except Exception as exc:  # pragma: no cover - env-dependent
-            logger.warning("nvml read failed for device %s: %s", idx, exc)
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps is None or not getattr(mps, "is_available", lambda: False)():
+        return
+    torch_mps = getattr(torch, "mps", None)
+    if torch_mps is None:
+        return
+    try:
+        used = int(getattr(torch_mps, "current_allocated_memory", lambda: 0)())
+        # driver_allocated_memory exists on torch 2.1+; gracefully degrade.
+        total = int(getattr(torch_mps, "driver_allocated_memory", lambda: 0)())
+    except Exception as exc:  # pragma: no cover - env-dependent
+        logger.warning("torch.mps read failed: %s", exc)
+        return
+    GPU_MEMORY_USED.labels(device="mps").set(used)
+    GPU_MEMORY_TOTAL.labels(device="mps").set(total)
 
 
 @contextmanager
