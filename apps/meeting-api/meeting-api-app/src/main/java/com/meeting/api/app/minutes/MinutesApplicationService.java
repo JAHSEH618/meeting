@@ -138,7 +138,8 @@ public class MinutesApplicationService implements MinutesFacade {
 
     @Override
     public Optional<MinutesDTO> get(String tenantId, String meetingId) {
-        return minutesRepository.findCurrent(tenantId, meetingId).map(MinutesApplicationService::toDto);
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> minutesRepository.findCurrent(tenantId, meetingId).map(MinutesApplicationService::toDto));
     }
 
     @Override

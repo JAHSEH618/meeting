@@ -35,6 +35,8 @@ public class ProdProfileValidator {
     private final String kmsMasterKeyId;
     private final boolean llmAllowConfidential;
     private final boolean flywayBaselineOnMigrate;
+    private final String authMode;
+    private final String tenantsActive;
 
     public ProdProfileValidator(
         @Value("${meeting.security.callback.hmac-secret:}") String callbackHmac,
@@ -43,7 +45,9 @@ public class ProdProfileValidator {
         @Value("${meeting.chunk.strategy-version:}") String chunkStrategyVersion,
         @Value("${meeting.kms.master-key-id:}") String kmsMasterKeyId,
         @Value("${meeting.llm.allow-confidential:false}") boolean llmAllowConfidential,
-        @Value("${spring.flyway.baseline-on-migrate:false}") boolean flywayBaselineOnMigrate
+        @Value("${spring.flyway.baseline-on-migrate:false}") boolean flywayBaselineOnMigrate,
+        @Value("${meeting.auth.mode:in-memory}") String authMode,
+        @Value("${meeting.tenants.active:}") String tenantsActive
     ) {
         this.callbackHmac = callbackHmac;
         this.aiWorkerHmac = aiWorkerHmac;
@@ -52,6 +56,8 @@ public class ProdProfileValidator {
         this.kmsMasterKeyId = kmsMasterKeyId;
         this.llmAllowConfidential = llmAllowConfidential;
         this.flywayBaselineOnMigrate = flywayBaselineOnMigrate;
+        this.authMode = authMode;
+        this.tenantsActive = tenantsActive;
     }
 
     @PostConstruct
@@ -113,6 +119,19 @@ public class ProdProfileValidator {
         if (flywayBaselineOnMigrate) {
             failures.add(
                 "spring.flyway.baseline-on-migrate must be false in prod — silent baselining hides schema drift"
+            );
+        }
+        if ("in-memory".equalsIgnoreCase(authMode)) {
+            failures.add(
+                "meeting.auth.mode must NOT be 'in-memory' in prod — InMemoryAuthApplicationService"
+                    + " ships hardcoded admin/admin123 / tenant_default credentials and is dev-only"
+            );
+        }
+        if (isBlank(tenantsActive)) {
+            failures.add(
+                "meeting.tenants.active must list at least one tenant id in prod — schedulers"
+                    + " (outbox publisher / lease scanner / deletion runner / break-glass scanner)"
+                    + " silently process zero tenants otherwise"
             );
         }
         return failures;

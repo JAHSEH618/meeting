@@ -49,7 +49,8 @@ public class DeletionJobRunnerConfig {
         TenantScopedTransaction tenantTx,
         AuditEventLogger audit,
         @Value("${meeting.deletion-runner.batch-size:25}") int batchSize,
-        @Value("${meeting.deletion-runner.tenants:tenant_01}") String tenantIdsCsv
+        @Value("${meeting.tenants.active:${meeting.deletion-runner.tenants:tenant_default}}")
+            String tenantIdsCsv
     ) {
         this.runner = new DeletionJobRunner(
             repo,

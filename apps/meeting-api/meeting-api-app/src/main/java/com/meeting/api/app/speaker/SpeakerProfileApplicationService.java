@@ -97,14 +97,16 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
 
     @Override
     public Optional<SpeakerProfileDTO> get(String tenantId, String profileId) {
-        return profileRepository.findById(tenantId, profileId).map(SpeakerProfileApplicationService::toDto);
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> profileRepository.findById(tenantId, profileId).map(SpeakerProfileApplicationService::toDto));
     }
 
     @Override
     public List<SpeakerProfileDTO> list(String tenantId) {
-        return profileRepository.listByTenant(tenantId, false).stream()
-            .map(SpeakerProfileApplicationService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> profileRepository.listByTenant(tenantId, false).stream()
+                .map(SpeakerProfileApplicationService::toDto)
+                .toList());
     }
 
     @Override
@@ -182,9 +184,10 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
 
     @Override
     public List<SpeakerEnrollmentDTO> listEnrollments(String tenantId, String profileId) {
-        return enrollmentRepository.findByProfile(tenantId, profileId).stream()
-            .map(SpeakerProfileApplicationService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> enrollmentRepository.findByProfile(tenantId, profileId).stream()
+                .map(SpeakerProfileApplicationService::toDto)
+                .toList());
     }
 
     private static SpeakerProfileDTO toDto(SpeakerProfile p) {

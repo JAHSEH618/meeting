@@ -36,7 +36,8 @@ public class BreakGlassExpiryScannerConfig {
         BreakGlassRequestRepository repo,
         TenantScopedTransaction tenantTx,
         @Value("${meeting.break-glass.scanner.batch-size:50}") int batchSize,
-        @Value("${meeting.break-glass.scanner.tenants:tenant_01}") String tenantIdsCsv
+        @Value("${meeting.tenants.active:${meeting.break-glass.scanner.tenants:tenant_default}}")
+            String tenantIdsCsv
     ) {
         this.scanner = new BreakGlassExpiryScanner(repo, tenantTx, Clock.systemUTC(), batchSize);
         this.tenantIds = List.of(tenantIdsCsv.split(",")).stream()

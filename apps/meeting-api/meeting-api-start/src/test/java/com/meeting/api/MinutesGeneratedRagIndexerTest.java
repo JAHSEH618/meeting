@@ -31,7 +31,7 @@ class MinutesGeneratedRagIndexerTest {
         ChunkingApplicationService chunker = mock(ChunkingApplicationService.class);
         when(chunker.rebuildForMeeting(eq("tenant_01"), eq("meeting_01")))
             .thenReturn(new ChunkingApplicationService.ChunkingResult(2, List.of("k_a", "k_b", "k_c")));
-        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, null);
+        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, com.meeting.api.app.common.TenantScopedTransaction.immediate(), null);
 
         MinutesGeneratedEvent event = new MinutesGeneratedEvent(
             "evt_1", "tenant_01", "meeting_01", "min_1", 3, 5, 1L, NOW
@@ -48,7 +48,7 @@ class MinutesGeneratedRagIndexerTest {
         ChunkingApplicationService chunker = mock(ChunkingApplicationService.class);
         when(chunker.rebuildForMeeting(eq("tenant_01"), eq("meeting_01")))
             .thenThrow(new RuntimeException("chunker down"));
-        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, null);
+        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, com.meeting.api.app.common.TenantScopedTransaction.immediate(), null);
 
         MinutesGeneratedEvent event = new MinutesGeneratedEvent(
             "evt_2", "tenant_01", "meeting_01", "min_1", 1, 1, 1L, NOW
@@ -61,7 +61,7 @@ class MinutesGeneratedRagIndexerTest {
     @Test
     void doesNotInvokeChunkerForUnrelatedEvents() {
         ChunkingApplicationService chunker = mock(ChunkingApplicationService.class);
-        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, null);
+        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunker, com.meeting.api.app.common.TenantScopedTransaction.immediate(), null);
 
         // No event delivered → no interaction.
         verify(chunker, never()).rebuildForMeeting(eq("tenant_01"), eq("meeting_01"));

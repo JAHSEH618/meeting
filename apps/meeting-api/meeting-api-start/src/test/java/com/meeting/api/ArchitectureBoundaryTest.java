@@ -1,12 +1,15 @@
 package com.meeting.api;
 
+import com.meeting.api.app.common.TenantScopedTransaction;
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
-import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
@@ -121,6 +124,44 @@ class ArchitectureBoundaryTest {
         SlicesRuleDefinition.slices()
             .matching("com.meeting.api.(*)..")
             .should().beFreeOfCycles()
+            .check(importedClasses);
+    }
+
+    /**
+     * Tenant-scope guard: every production Facade implementation that
+     * touches tenant-owned data must inject {@link TenantScopedTransaction}.
+     * Without it, the bean cannot set {@code app.tenant_id} before
+     * running SQL, and {@code FORCE ROW LEVEL SECURITY} policies return
+     * empty result sets — silently breaking reads.
+     *
+     * <p>Scoped to {@code com.meeting.api.app..} so test-local stub
+     * implementations (e.g. {@code MeetingControllerTest$StubMeetingFacade})
+     * are not flagged. {@code AuthFacade} implementations are excluded
+     * because login/logout/authenticate operate on session state, not
+     * tenant-owned tables.
+     */
+    @Test
+    void facadeImplementationsMustDependOnTenantScopedTransaction() {
+        DescribedPredicate<JavaClass> tenantScopedFacadeImpl = new DescribedPredicate<>(
+            "production Facade implementations under com.meeting.api.app.. (excluding AuthFacade)"
+        ) {
+            @Override
+            public boolean test(JavaClass clazz) {
+                if (clazz.isInterface()) return false;
+                if (!clazz.getPackageName().startsWith("com.meeting.api.app")) return false;
+                return clazz.getAllRawInterfaces().stream().anyMatch(iface ->
+                    iface.getPackageName().startsWith("com.meeting.api.client")
+                        && iface.getSimpleName().endsWith("Facade")
+                        && !iface.getSimpleName().equals("AuthFacade")
+                );
+            }
+        };
+
+        classes()
+            .that(tenantScopedFacadeImpl)
+            .should()
+            .dependOnClassesThat()
+            .areAssignableTo(TenantScopedTransaction.class)
             .check(importedClasses);
     }
 }

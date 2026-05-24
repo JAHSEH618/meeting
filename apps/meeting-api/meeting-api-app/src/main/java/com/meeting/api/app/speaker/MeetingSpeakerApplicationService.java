@@ -62,9 +62,10 @@ public class MeetingSpeakerApplicationService {
     }
 
     public List<MeetingSpeakerDTO> list(String tenantId, String meetingId) {
-        return meetingSpeakerRepository.findByMeeting(tenantId, meetingId).stream()
-            .map(MeetingSpeakerApplicationService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> meetingSpeakerRepository.findByMeeting(tenantId, meetingId).stream()
+                .map(MeetingSpeakerApplicationService::toDto)
+                .toList());
     }
 
     public void confirm(String tenantId, String meetingId, String speakerLabel,

@@ -38,7 +38,8 @@ public class OutboxPublisherConfig {
     public OutboxPublisherConfig(
         OutboxPublisher outboxPublisher,
         TenantScopedTransaction tenantTx,
-        @Value("${meeting.outbox-publisher.tenants:tenant_01}") String tenantIdsCsv
+        @Value("${meeting.tenants.active:${meeting.outbox-publisher.tenants:tenant_default}}")
+            String tenantIdsCsv
     ) {
         this.outboxPublisher = outboxPublisher;
         this.tenantTx = tenantTx;

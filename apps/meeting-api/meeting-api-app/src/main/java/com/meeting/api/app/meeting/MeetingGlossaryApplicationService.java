@@ -75,19 +75,21 @@ public class MeetingGlossaryApplicationService implements MeetingGlossaryFacade 
 
     @Override
     public Optional<MeetingGlossaryDTO> get(String tenantId, String meetingId) {
-        meetingRepository.findById(tenantId, meetingId)
-            .orElseThrow(() -> new ApplicationException(
-                ErrorCode.MEETING_NOT_FOUND, 404,
-                "meeting not found: " + meetingId, false
-            ));
-        Optional<List<GlossaryTerm>> stored = glossaryRepository.findByMeetingId(tenantId, meetingId);
-        if (stored.isEmpty()) {
-            return Optional.of(new MeetingGlossaryDTO(meetingId, List.of(), null));
-        }
-        List<GlossaryTermDTO> dtos = stored.get().stream()
-            .map(t -> new GlossaryTermDTO(t.term(), t.definition(), t.aliases() == null ? List.of() : t.aliases()))
-            .toList();
-        return Optional.of(new MeetingGlossaryDTO(meetingId, dtos, null));
+        return tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            meetingRepository.findById(tenantId, meetingId)
+                .orElseThrow(() -> new ApplicationException(
+                    ErrorCode.MEETING_NOT_FOUND, 404,
+                    "meeting not found: " + meetingId, false
+                ));
+            Optional<List<GlossaryTerm>> stored = glossaryRepository.findByMeetingId(tenantId, meetingId);
+            if (stored.isEmpty()) {
+                return Optional.of(new MeetingGlossaryDTO(meetingId, List.of(), null));
+            }
+            List<GlossaryTermDTO> dtos = stored.get().stream()
+                .map(t -> new GlossaryTermDTO(t.term(), t.definition(), t.aliases() == null ? List.of() : t.aliases()))
+                .toList();
+            return Optional.of(new MeetingGlossaryDTO(meetingId, dtos, null));
+        });
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.meeting.api.app.audit;
 
 import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.audit.AuditEventDTO;
 import com.meeting.api.client.audit.AuditQueryFacade;
 import com.meeting.api.client.common.ErrorCode;
@@ -24,22 +25,26 @@ import org.springframework.stereotype.Service;
 public class AuditQueryApplicationService implements AuditQueryFacade {
 
     private final AuditEventReadRepository repository;
+    private final TenantScopedTransaction tenantTx;
     private final Clock clock;
     private final Duration maxWindow;
 
     public AuditQueryApplicationService(
         AuditEventReadRepository repository,
+        TenantScopedTransaction tenantTx,
         @Value("${meeting.audit.query.max-window-days:90}") long maxWindowDays
     ) {
-        this(repository, Clock.systemUTC(), Duration.ofDays(maxWindowDays));
+        this(repository, tenantTx, Clock.systemUTC(), Duration.ofDays(maxWindowDays));
     }
 
     public AuditQueryApplicationService(
         AuditEventReadRepository repository,
+        TenantScopedTransaction tenantTx,
         Clock clock,
         Duration maxWindow
     ) {
         this.repository = repository;
+        this.tenantTx = tenantTx;
         this.clock = clock;
         this.maxWindow = maxWindow;
     }
@@ -67,23 +72,27 @@ public class AuditQueryApplicationService implements AuditQueryFacade {
             );
         }
 
-        AuditQuery domainQuery = new AuditQuery(
-            req.tenantId(),
-            req.actorUserId(),
-            req.resourceType(),
-            req.resourceId(),
-            req.action(),
-            req.result(),
-            from,
-            to,
-            req.cursor(),
-            req.limit()
-        );
-        PageResult<AuditEventRow> page = repository.list(domainQuery);
-        return new PageResult<>(
-            page.items().stream().map(AuditQueryApplicationService::toDto).toList(),
-            page.page()
-        );
+        OffsetDateTime queryFrom = from;
+        OffsetDateTime queryTo = to;
+        return tenantTx.execute(req.tenantId(), req.actorUserId(), null, () -> {
+            AuditQuery domainQuery = new AuditQuery(
+                req.tenantId(),
+                req.actorUserId(),
+                req.resourceType(),
+                req.resourceId(),
+                req.action(),
+                req.result(),
+                queryFrom,
+                queryTo,
+                req.cursor(),
+                req.limit()
+            );
+            PageResult<AuditEventRow> page = repository.list(domainQuery);
+            return new PageResult<>(
+                page.items().stream().map(AuditQueryApplicationService::toDto).toList(),
+                page.page()
+            );
+        });
     }
 
     private static AuditEventDTO toDto(AuditEventRow row) {

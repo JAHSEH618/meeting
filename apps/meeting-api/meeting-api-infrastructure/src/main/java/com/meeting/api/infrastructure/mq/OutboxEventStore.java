@@ -104,6 +104,48 @@ public class OutboxEventStore {
         );
     }
 
+    /**
+     * Terminal-status update for events that have no destination
+     * (recorded for audit but not routed to RabbitMQ — e.g. internal
+     * domain events the Java side already handled via Spring
+     * {@code ApplicationEventPublisher}). Does not increment
+     * {@code retry_count}, so SKIPPED rows stay out of the failure
+     * dashboards.
+     */
+    public void markSkipped(String id, String reason) {
+        jdbcTemplate.update(
+            """
+            UPDATE domain_events_outbox
+               SET status = 'SKIPPED',
+                   last_error_code = 'OUTBOX_SKIPPED',
+                   last_error_message = ?,
+                   published_at = now()
+             WHERE id = ?
+            """,
+            reason,
+            id
+        );
+    }
+
+    /**
+     * Terminal-status update for unroutable events (unknown event type
+     * with no allow-list entry). Sends straight to DLQ — retrying won't
+     * change the verdict, and on-call should see it once, not every poll.
+     */
+    public void markUnroutable(String id, String reason) {
+        jdbcTemplate.update(
+            """
+            UPDATE domain_events_outbox
+               SET status = 'DLQ',
+                   last_error_code = 'OUTBOX_UNROUTABLE_EVENT_TYPE',
+                   last_error_message = ?
+             WHERE id = ?
+            """,
+            reason,
+            id
+        );
+    }
+
     private long nextSequenceNo(String tenantId, String aggregateType, String aggregateId) {
         Long current = jdbcTemplate.query(
             """

@@ -192,23 +192,27 @@ public class ExportApplicationService implements ExportFacade {
 
     @Override
     public Optional<ExportJobDTO> get(String tenantId, String exportId) {
-        return exportRepo.findById(tenantId, exportId).map(job -> {
-            boolean stale = computeStale(tenantId, job);
-            return toDto(job, stale);
-        });
+        return tenantTx.execute(tenantId, null, null, () ->
+            exportRepo.findById(tenantId, exportId).map(job -> {
+                boolean stale = computeStale(tenantId, job);
+                return toDto(job, stale);
+            })
+        );
     }
 
     @Override
     public PageResult<ExportJobDTO> listByMeeting(
         String tenantId, String meetingId, String cursor, int limit
     ) {
-        PageResult<ExportJob> page = exportRepo.listByMeeting(tenantId, meetingId, cursor, limit);
-        return new PageResult<>(
-            page.items().stream()
-                .map(job -> toDto(job, computeStale(tenantId, job)))
-                .toList(),
-            page.page()
-        );
+        return tenantTx.execute(tenantId, null, null, () -> {
+            PageResult<ExportJob> page = exportRepo.listByMeeting(tenantId, meetingId, cursor, limit);
+            return new PageResult<>(
+                page.items().stream()
+                    .map(job -> toDto(job, computeStale(tenantId, job)))
+                    .toList(),
+                page.page()
+            );
+        });
     }
 
     @Override

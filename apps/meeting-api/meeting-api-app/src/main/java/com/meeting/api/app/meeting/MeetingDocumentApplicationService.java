@@ -185,18 +185,20 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
 
     @Override
     public List<MeetingDocumentDTO> list(String tenantId, String meetingId) {
-        meetingRepository.findById(tenantId, meetingId)
-            .orElseThrow(() -> new ApplicationException(
-                ErrorCode.MEETING_NOT_FOUND, 404,
-                "meeting not found: " + meetingId, false
-            ));
-        List<MeetingDocumentJoinRow> rows = linkRepository.listByMeeting(tenantId, meetingId);
-        return rows.stream()
-            .map(r -> new MeetingDocumentDTO(
-                r.linkId(), r.meetingId(), r.documentId(), r.documentTitle(),
-                r.role(), r.documentSecurityLevel(), r.attachedBy(), r.attachedAt()
-            ))
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            meetingRepository.findById(tenantId, meetingId)
+                .orElseThrow(() -> new ApplicationException(
+                    ErrorCode.MEETING_NOT_FOUND, 404,
+                    "meeting not found: " + meetingId, false
+                ));
+            List<MeetingDocumentJoinRow> rows = linkRepository.listByMeeting(tenantId, meetingId);
+            return rows.stream()
+                .map(r -> new MeetingDocumentDTO(
+                    r.linkId(), r.meetingId(), r.documentId(), r.documentTitle(),
+                    r.role(), r.documentSecurityLevel(), r.attachedBy(), r.attachedAt()
+                ))
+                .toList();
+        });
     }
 
     private static SecurityLevel maxSecurity(SecurityLevel a, SecurityLevel b) {

@@ -134,23 +134,26 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
 
     @Override
     public Optional<DeletionJobDTO> get(String tenantId, String deletionJobId) {
-        return repo.findById(tenantId, deletionJobId)
-            .map(DeletionJobApplicationService::toDto);
+        return tenantTx.execute(tenantId, null, null,
+            () -> repo.findById(tenantId, deletionJobId).map(DeletionJobApplicationService::toDto));
     }
 
     @Override
     public PageResult<DeletionJobDTO> list(String tenantId, String cursor, int limit) {
-        PageResult<DeletionJob> page = repo.listByTenant(tenantId, cursor, limit);
-        return new PageResult<>(
-            page.items().stream().map(DeletionJobApplicationService::toDto).toList(),
-            page.page()
-        );
+        return tenantTx.execute(tenantId, null, null, () -> {
+            PageResult<DeletionJob> page = repo.listByTenant(tenantId, cursor, limit);
+            return new PageResult<>(
+                page.items().stream().map(DeletionJobApplicationService::toDto).toList(),
+                page.page()
+            );
+        });
     }
 
     @Override
     public Optional<DeletionCertificateDTO> getCertificate(String tenantId, String deletionJobId) {
-        return certificateRepository.findByJobId(tenantId, deletionJobId)
-            .map(DeletionJobApplicationService::toCertificateDto);
+        return tenantTx.execute(tenantId, null, null,
+            () -> certificateRepository.findByJobId(tenantId, deletionJobId)
+                .map(DeletionJobApplicationService::toCertificateDto));
     }
 
     /**

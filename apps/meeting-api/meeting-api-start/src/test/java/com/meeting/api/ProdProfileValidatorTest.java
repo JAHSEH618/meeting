@@ -16,7 +16,9 @@ class ProdProfileValidatorTest {
             "v1.2.0",
             "kms/aws/arn:..::abcd",
             /* llmAllowConfidential */ false,
-            /* flywayBaselineOnMigrate */ false
+            /* flywayBaselineOnMigrate */ false,
+            /* authMode */ "jwt",
+            /* tenantsActive */ "tenant_acme,tenant_emea"
         );
         assertThat(v.validateInternal()).isEmpty();
     }
@@ -27,7 +29,7 @@ class ProdProfileValidatorTest {
             "change-me-callback-fallback-secret",
             "real-aiworker-secret",
             "https://ai-worker.internal",
-            "v1", "kms-real", false, false
+            "v1", "kms-real", false, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("callback.hmac-secret"));
@@ -38,7 +40,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false
+            false, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("ai-worker.hmac-secret"));
@@ -49,7 +51,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "same-secret", "same-secret",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false
+            false, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("must not be identical"));
@@ -60,7 +62,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "http://localhost:8090", "v1", "kms-real",
-            false, false
+            false, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("ai-worker.base-url"));
@@ -71,7 +73,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "dev-kms-master-key",
-            false, false
+            false, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("kms.master-key-id"));
@@ -82,7 +84,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "kms-real",
-            /* allow confidential */ true, false
+            /* allow confidential */ true, false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("allow-confidential"));
@@ -93,19 +95,41 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, /* baseline-on-migrate */ true
+            false, /* baseline-on-migrate */ true, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("baseline-on-migrate"));
     }
 
     @Test
+    void flagsInMemoryAuthMode() {
+        ProdProfileValidator v = new ProdProfileValidator(
+            "real-callback", "real-aiworker",
+            "https://ai-worker.internal", "v1", "kms-real",
+            false, false, "in-memory", "tenant_acme"
+        );
+        assertThat(v.validateInternal())
+            .anySatisfy(s -> assertThat(s).contains("meeting.auth.mode"));
+    }
+
+    @Test
+    void flagsMissingActiveTenants() {
+        ProdProfileValidator v = new ProdProfileValidator(
+            "real-callback", "real-aiworker",
+            "https://ai-worker.internal", "v1", "kms-real",
+            false, false, "jwt", ""
+        );
+        assertThat(v.validateInternal())
+            .anySatisfy(s -> assertThat(s).contains("meeting.tenants.active"));
+    }
+
+    @Test
     void aggregatesAllFailures() {
         ProdProfileValidator v = new ProdProfileValidator(
             "", "", "http://127.0.0.1:8090", "", "",
-            true, true
+            true, true, "in-memory", ""
         );
         assertThat(v.validateInternal())
-            .hasSizeGreaterThanOrEqualTo(6);
+            .hasSizeGreaterThanOrEqualTo(8);
     }
 }

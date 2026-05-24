@@ -104,19 +104,21 @@ public class BreakGlassApplicationService implements BreakGlassFacade {
 
     @Override
     public Optional<BreakGlassRequestDTO> get(String tenantId, String requestId) {
-        return repo.findById(tenantId, requestId)
-            .map(BreakGlassApplicationService::toDto);
+        return tenantTx.execute(tenantId, null, null,
+            () -> repo.findById(tenantId, requestId).map(BreakGlassApplicationService::toDto));
     }
 
     @Override
     public PageResult<BreakGlassRequestDTO> list(
         String tenantId, BreakGlassStatus status, String cursor, int limit
     ) {
-        PageResult<BreakGlassRequest> page = repo.listByTenant(tenantId, status, cursor, limit);
-        return new PageResult<>(
-            page.items().stream().map(BreakGlassApplicationService::toDto).toList(),
-            page.page()
-        );
+        return tenantTx.execute(tenantId, null, null, () -> {
+            PageResult<BreakGlassRequest> page = repo.listByTenant(tenantId, status, cursor, limit);
+            return new PageResult<>(
+                page.items().stream().map(BreakGlassApplicationService::toDto).toList(),
+                page.page()
+            );
+        });
     }
 
     @Override

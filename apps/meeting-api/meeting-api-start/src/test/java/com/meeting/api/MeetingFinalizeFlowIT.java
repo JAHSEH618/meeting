@@ -181,7 +181,7 @@ class MeetingFinalizeFlowIT {
             },
             clock
         );
-        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunking, null);
+        MinutesGeneratedRagIndexer indexer = new MinutesGeneratedRagIndexer(chunking, com.meeting.api.app.common.TenantScopedTransaction.immediate(), null);
         ApplicationEventPublisher minutesEvents = event -> {
             if (event instanceof MinutesGeneratedEvent minutesGenerated) {
                 indexer.onMinutesGenerated(minutesGenerated);

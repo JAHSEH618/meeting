@@ -19,6 +19,8 @@ server:
   port: 0
 
 meeting:
+  tenants:
+    active: tenant_01,tenant_default
   export:
     consumer:
       enabled: false   # tests drive ExportQueueConsumer via onMessage() directly

@@ -99,16 +99,19 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
 
     @Override
     public Optional<LegalHoldDTO> get(String tenantId, String legalHoldId) {
-        return repo.findById(tenantId, legalHoldId).map(LegalHoldApplicationService::toDto);
+        return tenantTx.execute(tenantId, null, null,
+            () -> repo.findById(tenantId, legalHoldId).map(LegalHoldApplicationService::toDto));
     }
 
     @Override
     public PageResult<LegalHoldDTO> list(String tenantId, String cursor, int limit) {
-        PageResult<LegalHold> page = repo.listByTenant(tenantId, cursor, limit);
-        return new PageResult<>(
-            page.items().stream().map(LegalHoldApplicationService::toDto).toList(),
-            page.page()
-        );
+        return tenantTx.execute(tenantId, null, null, () -> {
+            PageResult<LegalHold> page = repo.listByTenant(tenantId, cursor, limit);
+            return new PageResult<>(
+                page.items().stream().map(LegalHoldApplicationService::toDto).toList(),
+                page.page()
+            );
+        });
     }
 
     @Override

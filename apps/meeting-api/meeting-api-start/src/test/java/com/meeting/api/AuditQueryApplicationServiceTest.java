@@ -33,6 +33,7 @@ class AuditQueryApplicationServiceTest {
         repo = new RecordingRepo();
         service = new AuditQueryApplicationService(
             repo,
+            com.meeting.api.app.common.TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             Duration.ofDays(90)
         );

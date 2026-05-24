@@ -49,23 +49,26 @@ public class ExtractionQueryService implements ExtractionFacade {
 
     @Override
     public List<ActionItemDTO> listActionItems(String tenantId, String meetingId) {
-        return actionItemRepository.findByMeeting(tenantId, meetingId).stream()
-            .map(ExtractionQueryService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> actionItemRepository.findByMeeting(tenantId, meetingId).stream()
+                .map(ExtractionQueryService::toDto)
+                .toList());
     }
 
     @Override
     public List<DecisionDTO> listDecisions(String tenantId, String meetingId) {
-        return decisionRepository.findByMeeting(tenantId, meetingId).stream()
-            .map(ExtractionQueryService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> decisionRepository.findByMeeting(tenantId, meetingId).stream()
+                .map(ExtractionQueryService::toDto)
+                .toList());
     }
 
     @Override
     public List<RiskDTO> listRisks(String tenantId, String meetingId) {
-        return riskRepository.findByMeeting(tenantId, meetingId).stream()
-            .map(ExtractionQueryService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> riskRepository.findByMeeting(tenantId, meetingId).stream()
+                .map(ExtractionQueryService::toDto)
+                .toList());
     }
 
     @Override

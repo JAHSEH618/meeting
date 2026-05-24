@@ -50,6 +50,17 @@ management:
 
 # ── Meeting API 业务配置 ──────────────────────────────────────────
 meeting:
+  # 后台调度（outbox publisher、lease scanner、deletion runner、
+  # break-glass scanner）共享的活跃租户列表。每个 scheduler 也保留
+  # 了独立的 meeting.<scheduler>.tenants 兜底键，但生产请只用本键。
+  # prod profile 必须显式列出（ProdProfileValidator 会校验非空）。
+  tenants:
+    active: ${MEETING_TENANTS_ACTIVE:tenant_default}
+  # 鉴权实现挑选。in-memory = InMemoryAuthApplicationService（dev/test
+  # 唯一可用，admin/admin123）。prod 必须切换到 jwt/oidc 等真实实现，
+  # 否则 ProdProfileValidator 会拒绝启动。
+  auth:
+    mode: ${MEETING_AUTH_MODE:in-memory}
   security:
     callback:
       hmac-secret: ${AI_WORKER_CALLBACK_HMAC_SECRET:change-me-callback-fallback-secret}

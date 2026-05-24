@@ -30,7 +30,8 @@ public class ProcessingTaskLeaseScannerConfig {
         TenantScopedTransaction tenantScopedTransaction,
         MeetingApiMetrics metrics,
         @Value("${meeting.lease-scanner.batch-size:50}") int batchSize,
-        @Value("${meeting.lease-scanner.tenants:tenant_01}") String tenantIdsCsv
+        @Value("${meeting.tenants.active:${meeting.lease-scanner.tenants:tenant_default}}")
+            String tenantIdsCsv
     ) {
         this.scanner = new ProcessingTaskLeaseScanner(
             taskRepository,
