@@ -48,8 +48,8 @@ describe("AudioUploadPage", () => {
       expiresAt: "2026-05-15T09:00:00Z",
       partSizeBytes: 8 * 1024 * 1024,
       maxPartCount: 10000,
-      objectKey: "meeting-audio/tenant_01/mtg_01/upl_resume/raw",
-      bucket: "meeting-audio",
+      objectKey: "tenant/tenant_01/meeting/mtg_01/upload/upl_resume/raw",
+      bucket: "meeting-audio-auska",
       contentType: "audio/wav",
       fileName: "standup.wav",
       fileSizeBytes: 4,
@@ -80,6 +80,21 @@ describe("AudioUploadPage", () => {
     );
   });
 
+  it("rejects files larger than the 2 GiB single-PUT cap before hashing", async () => {
+    renderPage();
+
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "huge.wav", { type: "audio/wav" });
+    // jsdom's File implementation honors a writable `size` getter; spoof
+    // a 3 GiB file without actually allocating 3 GiB of bytes.
+    Object.defineProperty(file, "size", { value: 3 * 1024 * 1024 * 1024 });
+    fireEvent.change(screen.getByLabelText("音频文件"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "开始上传" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("音频文件超过 2 GiB 单 PUT 上限")).toBeInTheDocument(),
+    );
+  });
+
   it("navigates straight to task progress when the saved session is already COMPLETED", async () => {
     window.localStorage.setItem(STORAGE_KEY, "upl_done");
     const session: AudioUploadSession = {
@@ -89,8 +104,8 @@ describe("AudioUploadPage", () => {
       expiresAt: "2026-05-15T09:00:00Z",
       partSizeBytes: 8 * 1024 * 1024,
       maxPartCount: 10000,
-      objectKey: "meeting-audio/tenant_01/mtg_01/upl_done/raw",
-      bucket: "meeting-audio",
+      objectKey: "tenant/tenant_01/meeting/mtg_01/upload/upl_done/raw",
+      bucket: "meeting-audio-auska",
       contentType: "audio/wav",
       fileName: "standup.wav",
       fileSizeBytes: 4,

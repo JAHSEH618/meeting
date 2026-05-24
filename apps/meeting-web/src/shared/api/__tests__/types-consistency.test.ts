@@ -75,7 +75,7 @@ describe("types consistency with contracts enums.yaml", () => {
 
   it("sourceType must match contracts", () => {
     const expected = enumFromYaml("sourceType");
-    expect(["PRIMARY_TRANSCRIPT", "AI_SUMMARY", "DECISION", "ACTION_ITEM", "RISK", "DOCUMENT"]).toEqual(expected);
+    expect(["PRIMARY_TRANSCRIPT", "AI_SUMMARY", "MINUTES", "DECISION", "ACTION_ITEM", "RISK", "DOCUMENT"]).toEqual(expected);
   });
 });
 

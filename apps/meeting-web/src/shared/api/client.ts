@@ -116,7 +116,7 @@ async function uploadBinary(
 
   if (!res.ok) {
     const error = new Error(`上传分片失败: ${res.status}`) as ApiClientError;
-    error.code = "TOS_WRITE_FAILED";
+    error.code = "OSS_WRITE_FAILED";
     error.retryable = res.status >= 500;
     error.status = res.status;
     throw error;

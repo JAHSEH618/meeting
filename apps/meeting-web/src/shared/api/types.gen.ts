@@ -136,7 +136,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Initiate a multipart audio upload session for a meeting. */
+        /**
+         * @description Initiate an audio upload session for a meeting. Runs in single-PUT
+         *     mode: the server coerces `partSizeBytes >= fileSizeBytes` so the
+         *     client multipart loop always degenerates to exactly one PUT against
+         *     the session's object key. Files larger than 2 GiB are rejected
+         *     up-front.
+         */
         post: operations["createAudioUpload"];
         delete?: never;
         options?: never;
@@ -153,7 +159,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Request a signed upload URL for one part of a multipart upload. */
+        /**
+         * @description Request a signed PUT URL for an upload part. In single-PUT mode the
+         *     session always has exactly one part (partNumber=1) covering the full
+         *     object; clients should still call this endpoint to obtain the signed
+         *     URL and content-type headers.
+         */
         post: operations["createAudioUploadPart"];
         delete?: never;
         options?: never;
@@ -170,7 +181,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Finalize a multipart audio upload after all parts are transferred. */
+        /**
+         * @description Finalize an audio upload after the single PUT has transferred. The
+         *     request `parts` array must contain exactly one entry (partNumber=1)
+         *     matching the session's coerced single-part layout; server-side size
+         *     is compared against the upload session's `fileSizeBytes`.
+         */
         post: operations["completeAudioUpload"];
         delete?: never;
         options?: never;
@@ -187,7 +203,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Abort an in-progress multipart audio upload session. */
+        /** @description Abort an in-progress single-PUT audio upload session. */
         post: operations["abortAudioUpload"];
         delete?: never;
         options?: never;
@@ -1170,11 +1186,22 @@ export interface components {
             contentType: string;
             fileSizeBytes: number;
             fileSha256: string;
-            /** @default 8388608 */
+            /**
+             * @description Requested part size. In single-PUT mode the server coerces this
+             *     value to `max(requested, fileSizeBytes, 5 MiB)` so the resulting
+             *     session always has exactly one part; supply the actual file size
+             *     or let the server pick. Real multipart is not yet implemented.
+             * @default 8388608
+             */
             partSizeBytes: number;
         };
         CreateAudioUploadPartRequest: {
             partNumber: number;
+            /**
+             * @description Size of this part in bytes. In single-PUT mode this equals the
+             *     full file size (capped at 2 GiB by the server before the session
+             *     is created).
+             */
             sizeBytes: number;
             partSha256: string;
         };
@@ -1200,7 +1227,12 @@ export interface components {
             uploadStatus: components["schemas"]["AudioUploadStatus"];
             /** Format: date-time */
             expiresAt: string;
-            /** @default 8388608 */
+            /**
+             * @description Effective per-part size after server coercion. In single-PUT
+             *     mode this is `max(requested, fileSizeBytes, 5 MiB)` so
+             *     `ceil(fileSizeBytes / partSizeBytes) == 1`.
+             * @default 8388608
+             */
             partSizeBytes: number;
             /** @default 10000 */
             maxPartCount: number;

@@ -9,14 +9,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   TASK_ATTEMPT_CONFLICT: "任务尝试次数已变化",
   TASK_LEASE_CONFLICT: "任务租约已变化",
   INVALID_TASK_MESSAGE: "任务消息不符合处理要求",
-  TOS_OBJECT_NOT_FOUND: "存储对象不存在",
-  TOS_READ_FAILED: "存储读取失败",
-  TOS_WRITE_FAILED: "存储写入失败",
+  OSS_OBJECT_NOT_FOUND: "存储对象不存在",
+  OSS_READ_FAILED: "存储读取失败",
+  OSS_WRITE_FAILED: "存储写入失败",
   UPLOAD_SESSION_EXPIRED: "上传会话已过期",
   UPLOAD_ALREADY_ABORTED: "上传会话已取消",
   UPLOAD_ALREADY_COMPLETED: "上传已完成",
   UPLOAD_PART_HASH_MISMATCH: "分片校验失败",
   UPLOAD_FILE_HASH_MISMATCH: "文件校验失败",
+  UPLOAD_FILE_SIZE_MISMATCH: "文件大小不一致",
   UPLOAD_TOO_MANY_PARTS: "上传分片数量超过上限",
   UPLOAD_INCOMPLETE_PARTS: "上传分片不完整",
   AUDIO_UNSUPPORTED_FORMAT: "音频格式不支持",
@@ -74,7 +75,7 @@ export function isAuthError(code: string): boolean {
 
 export function isRetryable(code: string): boolean {
   const retryable = new Set([
-    "WORKER_LEASE_EXPIRED", "TOS_READ_FAILED", "TOS_WRITE_FAILED",
+    "WORKER_LEASE_EXPIRED", "OSS_READ_FAILED", "OSS_WRITE_FAILED",
     "CHANNEL_MAP_FAILED", "ASR_RUNTIME_ERROR", "ASR_MODEL_TIMEOUT",
     "ASR_GPU_OOM", "DIARIZATION_FAILED", "ALIGNMENT_FAILED",
     "SPEAKER_EMBEDDING_FAILED", "SPEAKER_MATCH_FAILED",

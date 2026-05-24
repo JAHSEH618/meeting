@@ -12,11 +12,17 @@ import {
 import type { ApiClientError } from "@shared/api/client";
 import type { AudioUploadSession } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { sha256Hex } from "@shared/utils/sha256-stream";
 import { initialUploadState, uploadReducer, type UploadPartState } from "./upload-reducer";
 
 const DEFAULT_CONCURRENCY = 3;
 const MAX_PART_RETRIES = 3;
 const SESSION_STORAGE_PREFIX = "meeting.audioUpload.";
+// Single-PUT mode cap — the server-side `MAX_SINGLE_PUT_BYTES` in
+// `AudioUploadApplicationService` is Integer.MAX_VALUE (≈ 2 GiB). Reject
+// here so the user gets a clear local error before we spend minutes
+// hashing a file that the API would refuse anyway.
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 export function AudioUploadPage() {
   const { meetingId = "" } = useParams();
@@ -80,7 +86,7 @@ export function AudioUploadPage() {
         partSizeBytes: 8 * 1024 * 1024,
       });
       window.localStorage.setItem(storageKey, session.uploadId);
-      const parts = await buildParts(file, session.partSizeBytes);
+      const parts = await buildParts(file, session.partSizeBytes, sha256);
       dispatch({ type: "session", session, parts });
       await uploadParts(session.uploadId, parts);
       await finalize(session.uploadId, sha256, parts);
@@ -127,7 +133,7 @@ export function AudioUploadPage() {
       } catch (cause) {
         if (attempt === MAX_PART_RETRIES) {
           const apiError = cause as ApiClientError;
-          dispatch({ type: "part-failed", partNumber: part.partNumber, errorCode: apiError.code || "TOS_WRITE_FAILED" });
+          dispatch({ type: "part-failed", partNumber: part.partNumber, errorCode: apiError.code || "OSS_WRITE_FAILED" });
           throw cause;
         }
       }
@@ -167,7 +173,7 @@ export function AudioUploadPage() {
         throw error;
       }
       setFileSha256(sha256);
-      const parts = await buildParts(file, state.session.partSizeBytes);
+      const parts = await buildParts(file, state.session.partSizeBytes, sha256);
       reconcilePartsWithSession(parts, state.session);
       dispatch({ type: "session", session: state.session, parts });
       await uploadParts(state.session.uploadId, parts.filter((part) => part.status !== "completed"));
@@ -283,8 +289,26 @@ export function AudioUploadPage() {
   );
 }
 
-async function buildParts(file: File, partSizeBytes: number): Promise<UploadPartState[]> {
+async function buildParts(
+  file: File,
+  partSizeBytes: number,
+  fileSha256: string,
+): Promise<UploadPartState[]> {
   const count = Math.ceil(file.size / partSizeBytes);
+  // Single-PUT mode: when the server has coerced partSize >= fileSize the
+  // only part is the full file, so reuse the already-computed fileSha256
+  // instead of streaming the file a second time.
+  if (count === 1) {
+    return [
+      {
+        partNumber: 1,
+        sizeBytes: file.size,
+        partSha256: fileSha256,
+        attempts: 0,
+        status: "pending",
+      },
+    ];
+  }
   const parts: UploadPartState[] = [];
   for (let index = 0; index < count; index += 1) {
     const start = index * partSizeBytes;
@@ -312,27 +336,6 @@ function reconcilePartsWithSession(parts: UploadPartState[], session: AudioUploa
   }
 }
 
-async function sha256Hex(blob: Blob): Promise<string> {
-  const buffer = await readBlobAsArrayBuffer(blob);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function readBlobAsArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
-  if (typeof (blob as Blob & { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer === "function") {
-    return blob.arrayBuffer();
-  }
-  if (typeof FileReader !== "undefined") {
-    return new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error ?? new Error("FileReader 读取失败"));
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.readAsArrayBuffer(blob);
-    });
-  }
-  return new Response(blob).arrayBuffer();
-}
-
 function validateFile(file: File) {
   const supported = file.type.startsWith("audio/") || /\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(file.name);
   if (!supported) {
@@ -343,6 +346,12 @@ function validateFile(file: File) {
   }
   if (file.size <= 0) {
     const error = new Error("音频文件为空") as ApiClientError;
+    error.code = "VALIDATION_FAILED";
+    error.retryable = false;
+    throw error;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const error = new Error("音频文件超过 2 GiB 单 PUT 上限") as ApiClientError;
     error.code = "VALIDATION_FAILED";
     error.retryable = false;
     throw error;
