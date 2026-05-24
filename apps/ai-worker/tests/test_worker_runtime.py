@@ -17,7 +17,7 @@ def _valid_message() -> dict:
         "tenantId": "tenant_01",
         "meetingId": "mtg_01",
         "audioFileId": "audio_01",
-        "audioUri": "tos://meeting-audio/audio_01.wav",
+        "audioUri": "oss://meeting-audio-auska/audio_01.wav",
         "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": [
@@ -83,7 +83,7 @@ class StubWorkflowEngine:
                     "timestampPrecision": "SEGMENT",
                 }
             ],
-            artifact_manifest_id="tos://meeting-artifacts/manifest.json",
+            artifact_manifest_id="oss://meeting-artifacts/manifest.json",
             terminal_status="SUCCEEDED",
         )
 

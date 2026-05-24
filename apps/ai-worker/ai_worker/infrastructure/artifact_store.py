@@ -10,7 +10,7 @@ from ai_worker.common.config import settings
 
 @dataclass
 class ArtifactRef:
-    uri: str  # tos://bucket/key
+    uri: str  # oss://bucket/key
     sha256: str
     size_bytes: int | None = None
     content_type: str | None = None
@@ -19,12 +19,12 @@ class ArtifactRef:
 @runtime_checkable
 class ArtifactStore(Protocol):
     """Reads and writes intermediate artifacts (raw ASR JSON, diarization turns,
-    embedding batches, quality reports) to TOS.
+    embedding batches, quality reports) to OSS.
 
     Constraints:
-    - Never write plaintext speaker embeddings to TOS
+    - Never write plaintext speaker embeddings to OSS
     - Always compute SHA256 on write and verify on read
-    - Path pattern: tos://{bucket}/tenant/{tenantId}/meeting/{meetingId}/artifacts/{category}/{taskId}.json
+    - Path pattern: oss://{bucket}/tenant/{tenantId}/meeting/{meetingId}/artifacts/{category}/{taskId}.json
     """
 
     async def upload(
@@ -49,11 +49,20 @@ class ArtifactStore(Protocol):
         """Delete an artifact. Only for temporary/intermediate artifacts."""
         ...
 
+    def local_path(self, uri: str) -> Path:
+        """Return a local filesystem path the URI is materialized at.
+
+        For ``LocalArtifactStore`` this is just ``root/bucket/key``; for
+        ``OssArtifactStore`` it downloads-on-demand into a tmp cache.
+        Used by pipeline steps that need real file paths (ffprobe / soundfile).
+        """
+        ...
+
 
 class LocalArtifactStore:
     """Filesystem-backed ArtifactStore for local and test worker runs.
 
-    The URI shape remains ``tos://bucket/key`` so pipeline outputs match the
+    The URI shape remains ``oss://bucket/key`` so pipeline outputs match the
     production contract while avoiding an SDK dependency for local smoke tests.
     """
 
@@ -71,7 +80,7 @@ class LocalArtifactStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return ArtifactRef(
-            uri=f"tos://{bucket}/{key}",
+            uri=f"oss://{bucket}/{key}",
             sha256=hashlib.sha256(data).hexdigest(),
             size_bytes=len(data),
             content_type=content_type,
@@ -85,7 +94,7 @@ class LocalArtifactStore:
         scheme, bucket, key = _parse_artifact_uri(uri)
         if scheme == "file":
             return Path(key).read_bytes()
-        if scheme in {"tos", "s3"}:
+        if scheme == "oss":
             return self._path_for(bucket, key).read_bytes()
         raise ValueError(f"unsupported artifact uri scheme: {scheme}")
 
@@ -96,7 +105,7 @@ class LocalArtifactStore:
         scheme, bucket, key = _parse_artifact_uri(uri)
         if scheme == "file":
             path = Path(key)
-        elif scheme in {"tos", "s3"}:
+        elif scheme == "oss":
             path = self._path_for(bucket, key)
         else:
             raise ValueError(f"unsupported artifact uri scheme: {scheme}")
@@ -107,7 +116,7 @@ class LocalArtifactStore:
         scheme, bucket, key = _parse_artifact_uri(uri)
         if scheme == "file":
             return Path(key)
-        if scheme in {"tos", "s3"}:
+        if scheme == "oss":
             return self._path_for(bucket, key)
         raise ValueError(f"unsupported artifact uri scheme: {scheme}")
 
@@ -122,6 +131,41 @@ def _parse_artifact_uri(uri: str) -> tuple[str, str, str]:
     parsed = urlparse(uri)
     if parsed.scheme == "file":
         return "file", "", parsed.path
-    if parsed.scheme in {"tos", "s3"} and parsed.netloc and parsed.path:
+    if parsed.scheme == "oss" and parsed.netloc and parsed.path:
         return parsed.scheme, parsed.netloc, parsed.path.lstrip("/")
     raise ValueError(f"invalid artifact uri: {uri}")
+
+
+def build_artifact_store() -> "ArtifactStore":
+    """Construct the artifact store appropriate for the current deploy.
+
+    Resolves at import time using :mod:`ai_worker.common.config.settings`:
+
+    * ``AI_WORKER_STORAGE_BACKEND=oss`` returns an :class:`OssArtifactStore`
+      with a co-resident :class:`LocalArtifactStore` as the write fallback
+      (see ``oss_artifact_store`` module docstring for why).
+    * Any other value (or unset) returns a plain
+      :class:`LocalArtifactStore`. This is the default for dev / CI / fake
+      runtime so unit tests don't need OSS credentials.
+    """
+    from ai_worker.common.config import settings
+
+    local = LocalArtifactStore()
+    if (settings.storage_backend or "local").lower() != "oss":
+        return local
+    if not (settings.oss_endpoint and settings.oss_region and settings.oss_access_key_id and settings.oss_access_key_secret):
+        raise RuntimeError(
+            "AI_WORKER_STORAGE_BACKEND=oss requires AI_WORKER_OSS_ENDPOINT, "
+            "AI_WORKER_OSS_REGION, AI_WORKER_OSS_ACCESS_KEY_ID, "
+            "AI_WORKER_OSS_ACCESS_KEY_SECRET to be set."
+        )
+    # Lazy import keeps oss2 off the critical path for fake-runtime tests.
+    from ai_worker.infrastructure.oss_artifact_store import OssArtifactStore
+
+    return OssArtifactStore(
+        endpoint=settings.oss_endpoint,
+        region=settings.oss_region,
+        access_key_id=settings.oss_access_key_id,
+        access_key_secret=settings.oss_access_key_secret,
+        local_writer=local,
+    )

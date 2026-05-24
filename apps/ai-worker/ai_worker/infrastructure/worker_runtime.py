@@ -13,6 +13,7 @@ from ai_worker.application.workflows.text_embedding import (
     to_callback_items,
 )
 from ai_worker.domain.task import StepResult, TaskMessage
+from ai_worker.infrastructure.artifact_store import build_artifact_store
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
 from ai_worker.infrastructure.task_consumer import consume_and_validate
 from ai_worker.model_runtime.registry import (
@@ -78,6 +79,7 @@ class MvpWorkerRuntime:
         # the flag flip had no observable consequence.
         self.workflow_engine = workflow_engine or LocalAudioPipelineEngine(
             state_store,
+            artifact_store=build_artifact_store(),
             asr_runtime=get_asr_runtime(),
             diarization_runtime=get_diarization_runtime(),
         )

@@ -51,7 +51,7 @@ async def test_local_audio_pipeline_writes_artifacts_and_transcript(tmp_path: Pa
     if shutil.which("ffprobe") is None:
         pytest.skip("ffprobe is required for audio preprocess smoke")
     audio_root = tmp_path / "objects"
-    audio_path = audio_root / "meeting-audio" / "meeting-audio" / "tenant_01" / "meeting_01" / "upl_01" / "raw"
+    audio_path = audio_root / "meeting-audio-auska" / "meeting-audio-auska" / "tenant_01" / "meeting_01" / "upl_01" / "raw"
     audio_path.parent.mkdir(parents=True)
     _write_wav(audio_path)
     audio_path.with_suffix(audio_path.suffix + ".txt").write_text("测试转录文本", encoding="utf-8")
@@ -59,7 +59,7 @@ async def test_local_audio_pipeline_writes_artifacts_and_transcript(tmp_path: Pa
     store = LocalArtifactStore(audio_root)
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore(), artifact_store=store)
 
-    artifact = await engine.run_pipeline(_task("tos://meeting-audio/meeting-audio/tenant_01/meeting_01/upl_01/raw"))
+    artifact = await engine.run_pipeline(_task("oss://meeting-audio-auska/meeting-audio-auska/tenant_01/meeting_01/upl_01/raw"))
 
     assert artifact.terminal_status == "SUCCEEDED"
     assert artifact.artifact_manifest_id is not None
@@ -79,7 +79,7 @@ async def test_audio_pipeline_maps_low_sample_rate_to_stable_error(tmp_path: Pat
     if shutil.which("ffprobe") is None:
         pytest.skip("ffprobe is required for audio preprocess smoke")
     audio_root = tmp_path / "objects"
-    audio_path = audio_root / "meeting-audio" / "low-rate.wav"
+    audio_path = audio_root / "meeting-audio-auska" / "low-rate.wav"
     audio_path.parent.mkdir(parents=True)
     _write_wav(audio_path, sample_rate=8000)
 
@@ -89,7 +89,7 @@ async def test_audio_pipeline_maps_low_sample_rate_to_stable_error(tmp_path: Pat
     )
 
     with pytest.raises(WorkerPipelineError) as exc_info:
-        await engine.run_pipeline(_task("tos://meeting-audio/low-rate.wav"))
+        await engine.run_pipeline(_task("oss://meeting-audio-auska/low-rate.wav"))
 
     assert exc_info.value.step_name == "AUDIO_PREPROCESS"
     assert exc_info.value.error_code == "AUDIO_SAMPLE_RATE_TOO_LOW"
@@ -98,7 +98,7 @@ async def test_audio_pipeline_maps_low_sample_rate_to_stable_error(tmp_path: Pat
 @pytest.mark.asyncio
 async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
     audio_root = tmp_path / "objects"
-    audio_path = audio_root / "meeting-audio" / "raw.wav"
+    audio_path = audio_root / "meeting-audio-auska" / "raw.wav"
     audio_path.parent.mkdir(parents=True)
     _write_wav(audio_path)
 
@@ -139,7 +139,7 @@ async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
         diarization_runtime=DiarizationRuntime(),
     )
 
-    artifact = await engine.run_pipeline(_task("tos://meeting-audio/raw.wav"))
+    artifact = await engine.run_pipeline(_task("oss://meeting-audio-auska/raw.wav"))
 
     assert artifact.transcript_segments == [
         {

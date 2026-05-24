@@ -7,7 +7,7 @@ from typing import Any
 
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact, TaskMessage
-from ai_worker.infrastructure.artifact_store import LocalArtifactStore
+from ai_worker.infrastructure.artifact_store import ArtifactStore, LocalArtifactStore
 from ai_worker.pipeline.alignment.transcript_merge import merge_transcript_segments
 from ai_worker.pipeline.asr.runtime import AsrModelRuntime, AsrRuntimeError, AsrSegment, DeterministicAsrRuntime
 from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, FfprobeAudioPreprocessor, PreprocessResult
@@ -31,13 +31,13 @@ class LocalAudioPipelineEngine:
     def __init__(
         self,
         state_store: InMemoryWorkflowStateStore,
-        artifact_store: LocalArtifactStore | None = None,
+        artifact_store: ArtifactStore | None = None,
         preprocessor: FfprobeAudioPreprocessor | None = None,
         asr_runtime: AsrModelRuntime | None = None,
         diarization_runtime: DiarizationRuntime | None = None,
     ) -> None:
         self._state_store = state_store
-        self._artifact_store = artifact_store or LocalArtifactStore()
+        self._artifact_store: ArtifactStore = artifact_store or LocalArtifactStore()
         self._preprocessor = preprocessor or FfprobeAudioPreprocessor()
         self._asr_runtime = asr_runtime or DeterministicAsrRuntime()
         self._diarization_runtime = diarization_runtime or SingleSpeakerDiarizationRuntime()

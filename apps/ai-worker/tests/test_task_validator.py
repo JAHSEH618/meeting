@@ -17,7 +17,7 @@ def test_validate_valid_meeting_full_pipeline() -> None:
         "minSpeakers": 2,
         "maxSpeakers": 5,
         "audioFileId": "file_01",
-        "audioUri": "tos://meeting-audio/file_01.wav",
+        "audioUri": "oss://meeting-audio-auska/file_01.wav",
         "options": {},
         "traceId": "trace_01",
     }
