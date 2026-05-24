@@ -43,10 +43,7 @@ public class OutboxPublisherConfig {
     ) {
         this.outboxPublisher = outboxPublisher;
         this.tenantTx = tenantTx;
-        this.tenantIds = List.of(tenantIdsCsv.split(",")).stream()
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+        this.tenantIds = ActiveTenantList.parse(tenantIdsCsv);
     }
 
     @Scheduled(

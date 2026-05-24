@@ -116,7 +116,8 @@ public class OutboxPublisher {
                 outboxEventStore.markPublished(record.id());
                 metrics.outboxPublishedCounter(eventType).increment();
                 published++;
-            } catch (ExportJobMessageValidator.InvalidPayloadException ex) {
+            } catch (ExportJobMessageValidator.InvalidPayloadException
+                    | ProcessingTaskMessageValidator.InvalidPayloadException ex) {
                 // Schema violation — message would be rejected downstream;
                 // mark FAILED with a precise error so on-call sees the
                 // missing-field message rather than a generic publish error.
@@ -144,6 +145,8 @@ public class OutboxPublisher {
     private void preflightValidate(OutboxEventRecord record) {
         if ("ExportJobCreatedEvent".equals(record.eventType())) {
             ExportJobMessageValidator.INSTANCE.validate(record.payloadJson(), objectMapper);
+        } else if ("ProcessingTaskCreatedEvent".equals(record.eventType())) {
+            ProcessingTaskMessageValidator.INSTANCE.validate(record.payloadJson(), objectMapper);
         }
     }
 

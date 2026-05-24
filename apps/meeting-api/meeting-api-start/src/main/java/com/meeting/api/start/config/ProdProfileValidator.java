@@ -127,11 +127,16 @@ public class ProdProfileValidator {
                     + " ships hardcoded admin/admin123 / tenant_default credentials and is dev-only"
             );
         }
-        if (isBlank(tenantsActive)) {
+        // Parsed list rather than raw isBlank() — "," and " , " used to
+        // sneak through here but produced an empty list at every
+        // scheduler (see ActiveTenantList), so background work silently
+        // no-op'd in prod.
+        if (ActiveTenantList.parse(tenantsActive).isEmpty()) {
             failures.add(
                 "meeting.tenants.active must list at least one tenant id in prod — schedulers"
                     + " (outbox publisher / lease scanner / deletion runner / break-glass scanner)"
-                    + " silently process zero tenants otherwise"
+                    + " silently process zero tenants otherwise (raw value: '"
+                    + (tenantsActive == null ? "" : tenantsActive) + "')"
             );
         }
         return failures;

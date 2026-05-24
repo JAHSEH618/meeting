@@ -24,11 +24,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Application service for legal holds. Owns the create / release
- * lifecycle behind {@code /api/legal-holds*}.
- *
- * <p>Read paths ({@code get}, {@code list}) deliberately do not wrap
- * in {@code TenantScopedTransaction.execute} — they're just a single
- * RLS-scoped SELECT and need no tenant-context plumbing for tests.
+ * lifecycle behind {@code /api/legal-holds*}. Every entry point —
+ * including {@code get} / {@code list} — wraps the call in
+ * {@link TenantScopedTransaction} so {@code app.tenant_id} is set
+ * before the underlying SELECT runs, keeping the row-level security
+ * policies enforceable on read paths too.
  */
 @Service
 public class LegalHoldApplicationService implements LegalHoldFacade {

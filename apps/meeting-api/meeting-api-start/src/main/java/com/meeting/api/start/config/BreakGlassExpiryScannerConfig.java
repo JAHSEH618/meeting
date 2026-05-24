@@ -40,10 +40,7 @@ public class BreakGlassExpiryScannerConfig {
             String tenantIdsCsv
     ) {
         this.scanner = new BreakGlassExpiryScanner(repo, tenantTx, Clock.systemUTC(), batchSize);
-        this.tenantIds = List.of(tenantIdsCsv.split(",")).stream()
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+        this.tenantIds = ActiveTenantList.parse(tenantIdsCsv);
     }
 
     @Bean

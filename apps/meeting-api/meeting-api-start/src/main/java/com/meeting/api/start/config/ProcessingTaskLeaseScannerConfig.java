@@ -40,10 +40,7 @@ public class ProcessingTaskLeaseScannerConfig {
             batchSize
         );
         this.metrics = metrics;
-        this.tenantIds = List.of(tenantIdsCsv.split(",")).stream()
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+        this.tenantIds = ActiveTenantList.parse(tenantIdsCsv);
     }
 
     @Bean

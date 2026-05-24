@@ -124,6 +124,24 @@ class ProdProfileValidatorTest {
     }
 
     @Test
+    void flagsCommaOnlyActiveTenants() {
+        // "," and " , " previously passed isBlank() but parsed to an
+        // empty list at the schedulers — they silently processed zero
+        // tenants. Validator must reject any raw value whose parsed
+        // ActiveTenantList is empty.
+        for (String raw : new String[] {",", " , ", ",,", " , , ,"}) {
+            ProdProfileValidator v = new ProdProfileValidator(
+                "real-callback", "real-aiworker",
+                "https://ai-worker.internal", "v1", "kms-real",
+                false, false, "jwt", raw
+            );
+            assertThat(v.validateInternal())
+                .as("raw value %s should be rejected", raw)
+                .anySatisfy(s -> assertThat(s).contains("meeting.tenants.active"));
+        }
+    }
+
+    @Test
     void aggregatesAllFailures() {
         ProdProfileValidator v = new ProdProfileValidator(
             "", "", "http://127.0.0.1:8090", "", "",

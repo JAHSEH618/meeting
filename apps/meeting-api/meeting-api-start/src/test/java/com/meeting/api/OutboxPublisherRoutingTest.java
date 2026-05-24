@@ -126,6 +126,32 @@ class OutboxPublisherRoutingTest {
     }
 
     @Test
+    void publishPendingMarksMalformedProcessingTaskAsFailed() {
+        // ProcessingTaskCreatedEvent payloads missing required fields
+        // (taskId / tenantId / securityLevel / etc) must be caught by
+        // the preflight validator and marked FAILED rather than
+        // shipped to RabbitMQ where ai-worker would have to reject
+        // them — by which time a malformed callback could already be
+        // routed against an unknown task.
+        FakeStore store = new FakeStore(List.of(
+            record("ProcessingTaskCreatedEvent", "evt_bad",
+                "{\"pipelineSteps\":[\"RAG_INDEXING\"]}")
+        ));
+        RabbitMqPublisher rabbit = Mockito.mock(RabbitMqPublisher.class);
+        OutboxPublisher publisher = new OutboxPublisher(
+            store, rabbit, new ObjectMapper(),
+            new MeetingApiMetrics(new SimpleMeterRegistry()), 100, 5
+        );
+
+        int published = publisher.publishPending("tenant_01");
+
+        assertThat(published).isZero();
+        Mockito.verifyNoInteractions(rabbit);
+        assertThat(store.failedIds).containsExactly("evt_bad");
+        assertThat(store.publishedIds).isEmpty();
+    }
+
+    @Test
     void publishPendingMarksUnknownEventTypesAsUnroutable() {
         FakeStore store = new FakeStore(List.of(
             record("MysteryEvent_v99", "evt_mystery", "{}")
@@ -148,7 +174,11 @@ class OutboxPublisherRoutingTest {
     void publishPendingRoutesAllowListedEvents() {
         FakeStore store = new FakeStore(List.of(
             record("ProcessingTaskCreatedEvent", "evt_proc",
-                "{\"pipelineSteps\":[\"RAG_INDEXING\"]}"),
+                "{\"taskId\":\"task_x\",\"taskType\":\"TEXT_EMBEDDING\","
+                    + "\"tenantId\":\"tenant_01\",\"securityLevel\":\"INTERNAL\","
+                    + "\"attemptNo\":1,\"pipelineSteps\":[\"RAG_INDEXING\"],"
+                    + "\"expectedInputVersion\":{\"chunkStrategyVersion\":\"v1\"},"
+                    + "\"options\":{},\"traceId\":\"trace_x\"}"),
             record("ExportJobCreatedEvent", "evt_export",
                 "{\"tenantId\":\"tenant_01\",\"exportId\":\"exp_x\","
                     + "\"meetingId\":\"mtg_01\",\"format\":\"PDF\","
