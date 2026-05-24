@@ -110,12 +110,13 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
     }
 
     @Override
-    public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+    public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
         return jdbcTemplate.query(
             """
             SELECT tenant_id, id
               FROM processing_tasks
-             WHERE status = 'RUNNING'
+             WHERE tenant_id = ?
+               AND status = 'RUNNING'
                AND phase <> 'TERMINAL'
                AND lease_expires_at IS NOT NULL
                AND lease_expires_at < ?
@@ -123,6 +124,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
              LIMIT ?
             """,
             (rs, rowNum) -> new ExpiredLease(rs.getString("tenant_id"), rs.getString("id")),
+            tenantId,
             Timestamp.from(now.toInstant()),
             limit
         );

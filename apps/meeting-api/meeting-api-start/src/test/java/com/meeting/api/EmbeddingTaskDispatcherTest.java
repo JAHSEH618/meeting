@@ -267,7 +267,7 @@ class EmbeddingTaskDispatcherTest {
         }
 
         @Override
-        public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+        public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
             return List.of();
         }
     }

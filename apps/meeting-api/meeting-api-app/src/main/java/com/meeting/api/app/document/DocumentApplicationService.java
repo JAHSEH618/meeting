@@ -82,14 +82,16 @@ public class DocumentApplicationService implements DocumentFacade {
 
     @Override
     public Optional<DocumentDTO> get(String tenantId, String documentId) {
-        return documentRepository.findById(tenantId, documentId).map(DocumentApplicationService::toDto);
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> documentRepository.findById(tenantId, documentId).map(DocumentApplicationService::toDto));
     }
 
     @Override
     public List<DocumentDTO> list(String tenantId) {
-        return documentRepository.listByTenant(tenantId, false).stream()
-            .map(DocumentApplicationService::toDto)
-            .toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> documentRepository.listByTenant(tenantId, false).stream()
+                .map(DocumentApplicationService::toDto)
+                .toList());
     }
 
     @Override

@@ -263,7 +263,7 @@ class EmbeddingsCallbackApplicationServiceTest {
         @Override public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return Optional.empty();
         }
-        @Override public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+        @Override public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
             return List.of();
         }
     }

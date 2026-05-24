@@ -38,7 +38,7 @@ class ProcessingTaskLeaseScannerTest {
             10
         );
 
-        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce();
+        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce(List.of("tenant_01"));
 
         assertThat(report.scanned()).isEqualTo(1);
         assertThat(report.orphaned()).isEqualTo(1);
@@ -53,7 +53,7 @@ class ProcessingTaskLeaseScannerTest {
         ProcessingTask succeeded = succeededTask("task_done");
         InMemoryTaskRepository tasks = new InMemoryTaskRepository(List.of(succeeded)) {
             @Override
-            public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+            public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
                 return List.of(new ExpiredLease(succeeded.tenantId(), succeeded.taskId()));
             }
         };
@@ -65,7 +65,7 @@ class ProcessingTaskLeaseScannerTest {
             10
         );
 
-        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce();
+        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce(List.of("tenant_01"));
 
         assertThat(report.scanned()).isEqualTo(1);
         assertThat(report.orphaned()).isZero();
@@ -83,7 +83,7 @@ class ProcessingTaskLeaseScannerTest {
             10
         );
 
-        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce();
+        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce(List.of("tenant_01"));
 
         assertThat(report.scanned()).isZero();
         assertThat(report.orphaned()).isZero();
@@ -177,8 +177,9 @@ class ProcessingTaskLeaseScannerTest {
         }
 
         @Override
-        public List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit) {
+        public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
             return tasks.stream()
+                .filter(task -> task.tenantId().equals(tenantId))
                 .filter(task -> task.status() == ProcessingTaskStatus.RUNNING)
                 .filter(task -> task.phase() != ProcessingTaskPhase.TERMINAL)
                 .filter(task -> task.leaseExpiresAt() != null && task.leaseExpiresAt().isBefore(now))

@@ -41,9 +41,9 @@ public class OutboxPublisher {
     }
 
     @Transactional
-    public int publishPending() {
+    public int publishPending(String tenantId) {
         int published = 0;
-        for (OutboxEventRecord record : outboxEventStore.lockPendingBatch(batchSize)) {
+        for (OutboxEventRecord record : outboxEventStore.lockPendingBatch(tenantId, batchSize)) {
             try {
                 preflightValidate(record);
                 rabbitMqPublisher.publish(

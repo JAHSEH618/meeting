@@ -62,18 +62,20 @@ public class OutboxEventStore {
         );
     }
 
-    public List<OutboxEventRecord> lockPendingBatch(int batchSize) {
+    public List<OutboxEventRecord> lockPendingBatch(String tenantId, int batchSize) {
         return jdbcTemplate.query(
             """
             SELECT id, tenant_id, aggregate_type, aggregate_id, sequence_no,
                    event_type, payload_json::text, dedupe_key, retry_count, created_at
               FROM domain_events_outbox
-             WHERE status = 'PENDING'
+             WHERE tenant_id = ?
+               AND status = 'PENDING'
              ORDER BY aggregate_type, aggregate_id, sequence_no
              LIMIT ?
              FOR UPDATE SKIP LOCKED
             """,
             this::mapRecord,
+            tenantId,
             batchSize
         );
     }

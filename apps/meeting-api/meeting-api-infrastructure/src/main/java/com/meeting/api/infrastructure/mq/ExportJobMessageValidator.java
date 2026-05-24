@@ -23,7 +23,7 @@ import java.util.Set;
  * outbox row is already marked PUBLISHED.
  *
  * <p>This validator runs in-process before
- * {@link OutboxPublisher#publishPending() publish}: a failure leaves
+ * {@link OutboxPublisher#publishPending(String) publish}: a failure leaves
  * the outbox row in PENDING (so a future code fix can re-publish) and
  * the call site marks it FAILED with {@code OUTBOX_PUBLISH_FAILED}.
  *

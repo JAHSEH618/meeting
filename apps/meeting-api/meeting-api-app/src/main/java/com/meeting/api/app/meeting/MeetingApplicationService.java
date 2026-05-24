@@ -105,12 +105,14 @@ public class MeetingApplicationService implements MeetingFacade {
 
     @Override
     public Optional<MeetingDTO> get(String tenantId, String meetingId) {
-        return meetingRepository.findById(tenantId, meetingId).map(this::toDto);
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> meetingRepository.findById(tenantId, meetingId).map(this::toDto));
     }
 
     @Override
     public List<MeetingDTO> list(String tenantId) {
-        return meetingRepository.findByTenantId(tenantId).stream().map(this::toDto).toList();
+        return tenantScopedTransaction.execute(tenantId, null, null,
+            () -> meetingRepository.findByTenantId(tenantId).stream().map(this::toDto).toList());
     }
 
     @Override

@@ -11,7 +11,7 @@ public interface ProcessingTaskRepository {
 
     Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId);
 
-    List<ExpiredLease> findExpiredLeases(OffsetDateTime now, int limit);
+    List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit);
 
     record ExpiredLease(String tenantId, String taskId) {}
 }

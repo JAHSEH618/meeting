@@ -82,27 +82,28 @@ public class TranscriptApplicationService implements TranscriptFacade {
 
     @Override
     public Optional<TranscriptDTO> get(String tenantId, String meetingId) {
-        return meetingRepository.findById(tenantId, meetingId)
-            .map(meeting -> {
-                int version = meeting.transcriptVersion();
-                var segments = transcriptRepository.findByMeeting(tenantId, meetingId, version).stream()
-                    .sorted(Comparator.comparingInt(TranscriptRepository.TranscriptSegmentRecord::segmentIndex))
-                    .map(segment -> new TranscriptSegmentDTO(
-                        segment.segmentId(),
-                        segment.startMs(),
-                        segment.endMs(),
-                        segment.speakerLabel(),
-                        segment.speakerDisplayName(),
-                        segment.originalText(),
-                        segment.editedText(),
-                        segment.currentText(),
-                        segment.asrConfidence(),
-                        segment.diarizationConfidence(),
-                        segment.timestampPrecision()
-                    ))
-                    .toList();
-                return new TranscriptDTO(meetingId, version, "ACTIVE", segments);
-            });
+        return tenantScopedTransaction.execute(tenantId, null, null, () ->
+            meetingRepository.findById(tenantId, meetingId)
+                .map(meeting -> {
+                    int version = meeting.transcriptVersion();
+                    var segments = transcriptRepository.findByMeeting(tenantId, meetingId, version).stream()
+                        .sorted(Comparator.comparingInt(TranscriptRepository.TranscriptSegmentRecord::segmentIndex))
+                        .map(segment -> new TranscriptSegmentDTO(
+                            segment.segmentId(),
+                            segment.startMs(),
+                            segment.endMs(),
+                            segment.speakerLabel(),
+                            segment.speakerDisplayName(),
+                            segment.originalText(),
+                            segment.editedText(),
+                            segment.currentText(),
+                            segment.asrConfidence(),
+                            segment.diarizationConfidence(),
+                            segment.timestampPrecision()
+                        ))
+                        .toList();
+                    return new TranscriptDTO(meetingId, version, "ACTIVE", segments);
+                }));
     }
 
     @Override

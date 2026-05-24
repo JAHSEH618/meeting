@@ -5,6 +5,7 @@ import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.task.ProcessingTaskLeaseScanner;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,12 +23,14 @@ public class ProcessingTaskLeaseScannerConfig {
 
     private final ProcessingTaskLeaseScanner scanner;
     private final MeetingApiMetrics metrics;
+    private final List<String> tenantIds;
 
     public ProcessingTaskLeaseScannerConfig(
         ProcessingTaskRepository taskRepository,
         TenantScopedTransaction tenantScopedTransaction,
         MeetingApiMetrics metrics,
-        @Value("${meeting.lease-scanner.batch-size:50}") int batchSize
+        @Value("${meeting.lease-scanner.batch-size:50}") int batchSize,
+        @Value("${meeting.lease-scanner.tenants:tenant_01}") String tenantIdsCsv
     ) {
         this.scanner = new ProcessingTaskLeaseScanner(
             taskRepository,
@@ -36,6 +39,10 @@ public class ProcessingTaskLeaseScannerConfig {
             batchSize
         );
         this.metrics = metrics;
+        this.tenantIds = List.of(tenantIdsCsv.split(",")).stream()
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .toList();
     }
 
     @Bean
@@ -45,9 +52,10 @@ public class ProcessingTaskLeaseScannerConfig {
 
     @Scheduled(fixedDelayString = "${meeting.lease-scanner.interval-ms:30000}", initialDelayString = "${meeting.lease-scanner.initial-delay-ms:30000}")
     public void scanExpiredLeases() {
+        if (tenantIds.isEmpty()) return;
         try {
             metrics.leaseScannerRunCounter().increment();
-            ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce();
+            ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce(tenantIds);
             if (report.orphaned() > 0) {
                 metrics.leaseScannerOrphanedCounter().increment(report.orphaned());
             }

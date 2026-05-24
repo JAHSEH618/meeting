@@ -164,7 +164,7 @@ class ProcessingTaskApplicationServiceTest {
         }
 
         @Override
-        public java.util.List<ExpiredLease> findExpiredLeases(java.time.OffsetDateTime now, int limit) {
+        public java.util.List<ExpiredLease> findExpiredLeases(String tenantId, java.time.OffsetDateTime now, int limit) {
             return java.util.List.of();
         }
     }
