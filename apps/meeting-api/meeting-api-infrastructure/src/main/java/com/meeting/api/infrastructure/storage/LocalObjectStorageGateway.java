@@ -15,9 +15,11 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "meeting.storage.type", havingValue = "minio", matchIfMissing = true)
 public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LocalObjectStorageGateway.class);
@@ -28,7 +30,7 @@ public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     public LocalObjectStorageGateway(
         @Value("${meeting.storage.endpoint:http://localhost:9000}") String endpoint,
-        @Value("${meeting.storage.bucket:meeting-local}") String bucket,
+        @Value("${meeting.storage.bucket-audio:meeting-audio-auska}") String bucket,
         @Value("${meeting.storage.local-root:}") String localRoot
     ) {
         this.endpoint = trimTrailingSlash(endpoint);
@@ -63,7 +65,37 @@ public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     @Override
     public StorageObject statObject(String bucket, String objectKey) {
-        return new StorageObject(bucket, objectKey, 0, null, null, OffsetDateTime.now());
+        OffsetDateTime modified = OffsetDateTime.now();
+        if (localRoot != null) {
+            // localRoot is the dev-loop "materialize bytes for real" mode:
+            // an upload session that completed must have actually written
+            // bytes to disk. If the file is missing, the upload didn't
+            // land — fail loud rather than silently letting the upload
+            // completion path skip the size check (which is what the
+            // -1 sentinel below allows for the pure-in-memory test mode).
+            Path target = localRoot.resolve(bucket).resolve(objectKey);
+            if (!Files.exists(target)) {
+                throw new ApplicationException(
+                    ErrorCode.OSS_OBJECT_NOT_FOUND, 404,
+                    "local stat failed: " + bucket + "/" + objectKey + " (no file at " + target + ")",
+                    false
+                );
+            }
+            try {
+                return new StorageObject(bucket, objectKey, Files.size(target), null, null, modified);
+            } catch (IOException ex) {
+                throw new ApplicationException(
+                    ErrorCode.INTERNAL_ERROR, 500,
+                    "failed to stat local object: " + ex.getMessage(),
+                    true
+                );
+            }
+        }
+        // In-memory mode (no localRoot configured): tests that don't
+        // actually materialize bytes get a -1 sentinel so the upload
+        // service skips the size check. Don't enable this mode against a
+        // real storage backend.
+        return new StorageObject(bucket, objectKey, -1L, null, null, modified);
     }
 
     @Override
@@ -107,7 +139,7 @@ public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     private String objectUrl(String bucket, String objectKey) {
         if (objectKey == null || objectKey.isBlank()) {
-            throw new ApplicationException(ErrorCode.TOS_OBJECT_NOT_FOUND, 404, "object key is blank", false);
+            throw new ApplicationException(ErrorCode.OSS_OBJECT_NOT_FOUND, 404, "object key is blank", false);
         }
         return endpoint + "/" + encode(bucket) + "/" + objectKey;
     }
