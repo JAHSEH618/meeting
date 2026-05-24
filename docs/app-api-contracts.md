@@ -30,7 +30,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 2. `ai-worker` 不直接写 PostgreSQL 业务库，只能通过 internal callback API 回写结果。
 3. `meeting-web` 不直接访问 Python、RabbitMQ、数据库或 DashScope。
 4. DashScope 调用统一经 `meeting-api` 的 `llm-gateway` 审计；音频、声纹参考音频和声纹 embedding 不得发送给 DashScope。
-5. TOS 中的大 JSON 中间产物通过 `tos://...` URI 引用，业务库只保存文件元信息、hash、版本和摘要 metadata。
+5. TOS 中的大 JSON 中间产物通过 `oss://...` URI 引用，业务库只保存文件元信息、hash、版本和摘要 metadata。
 
 ## 2. 通用 JSON 约定
 
@@ -433,7 +433,7 @@ POST /api/meetings/{meetingId}/files/audio/uploads/{uploadId}/complete
   "success": true,
   "data": {
     "fileId": "file_001",
-    "audioUri": "tos://meeting-audio/tenant/t_001/meeting/m_001/raw/file_001.wav",
+    "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file_001.wav",
     "status": "UPLOADED"
   },
   "error": null,
@@ -1072,7 +1072,7 @@ RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-messag
   "tenantId": "t_001",
   "meetingId": "m_001",
   "audioFileId": "file_001",
-  "audioUri": "tos://meeting-audio/tenant/t_001/meeting/m_001/raw/file.wav",
+  "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
   "securityLevel": "INTERNAL",
   "attemptNo": 1,
   "expectedInputVersion": {
@@ -1198,7 +1198,7 @@ POST /internal/processing-tasks/{taskId}/artifacts
   "stepName": "ASR",
   "attemptNo": 1,
   "artifactType": "RAW_ASR_JSON",
-  "artifactUri": "tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
+  "artifactUri": "oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
   "contentType": "application/json",
   "sha256": "artifact_hash_001",
   "sizeBytes": 1048576,
@@ -1380,7 +1380,7 @@ POST /internal/processing-tasks/{taskId}/embeddings
         "format": "FLOAT32_ARRAY",
         "dimension": 1024,
         "valuesPreview": [0.011, -0.022, 0.033],
-        "artifactUri": "tos://meeting-artifacts/tenant/t_001/task/task_001/embedding/emb_batch_001.json",
+        "artifactUri": "oss://meeting-artifacts/tenant/t_001/task/task_001/embedding/emb_batch_001.json",
         "sha256": "sha256:embedding_batch_hash_001"
       }
     }
@@ -1524,7 +1524,7 @@ POST /internal/processing-tasks/{taskId}/fail
     "retryable": true,
     "details": {
       "timeoutMs": 120000,
-      "audioUri": "tos://meeting-audio/tenant/t_001/meeting/m_001/raw/file.wav"
+      "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav"
     }
   },
   "artifactManifestId": "artifact_manifest_error_001",
@@ -1729,17 +1729,17 @@ GET /internal/workflows/{taskId}
 TOS URI 统一格式：
 
 ```text
-tos://{bucket}/tenant/{tenantId}/meeting/{meetingId}/{category}/{objectName}
+oss://{bucket}/tenant/{tenantId}/meeting/{meetingId}/{category}/{objectName}
 ```
 
 常用路径：
 
 ```text
-tos://meeting-audio/tenant/t_001/meeting/m_001/raw/file.wav
-tos://meeting-audio/tenant/t_001/meeting/m_001/normalized/task_001.wav
-tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json
-tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/diarization/task_001.json
-tos://meeting-exports/tenant/t_001/meeting/m_001/exports/export_001.pdf
+oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav
+oss://meeting-audio-auska/tenant/t_001/meeting/m_001/normalized/task_001.wav
+oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json
+oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/diarization/task_001.json
+oss://meeting-exports/tenant/t_001/meeting/m_001/exports/export_001.pdf
 ```
 
 Artifact manifest JSON：
@@ -1752,14 +1752,14 @@ Artifact manifest JSON：
   "taskId": "task_001",
   "input": {
     "audioFileId": "file_001",
-    "audioUri": "tos://meeting-audio/tenant/t_001/meeting/m_001/raw/file.wav",
+    "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
     "audioSha256": "audio_hash_001",
     "transcriptVersion": 1
   },
   "outputs": [
     {
       "artifactType": "RAW_ASR_JSON",
-      "artifactUri": "tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
+      "artifactUri": "oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
       "sha256": "artifact_hash_001",
       "sizeBytes": 1048576
     }
@@ -1952,7 +1952,7 @@ callback `Idempotency-Key` 精确定义：
 | Auth | `AUTH_REQUIRED`, `PERMISSION_DENIED`, `TENANT_CONTEXT_MISSING` | false |
 | Validation | `VALIDATION_FAILED`, `VERSION_CONFLICT`, `IDEMPOTENCY_CONFLICT` | false |
 | Task | `TASK_NOT_FOUND`, `TASK_ATTEMPT_CONFLICT`, `TASK_LEASE_CONFLICT` | false |
-| Storage | `TOS_OBJECT_NOT_FOUND`, `TOS_READ_FAILED`, `TOS_WRITE_FAILED` | true |
+| Storage | `OSS_OBJECT_NOT_FOUND`, `OSS_READ_FAILED`, `OSS_WRITE_FAILED` | true |
 | AI Pipeline | `ASR_MODEL_TIMEOUT`, `DIARIZATION_FAILED`, `SPEAKER_MATCH_FAILED` | true |
 | RAG | `RAG_INDEX_FAILED`, `VECTOR_SEARCH_FAILED`, `RERANK_UNAVAILABLE`, `RERANK_CONTRACT_ERROR` | depends |
 | LLM | `SECURITY_LEVEL_BLOCKED`, `LLM_SCHEMA_INVALID`, `LLM_PROVIDER_TIMEOUT` | depends |

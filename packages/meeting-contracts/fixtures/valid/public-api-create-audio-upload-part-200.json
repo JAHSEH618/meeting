@@ -15,7 +15,7 @@
   },
   "request": {
     "partNumber": 1,
-    "sizeBytes": 8388608,
+    "sizeBytes": 16777216,
     "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "response": {
@@ -25,10 +25,10 @@
       "partNumber": 1,
       "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "etag": null,
-      "uploadUrl": "https://minio.local/meeting-audio/tenant_fixture_01/mtg_fixture_01/upl_fixture_01/raw?partNumber=1&signature=fixture",
+      "uploadUrl": "https://oss-cn-hangzhou.aliyuncs.com/meeting-audio-auska/tenant/tenant_fixture_01/meeting/mtg_fixture_01/upload/upl_fixture_01/raw?partNumber=1&signature=fixture",
       "expiresAt": "2026-05-14T03:15:00Z",
       "headers": {
-        "x-amz-meta-part-sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        "Content-Type": "audio/wav"
       }
     },
     "error": null,

@@ -19,9 +19,12 @@ metadata:
   name: meeting-api-config
 data:
   # Non-sensitive runtime configuration. Secrets (HMAC, DB creds, KMS
-  # master key, DashScope API key) live in the `meeting-api-secret`
-  # Secret created out-of-band — see DEPLOY.md §5.
+  # master key, DashScope API key, OSS AK/SK) live in the
+  # `meeting-api-secret` Secret created out-of-band — see DEPLOY.md §5.
   STORAGE_TYPE: "minio"
+  STORAGE_BUCKET_AUDIO: "meeting-audio-auska"
+  STORAGE_BUCKET_ARTIFACTS: "meeting-artifacts"
+  STORAGE_BUCKET_EXPORTS: "meeting-exports"
   POSTGRES_HOST: "postgres"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "meeting"
@@ -34,6 +37,10 @@ data:
   # this entry the gateway falls back to http://localhost:9000 and every
   # generated upload/download URL is broken in-cluster.
   MEETING_STORAGE_ENDPOINT: "http://minio:9000"
+  # When switching to STORAGE_TYPE=oss, set OSS_ENDPOINT/OSS_REGION here
+  # and inject OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET via the Secret.
+  # OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com"
+  # OSS_REGION: "cn-hangzhou"
   AI_WORKER_BASE_URL: "http://ai-worker:8090"
   CHUNK_STRATEGY_VERSION: "v1"
   LIBREOFFICE_BINARY: "soffice"

@@ -33,6 +33,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class AudioUploadApplicationService implements AudioUploadFacade {
     private static final int PRESIGNED_URL_TTL_MINUTES = 15;
+    private static final int DEFAULT_PART_SIZE_BYTES = 8 * 1024 * 1024;
+    private static final int MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
+    private static final long MAX_SINGLE_PUT_BYTES = Integer.MAX_VALUE; // ~2 GiB
     private static final String FILE_TYPE_AUDIO = "AUDIO";
     private static final String FILE_PURPOSE_RAW_AUDIO = "RAW_AUDIO";
     private static final String FILE_UPLOAD_STATUS_COMPLETED = "COMPLETED";
@@ -86,7 +89,11 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
     public AudioUploadSessionDTO createSession(CreateAudioUploadSessionCommand command) {
         return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
             requireMeeting(command.tenantId(), command.meetingId());
-            validatePartSize(command.partSizeBytes());
+            // Single-PUT mode: coerce partSizeBytes so there is always exactly
+            // one part. Real OSS multipart (initiate/upload-part/complete) is
+            // not wired yet; allowing >1 part would race-overwrite the same
+            // object key. Files > 2 GiB are rejected until real multipart lands.
+            int effectivePartSize = resolveSinglePutPartSize(command.fileSizeBytes(), command.partSizeBytes());
             OffsetDateTime now = now();
             String uploadId = "upl_" + UUID.randomUUID().toString().replace("-", "");
             AudioUploadSession session = AudioUploadSession.create(
@@ -99,7 +106,7 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
                 command.fileName(),
                 command.fileSizeBytes(),
                 command.fileSha256(),
-                command.partSizeBytes(),
+                effectivePartSize,
                 command.requestedBy(),
                 now
             );
@@ -197,6 +204,17 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
                 }
             }
             StorageObject object = objectStorageGateway.statObject(session.bucket(), session.objectKey());
+            // sizeBytes >= 0 means the gateway reported a real size; -1 means
+            // "unknown" (LocalObjectStorageGateway when no local mirror
+            // exists). A real OSS HEAD always returns a non-negative size,
+            // so 0 bytes vs a positive session size is treated as mismatch.
+            if (object.sizeBytes() >= 0 && object.sizeBytes() != session.fileSizeBytes()) {
+                throw conflict(
+                    ErrorCode.UPLOAD_FILE_SIZE_MISMATCH,
+                    "stored object size mismatch: stored=" + object.sizeBytes()
+                        + " expected=" + session.fileSizeBytes()
+                );
+            }
             if (object.sha256() != null && !object.sha256().isBlank() && !object.sha256().equals(session.fileSha256())) {
                 throw conflict(ErrorCode.UPLOAD_FILE_HASH_MISMATCH, "stored object sha256 mismatch");
             }
@@ -211,7 +229,7 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
                 session.bucket(),
                 session.objectKey(),
                 storageUri(session.bucket(), session.objectKey()),
-                object.sizeBytes() > 0 ? object.sizeBytes() : session.fileSizeBytes(),
+                object.sizeBytes() >= 0 ? object.sizeBytes() : session.fileSizeBytes(),
                 session.fileSha256(),
                 command.durationMs(),
                 FILE_UPLOAD_STATUS_COMPLETED,
@@ -316,10 +334,15 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
         return AudioUploadAssembler.toDto(session, parts);
     }
 
-    private static void validatePartSize(Integer partSizeBytes) {
-        if (partSizeBytes != null && partSizeBytes < 5 * 1024 * 1024) {
-            throw validation("partSizeBytes must be at least 5 MiB");
+    private static int resolveSinglePutPartSize(long fileSizeBytes, Integer requestedPartSize) {
+        if (fileSizeBytes <= 0) {
+            throw validation("fileSizeBytes must be positive");
         }
+        if (fileSizeBytes > MAX_SINGLE_PUT_BYTES) {
+            throw validation("fileSizeBytes exceeds 2 GiB single-PUT limit; real OSS multipart is not implemented yet");
+        }
+        int requested = requestedPartSize != null ? requestedPartSize : DEFAULT_PART_SIZE_BYTES;
+        return Math.max(Math.max(requested, (int) fileSizeBytes), MIN_PART_SIZE_BYTES);
     }
 
     private static void validatePartNumber(int partNumber, int maxPartCount) {
@@ -348,11 +371,11 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
     }
 
     private static String objectKey(String tenantId, String meetingId, String uploadId) {
-        return "meeting-audio/" + tenantId + "/" + meetingId + "/" + uploadId + "/raw";
+        return "tenant/" + tenantId + "/meeting/" + meetingId + "/upload/" + uploadId + "/raw";
     }
 
     private static String storageUri(String bucket, String objectKey) {
-        return "tos://" + bucket + "/" + objectKey;
+        return "oss://" + bucket + "/" + objectKey;
     }
 
     private OffsetDateTime now() {

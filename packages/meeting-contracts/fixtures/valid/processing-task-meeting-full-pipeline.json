@@ -22,7 +22,7 @@
   "minSpeakers": 2,
   "maxSpeakers": 5,
   "audioFileId": "file_01HZ8XJK5MNOPQR",
-  "audioUri": "tos://meeting-audio/file_01HZ8XJK5MNOPQR.wav",
+  "audioUri": "oss://meeting-audio-auska/file_01HZ8XJK5MNOPQR.wav",
   "options": {
     "enableAsr": true,
     "enableDiarization": true,

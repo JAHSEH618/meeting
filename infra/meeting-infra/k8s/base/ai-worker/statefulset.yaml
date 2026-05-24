@@ -167,6 +167,15 @@ data:
   AI_WORKER_RABBITMQ_PORT: "5672"
   AI_WORKER_RABBITMQ_USERNAME: "meeting"
   AI_WORKER_MEETING_API_BASE_URL: "http://meeting-api:8080"
+  # Storage backend — switch to "oss" in prod overlay to enable OSS reads.
+  # When set, AI_WORKER_OSS_{ENDPOINT,REGION} are read from this ConfigMap
+  # and AI_WORKER_OSS_ACCESS_KEY_ID/SECRET from ai-worker-secret. The worker
+  # RAM credential MUST be read-only (oss:GetObject + oss:HeadObject only);
+  # writes are Java's responsibility. See AliyunOssObjectStorageGateway +
+  # OssArtifactStore docstrings.
+  AI_WORKER_STORAGE_BACKEND: "local"
+  # AI_WORKER_OSS_ENDPOINT: "https://oss-cn-hangzhou-internal.aliyuncs.com"
+  # AI_WORKER_OSS_REGION: "cn-hangzhou"
   # Phase 9 P6 / E1.3 — workstation BFF wiring.
   AI_WORKER_JAVA_API_BASE_URL: "http://meeting-api:8080"
   AI_WORKER_ENROLLMENT_TMP_DIR: "/var/lib/ai-worker/enrollment"

@@ -161,7 +161,7 @@ public class CreateAudioUploadRequest {
   }
 
   /**
-   * Get partSizeBytes
+   * Requested part size. In single-PUT mode the server coerces this value to &#x60;max(requested, fileSizeBytes, 5 MiB)&#x60; so the resulting session always has exactly one part; supply the actual file size or let the server pick. Real multipart is not yet implemented. 
    * minimum: 5242880
    * @return partSizeBytes
    */

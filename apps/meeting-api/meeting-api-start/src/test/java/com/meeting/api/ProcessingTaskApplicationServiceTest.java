@@ -94,7 +94,7 @@ class ProcessingTaskApplicationServiceTest {
             "spk_01",
             "spe_01",
             "file_01",
-            "minio://meeting-audio/tenant_01/spe_01.wav",
+            "oss://meeting-audio-auska/tenant_01/spe_01.wav",
             "zh",
             "user_01",
             "trace_speaker"

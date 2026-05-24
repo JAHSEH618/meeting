@@ -95,9 +95,9 @@ public class CreateAudioUploadPartRequest {
   }
 
   /**
-   * Get sizeBytes
+   * Size of this part in bytes. In single-PUT mode this equals the full file size (capped at 2 GiB by the server before the session is created). 
    * minimum: 1
-   * maximum: 8388608
+   * maximum: 2147483647
    * @return sizeBytes
    */
   @javax.annotation.Nonnull

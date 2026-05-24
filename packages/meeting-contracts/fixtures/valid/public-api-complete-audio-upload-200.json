@@ -21,11 +21,6 @@
         "partNumber": 1,
         "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "etag": "\"etag-part-1\""
-      },
-      {
-        "partNumber": 2,
-        "partSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "etag": "\"etag-part-2\""
       }
     ]
   },
@@ -36,10 +31,10 @@
       "meetingId": "mtg_fixture_01",
       "uploadStatus": "COMPLETED",
       "expiresAt": "2026-05-14T04:00:00Z",
-      "partSizeBytes": 8388608,
+      "partSizeBytes": 16777216,
       "maxPartCount": 10000,
-      "objectKey": "meeting-audio/tenant_fixture_01/mtg_fixture_01/upl_fixture_01/raw",
-      "bucket": "meeting-audio",
+      "objectKey": "tenant/tenant_fixture_01/meeting/mtg_fixture_01/upload/upl_fixture_01/raw",
+      "bucket": "meeting-audio-auska",
       "contentType": "audio/wav",
       "fileName": "weekly-sync.wav",
       "fileSizeBytes": 16777216,
@@ -50,17 +45,9 @@
           "partNumber": 1,
           "partSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "etag": "\"etag-part-1\"",
-          "sizeBytes": 8388608,
+          "sizeBytes": 16777216,
           "uploadStatus": "COMPLETED",
           "uploadedAt": "2026-05-14T03:01:00Z"
-        },
-        {
-          "partNumber": 2,
-          "partSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "etag": "\"etag-part-2\"",
-          "sizeBytes": 8388608,
-          "uploadStatus": "COMPLETED",
-          "uploadedAt": "2026-05-14T03:02:00Z"
         }
       ]
     },

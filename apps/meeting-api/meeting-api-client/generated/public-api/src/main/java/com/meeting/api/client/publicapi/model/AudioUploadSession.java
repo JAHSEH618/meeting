@@ -211,7 +211,7 @@ public class AudioUploadSession {
   }
 
   /**
-   * Get partSizeBytes
+   * Effective per-part size after server coercion. In single-PUT mode this is &#x60;max(requested, fileSizeBytes, 5 MiB)&#x60; so &#x60;ceil(fileSizeBytes / partSizeBytes) &#x3D;&#x3D; 1&#x60;. 
    * minimum: 5242880
    * @return partSizeBytes
    */

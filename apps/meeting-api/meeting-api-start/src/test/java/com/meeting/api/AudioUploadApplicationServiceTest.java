@@ -53,7 +53,7 @@ class AudioUploadApplicationServiceTest {
         assertThat(dto.uploadStatus()).isEqualTo(AudioUploadStatus.INITIATED);
         assertThat(dto.partSizeBytes()).isEqualTo(8388608);
         assertThat(dto.maxPartCount()).isEqualTo(10000);
-        assertThat(dto.objectKey()).startsWith("meeting-audio/tenant_01/meeting_01/upl_");
+        assertThat(dto.objectKey()).startsWith("tenant/tenant_01/meeting/meeting_01/upload/upl_");
         assertThat(dto.objectKey()).endsWith("/raw");
         assertThat(dto.expiresAt()).isEqualTo(OffsetDateTime.parse("2026-05-15T02:00:00Z"));
     }
@@ -149,7 +149,7 @@ class AudioUploadApplicationServiceTest {
             .extracting(Enum::name)
             .containsExactly("AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE");
         assertThat(event.payload().get("audioFileId")).isEqualTo(completed.fileId());
-        assertThat(event.payload().get("audioUri")).asString().startsWith("tos://meeting-local/");
+        assertThat(event.payload().get("audioUri")).asString().startsWith("oss://meeting-local/");
         assertThat(event.payload().get("language")).isEqualTo("zh");
         assertThat(event.payload().get("minSpeakers")).isEqualTo(1);
         assertThat(event.payload().get("maxSpeakers")).isEqualTo(4);
@@ -169,6 +169,38 @@ class AudioUploadApplicationServiceTest {
 
         assertThat(replay.uploadStatus()).isEqualTo(AudioUploadStatus.COMPLETED);
         assertThat(ctx.publisher.events).hasSize(1);
+    }
+
+    @Test
+    void completeRejectsObjectWithSizeMismatch() {
+        TestContext ctx = new TestContext();
+        String uploadId = ctx.service.createSession(createCommand("meeting_01")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('b')));
+        // session.fileSizeBytes() == 1024 (from createCommand); inject a
+        // mismatching stored size to simulate a short / corrupt upload.
+        ctx.storage.statSizeBytes = 9999;
+
+        assertThatThrownBy(() -> ctx.service.complete(completeCommand(uploadId)))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("errorCode")
+            .isEqualTo(ErrorCode.UPLOAD_FILE_SIZE_MISMATCH);
+    }
+
+    @Test
+    void completeRejectsZeroByteObjectWhenSessionExpectsContent() {
+        TestContext ctx = new TestContext();
+        String uploadId = ctx.service.createSession(createCommand("meeting_01")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('b')));
+        // A 0-byte HEAD response from OSS is a real signal (object exists
+        // but is empty), so the `>= 0` guard must catch it — the older
+        // `> 0` guard would have silently accepted this and persisted a
+        // MeetingFile pointing at empty storage.
+        ctx.storage.statSizeBytes = 0;
+
+        assertThatThrownBy(() -> ctx.service.complete(completeCommand(uploadId)))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("errorCode")
+            .isEqualTo(ErrorCode.UPLOAD_FILE_SIZE_MISMATCH);
     }
 
     private static CreateAudioUploadSessionCommand createCommand(String meetingId) {
@@ -357,6 +389,8 @@ class AudioUploadApplicationServiceTest {
     }
 
     private static final class FakeStorage implements ObjectStorageGateway {
+        long statSizeBytes = 1024;
+
         @Override
         public String defaultBucket() {
             return "meeting-local";
@@ -378,7 +412,7 @@ class AudioUploadApplicationServiceTest {
 
         @Override
         public StorageObject statObject(String bucket, String objectKey) {
-            return new StorageObject(bucket, objectKey, 1024, sha('a'), "etag_object", OffsetDateTime.now(CLOCK));
+            return new StorageObject(bucket, objectKey, statSizeBytes, sha('a'), "etag_object", OffsetDateTime.now(CLOCK));
         }
 
         @Override

@@ -84,7 +84,7 @@ public class ExportRenderService {
         ExportGatewayRegistry gatewayRegistry,
         ObjectStorageGateway storage,
         MessagePublisher messagePublisher,
-        @Value("${meeting.storage.minio.bucket-exports:meeting-exports}") String exportsBucket,
+        @Value("${meeting.storage.bucket-exports:meeting-exports}") String exportsBucket,
         @Value("${meeting.export.download-ttl-hours:24}") long downloadTtlHours
     ) {
         this(tenantTx, exportRepo, meetingFileRepo, snapshotPort, gatewayRegistry,
@@ -169,7 +169,7 @@ public class ExportRenderService {
             return tenantTx.execute(msg.tenantId(), "system:export-consumer", msg.traceId(), () -> {
                 OffsetDateTime now = OffsetDateTime.now(clock);
                 String fileId = "mf_" + UUID.randomUUID().toString().replace("-", "");
-                String uri = "s3://" + persisted.bucket() + "/" + persisted.objectKey();
+                String uri = "oss://" + persisted.bucket() + "/" + persisted.objectKey();
                 MeetingFile saved = meetingFileRepo.save(new MeetingFile(
                     fileId,
                     job.tenantId(),

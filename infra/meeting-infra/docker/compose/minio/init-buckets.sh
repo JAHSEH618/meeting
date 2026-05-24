@@ -13,8 +13,8 @@ until $MC 2>/dev/null; do
 done
 
 echo "Creating buckets..."
-mc mb local/meeting-audio --ignore-existing
+mc mb local/meeting-audio-auska --ignore-existing
 mc mb local/meeting-artifacts --ignore-existing
 mc mb local/meeting-exports --ignore-existing
 
-echo "Buckets ready: meeting-audio, meeting-artifacts, meeting-exports"
+echo "Buckets ready: meeting-audio-auska, meeting-artifacts, meeting-exports"

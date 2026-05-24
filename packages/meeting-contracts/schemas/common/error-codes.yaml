@@ -79,25 +79,25 @@ errorCodes:
     i18nKey: errors.INVALID_TASK_MESSAGE
     opsTags: [task, schema, worker]
 
-  # ── Storage / TOS ─────────────────────────────────────────────
-  - code: TOS_OBJECT_NOT_FOUND
+  # ── Storage / OSS ─────────────────────────────────────────────
+  - code: OSS_OBJECT_NOT_FOUND
     step: STORAGE
     retryable: false
     userMessage: 存储对象不存在
-    i18nKey: errors.TOS_OBJECT_NOT_FOUND
-    opsTags: [tos, storage]
-  - code: TOS_READ_FAILED
+    i18nKey: errors.OSS_OBJECT_NOT_FOUND
+    opsTags: [oss, storage]
+  - code: OSS_READ_FAILED
     step: STORAGE
     retryable: true
     userMessage: 存储读取失败
-    i18nKey: errors.TOS_READ_FAILED
-    opsTags: [tos, storage, io]
-  - code: TOS_WRITE_FAILED
+    i18nKey: errors.OSS_READ_FAILED
+    opsTags: [oss, storage, io]
+  - code: OSS_WRITE_FAILED
     step: STORAGE
     retryable: true
     userMessage: 存储写入失败
-    i18nKey: errors.TOS_WRITE_FAILED
-    opsTags: [tos, storage, io]
+    i18nKey: errors.OSS_WRITE_FAILED
+    opsTags: [oss, storage, io]
   - code: UPLOAD_SESSION_EXPIRED
     step: AUDIO_UPLOAD
     retryable: false
@@ -128,6 +128,12 @@ errorCodes:
     userMessage: 文件校验失败
     i18nKey: errors.UPLOAD_FILE_HASH_MISMATCH
     opsTags: [upload, checksum]
+  - code: UPLOAD_FILE_SIZE_MISMATCH
+    step: AUDIO_UPLOAD
+    retryable: false
+    userMessage: 文件大小不一致
+    i18nKey: errors.UPLOAD_FILE_SIZE_MISMATCH
+    opsTags: [upload, size]
   - code: UPLOAD_TOO_MANY_PARTS
     step: AUDIO_UPLOAD
     retryable: false
