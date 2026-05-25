@@ -220,7 +220,11 @@ wait_for_service() {
             # 额外检查 — 对有 HTTP 健康端点的服务校验真实就绪状态
             case "$service" in
                 meeting-api)
-                    if curl -sf http://localhost:8080/actuator/health &>/dev/null; then
+                    # 必须用 readiness 探针：聚合 /actuator/health 会被
+                    # AiWorkerHealthIndicator 在 ai-worker 还没启动时拉成
+                    # DOWN（startup() 的顺序是先 meeting-api 再 ai-worker），
+                    # 用 readiness 组才能反映 meeting-api 自身的就绪状态。
+                    if curl -sf http://localhost:8080/actuator/health/readiness &>/dev/null; then
                         log_ok "${service} 健康检查通过"
                         return 0
                     fi

@@ -132,8 +132,10 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
   --profile workstation up -d ai-worker
 
-# 第五步：启动前端开发服务器
-cd apps/meeting-web && npm install && npm run dev
+# 第五步：启动前端开发服务器（仓库已 check in lockfile，与 deploy.sh
+# codegen 保持一致用 npm ci；如本机首次 clone、依赖未装可改 `npm ci`，
+# 平时增量改源码用 `npm run dev` 即可，不需要每次重装依赖）
+cd apps/meeting-web && npm ci && npm run dev
 
 # 可选：启动可观测性栈
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
@@ -240,6 +242,13 @@ docker tag ai-worker:dev registry.example.com/meeting/ai-worker:v0.1.0
 docker push registry.example.com/meeting/meeting-api:v0.1.0
 docker push registry.example.com/meeting/meeting-web:v0.1.0
 docker push registry.example.com/meeting/ai-worker:v0.1.0
+
+# Phase J / 生产 ai-worker 走 CUDA 镜像：prod overlay 里 image tag
+# 是 `ai-worker:cuda-v0.1.0`（见 infra/meeting-infra/k8s/overlays/prod/
+# kustomization.yaml），与上面 dev 用的 `ai-worker:v0.1.0` 是两个不
+# 同 tag。漏推这条会让 prod Pod 直接 ImagePullBackOff。
+docker tag ai-worker:cuda registry.example.com/meeting/ai-worker:cuda-v0.1.0
+docker push registry.example.com/meeting/ai-worker:cuda-v0.1.0
 ```
 
 ---
@@ -301,7 +310,11 @@ kubectl create namespace "$NS"
 
 # PostgreSQL + pgvector —— Bitnami chart 默认装的是无 pgvector 的镜像，
 # 必须把 image 指到 pgvector/pgvector，并在 init script 里 CREATE EXTENSION。
+# fullnameOverride=postgres 让 svc 名变成 `postgres`，对齐
+# meeting-api-config 的默认 POSTGRES_HOST（缺省 Bitnami 命名是
+# `<release>-postgresql`，会导致 meeting-api 在集群里解析不到主机名）。
 helm install postgres bitnami/postgresql -n "$NS" \
+  --set fullnameOverride=postgres \
   --set image.registry=docker.io \
   --set image.repository=pgvector/pgvector \
   --set image.tag=pg15 \
@@ -311,17 +324,25 @@ helm install postgres bitnami/postgresql -n "$NS" \
   --set primary.initdb.scripts."enable-pgvector\.sql"="CREATE EXTENSION IF NOT EXISTS vector;"
 
 # RabbitMQ —— 启用 quorum queues（meeting-api 的 outbox 依赖），
-# 把 definitions.json 通过 ConfigMap 注入。
-kubectl -n "$NS" create configmap rabbitmq-definitions \
-  --from-file=definitions.json=infra/meeting-infra/docker/compose/rabbitmq/definitions.json
+# 把 definitions.json 通过 Secret 注入。Bitnami chart 的
+# loadDefinition.existingSecret 期望的是 Secret（不是 ConfigMap），
+# 且 chart 里硬编码读 key `load_definition.json`（snake_case，不要
+# 误写成 definitions.json）。fullnameOverride=rabbitmq 对齐 base
+# ConfigMap 的 RABBITMQ_HOST 默认值。
+kubectl -n "$NS" create secret generic rabbitmq-definitions \
+  --from-file=load_definition.json=infra/meeting-infra/docker/compose/rabbitmq/definitions.json
 helm install rabbitmq bitnami/rabbitmq -n "$NS" \
+  --set fullnameOverride=rabbitmq \
   --set auth.username=meeting --set auth.password=meeting_dev \
   --set loadDefinition.enabled=true \
   --set loadDefinition.existingSecret=rabbitmq-definitions
 
-# MinIO —— 简化为单副本；生产环境改成 S3/OSS 后在 overlay 里
-# 覆盖 STORAGE_TYPE=oss + OSS_ENDPOINT/OSS_REGION，不再装 chart。
+# MinIO —— 简化为单副本；fullnameOverride=minio 让 svc DNS 与
+# base ConfigMap 默认 MINIO_ENDPOINT=http://minio:9000 对齐。
+# 生产环境改成 S3/OSS 后在 overlay 里覆盖 STORAGE_TYPE=oss +
+# OSS_ENDPOINT/OSS_REGION，不再装 chart。
 helm install minio bitnami/minio -n "$NS" \
+  --set fullnameOverride=minio \
   --set auth.rootUser=minioadmin --set auth.rootPassword=minioadmin \
   --set defaultBuckets="meeting-audio-auska meeting-artifacts meeting-exports"
 
@@ -376,11 +397,13 @@ deploy.sh 与 overlay 都按 `meeting-${env}` 命名：
 
 | Overlay | namespace | 用途 |
 |---------|-----------|------|
-| `overlays/dev/` | `meeting-dev` | kind/minikube 本地集群、Phase J J1/J6 验收 |
-| `overlays/staging/` | _TBD_（占位目录，文件待补） | staging 环境（J5 5 连 E2E 通过后开放） |
+| `overlays/dev/` | `meeting-dev` | kind/minikube 本地集群、Phase J J1/J6 验收（当前的 acceptance 环境）|
+| `overlays/staging/` | _TBD_（占位目录，文件待补） | 预留 — staging overlay 未落地前，所有 "staging" 措辞（包括 Phase J runbook、§11.2 发布流水线）一律落到 `meeting-dev` |
 | `overlays/prod/` | `meeting-prod` | 生产 |
 
 如果 runbook 旧版本提到 `meeting-staging`，请按当前 overlay 实际值替换为 `meeting-dev`。
+staging overlay 文件正式落地后，请同步更新本表、`infra/meeting-infra/k8s/README.md`
+与 `docs/runbooks/phase-j-acceptance.md`，避免三个文档对 acceptance 环境出现分歧。
 
 ### 5.5 部署步骤（应用层）
 
@@ -755,7 +778,7 @@ terraform apply -var="environment=dev" -var="db_password=<password>"
 
 # 或分步执行
 cd packages/meeting-contracts
-npm install
+npm ci
 npm run check                              # 先校验合约一致性
 npm run codegen                            # 生成 TS/Python/Java 类型
 npm run codegen:check-temp                 # 零侵入 diff 检查
@@ -992,7 +1015,9 @@ push/PR → 5 并行 jobs:
 
 ```yaml
 # 发布流程建议
-build → test → push-image → deploy-staging → e2e → deploy-prod
+# staging overlay 尚未落地，acceptance 阶段先落到 dev overlay
+# （namespace meeting-dev）；overlays/staging/ 文件补齐后再切回 staging。
+build → test → push-image → deploy-acceptance(meeting-dev) → e2e → deploy-prod
 ```
 
 ---

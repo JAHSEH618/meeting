@@ -8,8 +8,11 @@ k8s/
     ai-worker/     # StatefulSet (GPU nodeSelector, /opt/models PVC)
     kustomization.yaml
   overlays/
-    dev/           # 1 replica, low resources, image tag :dev
-    staging/       # — TBD —
+    dev/           # 1 replica, low resources, image tag :dev — 也是
+                   # 当前 Phase J 验收（acceptance）环境。staging 占位
+                   # 目录尚未填充，docs 里凡是写 "staging" 的地方都按
+                   # meeting-dev 解读，详见 deploy/DEPLOY.md §5.4。
+    staging/       # — TBD（占位目录，验收暂用 dev/ overlay）—
     prod/          # 3 replicas, pinned image tags
 
 terraform/
@@ -18,13 +21,21 @@ terraform/
 
 ## Build a manifest bundle for a target environment
 
+> 所有 `kustomize` / `kubectl` 命令都默认从 **repo 根目录**执行，
+> 路径统一写成 `infra/meeting-infra/k8s/...`，方便 deploy.sh、CI、
+> README、DEPLOY 之间互相对照。
+
 ```bash
-kustomize build k8s/overlays/dev | kubectl apply -f -
-kustomize build k8s/overlays/prod
+kustomize build infra/meeting-infra/k8s/overlays/dev | kubectl apply -f -
+kustomize build infra/meeting-infra/k8s/overlays/prod
 ```
 
-> Phase 8.6 only ships the dev + prod overlays. Staging is intentionally
-> a TBD until we settle on environment naming.
+> Phase 8.6 only ships the dev + prod overlays. The `staging/` directory
+> is reserved but currently empty — Phase J acceptance therefore runs on
+> the `dev/` overlay (namespace `meeting-dev`). When the staging tree
+> lands, update `deploy/DEPLOY.md` §5.4 and the Phase J runbook in lock-
+> step so the three docs agree on which environment is the acceptance
+> target.
 
 ## Secrets
 
