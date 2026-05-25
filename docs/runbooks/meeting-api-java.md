@@ -23,12 +23,15 @@ Maven 模块：
 |------|------------------|----------|------|
 | 本地 Java 冒烟 | 可以 | `./deploy/meeting-api-java.sh compose` | 启动依赖、`meeting-api` 和 fake `ai-worker`。 |
 | 本地验收 | 可以，建议带观测组件 | `./deploy/meeting-api-java.sh compose --with-observability` | Prometheus/Grafana 规则检查需要这个模式。 |
-| 单台 CentOS 服务器 | 可以，用 Docker/Compose 起步 | `./deploy/meeting-api-java.sh compose` | 适合从 0 跑通服务，不等同于生产高可用。 |
-| K8s dev / acceptance | 可以，先安装工具 | `./deploy/deploy.sh k8s-deps dev && ./deploy/meeting-api-java.sh k8s dev` | kind/minikube 需要先 build 并 load 镜像。 |
+| 单台 CentOS 服务器 | 可以，直接接阿里云 OSS | 手工启动 PostgreSQL/RabbitMQ，然后用 `STORAGE_TYPE=oss` 启动 Java | 不再部署 MinIO。 |
+| K8s dev / acceptance | 可以，先安装工具 | 准备 PostgreSQL/RabbitMQ + OSS Secret 后手工 `kustomize build` / `kubectl apply` | kind/minikube 需要先 build 并 load 镜像。 |
 | 生产 K8s | 不能直接复用 dev 默认值 | ExternalSecrets/Vault + 托管依赖，然后 `./deploy/meeting-api-java.sh k8s prod` | 禁止 dev 密码、localhost、in-memory auth 和 fake worker。 |
 
-生产部署时，`k8s-deps prod` 只能作为例外路径。默认推荐托管
-PostgreSQL/RabbitMQ/Object Storage，加上 prod overlay 和
+Java API 的对象存储统一直接对接阿里云 OSS：`STORAGE_TYPE=oss`，
+`OSS_ENDPOINT` / `OSS_REGION` / `OSS_ACCESS_KEY_ID` /
+`OSS_ACCESS_KEY_SECRET` 必须显式配置。不要再按 MinIO 部署 Java API。
+生产部署不执行 `k8s-deps prod`；默认推荐托管 PostgreSQL/RabbitMQ、
+阿里云 OSS、prod overlay 和
 ExternalSecrets/Vault/SealedSecrets 注入配置。
 
 ## 1. 从 0 开始的 CentOS 准备
@@ -83,11 +86,12 @@ git status --short
 | `8090` | `ai-worker` |
 | `5432` | PostgreSQL |
 | `5672` / `15672` | RabbitMQ / 管理端 |
-| `9000` / `9001` | MinIO / Console |
+| 出站 `443` | 阿里云 OSS endpoint |
 | `9090` | Prometheus，只有 observability profile 才需要 |
 | `3000` | Grafana 或 Web 侧服务，取决于 profile |
 
-CentOS 防火墙按实际暴露范围放行，不建议把 DB/MQ/MinIO 管理端直接暴露到公网。
+CentOS 防火墙按实际暴露范围放行，不建议把 DB/MQ 管理端直接暴露到公网。
+OSS 走 HTTPS 出站访问阿里云 endpoint，不需要在本机部署或暴露 MinIO。
 
 ```bash
 sudo firewall-cmd --state
@@ -146,9 +150,9 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 | 构建并运行 jar | `./deploy/meeting-api-java.sh jar --run` | 主机原生调试，依赖需另行启动。 |
 | 构建 Docker 镜像 | `./deploy/meeting-api-java.sh image [tag]` | 本地 Compose、kind 或推送镜像仓库。 |
 | Apple Silicon 构建 amd64 | `./deploy/meeting-api-java.sh image meeting-api:v0.1.0 --cross` | 目标生产节点是 linux/amd64 时做本地 sanity check。 |
-| 单机 Compose | `./deploy/meeting-api-java.sh compose` | CentOS 或本地一键跑通依赖和 Java 服务。 |
+| 单机 OSS 部署 | 见 §7 手工 Compose 命令 | CentOS 或本地跑通 Java + PostgreSQL + RabbitMQ + 阿里云 OSS。 |
 | 带观测的验收 | `./deploy/meeting-api-java.sh compose --with-observability` | 启动 Prometheus/Grafana。 |
-| K8s 应用部署 | `./deploy/meeting-api-java.sh k8s dev` | `k8s-deps dev` 和镜像准备完成后使用。 |
+| K8s 应用部署 | 见 §8 手工 `kustomize build` / `kubectl apply` | OSS 直连路径需要先准备 PostgreSQL/RabbitMQ、OSS Secret 和 overlay 配置。 |
 | 数据库迁移参考 | `./deploy/meeting-api-java.sh migrate` | 打印 Flyway / restart / psql 方案。 |
 
 ## 4. 测试门禁
@@ -165,7 +169,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 |------|----------|
 | 单元测试 | JUnit 5 / Mockito，覆盖 domain 和 app 行为 |
 | 架构测试 | COLA 模块边界检查 |
-| 集成测试 | Testcontainers PostgreSQL、RabbitMQ、MinIO |
+| 集成测试 | Testcontainers PostgreSQL、RabbitMQ、对象存储网关相关用例 |
 | Spring 上下文 | Boot 配置、健康检查、profile 校验 |
 
 常见失败和处理：
@@ -200,10 +204,11 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 apps/meeting-api/meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 ```
 
-jar 模式不会自动启动 PostgreSQL/RabbitMQ/MinIO。先启动依赖：
+jar 模式不会自动启动 PostgreSQL/RabbitMQ。对象存储直接走阿里云 OSS，不在
+服务器上启动 MinIO。开发机可以只用 Compose 起 DB/MQ：
 
 ```bash
-docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d postgres rabbitmq
 ```
 
 jar 模式最小环境变量：
@@ -220,10 +225,14 @@ export RABBITMQ_PORT=5672
 export RABBITMQ_USER=meeting
 export RABBITMQ_PASS=meeting_dev
 
-export MINIO_ENDPOINT=http://localhost:9000
-export MEETING_STORAGE_ENDPOINT=http://localhost:9000
-export MINIO_ROOT_USER=minioadmin
-export MINIO_ROOT_PASSWORD=minioadmin
+export STORAGE_TYPE=oss
+export STORAGE_BUCKET_AUDIO=meeting-audio-auska
+export STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
+export STORAGE_BUCKET_EXPORTS=meeting-exports
+export OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+export OSS_REGION=cn-hangzhou
+export OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
+export OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
 
 export AI_WORKER_BASE_URL=http://localhost:8090
 export AI_WORKER_CALLBACK_HMAC_SECRET=change-me-callback-secret-32bytes
@@ -240,8 +249,9 @@ curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
 
 `/actuator/health/readiness` 只检查 Java 应用是否可接流量；聚合
-`/actuator/health` 还包括 `aiWorker`、`minIo`、`rabbitMqQueue`、
-`postgresRls`、`kms` 和 `outboxBacklog`。
+`/actuator/health` 还包括 `aiWorker`、`rabbitMqQueue`、`postgresRls`、
+`kms` 和 `outboxBacklog` 等组件。OSS 连通性用上传/下载业务冒烟验证，不再
+用 MinIO 健康端点代表对象存储。
 
 ## 6. Docker 镜像路径
 
@@ -284,31 +294,55 @@ docker buildx create --use 2>/dev/null || true
 | Spring Boot jar | `meeting-api-start` |
 | `/tmp` 和 `/tmp/soffice` 可写目录 | K8s 运行和 LibreOffice 转换需要 |
 
-## 7. 单台 CentOS Docker/Compose 部署
+## 7. 单台 CentOS + 阿里云 OSS 部署
 
-适合从 0 跑通 Java 服务和依赖：
+单台 CentOS 从 0 跑通时，Java API 只需要本机 PostgreSQL/RabbitMQ 和远端
+阿里云 OSS。不要为 Java API 部署 MinIO。
 
-```bash
-./deploy/meeting-api-java.sh compose
-```
-
-带观测组件：
+先启动 DB/MQ：
 
 ```bash
-./deploy/meeting-api-java.sh compose --with-observability
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d postgres rabbitmq
 ```
 
-会启动：
+构建镜像：
+
+```bash
+./deploy/meeting-api-java.sh image meeting-api:dev
+```
+
+启动 `meeting-api`，并显式切到 OSS：
+
+```bash
+STORAGE_TYPE=oss \
+STORAGE_BUCKET_AUDIO=meeting-audio-auska \
+STORAGE_BUCKET_ARTIFACTS=meeting-artifacts \
+STORAGE_BUCKET_EXPORTS=meeting-exports \
+OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com \
+OSS_REGION=cn-hangzhou \
+OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id> \
+OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret> \
+AI_WORKER_BASE_URL=http://ai-worker:8090 \
+  docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+  --profile full-stack up -d meeting-api
+```
+
+如果 ai-worker 也在同机 fake/runtime 容器运行：
+
+```bash
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+  --profile workstation up -d ai-worker
+```
+
+最小服务组成：
 
 | 服务 | 来源 | 健康门禁 |
 |------|------|----------|
 | PostgreSQL + pgvector | compose base | container healthcheck |
 | RabbitMQ | compose base | management healthcheck |
-| MinIO | compose base | healthcheck |
-| Vault | compose base | dev mode |
+| 阿里云 OSS | 云服务 | 通过上传/下载业务冒烟验证 |
 | meeting-api | `full-stack` profile | `/actuator/health/readiness` |
-| ai-worker fake runtime | `workstation` profile | `/internal/health` |
-| Prometheus/Grafana | `observability` profile | 只有显式开启时启动 |
+| ai-worker fake/runtime | `workstation` profile 或远端服务 | `/internal/health` |
 
 为什么启动门禁看 readiness 而不是聚合 health：`AiWorkerHealthIndicator`
 属于聚合健康检查，`ai-worker` 未就绪时聚合 health 可能为 DOWN，但 Java 服务
@@ -319,38 +353,91 @@ docker buildx create --use 2>/dev/null || true
 ```bash
 ./deploy/deploy.sh health
 curl -fsSL http://localhost:8080/actuator/health | jq .
-curl -fsSL http://localhost:9090/api/v1/rules | jq '.data.groups[].rules | length'
 ```
 
-单机 Compose 不等于生产高可用。生产需要把 DB、MQ、对象存储、Secret、
+`./deploy/meeting-api-java.sh compose` 和 `./deploy/deploy.sh local` 仍然是本地
+全栈便利命令，会启动 compose 文件里的历史 MinIO 服务。阿里云 OSS 部署不要
+使用它作为标准路径；按本节显式设置 `STORAGE_TYPE=oss` 和 `OSS_*`。
+
+单机 Compose 不等于生产高可用。生产需要把 DB、MQ、阿里云 OSS、Secret、
 监控和 ai-worker GPU runtime 按生产要求拆出来。
 
 ## 8. K8s dev / acceptance
+
+K8s dev/acceptance 也按阿里云 OSS 直连处理。对象存储不在集群里安装 MinIO，
+而是在 overlay 中设置 `STORAGE_TYPE=oss`、`OSS_ENDPOINT`、`OSS_REGION`，
+并通过 Secret 注入 `OSS_ACCESS_KEY_ID` 和 `OSS_ACCESS_KEY_SECRET`。
 
 kind/minikube 示例：
 
 ```bash
 ./deploy/deploy.sh build
 kind create cluster --name meeting-dev
-./deploy/deploy.sh k8s-deps dev
+
+# PostgreSQL/RabbitMQ 可以使用托管服务，也可以按团队内部 Helm values 单独安装。
+# 不要为了 Java API 对象存储去安装 MinIO。
+
 kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev --name meeting-dev
-./deploy/meeting-api-java.sh k8s dev
 ```
 
-`k8s-deps dev` 会安装命名空间依赖：
+创建 Java API Secret 时必须包含 OSS 凭据：
 
-| 依赖 | Release | 说明 |
-|------|---------|------|
-| PostgreSQL | `postgres` | `pgvector/pgvector:pg15`，service DNS 为 `postgres` |
-| RabbitMQ | `rabbitmq` | 加载 `definitions.json`，`auth.securePassword=false` |
-| MinIO | `minio` | 默认 standalone Deployment，自动创建 bucket |
+```bash
+kubectl create namespace meeting-dev --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic meeting-api-secret \
+  -n meeting-dev \
+  --from-literal=POSTGRES_USER=meeting \
+  --from-literal=POSTGRES_PASSWORD=<postgres-password> \
+  --from-literal=RABBITMQ_USER=meeting \
+  --from-literal=RABBITMQ_PASS=<rabbitmq-password> \
+  --from-literal=OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id> \
+  --from-literal=OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret> \
+  --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-secret> \
+  --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
+  --from-literal=DASHSCOPE_API_KEY=<dashscope-key> \
+  --from-literal=KMS_MASTER_KEY_ID=<kms-key-id> \
+  --from-literal=MEETING_KMS_MASTER_KEY_BASE64=<base64-32-bytes> \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
 
-`k8s dev` 会执行：
+overlay / ConfigMap 需要包含：
 
-1. 创建 dev 用 `meeting-api-secret` 和 `ai-worker-secret`。
-2. 使用 `kustomize build --enable-helm` 渲染 `infra/meeting-infra/k8s/overlays/dev`。
-3. `kubectl apply` 应用清单。
-4. 等待 `deployment/meeting-api`、`deployment/meeting-web` 和 `statefulset/ai-worker` 就绪。
+```yaml
+STORAGE_TYPE: "oss"
+STORAGE_BUCKET_AUDIO: "meeting-audio-auska"
+STORAGE_BUCKET_ARTIFACTS: "meeting-artifacts"
+STORAGE_BUCKET_EXPORTS: "meeting-exports"
+OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com"
+OSS_REGION: "cn-hangzhou"
+```
+
+如果 K8s 集群和 OSS bucket 在同地域同 VPC，优先使用内网 endpoint，例如：
+
+```yaml
+OSS_ENDPOINT: "https://oss-cn-hangzhou-internal.aliyuncs.com"
+```
+
+渲染并应用 dev overlay：
+
+```bash
+kustomize build infra/meeting-infra/k8s/overlays/dev --enable-helm \
+  > deploy/.kustomize-dev.yaml
+rg 'STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION|POSTGRES_HOST|RABBITMQ_HOST' \
+  deploy/.kustomize-dev.yaml
+kubectl apply -f deploy/.kustomize-dev.yaml
+```
+
+然后手工等待应用就绪：
+
+```bash
+kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
+kubectl rollout status deployment/meeting-web -n meeting-dev --timeout=300s
+kubectl rollout status statefulset/ai-worker -n meeting-dev --timeout=600s
+```
+
+注意：`./deploy/deploy.sh k8s-deps dev` 是旧的本地依赖捷径，会安装
+PostgreSQL/RabbitMQ/MinIO。按当前 OSS 直连要求，不把它作为 Java API 标准
+部署步骤。
 
 验证：
 
@@ -383,8 +470,8 @@ curl -fsSL http://localhost:8080/actuator/health | jq .
 |------|----------|----------|
 | Java 验证 | `./deploy/meeting-api-java.sh test` 退出码为 0 | 单测、架构测试、集成测试或 Spring context 任一失败 |
 | Release 镜像 | `meeting-api`、`meeting-web`、CUDA `ai-worker` 镜像已按 digest 推送 | 只有本地 tag、架构错误或缺少 `ai-worker:cuda-*` |
-| 基础设施 | PostgreSQL、RabbitMQ、对象存储、KMS、监控已准备 | 误用 dev 密码、单节点生产 DB/MQ 或没有日志/指标入口 |
-| Secret | `meeting-api-secret` 和 `ai-worker-secret` 已同步到 `meeting-prod` | Secret 缺失、demo HMAC、callback/internal HMAC 不一致 |
+| 基础设施 | PostgreSQL、RabbitMQ、阿里云 OSS、KMS、监控已准备 | 误用 dev 密码、单节点生产 DB/MQ、OSS bucket 未建好或没有日志/指标入口 |
+| Secret | `meeting-api-secret` 和 `ai-worker-secret` 已同步到 `meeting-prod` | Secret 缺失、demo HMAC、OSS AK/SK 缺失、callback/internal HMAC 不一致 |
 | 数据库 | 已备份、恢复路径明确、Flyway 是迁移 owner | 没有备份、手工 SQL 没有 Flyway history、baseline-on-migrate 打开 |
 | AI worker | Linux + NVIDIA + CUDA worker 已就绪并加载真实模型 | Apple Silicon、fake runtime、checksum 缺失或 CPU-only worker |
 
@@ -426,22 +513,14 @@ diarization 依赖和模型权重。
 |------|----------|
 | PostgreSQL | 托管 RDS / Cloud SQL / 自管 HA PostgreSQL，并启用 pgvector |
 | RabbitMQ | 托管 MQ 或 HA RabbitMQ，definitions 由运维应用 |
-| 对象存储 | S3 / OSS / 等价对象存储，不建议生产内置单副本 MinIO |
+| 对象存储 | 阿里云 OSS，直接使用公网或内网 endpoint |
 | Secret | Vault / ExternalSecrets / SealedSecrets |
 | KMS | 优先云 KMS；本地 KMS 必须使用稳定的 32 字节 base64 master key |
 | 监控 | 托管 Prometheus/Grafana 或集群监控栈 |
 
-只有明确决定把生产依赖也部署到集群内时，才使用例外路径：
-
-```bash
-ALLOW_IN_CLUSTER_PROD_DEPS=1 \
-POSTGRES_PASSWORD="<strong-password>" \
-RABBITMQ_PASS="<strong-password>" \
-MINIO_ROOT_PASSWORD="<strong-password>" \
-  ./deploy/deploy.sh k8s-deps prod
-```
-
-该路径只适合受控环境，不是默认生产建议。
+不要在生产集群内安装 MinIO，也不要执行 `./deploy/deploy.sh k8s-deps prod`
+作为 Java API 标准生产步骤；该旧命令会安装 MinIO。生产对象存储统一使用
+阿里云 OSS，bucket、生命周期、加密、跨域、RAM 权限由云资源侧提前准备。
 
 ### 9.4 Secret 和 Config
 
@@ -456,6 +535,7 @@ MINIO_ROOT_PASSWORD="<strong-password>" \
 | `DASHSCOPE_API_KEY` | 真实 provider key |
 | `KMS_MASTER_KEY_ID` | 不能是 `dev-kms-master-key` |
 | `MEETING_KMS_MASTER_KEY_BASE64` | 使用本地 KMS gateway 时必填 |
+| `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 有权访问目标 OSS bucket 的 RAM 凭据 |
 
 `ai-worker-secret` 必须和 `meeting-api` 使用同一组 HMAC：
 
@@ -465,16 +545,35 @@ MINIO_ROOT_PASSWORD="<strong-password>" \
 | `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 与 `meeting-api-secret` 相同 |
 | `AI_WORKER_ADMIN_JWT_SECRET` | 非 demo 管理密钥 |
 
+OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
+
+| 能力 | 用途 |
+|------|------|
+| `oss:PutObject` | 客户端签名上传、服务端写入导出物 |
+| `oss:GetObject` / `oss:HeadObject` | 完成上传后确认对象存在和大小、下载预签名 |
+| `oss:DeleteObject` | 删除会议、导出物或清理任务 |
+
+不要使用主账号 AK/SK。生产建议使用专用 RAM 用户或 STS 角色，并限制到
+`STORAGE_BUCKET_AUDIO`、`STORAGE_BUCKET_ARTIFACTS`、`STORAGE_BUCKET_EXPORTS`
+对应 bucket。
+
 生产配置必须通过 prod overlay、ExternalSecret 或平台配置注入：
 
 | 配置 | 生产值 |
 |------|--------|
 | `AI_WORKER_BASE_URL` | 集群 DNS 或内部 URL，不能是 localhost |
 | `MEETING_TENANTS_ACTIVE` | 非空租户列表 |
-| `MEETING_STORAGE_ENDPOINT` | 集群内或云对象存储 endpoint |
-| `STORAGE_TYPE` / `OSS_*` | 不用 MinIO 时配置云对象存储 |
+| `STORAGE_TYPE` | 固定为 `oss` |
+| `OSS_ENDPOINT` | 阿里云 OSS endpoint，ECS/K8s 同地域优先内网 endpoint |
+| `OSS_REGION` | OSS bucket 所在地域，例如 `cn-hangzhou` |
+| `STORAGE_BUCKET_AUDIO` / `STORAGE_BUCKET_ARTIFACTS` / `STORAGE_BUCKET_EXPORTS` | 已存在的 OSS bucket 名 |
 | Auth mode | 不能是 `in-memory` |
 | `SPRING_FLYWAY_BASELINE_ON_MIGRATE` | `false` |
+
+当前 prod overlay 已把 `STORAGE_TYPE` 切到 `oss`，并默认使用
+`https://oss-cn-hangzhou-internal.aliyuncs.com` / `cn-hangzhou`。如果 bucket
+不在杭州地域，或集群不能走阿里云内网 endpoint，先修改
+`infra/meeting-infra/k8s/overlays/prod/kustomization.yaml` 后再部署。
 
 应用清单前检查 Secret：
 
@@ -505,7 +604,7 @@ kubectl get secret ai-worker-secret -n meeting-prod
 ```bash
 kustomize build infra/meeting-infra/k8s/overlays/prod --enable-helm \
   > deploy/.kustomize-prod.yaml
-rg 'SPRING_PROFILES_ACTIVE|SPRING_FLYWAY_BASELINE_ON_MIGRATE|AI_WORKER_BASE_URL|MEETING_TENANTS_ACTIVE|MEETING_STORAGE_ENDPOINT' \
+rg 'SPRING_PROFILES_ACTIVE|SPRING_FLYWAY_BASELINE_ON_MIGRATE|AI_WORKER_BASE_URL|MEETING_TENANTS_ACTIVE|STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION' \
   deploy/.kustomize-prod.yaml
 kubectl diff -f deploy/.kustomize-prod.yaml
 ```
@@ -610,7 +709,8 @@ kubectl rollout undo deployment/meeting-api -n meeting-prod
 | `ProdProfileValidator failed` | prod config 仍有 dev 默认值 | 按 §9.4 对照检查 |
 | `/actuator/health` DOWN 但 readiness UP | `aiWorker` 或依赖聚合项未就绪 | rollout 看 readiness，验收看 aggregate |
 | `outboxBacklog` DOWN | 事件发布积压 | 查 `domain_events_outbox` 和应用日志 |
-| `MinIoHealthIndicator` DOWN | `MEETING_STORAGE_ENDPOINT` 错误 | 使用集群 DNS 或云 endpoint，不能用 localhost |
+| OSS 初始化失败 | `STORAGE_TYPE=oss` 但 `OSS_ENDPOINT` / `OSS_REGION` / AK/SK 缺失 | 补齐 OSS 配置和 Secret，确认 bucket 所在 region |
+| `oss put/head/delete failed` | RAM 权限、bucket、endpoint 或网络不正确 | 检查 RAM policy、bucket 名、内网/公网 endpoint 和出站 HTTPS |
 | LibreOffice 导出失败 | 临时目录不可写或架构错误 | 查 `/tmp/soffice`、镜像架构、`LIBREOFFICE_BINARY=soffice` |
 | Flyway `relation already exists` | SQL 曾被手工执行 | 用 disposable DB 复现，repair 或提交前向 migration |
 

@@ -105,8 +105,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio:
-        condition: service_healthy
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -117,9 +115,17 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-meeting}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-meeting_dev}
+      STORAGE_TYPE: ${STORAGE_TYPE:-minio}
+      STORAGE_BUCKET_AUDIO: ${STORAGE_BUCKET_AUDIO:-meeting-audio-auska}
+      STORAGE_BUCKET_ARTIFACTS: ${STORAGE_BUCKET_ARTIFACTS:-meeting-artifacts}
+      STORAGE_BUCKET_EXPORTS: ${STORAGE_BUCKET_EXPORTS:-meeting-exports}
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_REGION: ${OSS_REGION:-cn-hangzhou}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
       # Default to the compose ai-worker service. Apple Silicon real-model
       # runs can point meeting-api at a host-native ai-worker with:
       #   AI_WORKER_BASE_URL=http://host.docker.internal:8090

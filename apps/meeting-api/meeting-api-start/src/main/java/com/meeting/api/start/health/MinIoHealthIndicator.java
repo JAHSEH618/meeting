@@ -8,15 +8,16 @@ import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * 8.1.2.c — pings MinIO's {@code /minio/health/live} endpoint with a
- * short timeout. We deliberately skip a write-byte smoke here to keep
- * the probe cheap; a real write would touch billing on hosted object
- * storage and is better done by an out-of-band lifecycle check.
+ * 8.1.2.c — legacy/local MinIO health check. It is only enabled when
+ * {@code meeting.storage.type=minio}; Aliyun OSS deployments do not register
+ * this indicator and should validate storage with an out-of-band upload smoke.
  */
 @Component("minio")
+@ConditionalOnProperty(name = "meeting.storage.type", havingValue = "minio", matchIfMissing = true)
 public class MinIoHealthIndicator implements HealthIndicator {
 
     private final URI healthUri;
