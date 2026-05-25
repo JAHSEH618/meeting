@@ -4,28 +4,32 @@
 FROM node:20-alpine AS build
 WORKDIR /src
 
+# Build context MUST be the repo root (see deploy/DEPLOY.md §4.2):
+#   docker build -f apps/meeting-web/Dockerfile -t meeting-web:dev .
+# because `npm run build` triggers `npm run codegen` which reads
+#   ../../packages/meeting-contracts/openapi/public-api.yaml
+# relative to apps/meeting-web/. Copying just apps/meeting-web/ would
+# leave codegen with no contracts on disk.
+#
 # Cache npm deps when only source changes.
-COPY package.json package-lock.json* ./
+COPY apps/meeting-web/package.json apps/meeting-web/package-lock.json* ./apps/meeting-web/
+COPY packages/meeting-contracts ./packages/meeting-contracts
+WORKDIR /src/apps/meeting-web
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Vite reads the contracts package to generate types.gen.ts at boot
-# (codegen target), so we have to bring it into the build image even
-# though it lives outside apps/meeting-web. The compose / CI builder
-# is expected to set the build context to the repo root and use this
-# Dockerfile with `--file apps/meeting-web/Dockerfile`. For a per-app
-# build context, copy types.gen.ts into the source tree before invoking
-# docker build instead.
-COPY . .
+# Bring in the app sources after the deps install so a source-only
+# change doesn't bust the npm cache layer.
+COPY apps/meeting-web ./
 
-# Production build.
+# Production build (includes codegen → src/shared/api/types.gen.ts).
 RUN npm run build
 
 # ----- runtime stage ---------------------------------------------------------
 FROM nginx:1.27-alpine
 
 # CSP / SPA fallback / gzip / cache headers all live in nginx.conf.
-COPY --from=build /src/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /src/apps/meeting-web/dist /usr/share/nginx/html
+COPY apps/meeting-web/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Run as the non-root nginx user (added by the upstream image).
 USER nginx

@@ -36,7 +36,23 @@ ships plaintext credentials.
 ## Validate locally before pushing
 
 ```bash
-kustomize build infra/meeting-infra/k8s/overlays/dev | kubeval --strict
+# CI runs the same kubeconform call from .github/workflows/ci.yml
+# (k8s-lint job). The older kubeval CLI is unmaintained — kubeconform
+# supports newer Kubernetes API versions and CRD schemas.
+kustomize build infra/meeting-infra/k8s/overlays/dev \
+    | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0
+kustomize build infra/meeting-infra/k8s/overlays/prod \
+    | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0
+```
+
+Install kubeconform:
+
+```bash
+# macOS
+brew install kubeconform
+# Linux
+curl -sLo /tmp/kc.tgz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+    && tar -xzf /tmp/kc.tgz -C /tmp && sudo mv /tmp/kubeconform /usr/local/bin/
 ```
 
 CI runs the same step in the `k8s-lint` job.

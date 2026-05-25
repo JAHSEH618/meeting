@@ -17,10 +17,14 @@ docker compose --profile full-stack \
 curl -fsSL http://localhost:8080/actuator/health | jq .
 
 # Path B — kind / minikube
-kind create cluster --name meeting-staging
+# The dev overlay's namespace is `meeting-dev` (see
+# infra/meeting-infra/k8s/overlays/dev/kustomization.yaml line 11). An
+# overlays/staging tree is reserved but currently empty — use the dev
+# overlay until staging-specific patches land.
+kind create cluster --name meeting-dev
 kubectl apply -k infra/meeting-infra/k8s/overlays/dev
-kubectl rollout status deploy/meeting-api -n meeting-staging
-kubectl port-forward svc/meeting-api 8080:8080 &
+kubectl rollout status deploy/meeting-api -n meeting-dev
+kubectl port-forward -n meeting-dev svc/meeting-api 8080:8080 &
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
 
@@ -136,7 +140,7 @@ grep -c "passed (.*)" logs/e2e-*.log | sort
 ```bash
 kind create cluster --name meeting-j6
 kubectl apply -k infra/meeting-infra/k8s/overlays/dev
-kubectl get pods -n meeting-staging --watch
+kubectl get pods -n meeting-dev --watch
 ```
 
 **Pass criteria**
@@ -156,6 +160,29 @@ kubectl get pods -n meeting-staging --watch
 ```
 
 **Pass criteria**: every command exits zero.
+
+### J7 — Colima / non-Docker-Desktop environment notes
+
+`./mvnw verify` boots Testcontainers, and Testcontainers needs to know
+where to find the Docker daemon. Recipes by host setup:
+
+| Setup | Required env | Why |
+|-------|-------------|-----|
+| Docker Desktop (mac/Windows) | _(none)_ | `~/.docker/run/docker.sock` is detected by default. |
+| Colima (macOS) | `export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`<br>`export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` | Without `DOCKER_HOST` Testcontainers probes `/var/run/docker.sock` which Colima doesn't populate. Without the override Ryuk tries to bind-mount the colima socket *path* into the reaper container and the colima VM can't see it. |
+| OrbStack | `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock` (usually optional) | OrbStack auto-creates `/var/run/docker.sock`, so most installs work out of the box. |
+| Rancher Desktop (containerd backend) | Disable containerd / switch to dockerd, or set the same `DOCKER_HOST` pointing at the dockerd socket. | Testcontainers does not support a pure-containerd backend yet. |
+
+Tool versions on the host must match the repo's `.tool-versions` (java
+17 / nodejs 20 / python 3.11). With asdf/mise/rtx the shim picks this up
+automatically; otherwise `JAVA_HOME=$(/usr/libexec/java_home -v 17)` is
+required to pacify Maven Enforcer `[17,18)`.
+
+The Testcontainers version pinned in `apps/meeting-api/pom.xml`
+(currently 1.21.4) supports Docker API auto-negotiation, so Docker 29+
+no longer needs `-Dapi.version=1.44`. Earlier 1.20.x baselines did —
+keep that workaround in mind if you cherry-pick this runbook back onto
+an older branch.
 
 ## J8 — Backup recovery drill
 

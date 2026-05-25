@@ -74,10 +74,28 @@
 
 ### 前置要求
 
-- Docker Desktop / Docker Engine 24+
-- JDK 17（仅本地开发/编译时需要）
-- Node 20（仅本地前端开发时需要）
-- Python 3.11 + uv（仅本地 Python 开发时需要）
+最低要求按你要跑的路径分两类。仓库根目录提供 `.tool-versions`（`asdf` / `mise` / `rtx` / `proto` / `vfox` 通用），切到这些工具会自动锁到下面的版本。
+
+**所有路径必装：**
+- Docker Engine 24+。macOS 推荐 Colima（`brew install colima docker docker-compose`，`colima start --cpu 4 --memory 6`）或 Docker Desktop；Linux 直接 `apt-get install docker.io`。
+- Git ≥ 2.39。
+
+**编译/测试本地源码（"Java/Python 路径"）：**
+- JDK 17（Maven Enforcer 严格要求 `[17,18)`；高版本会被 enforcer 拒绝）。
+- Node 20（CI matrix 用的是 Node 20.x；25/26 会因 `@types` 解析变化在 `tsc --noEmit` 上报错）。
+- Python 3.11 + [uv](https://docs.astral.sh/uv/)（`ai-worker` 的 `pyproject.toml` 明确 `requires-python = ">=3.11"`）。
+
+**K8s 演练 / Phase J 验收：**
+- `kubectl` ≥ 1.29（基线 K8s 版本，见 `.github/workflows/ci.yml` 的 `kubeconform -kubernetes-version 1.29.0`）。
+- `kustomize` ≥ 5.0（CLI 形式；`kubectl kustomize` 内置版本通常滞后，且不支持 `--enable-helm`，本仓库的 dev/prod overlay 暂未引用 helm chart，但 `deploy/deploy.sh:321` 已传该参数，缺它会在引入 helm chart 后突然报错）。
+- `kind` 或 `minikube`（J6 在本机起 K8s 集群）。
+- `kubeconform` ≥ 0.6.7（CI 用它做 manifest 校验；本地用同一个工具能避免 schema 抖动）。
+
+**ai-worker 真实模型（GPU 生产路径）：**
+- NVIDIA GPU host：CUDA 13.x runtime + `nvidia-container-toolkit`（`nvidia-ctk runtime configure --runtime=docker`），通过 `docker run --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi` 验证。
+- 模型权重已落盘到 `/opt/models/<model>/<version>/`（详见 §五 5.6）。
+
+> macOS / 无 GPU 机器只能跑 fake runtime 模式（`AI_WORKER_USE_FAKE_*_RUNTIME=true`）。Apple Silicon 上的 MPS 支持仅作为开发期 sanity-check 通道（embedding / rerank 走 fp32），不要拿它做生产推理。
 
 ### 3.1 一键启动
 
@@ -168,9 +186,9 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
 | 镜像 | 基础镜像 | 构建上下文 | 最终大小(约) |
 |------|---------|-----------|------------|
 | `meeting-api` | `eclipse-temurin:17-jre-jammy` | `apps/meeting-api/` | ~1.2 GB (含 LibreOffice) |
-| `meeting-web` | `nginx:1.27-alpine` | repo root | ~15 MB |
-| `ai-worker` (CPU) | `python:3.11-slim` | repo root | ~300 MB |
-| `ai-worker` (CUDA) | `nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04` | repo root | ~5 GB |
+| `meeting-web` | `nginx:1.27-alpine` | **repo root**（Dockerfile 通过 `apps/meeting-web/...` 引用源码，codegen 直接 COPY `packages/meeting-contracts/`） | ~15 MB |
+| `ai-worker` (CPU / fake runtime) | `python:3.11-slim` | repo root | ~300 MB |
+| `ai-worker` (CUDA / 真实模型) | `nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04`（Dockerfile 默认 BASE，CUDA 13 对齐 `uv.lock` 里的 torch 2.12 wheel；旧 12.x 已弃用） | repo root | ~5 GB |
 
 ### 4.2 一键构建
 
@@ -184,19 +202,25 @@ docker build -t meeting-api:dev \
   -f apps/meeting-api/Dockerfile \
   apps/meeting-api/
 
-# meeting-web (构建上下文必须是 repo root，用于读取 contracts)
+# meeting-web —— 构建上下文必须是 repo root：Dockerfile 内 COPY
+# 路径已经写成 `apps/meeting-web/...` 并把 `packages/meeting-contracts/`
+# 一并拉进 build stage（`npm run codegen` 要读 ../../packages/...）。
+# 早期版本把 context 设成 apps/meeting-web/ 会缺 contracts，build 会
+# 在 codegen 步骤报 `ENOENT ../../packages/...`。
 docker build -t meeting-web:dev \
   -f apps/meeting-web/Dockerfile \
   .
 
-# ai-worker (CPU fake 模式)
+# ai-worker (CPU / fake runtime) — 本地开发 / macOS 默认走这条
 docker build -t ai-worker:dev \
   -f apps/ai-worker/Dockerfile \
   --build-arg BASE=python:3.11-slim \
   .
 
-# ai-worker (GPU 真实模型) —— Phase J ML: UV_EXTRAS 必须传，否则 ai-worker:cuda
-# 不会安装 FlagEmbedding / funasr / pyannote.audio，首个真实任务直接 crash。
+# ai-worker (CUDA / 真实模型) —— Phase J ML 必须传 UV_EXTRAS，
+# 否则 ai-worker:cuda 不会安装 FlagEmbedding / funasr / pyannote.audio，
+# 首个真实任务直接 crash。BASE 已对齐 uv.lock（torch 2.12 + CUDA 13），
+# 不传 BASE 也是 OK 的；只在用其他 CUDA 主线时显式覆盖。
 docker build -t ai-worker:cuda \
   -f apps/ai-worker/Dockerfile \
   --build-arg UV_EXTRAS=real-models \
@@ -250,16 +274,117 @@ infra/meeting-infra/k8s/
 | meeting-web | 2-3 | 100m / 500m | 64Mi / 256Mi | - | - |
 | ai-worker | 1 | 2000m / 4000m | 8Gi / 16Gi | 1 GPU | 5Gi PVC |
 
-### 5.3 部署步骤
+### 5.3 部署前提：依赖服务必须已存在
+
+**`infra/meeting-infra/k8s/` 只包含应用层清单**（meeting-api / meeting-web / ai-worker）。
+PostgreSQL、RabbitMQ、对象存储、Ingress 控制器、模型 PVC 都不在 base 里，必须在 apply
+overlay **之前**先准备好。CI 的 `kubeconform` 检查不会发现依赖缺失，只会在 Pod
+启动时表现为 `CrashLoopBackOff: Connection refused`。
+
+#### 5.3.1 集群级控制面（每集群一次）
+
+| 组件 | 安装方式 | 验证命令 |
+|------|---------|---------|
+| Ingress Controller | `helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace`（kind 用 `kind-ingress-nginx` 预设） | `kubectl -n ingress-nginx get svc ingress-nginx-controller` 有 `EXTERNAL-IP`（或 NodePort） |
+| StorageClass | EKS/GKE/AKS 内置；kind 用 `local-path-provisioner`（默认开启） | `kubectl get sc` 显示 `(default)` |
+| Cert-manager（仅生产 TLS） | `helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set installCRDs=true` | `kubectl -n cert-manager get pods` 全 `Ready` |
+
+#### 5.3.2 命名空间内依赖服务（每环境一次）
+
+容器化部署用 Bitnami helm charts 起；托管服务（RDS / Amazon MQ / S3 / OSS）则在
+overlay 的 `meeting-api-config` ConfigMap 里覆盖 `POSTGRES_HOST` / `RABBITMQ_HOST` /
+`MINIO_ENDPOINT` 指向托管 endpoint。
 
 ```bash
-# -- 前置：集群中必须已有以下资源 --
-#   1. PostgreSQL (含 pgvector 扩展)
-#   2. RabbitMQ (含 definitions.json 中的 exchanges/queues)
-#   3. MinIO 或 S3 存储桶
-#   4. Ingress Controller (nginx-ingress)
-#   5. ai-worker-models PVC (预置模型权重)
+NS=meeting-dev   # 或 meeting-prod
+kubectl create namespace "$NS"
 
+# PostgreSQL + pgvector —— Bitnami chart 默认装的是无 pgvector 的镜像，
+# 必须把 image 指到 pgvector/pgvector，并在 init script 里 CREATE EXTENSION。
+helm install postgres bitnami/postgresql -n "$NS" \
+  --set image.registry=docker.io \
+  --set image.repository=pgvector/pgvector \
+  --set image.tag=pg15 \
+  --set auth.username=meeting \
+  --set auth.password=meeting_dev \
+  --set auth.database=meeting \
+  --set primary.initdb.scripts."enable-pgvector\.sql"="CREATE EXTENSION IF NOT EXISTS vector;"
+
+# RabbitMQ —— 启用 quorum queues（meeting-api 的 outbox 依赖），
+# 把 definitions.json 通过 ConfigMap 注入。
+kubectl -n "$NS" create configmap rabbitmq-definitions \
+  --from-file=definitions.json=infra/meeting-infra/docker/compose/rabbitmq/definitions.json
+helm install rabbitmq bitnami/rabbitmq -n "$NS" \
+  --set auth.username=meeting --set auth.password=meeting_dev \
+  --set loadDefinition.enabled=true \
+  --set loadDefinition.existingSecret=rabbitmq-definitions
+
+# MinIO —— 简化为单副本；生产环境改成 S3/OSS 后在 overlay 里
+# 覆盖 STORAGE_TYPE=oss + OSS_ENDPOINT/OSS_REGION，不再装 chart。
+helm install minio bitnami/minio -n "$NS" \
+  --set auth.rootUser=minioadmin --set auth.rootPassword=minioadmin \
+  --set defaultBuckets="meeting-audio-auska meeting-artifacts meeting-exports"
+
+# ai-worker 模型 PVC —— 名称与挂载 path 必须与 base/ai-worker/statefulset.yaml 完全一致
+kubectl -n "$NS" apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-worker-models
+spec:
+  accessModes: [ReadOnlyMany]
+  resources:
+    requests:
+      storage: 50Gi
+EOF
+# 把权重灌入 PVC 的方式见 §5.6 + apps/ai-worker/scripts/stage_mock_weights.py
+```
+
+#### 5.3.3 命名空间内 DNS 约定（base ConfigMap 默认值）
+
+| ConfigMap key | 默认值 | 在 kind/minikube/helm 默认安装下解析到 |
+|---------------|--------|-----------------------------------|
+| `POSTGRES_HOST` | `postgres` | `postgres.<ns>.svc.cluster.local`（helm install 名 `postgres` 时；Bitnami 默认 service 名是 `postgres-postgresql`，覆盖一下：`--set fullnameOverride=postgres`） |
+| `RABBITMQ_HOST` | `rabbitmq` | 同上，`--set fullnameOverride=rabbitmq` |
+| `MINIO_ENDPOINT` / `MEETING_STORAGE_ENDPOINT` | `http://minio:9000` | `http://minio.<ns>.svc.cluster.local:9000`，Bitnami 用 `--set fullnameOverride=minio` |
+| `AI_WORKER_BASE_URL` | `http://ai-worker:8090` | base/ai-worker 创建的 `ai-worker` Service |
+
+托管服务覆盖示例：
+
+```yaml
+# overlays/prod/kustomization.yaml 中追加
+patches:
+  - target: { kind: ConfigMap, name: meeting-api-config }
+    patch: |
+      - op: replace
+        path: /data/POSTGRES_HOST
+        value: "meeting-prod.cluster-xxx.us-east-1.rds.amazonaws.com"
+      - op: replace
+        path: /data/RABBITMQ_HOST
+        value: "b-xxx.mq.us-east-1.amazonaws.com"
+      - op: replace
+        path: /data/STORAGE_TYPE
+        value: "oss"
+      - op: add
+        path: /data/OSS_ENDPOINT
+        value: "https://oss-cn-hangzhou-internal.aliyuncs.com"
+```
+
+### 5.4 命名空间约定
+
+deploy.sh 与 overlay 都按 `meeting-${env}` 命名：
+
+| Overlay | namespace | 用途 |
+|---------|-----------|------|
+| `overlays/dev/` | `meeting-dev` | kind/minikube 本地集群、Phase J J1/J6 验收 |
+| `overlays/staging/` | _TBD_（占位目录，文件待补） | staging 环境（J5 5 连 E2E 通过后开放） |
+| `overlays/prod/` | `meeting-prod` | 生产 |
+
+如果 runbook 旧版本提到 `meeting-staging`，请按当前 overlay 实际值替换为 `meeting-dev`。
+
+### 5.5 部署步骤（应用层）
+
+```bash
 # 1. 部署到开发环境
 ./deploy/deploy.sh k8s-dev
 
@@ -274,30 +399,24 @@ infra/meeting-infra/k8s/
 ./deploy/deploy.sh k8s-destroy dev
 ```
 
-### 5.4 手动部署
+### 5.6 手动部署 (`deploy.sh` 等价命令)
 
 ```bash
-# 构建 Kustomize 清单
-kustomize build infra/meeting-infra/k8s/overlays/dev > deploy/dev-bundle.yaml
-kustomize build infra/meeting-infra/k8s/overlays/prod > deploy/prod-bundle.yaml
-
-# 创建命名空间
-kubectl create namespace meeting-dev
-kubectl create namespace meeting-prod
+NS=meeting-dev
 
 # Phase J 重点：ai-worker-secret 不再在 K8s base 里声明 placeholder（避免
 # kustomize apply 覆盖运维 / deploy.sh 刚创建好的真实 Secret）。任何环境
 # 必须在 kustomize apply 之前创建好它，否则 ai-worker Pod 会停在
 # CreateContainerConfigError。
 kubectl create secret generic ai-worker-secret \
-  -n meeting-dev \
+  -n "$NS" \
   --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-secret> \
   --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
   --from-literal=AI_WORKER_ADMIN_JWT_SECRET=<32-byte-secret>
 
-# 创建 Secret（生产环境用 SealedSecrets / Vault 替代）
+# meeting-api-secret —— 生产用 SealedSecrets / Vault / ExternalSecret 替代
 kubectl create secret generic meeting-api-secret \
-  -n meeting-dev \
+  -n "$NS" \
   --from-literal=POSTGRES_USER=meeting \
   --from-literal=POSTGRES_PASSWORD=meeting_dev \
   --from-literal=RABBITMQ_USER=meeting \
@@ -316,21 +435,27 @@ kubectl create secret generic meeting-api-secret \
 #     embedding 全部无法解密）。生成方式：`openssl rand -base64 32`。
 #   * 切换到云 KMS 后这个 base64 不再需要，但 ID 仍然要求非 demo 值。
 
-kubectl create secret generic meeting-api-config \
-  -n meeting-dev \
-  --from-literal=POSTGRES_HOST=postgres-service \
-  --from-literal=RABBITMQ_HOST=rabbitmq-service \
-  --from-literal=MINIO_ENDPOINT=http://minio-service:9000 \
-  --from-literal=AI_WORKER_BASE_URL=http://ai-worker:8090
+# meeting-api-config 是 ConfigMap（不是 Secret），由 kustomize 从
+# infra/meeting-infra/k8s/base/meeting-api/service.yaml 直接渲染。
+# 默认值已经写好集群内 DNS（postgres / rabbitmq / minio / ai-worker），
+# 需要覆盖时在 overlay 里 JSON patch（见 §5.3.3）。不要再用
+# `kubectl create configmap meeting-api-config` —— 那是旧文档的写法，
+# 会和 kustomize 渲染的同名 ConfigMap 冲突 / 互相覆盖。
 
-# 应用清单
-kubectl apply -f deploy/dev-bundle.yaml
+# 构建 Kustomize 清单（与 deploy.sh 完全一致：保留 --enable-helm，
+# 这样后续引入任何 helm-chart 形式的依赖时不会出现"脚本能跑、手动命令
+# 报 helmChart inflator not enabled"的不一致）
+kustomize build infra/meeting-infra/k8s/overlays/dev --enable-helm \
+    > deploy/.kustomize-dev.yaml
+kubectl apply -f deploy/.kustomize-dev.yaml
 
 # 等待部署完成
-kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
+kubectl rollout status deployment/meeting-api -n "$NS" --timeout=300s
+kubectl rollout status deployment/meeting-web -n "$NS" --timeout=300s
+kubectl rollout status statefulset/ai-worker  -n "$NS" --timeout=600s
 ```
 
-### 5.5 meeting-api prod profile 必读
+### 5.7 meeting-api prod profile 必读
 
 `ProdProfileValidator`（`apps/meeting-api/.../start/config/ProdProfileValidator.java`）只在 `SPRING_PROFILES_ACTIVE=prod` 时启用，启用后会在 Bean 创建阶段 fail-fast。把所有违反项一次列出，避免反复重启排错。
 
@@ -342,7 +467,7 @@ kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
 - **存储 endpoint**：`MEETING_STORAGE_ENDPOINT` 必须显式设到集群内的 MinIO/S3 URL。`LocalObjectStorageGateway` 读 `meeting.storage.endpoint`（而不是 `meeting.storage.minio.endpoint`）来生成预签名 URL；不设会默认 `http://localhost:9000`，所有上传/下载链接在集群里都不可用。base ConfigMap 已默认 `http://minio:9000`，运行在 S3 上时由 overlay 覆盖。
 - **KMS master key**：本地实现 (`LocalKmsGateway`) 通过 `MEETING_KMS_MASTER_KEY_BASE64` 读 32 字节 AES-256 master key（base64）。**不设的话每次启动生成随机 key**，重启即丢，所有已加密的 speaker embedding 都会解不开。生成方法：`openssl rand -base64 32`。切换到云 KMS 后此变量可省略。
 
-### 5.6 ai-worker 特殊要求
+### 5.8 ai-worker 特殊要求
 
 - **GPU 节点**: 集群需有 `nvidia.com/gpu.present: "true"` 标签的节点
 - **模型卷**: 预创建 `ai-worker-models` PVC 并预置模型权重。挂载路径必须包含版本号子目录，否则 `/internal/ready` 的 checksum guard 无法校验：
@@ -357,7 +482,7 @@ kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
 - **Secret**: `ai-worker-secret` 必须在 kustomize apply 之前创建（dev 由 `deploy.sh k8s-dev` 自动处理；staging/prod 由 SealedSecrets / ExternalSecret 注入）
 - **fsGroup**: `securityContext.fsGroup: 1001` 确保 ai-worker 用户 (uid 1001) 可读取模型
 
-### 5.7 Ingress 配置
+### 5.9 Ingress 配置
 
 ```yaml
 # ai-worker 工作站 Ingress（仅内部 IP）
@@ -392,12 +517,143 @@ spec:
                   number: 8090
 ```
 
-### 5.8 工作站 SPA 路径约定 (Phase J)
+### 5.10 工作站 SPA 路径约定 (Phase J)
 
 - 前端 `vite.config.ts` 设 `base: "/workstation/"`，构建出的 `index.html` 引用 `/workstation/assets/...`。
 - `BrowserRouter basename="/workstation"`，所有 SPA 链接（`/meetings`、`/enrollment`）实际落在 `/workstation/meetings` 等路径下；E2E (`apps/ai-worker-web/e2e/*.spec.ts`) 必须用带前缀的 `page.goto("/workstation/...")`。
 - FastAPI 用 `SpaStaticFiles` 子类挂载：SPA 路由（无扩展名、不在 `assets/` 下）的 404 回退到 `index.html`，但缺失的 `*.js / *.css / *.ico` 等真实 404 保留——避免浏览器把 HTML 当 JS module 解析后报隐晦错误。
 - **登录跳转**优先级：`window.__WORKSTATION_CONFIG__.authLoginUrl`（运行时，由 `AI_WORKER_AUTH_LOGIN_URL` 注入）→ `VITE_AUTH_LOGIN_URL`（构建期）→ `/auth/login`（同主机兜底）。K8s 多 host 部署设置 `AI_WORKER_AUTH_LOGIN_URL` 即可，无需重 build SPA 镜像。
+
+---
+
+## 五·五、平台分流：Java + Python 详细部署路径
+
+K8s 章节给出的是「一个 overlay 应用所有平台」的视角。下面按运行平台拆开，列出实际遇到的差异点。表里 ❌ 表示不支持，⚠️ 表示能跑但仅限开发 / smoke。
+
+| 平台 | meeting-api (Java) | ai-worker (Python, fake) | ai-worker (Python, 真实模型) | meeting-web |
+|------|-------------------|------------------------|---------------------------|--------------|
+| **Linux x86_64 + NVIDIA GPU**（生产） | ✅ JDK 17 / JRE 17 镜像直接跑 | ✅ | ✅ CUDA 13 wheel | ✅ |
+| **Linux x86_64 / CPU 服务器**（staging / 应急） | ✅ 同上 | ✅ | ⚠️ 仅 BGE / rerank 走 fp32 CPU；Qwen3-ASR 实测 ≥ 8× 实时延迟，建议下降为 fake-ASR | ✅ |
+| **macOS Apple Silicon (arm64)**（开发机） | ✅ 用 Temurin 17 arm64 原生镜像 | ✅ | ⚠️ MPS 可用但仅做 sanity check，FlagEmbedding 在 MPS 上未官方支持；生产请保持 fake | ✅ |
+| **macOS Intel** | ⚠️ Docker 跑得动，性能差；推荐远端开发 | ✅ | ❌ 无 CUDA、CPU 推理太慢 | ✅ |
+| **Windows + WSL2** | ✅ 同 Linux x86_64 | ✅ | ✅（NVIDIA GPU pass-through 必须装 `nvidia-container-toolkit` for WSL） | ✅ |
+
+### 5·5.1 Java 路径（meeting-api）
+
+#### A. 直接跑 jar（最快验收启动逻辑）
+
+```bash
+# 所有平台通用 —— 仅依赖 JDK 17
+cd apps/meeting-api
+JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null || echo /usr/lib/jvm/temurin-17-jdk-amd64) \
+  ./mvnw -pl meeting-api-start -am -DskipTests package
+java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
+```
+
+需要把 `application.yml` 里所有 `${...}` 占位变量从 shell 传进去；最小集见 §9 `meeting-api application.yml`。本机起 Postgres / RabbitMQ / MinIO 用 `docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d`。
+
+#### B. Docker（生产唯一推荐）
+
+```bash
+# 所有平台共用一份 Dockerfile（arm64 + amd64 由 base image 自适配）
+docker build -t meeting-api:dev -f apps/meeting-api/Dockerfile apps/meeting-api/
+
+# Apple Silicon 上想跑生产同款 amd64 镜像（包括 LibreOffice 原生路径）：
+docker buildx build --platform linux/amd64 -t meeting-api:dev-amd64 \
+  -f apps/meeting-api/Dockerfile apps/meeting-api/
+```
+
+> Mac M 系列上 LibreOffice 在 arm64 镜像里需要的字体目录与 amd64 不同：如果出现 `soffice: command not found` 或 PDF 输出乱码，先确认 Pod 用的是 amd64 镜像（通过 buildx + `--platform linux/amd64` 强制）。
+
+#### C. Kubernetes（生产）
+
+按 §五 完整流程即可。Java 容器没有 GPU 依赖，nodeSelector 默认走通用节点池；prod overlay 通过 ConfigMap patch 注入 `SPRING_PROFILES_ACTIVE=prod` 触发 `ProdProfileValidator` 严格检查（详情见 §5.7）。
+
+### 5·5.2 Python 路径（ai-worker）
+
+ai-worker 是平台差异最大的组件，按硬件能力走以下三条路径之一：
+
+#### A. NVIDIA Linux + 真实模型（生产路径）
+
+```bash
+# 1. 主机检查
+nvidia-smi                                          # 必须能输出 GPU 列表
+nvidia-ctk runtime configure --runtime=docker      # 一次性配置
+docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi
+
+# 2. 构建 CUDA 镜像（UV_EXTRAS=real-models 装齐 FlagEmbedding/funasr/pyannote.audio）
+docker build -t ai-worker:cuda \
+  -f apps/ai-worker/Dockerfile \
+  --build-arg UV_EXTRAS=real-models \
+  .
+
+# 3. 灌权重到 PVC（K8s）—— 见 §5.8 + apps/ai-worker/scripts/stage_mock_weights.py
+#    本地 docker compose 路径直接挂载 host 目录到容器 /opt/models。
+
+# 4. 运行（K8s 走 base/ai-worker/statefulset.yaml；docker run 单机调试见下）
+docker run --rm --gpus all \
+  -e AI_WORKER_USE_FAKE_RUNTIME=false \
+  -e AI_WORKER_USE_FAKE_ASR_RUNTIME=false \
+  -e AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false \
+  -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
+  -e AI_WORKER_RABBITMQ_HOST=... -e AI_WORKER_MEETING_API_BASE_URL=... \
+  -e AI_WORKER_CALLBACK_HMAC_SECRET=... -e AI_WORKER_INTERNAL_API_HMAC_SECRET=... \
+  -v /opt/models:/opt/models:ro \
+  -p 8090:8090 \
+  ai-worker:cuda
+
+# 5. 验证
+curl -fsSL http://localhost:8090/internal/hardware | jq .   # torch/CUDA/模型 device
+curl -fsSL http://localhost:8090/internal/ready    | jq .   # 模型 checksum guard
+```
+
+K8s 资源请求：1 × `nvidia.com/gpu`、8Gi RAM、2 vCPU 起步；多卡时通过 statefulset replica 横向扩展（每副本独占一卡），不要共享 GPU。
+
+#### B. macOS / 任何无 GPU 机器（开发 + smoke 路径）
+
+```bash
+# 1. 装依赖（不需要 CUDA toolkit）
+brew install python@3.11 uv             # 或 mise/asdf 走 .tool-versions
+cd apps/ai-worker
+uv sync --extra dev
+
+# 2. 启动 fake runtime
+export AI_WORKER_USE_FAKE_RUNTIME=true
+export AI_WORKER_USE_FAKE_ASR_RUNTIME=true
+export AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=true
+export AI_WORKER_RABBITMQ_HOST=localhost
+export AI_WORKER_MEETING_API_BASE_URL=http://localhost:8080
+export AI_WORKER_CALLBACK_HMAC_SECRET=$(openssl rand -hex 32)
+export AI_WORKER_INTERNAL_API_HMAC_SECRET=$(openssl rand -hex 32)
+uv run ai-worker-api
+
+# 3. 验证（fake runtime 下 /internal/ready 也会 200，不依赖权重）
+curl -fsSL http://localhost:8090/internal/health
+```
+
+> **不要**在 macOS 上尝试 `UV_EXTRAS=real-models`：`funasr` + `pyannote.audio` 的 CUDA-only 依赖在 arm64 上无 wheel，`uv sync` 会编译失败。开发期想试通模型 device 解析，可在 K8s 旁路一台 NVIDIA 节点起 ai-worker，本机 meeting-api / meeting-web 通过 `AI_WORKER_BASE_URL` 指过去。
+
+#### C. macOS Apple Silicon + MPS（仅 BGE / rerank 数值核对）
+
+```bash
+# 仅用于开发期对照 fp32 数值，绝不进生产。
+uv sync --extra real-bge                # FlagEmbedding 有 macOS wheel
+export AI_WORKER_BGE_M3_DEVICE=mps
+export AI_WORKER_BGE_RERANKER_DEVICE=mps
+export AI_WORKER_BGE_M3_DTYPE=fp32      # MPS 上 fp16 数值不稳，禁用
+export AI_WORKER_BGE_RERANKER_DTYPE=fp32
+uv run ai-worker-api
+```
+
+`/internal/hardware` 会显示 `mps=true`，每个模型的 `device` 字段会落到 `mps`；任意一项报 `fp16` + `mps` 组合就停止使用。
+
+### 5·5.3 meeting-web
+
+唯一平台差异是 nginx 容器的 base 架构：
+- `nginx:1.27-alpine` 已经提供 amd64 + arm64 multi-arch manifest，直接 `docker build` 即可在 Mac arm64 / Linux amd64 上分别生成 native 镜像。
+- 想做跨架构发布：`docker buildx build --platform linux/amd64,linux/arm64 --push -t registry/meeting-web:v0.1.0 -f apps/meeting-web/Dockerfile .`
+
+构建上下文必须是 repo root（Dockerfile 通过 `apps/meeting-web/...` 引用源码并 COPY 整个 `packages/meeting-contracts/`，否则 `npm run codegen` 在镜像里读不到合约）。
 
 ---
 
@@ -415,14 +671,40 @@ meeting-api-infrastructure/src/main/resources/db/migration/
 ### 6.2 手动执行迁移
 
 ```bash
-# 方式 1：重启 meeting-api
+# 方式 1：重启 meeting-api 让 Flyway 自动 migrate（推荐）
 docker restart meeting-api
+# K8s 环境：
+# kubectl -n meeting-dev rollout restart deployment/meeting-api
 
-# 方式 2：直接在 PostgreSQL 执行
-psql -h localhost -U meeting -d meeting \
-  -v ON_ERROR_STOP=1 \
-  -f apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V202501010000__initial_schema.sql
+# 方式 2：用 Flyway CLI 直接对着 DB 跑（与 meeting-api 启动时一致）
+docker run --rm -v "$(pwd)/apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration:/flyway/sql" \
+  flyway/flyway:10 \
+  -url=jdbc:postgresql://host.docker.internal:5432/meeting \
+  -user=meeting -password=meeting_dev \
+  -baselineOnMigrate=false \
+  migrate
+
+# 方式 3：纯 psql 顺序执行（应急 / debug 时用）
+# 按文件名顺序拼接所有迁移；ON_ERROR_STOP=1 保证中途失败立刻退出。
+ls apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V*.sql \
+  | sort \
+  | xargs -I{} psql -h localhost -U meeting -d meeting -v ON_ERROR_STOP=1 -f {}
+# 当前已有的 8 个迁移（截至本文档发布时；以 git 仓库为准）：
+#   V202605110001__initial_schema.sql
+#   V202605110002__meeting_status_enum.sql
+#   V202605140001__audio_upload_sessions.sql
+#   V202605180001__export_jobs_render_options.sql
+#   V202605180002__break_glass_requests.sql
+#   V202605190001__meeting_documents.sql
+#   V202605190002__meetings_glossary.sql
+#   V202605190003__processing_tasks_hold_flag.sql
 ```
+
+> 注意：DDL 命名以 `V{yyyyMMddHHmm}__desc.sql` 为准。文档历史版本曾引用过
+> `V202501010000__initial_schema.sql` —— 那不是真实文件，已被当前 `V202605110001__...`
+> 系列取代。psql 直跑路径不会写 `flyway_schema_history` 表，下一次 Flyway 启动会因
+> `baseline-on-migrate=false`（prod 强制）拒绝继续；如果走的是方式 3，请同时手动
+> `INSERT` 一条 baseline 行，或交给 Flyway 在 dev 上 `baseline-on-migrate=true` 自愈。
 
 ### 6.3 迁移前检查
 
