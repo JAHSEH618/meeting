@@ -74,44 +74,277 @@ Vault、ExternalSecrets、SealedSecrets 或目标平台的 Secret Manager。
 | 生产清单引用 Mac `.env` 文件 | 停止，替换为生产 Secret Manager 值。 |
 | `/internal/hardware` 显示 `cuda.available=false` | 停止，检查调度、驱动、镜像或 torch/CUDA 构建。 |
 
-## 1. 预检
+## 1. 从 0 到 1 部署步骤
 
-在 Mac 上执行：
+这一节按全新 Apple Silicon Mac 从零开始编写。目标是先跑通
+`ai-worker` 本地服务，再按需要接入 `meeting-api` 做端到端联调。
+
+### 1.1 确认机器和系统
 
 ```bash
 sw_vers
 uname -m
-python3 --version
-uv --version
 df -h "$HOME"
 ```
 
-要求：
+必须满足：
 
 | 项 | 要求 | 原因 |
 |----|------|------|
 | 硬件 | Apple Silicon，`uname -m` 必须是 `arm64` | x86_64 macOS 不支持该真实模型路径。 |
 | macOS | 13+ | MPS 和 Python wheel 兼容性更稳定。 |
-| Python | 3.11.x | `ai-worker` 依赖 Python 3.11。 |
-| uv | 0.4+ | 依赖同步和隔离 venv。 |
 | 磁盘 | 建议 100 GB 空闲 | 模型权重和 uv cache 可能接近 80 GB。 |
 | 内存 | 建议 32 GB，冒烟最低 16 GB | ASR、diarization、浏览器、Java 会共同占用统一内存。 |
 | 网络 | 可访问 HuggingFace | 下载 BGE 和 pyannote 权重需要。 |
 
-安装常见 native 依赖：
+如果 `uname -m` 不是 `arm64`，不要继续执行本文档。Linux + NVIDIA 生产路径
+看 `deploy/DEPLOY.md`，Intel macOS 只能使用 fake runtime 或远端 CUDA worker。
+
+### 1.2 安装 Xcode Command Line Tools 和 Homebrew
+
+如果机器尚未安装命令行工具：
 
 ```bash
-brew install uv python@3.11 ffmpeg cmake pkg-config libsndfile
+xcode-select --install
 ```
 
-检查是否误用 Rosetta：
+如果尚未安装 Homebrew：
 
 ```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+eval "$(/opt/homebrew/bin/brew shellenv)"
+brew update
+```
+
+确认 Homebrew 运行在 arm64 路径：
+
+```bash
+which brew
+brew config | grep -E 'HOMEBREW_PREFIX|CPU|Rosetta'
+```
+
+Apple Silicon 正常前缀应为 `/opt/homebrew`。如果看到 Rosetta 或 `/usr/local`
+路径，先修正 shell 环境，避免安装到 x86_64 工具链。
+
+### 1.3 安装 ai-worker 本地依赖
+
+worker 本身需要 Python/uv/ffmpeg/native build 依赖：
+
+```bash
+brew install git uv python@3.11 ffmpeg cmake pkg-config libsndfile jq openssl
+```
+
+如果还要和 `meeting-api` Compose 联调，需要安装并启动一个容器运行时。任选一种：
+
+| 方案 | 安装 | 说明 |
+|------|------|------|
+| Docker Desktop | `brew install --cask docker` | 最直接，启动 Docker Desktop 后再跑 Compose。 |
+| OrbStack | `brew install --cask orbstack` | Mac 上较轻量，Docker socket 兼容性好。 |
+| Colima | `brew install colima docker docker-compose` | 需要手工 `colima start`，适合不装 Docker Desktop。 |
+
+只跑原生 `ai-worker` 时不需要 Docker；只有联调 Java Compose 时才需要。
+
+### 1.4 拉取代码
+
+```bash
+git clone https://github.com/JAHSEH618/meeting.git
+cd meeting
+git status --short
+```
+
+确认脚本可执行：
+
+```bash
+test -x deploy/ai-worker-apple-silicon.sh
+./deploy/ai-worker-apple-silicon.sh
+```
+
+脚本不带参数会打印 usage，并以 64 退出，这是正常行为。
+
+### 1.5 确认 Python 和 uv 是 arm64
+
+```bash
+python3 --version
+uv --version
 file "$(python3 -c 'import sys; print(sys.executable)')"
 ```
 
-输出必须包含 `arm64`。如果是 `x86_64`，先切到 arm64 Python/uv 环境，否则
-MPS 和部分 wheel 会出现不可预测问题。
+`file` 输出必须包含 `arm64`。如果是 `x86_64`，不要继续安装依赖，先修正
+shell PATH 或重新安装 arm64 Python。
+
+### 1.6 选择模型目录
+
+默认模型目录是：
+
+```bash
+export AI_WORKER_MODELS_ROOT="$HOME/meeting-models"
+```
+
+如果系统盘空间不足，放到外置盘或大容量卷：
+
+```bash
+export AI_WORKER_MODELS_ROOT="/Volumes/models/meeting-models"
+mkdir -p "$AI_WORKER_MODELS_ROOT"
+```
+
+后续所有 `stage`、`weights`、`run` 都会读取这个目录。不要频繁切换，否则
+readiness 会报 missing path 或 checksum mismatch。
+
+### 1.7 最短 0-1：mock 权重冒烟
+
+这个路径不下载真实模型，适合确认脚本、依赖安装、模型目录、checksum 和 API
+启动流程是否通。
+
+终端 A：
+
+```bash
+cd meeting
+export AI_WORKER_MODELS_ROOT="${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}"
+
+./deploy/ai-worker-apple-silicon.sh stage
+./deploy/ai-worker-apple-silicon.sh env
+
+set -a
+. deploy/.ai-worker-apple-silicon.env
+. deploy/.ai-worker-apple-silicon.env.checksums
+set +a
+
+./deploy/ai-worker-apple-silicon.sh run
+```
+
+终端 B：
+
+```bash
+cd meeting
+./deploy/ai-worker-apple-silicon.sh verify
+```
+
+成功标准：
+
+| 检查 | 期望 |
+|------|------|
+| `stage` | 生成 `deploy/.ai-worker-apple-silicon.env.checksums` |
+| `env` | 生成或复用 `deploy/.ai-worker-apple-silicon.env` |
+| `run` | 完成 `uv sync --extra dev --extra real-models` 并监听 `:8090` |
+| `verify` | `/internal/hardware` 和 `/internal/ready` 都能返回 JSON |
+
+mock 权重只验证流程和 readiness，不代表真实模型推理质量。
+
+### 1.8 真实模型 0-1
+
+真实模型路径用于本地演示和生产前集成验证。执行前先确认：
+
+1. HuggingFace 能访问。
+2. 有 `HF_TOKEN`。
+3. 部署账号已接受 pyannote license：
+   `https://huggingface.co/pyannote/speaker-diarization-3.1`
+
+下载权重：
+
+```bash
+cd meeting
+export AI_WORKER_MODELS_ROOT="${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}"
+HF_TOKEN=hf_xxx ./deploy/ai-worker-apple-silicon.sh weights
+```
+
+预热 Qwen3-ASR：
+
+```bash
+cd apps/ai-worker
+export AI_WORKER_MODELS_ROOT=${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}
+uv run --extra real-asr python - <<'PY'
+from funasr import AutoModel
+import os
+root = os.environ["AI_WORKER_MODELS_ROOT"]
+AutoModel(
+    model="paraformer-zh",
+    cache_dir=f"{root}/qwen3-asr-1.7b/v2026.05.1",
+)
+PY
+cd ../..
+```
+
+启动真实模型 worker：
+
+```bash
+./deploy/ai-worker-apple-silicon.sh env
+export AI_WORKER_MODELS_ROOT="${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}"
+AI_WORKER_OFFLINE=1 ./deploy/ai-worker-apple-silicon.sh run
+```
+
+另一个终端验证：
+
+```bash
+./deploy/ai-worker-apple-silicon.sh verify
+```
+
+只有权重完整下载后才设置 `AI_WORKER_OFFLINE=1`。如果首次运行还需要懒加载，
+先不加 offline，让 HuggingFace/funasr 完成缓存。
+
+### 1.9 与 meeting-api 从 0 联调
+
+这一步需要 Docker Desktop、OrbStack 或 Colima 已经启动。
+
+终端 A：准备共享 HMAC 和依赖。
+
+```bash
+cd meeting
+./deploy/ai-worker-apple-silicon.sh env
+
+set -a
+. deploy/.ai-worker-apple-silicon.env
+set +a
+
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
+```
+
+终端 B：启动 Mac 原生 ai-worker。
+
+```bash
+cd meeting
+set -a
+. deploy/.ai-worker-apple-silicon.env
+set +a
+
+./deploy/ai-worker-apple-silicon.sh run
+```
+
+终端 A：启动 Java，并把容器内的 meeting-api 指向 Mac 宿主机上的 worker。
+
+```bash
+AI_WORKER_BASE_URL=http://host.docker.internal:8090 \
+  docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+  --profile full-stack up -d meeting-api
+```
+
+验证联调：
+
+```bash
+curl -fsSL http://localhost:8090/internal/hardware | jq .
+curl -fsSL http://localhost:8090/internal/ready | jq .
+curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
+```
+
+联调成功标准：
+
+| 检查 | 期望 |
+|------|------|
+| ai-worker hardware | `mps.available=true`，BGE 为 `mps/fp32`，ASR/diarization 为 `cpu/fp32` |
+| ai-worker readiness | 返回 200 |
+| Java health | `components.aiWorker.status` 为 `UP` |
+| HMAC | Java 日志和 worker 日志没有 callback/internal HMAC 拒绝 |
+
+### 1.10 0-1 完成后保留的产物
+
+| 文件 / 目录 | 是否提交 | 说明 |
+|-------------|----------|------|
+| `deploy/.ai-worker-apple-silicon.env` | 不提交 | 本地 HMAC/JWT 和连接信息。 |
+| `deploy/.ai-worker-apple-silicon.env.checksums` | 不提交 | 本地 staged 权重 checksum。 |
+| `$AI_WORKER_MODELS_ROOT` | 不提交 | mock 或真实模型权重目录。 |
+| `apps/ai-worker/.venv` | 不提交 | uv 管理的本地虚拟环境。 |
+
+这些产物都只属于当前机器。生产交接只需要模型版本、checksum、接口验证记录和
+license 状态。
 
 ## 2. 命令矩阵
 
