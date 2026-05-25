@@ -120,7 +120,10 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      AI_WORKER_BASE_URL: http://ai-worker:8090
+      # Default to the compose ai-worker service. Apple Silicon real-model
+      # runs can point meeting-api at a host-native ai-worker with:
+      #   AI_WORKER_BASE_URL=http://host.docker.internal:8090
+      AI_WORKER_BASE_URL: ${AI_WORKER_BASE_URL:-http://ai-worker:8090}
       AI_WORKER_CALLBACK_HMAC_SECRET: ${AI_WORKER_CALLBACK_HMAC_SECRET:-change-me-callback-fallback-secret}
       AI_WORKER_INTERNAL_API_HMAC_SECRET: ${AI_WORKER_INTERNAL_API_HMAC_SECRET:-change-me-internal-fallback-secret}
       CHUNK_STRATEGY_VERSION: v1

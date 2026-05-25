@@ -123,7 +123,7 @@ run_compose() {
     log "  → starts postgres/rabbitmq/minio/vault, then meeting-api, then ai-worker"
     log "  → polls /actuator/health/readiness so AiWorkerHealthIndicator cannot"
     log "    deadlock the boot gate (see deploy.sh:222)"
-    exec "${REPO_ROOT}/deploy/deploy.sh" local
+    exec "${REPO_ROOT}/deploy/deploy.sh" local "$@"
 }
 
 deploy_k8s() {
@@ -133,8 +133,13 @@ deploy_k8s() {
         exit 64
     fi
     log "Preflight reminder (DEPLOY.md §5.3.2):"
-    log "  1. Bitnami helm upgrade --install postgres / rabbitmq / minio inside meeting-${env}"
-    log "  2. kind users: kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev"
+    if [ "${env}" = "dev" ]; then
+        log "  1. Run ./deploy/deploy.sh k8s-deps dev first"
+        log "  2. kind users: build + kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev"
+    else
+        log "  1. Use managed PostgreSQL/RabbitMQ/object storage, or guarded k8s-deps prod"
+        log "  2. meeting-api-secret and ai-worker-secret must already exist in meeting-prod"
+    fi
     log "  3. prod overlay needs SealedSecrets/Vault — see §5.7 ProdProfileValidator"
     log
     log "Invoking ./deploy/deploy.sh k8s-${env}"
@@ -167,7 +172,7 @@ main() {
         test)     shift; run_tests "$@" ;;
         jar)      shift; build_jar "$@" ;;
         image)    shift; build_image "$@" ;;
-        compose)  run_compose ;;
+        compose)  shift; run_compose "$@" ;;
         k8s)      shift; deploy_k8s "$@" ;;
         migrate)  run_migrations ;;
         *)
@@ -178,7 +183,8 @@ Commands:
   test                          mvn verify -q (CI command)
   jar [--run]                   mvn package -pl meeting-api-start; optionally java -jar
   image [tag] [--cross]         docker build (apple silicon --cross adds linux/amd64)
-  compose                       ./deploy/deploy.sh local (full local stack)
+  compose [--with-observability]
+                                ./deploy/deploy.sh local (full local stack)
   k8s [dev|prod]                ./deploy/deploy.sh k8s-<env> (canonical K8s deploy)
   migrate                       Print Flyway migration recipes (auto / docker / psql)
 

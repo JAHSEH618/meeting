@@ -281,12 +281,30 @@ k8s_deps_install() {
     local env="${1:-dev}"
     local ns="meeting-${env}"
     local definitions="${INFRA_DIR}/docker/compose/rabbitmq/definitions.json"
+    local postgres_user="${POSTGRES_USER:-meeting}"
+    local postgres_password="${POSTGRES_PASSWORD:-meeting_dev}"
+    local rabbitmq_user="${RABBITMQ_USER:-meeting}"
+    local rabbitmq_password="${RABBITMQ_PASS:-meeting_dev}"
+    local minio_root_user="${MINIO_ROOT_USER:-minioadmin}"
+    local minio_root_password="${MINIO_ROOT_PASSWORD:-minioadmin}"
 
     log_step
     log_step_title "K8s 命名空间内依赖部署: ${ns}"
 
     check_dependency kubectl
     check_dependency helm
+
+    if [ "${env}" != "dev" ]; then
+        if [ "${ALLOW_IN_CLUSTER_PROD_DEPS:-}" != "1" ]; then
+            log_error "k8s-deps ${env} 默认被阻止：生产依赖推荐走托管 RDS/MQ/S3 或外部 Helm values。"
+            log_error "如确实要在集群内起 ${env} 依赖，请显式设置 ALLOW_IN_CLUSTER_PROD_DEPS=1"
+            log_error "并提供 POSTGRES_PASSWORD / RABBITMQ_PASS / MINIO_ROOT_PASSWORD。"
+            exit 1
+        fi
+        : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for k8s-deps ${env}}"
+        : "${RABBITMQ_PASS:?RABBITMQ_PASS is required for k8s-deps ${env}}"
+        : "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required for k8s-deps ${env}}"
+    fi
 
     log_info "确认 helm chart 仓库..."
     helm repo list 2>/dev/null | grep -q '^bitnami\b' || \
@@ -302,8 +320,8 @@ k8s_deps_install() {
         --set image.registry=docker.io \
         --set image.repository=pgvector/pgvector \
         --set image.tag=pg15 \
-        --set auth.username=meeting \
-        --set auth.password=meeting_dev \
+        --set "auth.username=${postgres_user}" \
+        --set "auth.password=${postgres_password}" \
         --set auth.database=meeting \
         --set 'primary.initdb.scripts.enable-pgvector\.sql=CREATE EXTENSION IF NOT EXISTS vector;'
 
@@ -317,7 +335,7 @@ k8s_deps_install() {
         --dry-run=client -o yaml | kubectl apply -f -
     helm upgrade --install rabbitmq bitnami/rabbitmq -n "${ns}" \
         --set fullnameOverride=rabbitmq \
-        --set auth.username=meeting --set auth.password=meeting_dev \
+        --set "auth.username=${rabbitmq_user}" --set "auth.password=${rabbitmq_password}" \
         --set auth.securePassword=false \
         --set loadDefinition.enabled=true \
         --set loadDefinition.existingSecret=rabbitmq-definitions
@@ -325,13 +343,20 @@ k8s_deps_install() {
     log_info "MinIO (单副本)..."
     helm upgrade --install minio bitnami/minio -n "${ns}" \
         --set fullnameOverride=minio \
-        --set auth.rootUser=minioadmin --set auth.rootPassword=minioadmin \
+        --set "auth.rootUser=${minio_root_user}" --set "auth.rootPassword=${minio_root_password}" \
         --set defaultBuckets="meeting-audio-auska meeting-artifacts meeting-exports"
 
     log_info "等待依赖就绪 (PostgreSQL + RabbitMQ + MinIO)..."
     kubectl -n "${ns}" rollout status statefulset/postgres --timeout=180s
     kubectl -n "${ns}" rollout status statefulset/rabbitmq --timeout=180s
-    kubectl -n "${ns}" rollout status statefulset/minio    --timeout=120s
+    # Bitnami MinIO defaults to standalone mode, which renders a Deployment.
+    # Distributed mode renders a StatefulSet; support both so chart changes do
+    # not break the deployment gate.
+    if kubectl -n "${ns}" get deployment/minio >/dev/null 2>&1; then
+        kubectl -n "${ns}" rollout status deployment/minio --timeout=120s
+    else
+        kubectl -n "${ns}" rollout status statefulset/minio --timeout=120s
+    fi
 
     log_ok "命名空间 ${ns} 依赖就绪 — 接下来跑 ./deploy/deploy.sh k8s-${env}"
 }
@@ -400,11 +425,23 @@ stringData:
 EOF
     else
         log_warn "生产环境 Secret 请通过外部 Secrets Manager (Vault/AWS Secrets Manager) 注入"
-        log_warn "手动创建后请注释以下提示:"
+        log_warn "部署前必须已经同步以下 Secret:"
         log_warn "  kubectl create secret generic meeting-api-secret -n ${ns} --from-literal=... "
         log_warn "  kubectl create secret generic ai-worker-secret -n ${ns} --from-literal=... "
+        local missing_secret=false
+        for secret in meeting-api-secret ai-worker-secret; do
+            if kubectl -n "${ns}" get secret "${secret}" >/dev/null 2>&1; then
+                log_info "已找到 ${secret}"
+            else
+                log_error "缺少 ${secret}，请先通过 Vault/ExternalSecrets/SealedSecrets 注入"
+                missing_secret=true
+            fi
+        done
+        if [ "${missing_secret}" = true ]; then
+            exit 1
+        fi
     fi
-    log_ok "Secret 已创建"
+    log_ok "Secret gate 通过"
 
     # 构建并应用 Kustomize
     log_info "构建 Kustomize 清单..."

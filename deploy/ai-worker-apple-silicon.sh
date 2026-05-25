@@ -30,6 +30,7 @@
 #                                               # (BGE + pyannote via HF,
 #                                               #  Qwen3-ASR via funasr
 #                                               #  hub auto-download)
+#   ./deploy/ai-worker-apple-silicon.sh env     # create/reuse local env file
 #   ./deploy/ai-worker-apple-silicon.sh run     # uv sync + start API
 #   ./deploy/ai-worker-apple-silicon.sh verify  # /internal/hardware +
 #                                               # /internal/ready check
@@ -78,6 +79,7 @@ stage_mock_weights() {
 
 download_real_weights() {
     log "Downloading real weights into ${MODELS_DIR}"
+    export MODELS_DIR
     mkdir -p "${MODELS_DIR}/bge-m3/v1" \
              "${MODELS_DIR}/bge-reranker-v2-m3/v1" \
              "${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1" \
@@ -120,12 +122,7 @@ PY
     warn "  uv run --extra real-asr python -c \"from funasr import AutoModel; AutoModel(model='paraformer-zh', cache_dir='${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1')\""
 }
 
-run_api() {
-    log "Installing all real-model extras (FlagEmbedding + funasr + pyannote.audio)"
-    cd "${AI_WORKER_DIR}"
-    uv sync --extra dev --extra real-models
-
-    # Generate HMAC secrets if the env file doesn't already declare them.
+ensure_env_file() {
     local env_file="${REPO_ROOT}/deploy/.ai-worker-apple-silicon.env"
     if [ ! -f "${env_file}" ]; then
         cat > "${env_file}" <<EOF
@@ -142,7 +139,18 @@ AI_WORKER_INTERNAL_API_HMAC_SECRET=$(openssl rand -hex 32)
 AI_WORKER_ADMIN_JWT_SECRET=$(openssl rand -hex 32)
 EOF
         log "Wrote ${env_file} with fresh HMAC secrets — copy these into meeting-api too."
+    else
+        log "Using existing ${env_file}"
     fi
+}
+
+run_api() {
+    log "Installing all real-model extras (FlagEmbedding + funasr + pyannote.audio)"
+    cd "${AI_WORKER_DIR}"
+    uv sync --extra dev --extra real-models
+
+    ensure_env_file
+    local env_file="${REPO_ROOT}/deploy/.ai-worker-apple-silicon.env"
     set -a
     # shellcheck disable=SC1090
     . "${env_file}"
@@ -192,16 +200,19 @@ main() {
     case "${1:-}" in
         stage)   stage_mock_weights ;;
         weights) MODELS_DIR="${MODELS_DIR}" download_real_weights ;;
+        env)     ensure_env_file ;;
         run)     run_api ;;
         verify)  verify_api ;;
         *)
             cat <<EOF
-Usage: $0 {stage|weights|run|verify}
+Usage: $0 {stage|weights|env|run|verify}
 
   stage     Stage deterministic mock weights into \${MODELS_DIR}
             (default: \${HOME}/meeting-models). Use for offline smoke.
   weights   Download REAL weights from HuggingFace into \${MODELS_DIR}.
             HF_TOKEN required for pyannote/speaker-diarization-3.1.
+  env       Create/reuse deploy/.ai-worker-apple-silicon.env with local
+            RabbitMQ / meeting-api URLs and HMAC secrets.
   run       uv sync --extra real-models, then start ai-worker-api on
             :8090 with MPS for BGE / CPU for ASR + diarization.
   verify    curl /internal/hardware and /internal/ready against a

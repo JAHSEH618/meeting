@@ -440,8 +440,15 @@ staging overlay 文件正式落地后，请同步更新本表、`infra/meeting-i
 # 2. 部署应用层到开发环境
 ./deploy/deploy.sh k8s-dev
 
-# 3. 生产环境（依赖 + 应用层各跑一次）
-./deploy/deploy.sh k8s-deps prod
+# 3. 生产环境
+# 推荐使用托管 RDS / MQ / S3，并在 prod overlay + ExternalSecret 中覆盖
+# POSTGRES_HOST / RABBITMQ_HOST / STORAGE_TYPE / OSS_*。只有明确决定把依赖
+# 也部署到集群内时，才显式放开下面的命令：
+ALLOW_IN_CLUSTER_PROD_DEPS=1 \
+POSTGRES_PASSWORD="<strong-password>" \
+RABBITMQ_PASS="<strong-password>" \
+MINIO_ROOT_PASSWORD="<strong-password>" \
+  ./deploy/deploy.sh k8s-deps prod
 ./deploy/deploy.sh k8s-prod
 
 # 4. 查看状态

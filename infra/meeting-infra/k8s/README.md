@@ -36,7 +36,8 @@ kustomize build infra/meeting-infra/k8s/overlays/dev
 kustomize build infra/meeting-infra/k8s/overlays/prod
 ```
 
-实际部署走 `deploy/deploy.sh`，它会按顺序补齐：
+实际部署走 `deploy/deploy.sh`。开发 / 验收环境由脚本补齐命名空间、
+依赖、Secret 和 rollout gate：
 
 1. `./deploy/deploy.sh k8s-deps dev` — namespace + Bitnami
    PostgreSQL+pgvector / RabbitMQ / MinIO；
@@ -47,9 +48,26 @@ kustomize build infra/meeting-infra/k8s/overlays/prod
 ```bash
 ./deploy/deploy.sh k8s-deps dev    # 仅依赖（每环境一次）
 ./deploy/deploy.sh k8s-dev         # 应用层 + 等待 rollout
+```
 
-# 生产同理：
-./deploy/deploy.sh k8s-deps prod
+生产环境不是简单把 `dev` 命令换成 `prod`。默认路径是托管
+PostgreSQL/RabbitMQ/Object Storage + Vault/ExternalSecrets/SealedSecrets，
+并在 Secret 同步完成后部署应用层：
+
+```bash
+kubectl get secret meeting-api-secret -n meeting-prod
+kubectl get secret ai-worker-secret -n meeting-prod
+./deploy/deploy.sh k8s-prod
+```
+
+只有明确决定把生产依赖也部署到集群内时，才显式放开例外路径：
+
+```bash
+ALLOW_IN_CLUSTER_PROD_DEPS=1 \
+POSTGRES_PASSWORD="<strong-password>" \
+RABBITMQ_PASS="<strong-password>" \
+MINIO_ROOT_PASSWORD="<strong-password>" \
+  ./deploy/deploy.sh k8s-deps prod
 ./deploy/deploy.sh k8s-prod
 ```
 

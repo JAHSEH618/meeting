@@ -1,179 +1,465 @@
 # ai-worker on Apple Silicon — Deployment Runbook
 
-> Standalone runbook for the Apple Silicon (arm64 macOS) "full real-models"
-> path. Mirrors `deploy/ai-worker-apple-silicon.sh` command-by-command.
-> Production NVIDIA + CUDA path is **not** in this runbook — that one is
-> in `deploy/DEPLOY.md` §5·5.2.A.
+This runbook covers the Apple Silicon native `ai-worker` path: full
+`real-models` dependencies on arm64 macOS, BGE/rerank on MPS, ASR and
+diarization on CPU. It mirrors `deploy/ai-worker-apple-silicon.sh`.
 
-## Why a separate runbook
+This is a development, acceptance-dry-run, and demo path. It is not a
+production serving path. Production model serving remains Linux + NVIDIA +
+CUDA image from `deploy/DEPLOY.md` §5.5.2.A.
 
-`ai-worker` is the platform-dependent service. Linux + NVIDIA uses the
-CUDA-13 Dockerfile build with `UV_EXTRAS=real-models`, runs every model
-on CUDA / fp16, and is the prod target. Apple Silicon can't use CUDA,
-but in 2026 the four real-model extras (FlagEmbedding, funasr,
-pyannote.audio, modelscope) all publish arm64 wheels or build cleanly
-from sdists. That makes a native real-models stack feasible for
-development, single-host demos, and offline acceptance dry-runs — at
-roughly 1/10 of a single RTX 4080's throughput. It is **not** a prod
-target.
+## 0. Deployment Decision
 
-The historical "don't try real-models on macOS" warning in DEPLOY.md was
-correct for Intel Macs and outdated for Apple Silicon as of late 2025;
-this runbook + the bundled script are the authoritative arm64 path.
+| Target | Recommended path | Notes |
+|--------|------------------|-------|
+| Quick local worker smoke | `./deploy/ai-worker-apple-silicon.sh stage && ./deploy/ai-worker-apple-silicon.sh run` | Uses deterministic mock weights. |
+| Real-model local demo | `HF_TOKEN=... ./deploy/ai-worker-apple-silicon.sh weights && ./deploy/ai-worker-apple-silicon.sh run` | Needs disk, RAM, and model licenses. |
+| Full local Java + native Apple worker | Run meeting-api with `AI_WORKER_BASE_URL=http://host.docker.internal:8090`, then run this worker natively | Compose now allows this override. |
+| K8s / production | Do not use this path | Use CUDA image and GPU node pool. |
 
-## 0. Preflight
+Apple Silicon is suitable for validating integration logic, HMAC callbacks,
+model wiring, readiness, checksum guard, and UI workstation flows. It is not
+suitable for production throughput or SLO testing.
 
-| 工具 | 最低版本 | 验证命令 |
-|------|----------|---------|
-| macOS | 13+ (Apple Silicon) | `sw_vers && uname -m` 应该回 `arm64` |
-| Python 3.11 | 3.11.x | `python3 --version` |
-| uv | 0.4+ | `uv --version`，未装：`brew install uv` |
-| HuggingFace CLI | 任意现代版 | `pip install -U huggingface_hub` 或随 `uv sync` 一起装 |
-| Docker | 24+（compose 模式 / 镜像构建用） | 可选；纯 native python 路径不需要 |
-| ~100 GB 磁盘 | 模型权重 + uv venv ≈ 80 GB | `df -h ~` |
+## 0.1 Production Boundary and Handoff
 
-脚本入口：
+This runbook is allowed to feed production readiness decisions, but it is not
+allowed to become the production runtime. Production ai-worker serving must use
+the Linux + NVIDIA + CUDA path described in `deploy/DEPLOY.md` §5.5.2.A.
+
+Use the Apple Silicon path for:
+
+| Use | Allowed? | Notes |
+|-----|----------|-------|
+| Local real-model integration | Yes | Validates request/response contracts and callback HMACs. |
+| Demo with real BGE/ASR/diarization wiring | Yes | Do not report these numbers as production SLOs. |
+| Model checksum rehearsal | Yes | Checksums can be copied into the production model registry after review. |
+| Production Kubernetes serving | No | Use CUDA image, GPU node pool, and production model volume. |
+| Production performance benchmark | No | MPS/CPU behavior does not represent CUDA throughput. |
+
+The handoff from this runbook to production is a release note, not a copy of
+the Mac environment. Capture only these outputs:
+
+| Handoff item | Production use |
+|--------------|----------------|
+| Model names and versions | Populate the production model registry / PVC layout. |
+| SHA-256 checksums | Set `AI_WORKER_*_EXPECTED_CHECKSUM=sha256:...` in prod. |
+| Contract test results | Evidence that meeting-api and ai-worker agree on payloads and HMACs. |
+| Audio smoke samples | Re-run on the CUDA worker before production rollout. |
+| Known model licenses | Confirm pyannote/HuggingFace terms are accepted for the deployment account. |
+
+Do not copy `deploy/.ai-worker-apple-silicon.env` into production. It contains
+local URLs, local RabbitMQ credentials, and locally generated HMAC/JWT values.
+Production secrets must come from Vault, ExternalSecrets, SealedSecrets, or the
+target platform's secret manager.
+
+Production ai-worker must satisfy all of these:
+
+| Requirement | Production value |
+|-------------|------------------|
+| Image | `ai-worker:cuda-<release>` or equivalent digest |
+| Node pool | NVIDIA GPU nodes labeled for the ai-worker StatefulSet |
+| Runtime flags | `AI_WORKER_USE_FAKE_RUNTIME=false`, `AI_WORKER_USE_FAKE_ASR_RUNTIME=false`, `AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false` |
+| Offline mode | `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` after weights are staged |
+| Model volume | `/opt/models/<model>/<version>/` with expected checksums |
+| Secrets | `ai-worker-secret` synced before `kubectl apply` |
+| Hardware check | `/internal/hardware` shows CUDA available and MPS not used |
+| Readiness | `/internal/ready` returns 200 after checksum validation |
+
+Production blockers:
+
+| Blocker | Action |
+|---------|--------|
+| Worker runs on MPS or CPU | Stop; deploy CUDA image to GPU node pool. |
+| `AI_WORKER_USE_FAKE_*` is true | Stop; fake runtime is not production traffic. |
+| Model checksum is absent or mismatched | Stop; restage model weights and update expected checksums. |
+| pyannote license is not accepted by the deployment account | Stop; complete license approval before image/model promotion. |
+| Mac `.env` file is referenced by prod manifests | Stop; replace with production Secret manager values. |
+| `/internal/hardware` reports `cuda.available=false` | Stop; fix node scheduling, driver, image, or torch/CUDA build. |
+
+## 1. Preflight
+
+Run:
 
 ```bash
-./deploy/ai-worker-apple-silicon.sh {stage|weights|run|verify}
+sw_vers
+uname -m
+python3 --version
+uv --version
+df -h "$HOME"
 ```
 
-## 1. 设备拆分（核心设计）
+Requirements:
 
-| 模型 | Device | DType | 原因 |
-|------|--------|-------|------|
-| BGE-m3 | MPS | fp32 | MPS 上 fp16 在 norm / softmax 上数值不稳；FlagEmbedding 有 arm64 wheel |
-| BGE-reranker-v2-m3 | MPS | fp32 | 同上 |
-| Qwen3-ASR (via funasr) | CPU | fp32 | funasr 内核没全 MPS 化；强行 MPS 会落到大量 `aten::*` 回退 CPU，反而更慢 |
-| pyannote diarization 3.1 | CPU | fp32 | segmentation 模型同样有 MPS 不支持算子；CPU 直跑避免 warning 噪音 |
+| Item | Requirement | Why |
+|------|-------------|-----|
+| Hardware | Apple Silicon, `uname -m` = `arm64` | x86_64 macOS is not supported for real-models. |
+| macOS | 13+ | Modern MPS and Python wheel compatibility. |
+| Python | 3.11.x | `ai-worker` requires Python 3.11. |
+| uv | 0.4+ | Dependency sync and isolated venv. |
+| Disk | 100 GB free recommended | Model weights + uv cache can approach 80 GB. |
+| Memory | 32 GB recommended, 16 GB minimum for smoke | ASR + diarization + browser/Java consume unified memory. |
+| Network | HuggingFace access | Required for BGE and pyannote downloads. |
 
-脚本 `run` 子命令把这八个 env 都自动 export，不用手抄。
+Install common native dependencies:
 
-## 2. 操作流程（推荐路径）
+```bash
+brew install uv python@3.11 ffmpeg cmake pkg-config libsndfile
+```
 
-### 2.1 Stage mock 权重（最快验证 ai-worker 装好了）
+Rosetta check:
+
+```bash
+file "$(python3 -c 'import sys; print(sys.executable)')"
+```
+
+The output must mention `arm64`. If it says `x86_64`, stop and switch to an
+arm64 Python/uv environment.
+
+## 2. Command Matrix
+
+| Command | Purpose | Safe offline? |
+|---------|---------|---------------|
+| `./deploy/ai-worker-apple-silicon.sh stage` | Writes deterministic mock weights and checksum env | Yes |
+| `HF_TOKEN=... ./deploy/ai-worker-apple-silicon.sh weights` | Downloads real BGE and pyannote weights | No |
+| `./deploy/ai-worker-apple-silicon.sh env` | Creates/reuses local connection + HMAC env file | Yes |
+| `./deploy/ai-worker-apple-silicon.sh run` | Installs extras and starts `ai-worker-api` on `:8090` | Depends on weights/cache |
+| `./deploy/ai-worker-apple-silicon.sh verify` | Calls `/internal/hardware` and `/internal/ready` | Requires worker running |
+
+Default model root:
+
+```bash
+export AI_WORKER_MODELS_ROOT="$HOME/meeting-models"
+```
+
+Override when disk space is elsewhere:
+
+```bash
+AI_WORKER_MODELS_ROOT=/Volumes/models/meeting-models \
+  ./deploy/ai-worker-apple-silicon.sh stage
+```
+
+## 3. Architecture
+
+Device routing is explicit:
+
+| Model / capability | Device | DType | Reason |
+|--------------------|--------|-------|--------|
+| BGE-m3 embedding | MPS | fp32 | FlagEmbedding works on arm64; fp16 on MPS is numerically risky. |
+| BGE-reranker-v2-m3 | MPS | fp32 | Same as BGE-m3. |
+| Qwen3-ASR / funasr | CPU | fp32 | funasr operators are not fully MPS-clean. |
+| pyannote diarization | CPU | fp32 | MPS fallback warnings are noisy and often slower. |
+
+The script exports:
+
+```bash
+AI_WORKER_BGE_M3_DEVICE=mps
+AI_WORKER_BGE_RERANKER_DEVICE=mps
+AI_WORKER_BGE_M3_DTYPE=fp32
+AI_WORKER_BGE_RERANKER_DTYPE=fp32
+AI_WORKER_ASR_DEVICE=cpu
+AI_WORKER_DIARIZATION_DEVICE=cpu
+```
+
+Do not force ASR or diarization to MPS unless you are debugging a specific
+upstream kernel change.
+
+## 4. Mock-Weight Smoke
+
+Use this when you want the worker to boot and pass readiness without pulling
+large model repositories:
 
 ```bash
 ./deploy/ai-worker-apple-silicon.sh stage
-# 用 apps/ai-worker/scripts/stage_mock_weights.py 写确定性 mock
-# 权重到 ${HOME}/meeting-models/<model>/<version>/，再把对应的
-# AI_WORKER_*_EXPECTED_CHECKSUM= 写到 deploy/.ai-worker-apple-silicon.env.checksums
+./deploy/ai-worker-apple-silicon.sh run
 ```
 
-适合：CI dry-run / `/internal/ready` 探针 smoke / 不想下载几十 GB
-权重时验证 ai-worker 自身代码路径。
+`stage` writes mock model directories:
 
-### 2.2 下载真实权重
+```text
+~/meeting-models/
+  bge-m3/v1/
+  bge-reranker-v2-m3/v1/
+  qwen3-asr-1.7b/v2026.05.1/
+  pyannote/v3.1/
+```
 
-BGE-m3 + BGE-reranker-v2-m3 是公开模型，HuggingFace 直接拉：
+It also writes:
+
+```text
+deploy/.ai-worker-apple-silicon.env.checksums
+```
+
+If you want checksum guard to validate those exact mock weights during `run`,
+source the checksum file before starting:
 
 ```bash
-HF_TOKEN=hf_xxxxx ./deploy/ai-worker-apple-silicon.sh weights
-# 注意 pyannote/speaker-diarization-3.1 是 gated 仓库：必须先到
-# https://huggingface.co/pyannote/speaker-diarization-3.1
-# 接受 license，再 export HF_TOKEN。不设 HF_TOKEN 脚本会跳过
-# pyannote 一项并打 warning。
+set -a
+. deploy/.ai-worker-apple-silicon.env.checksums
+set +a
+./deploy/ai-worker-apple-silicon.sh run
 ```
 
-Qwen3-ASR 权重由 funasr 在首个 ASR 请求时懒下载到指定 cache_dir。
-想预下载的话：
+## 5. Real-Weight Path
+
+Download public BGE weights and gated pyannote weights:
+
+```bash
+HF_TOKEN=hf_xxx ./deploy/ai-worker-apple-silicon.sh weights
+```
+
+Before downloading pyannote, accept the model terms on HuggingFace:
+
+```text
+https://huggingface.co/pyannote/speaker-diarization-3.1
+```
+
+Qwen3-ASR is fetched lazily by funasr. To warm it ahead of a demo:
 
 ```bash
 cd apps/ai-worker
-uv run --extra real-asr python -c "
+AI_WORKER_MODELS_ROOT=${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}
+uv run --extra real-asr python - <<'PY'
 from funasr import AutoModel
-AutoModel(model='paraformer-zh',
-          cache_dir='${HOME}/meeting-models/qwen3-asr-1.7b/v2026.05.1')
-"
+import os
+root = os.environ["AI_WORKER_MODELS_ROOT"]
+AutoModel(
+    model="paraformer-zh",
+    cache_dir=f"{root}/qwen3-asr-1.7b/v2026.05.1",
+)
+PY
 ```
 
-### 2.3 启动 ai-worker
+After real weights are in place:
 
 ```bash
 ./deploy/ai-worker-apple-silicon.sh run
-# 内部：
-#   1. uv sync --extra dev --extra real-models      （首次约 5-10 min）
-#   2. 若 deploy/.ai-worker-apple-silicon.env 不存在，生成 HMAC + RabbitMQ 默认值
-#   3. export 全部设备 / dtype / models_dir env
-#   4. uv run ai-worker-api
 ```
 
-默认监听 `:8090`。日常迭代直接 ctrl-C 重启，脚本会复用已经生成的
-`.env` 文件，不重发 HMAC。
+For offline demos:
 
-### 2.4 验证
+```bash
+AI_WORKER_OFFLINE=1 ./deploy/ai-worker-apple-silicon.sh run
+```
+
+Only set offline mode after all required files are present locally.
+
+## 6. Environment File
+
+The first `run` creates:
+
+```text
+deploy/.ai-worker-apple-silicon.env
+```
+
+It contains local connection and HMAC values:
+
+```bash
+AI_WORKER_RABBITMQ_HOST=localhost
+AI_WORKER_RABBITMQ_PORT=5672
+AI_WORKER_RABBITMQ_USERNAME=meeting
+AI_WORKER_RABBITMQ_PASSWORD=meeting_dev
+AI_WORKER_MEETING_API_BASE_URL=http://localhost:8080
+AI_WORKER_JAVA_API_BASE_URL=http://localhost:8080
+AI_WORKER_CALLBACK_HMAC_SECRET=...
+AI_WORKER_INTERNAL_API_HMAC_SECRET=...
+AI_WORKER_ADMIN_JWT_SECRET=...
+```
+
+The script does not overwrite this file. Rotate it manually when you want new
+secrets:
+
+```bash
+mv deploy/.ai-worker-apple-silicon.env deploy/.ai-worker-apple-silicon.env.old
+./deploy/ai-worker-apple-silicon.sh run
+```
+
+## 7. Integrating With meeting-api
+
+There are two supported local integration shapes.
+
+### Option A: Compose worker, fake runtime
+
+Use this for everyday local development:
+
+```bash
+./deploy/deploy.sh local --with-observability
+```
+
+This starts the compose `ai-worker:dev` container in fake runtime. It does not
+use the Apple Silicon native real-model worker.
+
+### Option B: Native Apple worker, compose meeting-api
+
+Use this for real-model integration on a Mac:
+
+```bash
+# 1. Create/reuse the shared HMAC env before starting meeting-api.
+./deploy/ai-worker-apple-silicon.sh env
+set -a
+. deploy/.ai-worker-apple-silicon.env
+set +a
+
+# 2. Start dependencies only.
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
+
+# 3. Start meeting-api and point it to the host-native worker. The HMAC
+#    variables sourced above are also passed into compose.
+AI_WORKER_BASE_URL=http://host.docker.internal:8090 \
+  docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+  --profile full-stack up -d meeting-api
+
+# 4. Start native Apple worker in another terminal.
+./deploy/ai-worker-apple-silicon.sh run
+```
+
+Why `host.docker.internal`: `meeting-api` runs in Docker, while the native
+worker listens on the macOS host at `localhost:8090`. From inside the
+container, that host is `host.docker.internal`.
+
+Copy HMAC values both ways:
+
+| Direction | Variable |
+|-----------|----------|
+| ai-worker -> meeting-api callback | `AI_WORKER_CALLBACK_HMAC_SECRET` |
+| meeting-api -> ai-worker internal API | `AI_WORKER_INTERNAL_API_HMAC_SECRET` |
+
+If these differ between processes, callbacks and rerank/internal calls fail
+with HMAC errors.
+
+## 8. Verification
+
+With ai-worker running:
 
 ```bash
 ./deploy/ai-worker-apple-silicon.sh verify
-# = curl /internal/hardware + /internal/ready
 ```
 
-`/internal/hardware` 应返回（截选关键字段）：
+Manual:
+
+```bash
+curl -fsSL http://localhost:8090/internal/hardware | jq .
+curl -fsSL http://localhost:8090/internal/ready | jq .
+```
+
+Expected hardware shape:
 
 ```json
 {
-  "torch": "2.5.x",
   "cuda": { "available": false },
   "mps": { "available": true, "built": true },
   "models": {
-    "bge-m3":            { "device": "mps", "dtype": "fp32" },
-    "bge-reranker-v2-m3":{ "device": "mps", "dtype": "fp32" },
-    "qwen3-asr":         { "device": "cpu", "dtype": "fp32" },
-    "pyannote":          { "device": "cpu", "dtype": "fp32" }
+    "bge-m3": { "device": "mps", "dtype": "fp32" },
+    "bge-reranker-v2-m3": { "device": "mps", "dtype": "fp32" },
+    "qwen3-asr": { "device": "cpu", "dtype": "fp32" },
+    "pyannote": { "device": "cpu", "dtype": "fp32" }
   }
 }
 ```
 
-`/internal/ready` 返回 200 表示 checksum guard 全部通过；返回 503 时
-看 `lastError` 字段排错（最常见是 mock 权重 + 真实 checksum env 不匹
-配，重新跑 `stage` 写一遍即可）。
+Readiness interpretation:
 
-## 3. 与 meeting-api 协同
+| Status | Meaning |
+|--------|---------|
+| 200 | Model dirs exist and checksum guard passed. |
+| 503 with checksum mismatch | Expected checksum env does not match files. Re-run `stage` or update checksum env. |
+| 503 with missing path | Weight directory is absent or wrong `AI_WORKER_MODELS_ROOT`. |
+| 503 with import error | Real-model extra did not install; rerun `uv sync --extra dev --extra real-models`. |
 
-`run` 子命令会写 `deploy/.ai-worker-apple-silicon.env`，里面包含新
-生成的 HMAC 双密钥：
+## 9. Performance Expectations
 
+Approximate local demo numbers:
+
+| Step | Expected speed | Notes |
+|------|----------------|-------|
+| Embedding | fast enough for UI demos | MPS fp32, batch size matters |
+| Rerank | sub-second to a few seconds | Candidate count dominates |
+| ASR | slower than realtime on many inputs | CPU fp32, do not compare with CUDA |
+| Diarization | around realtime on M2/M3 class machines | CPU-bound |
+
+Keep Chrome, Xcode, Docker Desktop, and large IDE indexing under control. The
+unified-memory pressure is the common failure mode.
+
+## 10. Audio Input Rules
+
+For ASR/diarization sanity tests, normalize audio first:
+
+```bash
+ffmpeg -i input.mp4 \
+  -ar 16000 \
+  -ac 1 \
+  -c:a pcm_s16le \
+  sample-16k-mono.wav
 ```
-AI_WORKER_CALLBACK_HMAC_SECRET=...
-AI_WORKER_INTERNAL_API_HMAC_SECRET=...
+
+Avoid feeding compressed MP3/MP4 directly to low-level smoke scripts. The API
+upload path may normalize, but direct local debugging is simpler with PCM WAV.
+
+## 11. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Script says not Apple Silicon | Running on Intel/Rosetta/Linux | Use fake runtime or CUDA Linux path. |
+| `/internal/hardware` says `mps=false` | x86 Python or old macOS/PyTorch | Switch to arm64 Python, update macOS/uv env. |
+| `uv sync` fails on `soundfile` | Missing native library | `brew install libsndfile pkg-config`. |
+| `sentencepiece` build fails | Missing build tools | `brew install cmake`. |
+| pyannote returns 401/403 | License not accepted or token absent | Accept model terms and set `HF_TOKEN`. |
+| `/internal/ready` checksum mismatch | Mock checksum env with real weights, or stale checksum file | Regenerate checksum env for the files in use. |
+| HMAC callback rejected by Java | Secrets differ between worker and meeting-api | Copy `deploy/.ai-worker-apple-silicon.env` HMAC values into meeting-api env. |
+| meeting-api cannot reach native worker | Docker container uses `http://ai-worker:8090` | Start compose with `AI_WORKER_BASE_URL=http://host.docker.internal:8090`. |
+| ASR emits empty/silence output | Bad audio format or too quiet input | Convert to 16k mono PCM WAV and retry. |
+| First inference pauses for seconds | MPS kernel compilation | Expected on first call; repeat once before measuring. |
+| OOM / process killed | unified memory pressure | Stop Docker/IDE/browser workloads; reduce batch sizes; use mock mode. |
+
+## 12. Cleanup
+
+Stop worker:
+
+```bash
+# Ctrl-C in the run terminal
 ```
 
-**必须**把这两个值复制到 meeting-api 一侧的 `.env`（同名变量），
-否则 callback HMAC 校验会失败，所有 ai-worker → meeting-api 的回调
-被拒。本地 docker compose 路径默认从 repo-root `.env` 读，复制完
-重启 meeting-api 即可（`./deploy/deploy.sh local --with-observability`
-重跑会读到新值）。
+Remove generated env:
 
-## 4. 性能预期
+```bash
+rm -f deploy/.ai-worker-apple-silicon.env
+rm -f deploy/.ai-worker-apple-silicon.env.checksums
+```
 
-在 M2 Pro / M3 Max 上单线程测试（输入 10 min 普通话会议 wav）：
+Remove mock/real weights:
 
-| 步骤 | 实测时长 | 实时倍率 | 备注 |
-|------|---------|---------|------|
-| ASR (Qwen3-ASR, CPU fp32) | ≈ 20 min | 0.5× 实时 | funasr 单线程；多个 worker 进程不一定更快（macOS GIL + CPU 上下文切换） |
-| Diarization (pyannote, CPU fp32) | ≈ 10 min | 1× 实时 | pyannote 内置多进程划分；M-series 大核能跑到接近 1.5× |
-| Embedding (BGE-m3, MPS fp32) | < 30 s | — | 批量 chunk 时基本无瓶颈 |
-| Rerank (BGE-reranker, MPS fp32) | < 5 s | — | RAG 路径里单次调用 ≤ 100ms |
+```bash
+rm -rf "${AI_WORKER_MODELS_ROOT:-$HOME/meeting-models}"
+```
 
-整机端到端约为单卡 RTX 4080 的 1/10。这是开发 / 演示 / 数值核对通道，**不要把它部署到任何生产环境**。
+Clear uv cache only if disk pressure is severe:
 
-## 5. 故障排查
+```bash
+uv cache clean
+```
 
-| 现象 | 排查方向 |
-|------|---------|
-| `uv sync --extra real-models` 卡在 `building wheel for soundfile` | macOS 缺 libsndfile：`brew install libsndfile` |
-| `uv sync` 报 `Could not build wheels for sentencepiece` | 缺 CMake：`brew install cmake` |
-| pyannote 下载报 401 / 403 | HF_TOKEN 没设，或没在 model card 上点 "Agree" |
-| `/internal/hardware` 返回 mps=false | Python 是 x86 (Rosetta)：`file $(python3 -c "import sys; print(sys.executable)")` 应该是 arm64 |
-| ASR 输出全是 `<sil>` 或 `?` | 输入 wav 是 mp3/mp4 编码；funasr 只吃 PCM wav。先 `ffmpeg -i in.mp3 -ar 16000 -ac 1 -c:a pcm_s16le out.wav` |
-| Diarization 把所有说话人合并成一个 | pyannote 需要 ≥ 2 个不同说话人才能起作用；单人输入会输出单 cluster，正常行为 |
-| BGE 在第一次推理后 hang 5+ 秒 | MPS 首次 kernel 编译；后续调用恢复正常。如果一直 hang 改成 CPU device 看是否 MPS 驱动问题 |
-| 启动时 OOM | M-series 统一内存被 Chrome / Xcode 占满；模型加载需要 ≥ 16 GB free。先 `sudo purge` |
+## 13. Final Checklist
 
-## 6. 关联文档
+Before using Apple Silicon real-models in a demo or production-readiness
+handoff:
 
-- `deploy/DEPLOY.md` §5·5.2.C — 同一流程的 inline 版本，便于和 NVIDIA 路径横向对照。
-- `deploy/DEPLOY.md` §5·5.2.A — Linux + NVIDIA 生产路径。
-- `apps/ai-worker/SPEC.md` — ai-worker 内部结构、`/internal/*` 接口约束。
-- `apps/ai-worker/scripts/stage_mock_weights.py` — `stage` 子命令底层实现。
-- `deploy/ai-worker-apple-silicon.sh` — 本运行手册的脚本入口。
+- `uname -m` returns `arm64`.
+- `uv sync --extra dev --extra real-models` completes.
+- Model directories exist under `AI_WORKER_MODELS_ROOT`.
+- HMAC values match meeting-api.
+- `/internal/hardware` shows BGE on `mps` and ASR/diarization on `cpu`.
+- `/internal/ready` returns 200.
+- A short PCM WAV smoke input has been tested.
+- The audience understands this is not the production performance profile.
+- Only model versions, checksums, contract evidence, and license notes are
+  handed off to production.
+- Production deployment still uses the CUDA image, GPU node pool,
+  production Secret manager values, and `/opt/models` model volume.
+
+Related docs:
+
+- `deploy/DEPLOY.md` §5.5.2
+- `docs/runbooks/meeting-api-java.md`
+- `docs/runbooks/phase-j-acceptance.md`
+- `apps/ai-worker/SPEC.md`
+- `deploy/ai-worker-apple-silicon.sh`
