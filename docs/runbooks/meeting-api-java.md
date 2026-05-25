@@ -1,37 +1,103 @@
-# meeting-api (Java) — Deployment Runbook
+# meeting-api Java 部署运行手册
 
-This runbook is the Java-side operating guide for `meeting-api`. It mirrors
-`deploy/meeting-api-java.sh` and points back to `deploy/DEPLOY.md` for shared
-K8s, image, and environment-variable details.
+本文档是 `meeting-api` Java 服务的详细部署手册，覆盖本地验证、单台
+CentOS 服务器 Docker/Compose 部署、K8s 开发/验收部署，以及生产 K8s 部署
+前后的门禁、回滚和排障。脚本入口以 `deploy/meeting-api-java.sh` 为准，
+共享的基础设施、镜像、K8s overlay 和环境变量说明见 `deploy/DEPLOY.md`。
 
-`apps/meeting-api` is a Spring Boot 3.3 / Java 17 modular monolith split into
-six Maven modules:
+`apps/meeting-api` 是 Spring Boot 3.3 / Java 17 的模块化单体，分为六个
+Maven 模块：
 
-| Module | Responsibility |
-|--------|----------------|
-| `meeting-api-start` | Boot entry point, Spring configuration, profile validation, health indicators |
-| `meeting-api-adapter` | REST/SSE/internal callback controllers and protocol adapters |
-| `meeting-api-app` | Use-case orchestration, transactions, task scheduling, tenant context |
-| `meeting-api-domain` | Aggregates, entities, domain services, repository/gateway ports |
-| `meeting-api-infrastructure` | PostgreSQL, RabbitMQ, object storage, KMS, DashScope, LibreOffice gateways |
-| `meeting-api-client` | DTOs, commands, results, generated API clients |
+| 模块 | 职责 |
+|------|------|
+| `meeting-api-start` | 启动入口、Spring 配置、profile 校验、健康检查 |
+| `meeting-api-adapter` | REST、SSE、内部 callback controller 和协议适配 |
+| `meeting-api-app` | 用例编排、事务、任务调度、租户上下文 |
+| `meeting-api-domain` | 聚合、实体、领域服务、Repository/Gateway 端口 |
+| `meeting-api-infrastructure` | PostgreSQL、RabbitMQ、对象存储、KMS、DashScope、LibreOffice 网关 |
+| `meeting-api-client` | DTO、命令、结果对象、生成的 API client |
 
-## 0. Deployment Decision
+## 0. 部署决策
 
-| Target | Can start now? | Canonical command | Notes |
-|--------|----------------|-------------------|-------|
-| Local Java smoke | Yes | `./deploy/meeting-api-java.sh compose` | Starts infra + `meeting-api` + fake `ai-worker`. |
-| Phase J local acceptance | Yes, with observability | `./deploy/meeting-api-java.sh compose --with-observability` | Required for Prometheus/Grafana checks. |
-| K8s dev / acceptance | Yes, after tool install | `./deploy/deploy.sh k8s-deps dev && ./deploy/meeting-api-java.sh k8s dev` | For kind, build and `kind load` images first. |
-| Production | Not directly from dev defaults | ExternalSecrets/Vault + managed dependencies, then `./deploy/meeting-api-java.sh k8s prod` | Do not use dev passwords or in-memory auth. |
+| 目标 | 是否可以直接开始 | 标准命令 | 说明 |
+|------|------------------|----------|------|
+| 本地 Java 冒烟 | 可以 | `./deploy/meeting-api-java.sh compose` | 启动依赖、`meeting-api` 和 fake `ai-worker`。 |
+| 本地验收 | 可以，建议带观测组件 | `./deploy/meeting-api-java.sh compose --with-observability` | Prometheus/Grafana 规则检查需要这个模式。 |
+| 单台 CentOS 服务器 | 可以，用 Docker/Compose 起步 | `./deploy/meeting-api-java.sh compose` | 适合从 0 跑通服务，不等同于生产高可用。 |
+| K8s dev / acceptance | 可以，先安装工具 | `./deploy/deploy.sh k8s-deps dev && ./deploy/meeting-api-java.sh k8s dev` | kind/minikube 需要先 build 并 load 镜像。 |
+| 生产 K8s | 不能直接复用 dev 默认值 | ExternalSecrets/Vault + 托管依赖，然后 `./deploy/meeting-api-java.sh k8s prod` | 禁止 dev 密码、localhost、in-memory auth 和 fake worker。 |
 
-For production, treat `k8s-deps prod` as an exception path. The default
-recommendation is managed PostgreSQL/RabbitMQ/object storage plus prod overlay
-patches and ExternalSecrets.
+生产部署时，`k8s-deps prod` 只能作为例外路径。默认推荐托管
+PostgreSQL/RabbitMQ/Object Storage，加上 prod overlay 和
+ExternalSecrets/Vault/SealedSecrets 注入配置。
 
-## 1. Preflight
+## 1. 从 0 开始的 CentOS 准备
 
-Run these before touching deploy commands:
+CentOS 上建议先走 Docker/Compose 路径把 Java 服务和依赖整体跑通，再决定
+是否迁移到 K8s。下面命令适用于 CentOS Stream 9 / RHEL 9 类系统，CentOS 7
+需要根据系统仓库替换安装命令。
+
+### 1.1 基础包
+
+```bash
+sudo dnf update -y
+sudo dnf install -y git curl jq unzip tar ca-certificates openssl
+sudo dnf install -y java-17-openjdk java-17-openjdk-devel
+java -version
+```
+
+要求 Java 主版本必须是 17。Maven Enforcer 只接受 `[17,18)`，Java 21 或
+Java 25 会被拒绝。
+
+### 1.2 Docker 和 Compose
+
+```bash
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+docker version
+docker compose version
+```
+
+执行 `usermod` 后需要重新登录当前用户，或者临时用 `sudo docker ...` 验证。
+
+### 1.3 拉取代码
+
+```bash
+git clone https://github.com/JAHSEH618/meeting.git
+cd meeting
+git status --short
+```
+
+部署前工作区应干净，避免把未确认的本地改动带到服务器。
+
+### 1.4 端口和资源
+
+单机 Compose 默认会用到：
+
+| 端口 | 服务 |
+|------|------|
+| `8080` | `meeting-api` |
+| `8090` | `ai-worker` |
+| `5432` | PostgreSQL |
+| `5672` / `15672` | RabbitMQ / 管理端 |
+| `9000` / `9001` | MinIO / Console |
+| `9090` | Prometheus，只有 observability profile 才需要 |
+| `3000` | Grafana 或 Web 侧服务，取决于 profile |
+
+CentOS 防火墙按实际暴露范围放行，不建议把 DB/MQ/MinIO 管理端直接暴露到公网。
+
+```bash
+sudo firewall-cmd --state
+sudo firewall-cmd --add-port=8080/tcp --permanent
+sudo firewall-cmd --reload
+```
+
+## 2. 预检
+
+每次部署前先执行：
 
 ```bash
 git status --short
@@ -40,101 +106,107 @@ docker version
 docker compose version
 ```
 
-Required versions:
+K8s 路径还需要：
 
-| Tool | Requirement | Why |
-|------|-------------|-----|
-| JDK | 17, strictly `[17,18)` | Maven Enforcer rejects Java 21/25. |
-| Maven | Use bundled `apps/meeting-api/mvnw` | Keeps Maven version pinned. |
-| Docker Engine | 24+ | Testcontainers, image build, compose. |
-| Node 20 | Only for contract/codegen path | Java generated clients depend on contract output. |
-| `kubectl` / `kustomize` / `helm` | K8s only | See `deploy/DEPLOY.md` §2. |
+```bash
+kubectl version --client
+kustomize version
+helm version
+```
 
-The script auto-detects Java 17 on macOS:
+工具要求：
+
+| 工具 | 要求 | 原因 |
+|------|------|------|
+| JDK | 17，严格 `[17,18)` | Maven Enforcer 会拒绝其他主版本。 |
+| Maven | 使用 `apps/meeting-api/mvnw` | 固定 Maven 版本，避免服务器全局 Maven 差异。 |
+| Docker Engine | 24+ | 支持 Testcontainers、镜像构建、Compose。 |
+| Node 20 | 仅 contract/codegen 路径需要 | Java 生成 client 依赖合同产物。 |
+| `kubectl` / `kustomize` / `helm` | 仅 K8s 路径需要 | 渲染 overlay、安装命名空间依赖、等待 rollout。 |
+
+macOS 本地调试时脚本会自动查找 Java 17：
 
 ```bash
 /usr/libexec/java_home -v 17
 ```
 
-If you use Colima for Testcontainers:
+如果本地用 Colima 跑 Testcontainers：
 
 ```bash
 export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
-Rancher Desktop must use dockerd, not pure containerd. OrbStack usually works
-without overrides, but setting `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`
-is harmless when auto-detection fails.
+## 3. 命令矩阵
 
-## 2. Command Matrix
+| 流程 | 命令 | 使用场景 |
+|------|------|----------|
+| 完整 Java 验证 | `./deploy/meeting-api-java.sh test` | 部署前后端门禁，等价 CI 后端验证。 |
+| 构建 jar | `./deploy/meeting-api-java.sh jar` | 快速打包检查。 |
+| 构建并运行 jar | `./deploy/meeting-api-java.sh jar --run` | 主机原生调试，依赖需另行启动。 |
+| 构建 Docker 镜像 | `./deploy/meeting-api-java.sh image [tag]` | 本地 Compose、kind 或推送镜像仓库。 |
+| Apple Silicon 构建 amd64 | `./deploy/meeting-api-java.sh image meeting-api:v0.1.0 --cross` | 目标生产节点是 linux/amd64 时做本地 sanity check。 |
+| 单机 Compose | `./deploy/meeting-api-java.sh compose` | CentOS 或本地一键跑通依赖和 Java 服务。 |
+| 带观测的验收 | `./deploy/meeting-api-java.sh compose --with-observability` | 启动 Prometheus/Grafana。 |
+| K8s 应用部署 | `./deploy/meeting-api-java.sh k8s dev` | `k8s-deps dev` 和镜像准备完成后使用。 |
+| 数据库迁移参考 | `./deploy/meeting-api-java.sh migrate` | 打印 Flyway / restart / psql 方案。 |
 
-| Flow | Command | Use when |
-|------|---------|----------|
-| Full Java verification | `./deploy/meeting-api-java.sh test` | CI-equivalent backend gate before deploy. |
-| Build jar | `./deploy/meeting-api-java.sh jar` | Fast packaging check. |
-| Build and run jar | `./deploy/meeting-api-java.sh jar --run` | Host-native debugging. |
-| Build Docker image | `./deploy/meeting-api-java.sh image [tag]` | Local compose / kind / registry push. |
-| Cross-build amd64 from Apple Silicon | `./deploy/meeting-api-java.sh image meeting-api:v0.1.0 --cross` | Prod nodes are linux/amd64. |
-| Local stack | `./deploy/meeting-api-java.sh compose` | Local app + fake worker. |
-| Local acceptance | `./deploy/meeting-api-java.sh compose --with-observability` | Adds Prometheus + Grafana. |
-| K8s app deploy | `./deploy/meeting-api-java.sh k8s dev` | After `k8s-deps dev` and image load. |
-| Migration recipes | `./deploy/meeting-api-java.sh migrate` | Prints Flyway / restart / psql options. |
+## 4. 测试门禁
 
-## 3. Test Gate
+部署前必须跑：
 
 ```bash
 ./deploy/meeting-api-java.sh test
 ```
 
-This runs:
+该命令会执行：
 
-| Layer | Coverage |
-|-------|----------|
-| Unit tests | JUnit 5 / Mockito domain and app behavior |
-| Architecture tests | COLA module boundary checks |
-| Integration tests | Testcontainers PostgreSQL, RabbitMQ, MinIO |
-| Spring context | Boot configuration, health indicators, profile validation |
+| 层级 | 覆盖内容 |
+|------|----------|
+| 单元测试 | JUnit 5 / Mockito，覆盖 domain 和 app 行为 |
+| 架构测试 | COLA 模块边界检查 |
+| 集成测试 | Testcontainers PostgreSQL、RabbitMQ、MinIO |
+| Spring 上下文 | Boot 配置、健康检查、profile 校验 |
 
-Expected failure classes:
+常见失败和处理：
 
-| Symptom | Action |
-|---------|--------|
-| Maven Enforcer says wrong JDK | Fix `JAVA_HOME` to Java 17. |
-| Testcontainers cannot find Docker socket | Apply the Colima/OrbStack env above. |
-| Ryuk bind-mount failure on Colima | Set `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. |
-| Port already used | Stop local compose stack or conflicting containers. |
+| 现象 | 处理 |
+|------|------|
+| Maven Enforcer 提示 JDK 错误 | 修正 `JAVA_HOME` 到 Java 17。 |
+| Testcontainers 找不到 Docker socket | 确认 Docker 服务运行，必要时设置 Colima/OrbStack 环境变量。 |
+| Ryuk bind-mount 失败 | 设置 `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`。 |
+| 端口被占用 | 停止本地 Compose stack 或占用端口的容器。 |
 
-Do not use a passing `compile` as a deploy gate. The deploy gate is
-`./mvnw verify -q`.
+不要把 `compile` 通过当成部署门禁。真正的 Java 部署门禁是
+`./mvnw verify -q`，脚本已经封装在 `test` 子命令里。
 
-## 4. Jar Path
+## 5. Jar 部署路径
 
-Build only:
+构建 jar：
 
 ```bash
 ./deploy/meeting-api-java.sh jar
 ```
 
-Build and run:
+构建并运行：
 
 ```bash
 ./deploy/meeting-api-java.sh jar --run
 ```
 
-The jar is:
+产物位置：
 
 ```text
 apps/meeting-api/meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 ```
 
-Host-native jar mode needs external dependencies already running:
+jar 模式不会自动启动 PostgreSQL/RabbitMQ/MinIO。先启动依赖：
 
 ```bash
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
-Minimum environment for jar mode:
+jar 模式最小环境变量：
 
 ```bash
 export POSTGRES_HOST=localhost
@@ -160,32 +232,32 @@ export KMS_MASTER_KEY_ID=dev-kms-master-key
 export MEETING_KMS_MASTER_KEY_BASE64="$(openssl rand -base64 32)"
 ```
 
-Verification:
+验证：
 
 ```bash
 curl -fsSL http://localhost:8080/actuator/health/readiness | jq .
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
 
-`/actuator/health/readiness` checks the Java app itself. Aggregate
-`/actuator/health` also includes `aiWorker`, `minIo`, `rabbitMqQueue`,
-`postgresRls`, `kms`, and `outboxBacklog`.
+`/actuator/health/readiness` 只检查 Java 应用是否可接流量；聚合
+`/actuator/health` 还包括 `aiWorker`、`minIo`、`rabbitMqQueue`、
+`postgresRls`、`kms` 和 `outboxBacklog`。
 
-## 5. Docker Image Path
+## 6. Docker 镜像路径
 
-Build native image:
+构建默认镜像：
 
 ```bash
 ./deploy/meeting-api-java.sh image
 ```
 
-Build with a release tag:
+构建指定 tag：
 
 ```bash
 ./deploy/meeting-api-java.sh image meeting-api:v0.1.0
 ```
 
-Manual equivalent:
+手工等价命令：
 
 ```bash
 docker build -t meeting-api:dev \
@@ -193,56 +265,56 @@ docker build -t meeting-api:dev \
   apps/meeting-api/
 ```
 
-Apple Silicon producing a linux/amd64 image:
+Apple Silicon 机器为 linux/amd64 做本地构建检查：
 
 ```bash
 docker buildx create --use 2>/dev/null || true
 ./deploy/meeting-api-java.sh image meeting-api:v0.1.0 --cross
 ```
 
-Use cross-build when the target K8s node pool is linux/amd64. Do not push an
-arm64-only image to an amd64 cluster.
+生产发布建议由 CI 使用 `docker buildx build --platform linux/amd64 --push`
+直接推送到镜像仓库，并在 release 或 prod overlay 中使用 digest 固定版本。
 
-Image contents:
+镜像内容：
 
-| Component | Purpose |
-|-----------|---------|
-| `eclipse-temurin:17-jre-jammy` | Runtime JRE |
-| LibreOffice | DOCX/PDF export conversion |
+| 组件 | 用途 |
+|------|------|
+| `eclipse-temurin:17-jre-jammy` | Java 运行时 |
+| LibreOffice | DOCX/PDF 导出转换 |
 | Spring Boot jar | `meeting-api-start` |
-| `/tmp` and `/tmp/soffice` writable volumes | Required by Kubernetes deployment |
+| `/tmp` 和 `/tmp/soffice` 可写目录 | K8s 运行和 LibreOffice 转换需要 |
 
-## 6. Local Compose Path
+## 7. 单台 CentOS Docker/Compose 部署
 
-Default local stack:
+适合从 0 跑通 Java 服务和依赖：
 
 ```bash
 ./deploy/meeting-api-java.sh compose
 ```
 
-Phase J local acceptance stack:
+带观测组件：
 
 ```bash
 ./deploy/meeting-api-java.sh compose --with-observability
 ```
 
-What starts:
+会启动：
 
-| Service | Source | Health gate |
-|---------|--------|-------------|
+| 服务 | 来源 | 健康门禁 |
+|------|------|----------|
 | PostgreSQL + pgvector | compose base | container healthcheck |
 | RabbitMQ | compose base | management healthcheck |
 | MinIO | compose base | healthcheck |
 | Vault | compose base | dev mode |
 | meeting-api | `full-stack` profile | `/actuator/health/readiness` |
 | ai-worker fake runtime | `workstation` profile | `/internal/health` |
-| Prometheus/Grafana | `observability` profile | only when requested |
+| Prometheus/Grafana | `observability` profile | 只有显式开启时启动 |
 
-Why readiness, not aggregate health: aggregate health is expected to be DOWN
-until `ai-worker` is available, because `AiWorkerHealthIndicator` is part of
-the aggregate group.
+为什么启动门禁看 readiness 而不是聚合 health：`AiWorkerHealthIndicator`
+属于聚合健康检查，`ai-worker` 未就绪时聚合 health 可能为 DOWN，但 Java 服务
+本身已经可启动。
 
-Verification:
+验证：
 
 ```bash
 ./deploy/deploy.sh health
@@ -250,9 +322,12 @@ curl -fsSL http://localhost:8080/actuator/health | jq .
 curl -fsSL http://localhost:9090/api/v1/rules | jq '.data.groups[].rules | length'
 ```
 
-## 7. K8s Dev / Acceptance
+单机 Compose 不等于生产高可用。生产需要把 DB、MQ、对象存储、Secret、
+监控和 ai-worker GPU runtime 按生产要求拆出来。
 
-For kind/minikube:
+## 8. K8s dev / acceptance
+
+kind/minikube 示例：
 
 ```bash
 ./deploy/deploy.sh build
@@ -262,22 +337,22 @@ kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev --name meet
 ./deploy/meeting-api-java.sh k8s dev
 ```
 
-`k8s-deps dev` installs namespace dependencies:
+`k8s-deps dev` 会安装命名空间依赖：
 
-| Dependency | Release | Notes |
-|------------|---------|-------|
-| PostgreSQL | `postgres` | `pgvector/pgvector:pg15`, service DNS `postgres` |
-| RabbitMQ | `rabbitmq` | loads `definitions.json`; `auth.securePassword=false` |
-| MinIO | `minio` | standalone Deployment by default, buckets auto-created |
+| 依赖 | Release | 说明 |
+|------|---------|------|
+| PostgreSQL | `postgres` | `pgvector/pgvector:pg15`，service DNS 为 `postgres` |
+| RabbitMQ | `rabbitmq` | 加载 `definitions.json`，`auth.securePassword=false` |
+| MinIO | `minio` | 默认 standalone Deployment，自动创建 bucket |
 
-`k8s dev` then:
+`k8s dev` 会执行：
 
-1. Creates `meeting-api-secret` and `ai-worker-secret` for dev.
-2. Renders `infra/meeting-infra/k8s/overlays/dev` via `kustomize build --enable-helm`.
-3. Applies the bundle.
-4. Waits for `deployment/meeting-api`, `deployment/meeting-web`, and `statefulset/ai-worker`.
+1. 创建 dev 用 `meeting-api-secret` 和 `ai-worker-secret`。
+2. 使用 `kustomize build --enable-helm` 渲染 `infra/meeting-infra/k8s/overlays/dev`。
+3. `kubectl apply` 应用清单。
+4. 等待 `deployment/meeting-api`、`deployment/meeting-web` 和 `statefulset/ai-worker` 就绪。
 
-Verification:
+验证：
 
 ```bash
 kubectl get pods -n meeting-dev -o wide
@@ -286,78 +361,77 @@ kubectl port-forward -n meeting-dev svc/meeting-api 8080:8080
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
 
-## 8. Production K8s
+## 9. 生产 K8s 部署
 
-Production deployment has a fixed order:
+生产部署必须按固定顺序执行：
 
-1. Pass the release gate.
-2. Publish immutable images for the target node architecture.
-3. Prepare infrastructure, secrets, and config.
-4. Confirm database backup and migration policy.
-5. Apply the prod overlay.
-6. Verify rollout, health, logs, and business smoke checks.
+1. 通过 release gate。
+2. 发布目标节点架构对应的不可变镜像。
+3. 准备基础设施、Secret 和 Config。
+4. 确认数据库备份和 Flyway 迁移策略。
+5. 应用 prod overlay。
+6. 验证 rollout、健康检查、日志和业务冒烟。
 
-Do not promote a dev or acceptance deployment by changing only the namespace.
-The prod overlay enables `SPRING_PROFILES_ACTIVE=prod` and forces
-`SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`; `ProdProfileValidator` then
-fail-fasts the pod if production-only invariants are missing.
+不要把 dev/acceptance 只换 namespace 后当成生产部署。prod overlay 会设置
+`SPRING_PROFILES_ACTIVE=prod`，并强制
+`SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`。`ProdProfileValidator` 会在启动
+阶段 fail-fast，避免带着 dev 默认值对外服务。
 
-### 8.1 Go / No-Go Gate
+### 9.1 Go / No-Go 门禁
 
-| Gate | Go condition | Stop condition |
-|------|--------------|----------------|
-| Java verification | `./deploy/meeting-api-java.sh test` exits 0 | Any unit, ArchUnit, Testcontainers, or Spring context failure |
-| Release image | `meeting-api`, `meeting-web`, and CUDA `ai-worker` images are pushed by digest | Local-only tags, wrong architecture, or missing `ai-worker:cuda-*` image |
-| Infrastructure | PostgreSQL, RabbitMQ, object storage, KMS, and monitoring are provisioned | Dev passwords, single-node prod DB/MQ by accident, or no metrics/log access |
-| Secrets | `meeting-api-secret` and `ai-worker-secret` are synced in `meeting-prod` | Missing Secret, demo HMAC value, or callback/internal HMAC mismatch |
-| Database | Backup exists, restore path is known, Flyway is the migration owner | No backup, raw SQL applied without Flyway history, or baseline-on-migrate enabled |
-| AI worker | Linux + NVIDIA + CUDA worker is ready with real model weights | Apple Silicon path, fake runtime, missing checksums, or CPU-only worker |
+| 门禁 | 可以继续 | 必须停止 |
+|------|----------|----------|
+| Java 验证 | `./deploy/meeting-api-java.sh test` 退出码为 0 | 单测、架构测试、集成测试或 Spring context 任一失败 |
+| Release 镜像 | `meeting-api`、`meeting-web`、CUDA `ai-worker` 镜像已按 digest 推送 | 只有本地 tag、架构错误或缺少 `ai-worker:cuda-*` |
+| 基础设施 | PostgreSQL、RabbitMQ、对象存储、KMS、监控已准备 | 误用 dev 密码、单节点生产 DB/MQ 或没有日志/指标入口 |
+| Secret | `meeting-api-secret` 和 `ai-worker-secret` 已同步到 `meeting-prod` | Secret 缺失、demo HMAC、callback/internal HMAC 不一致 |
+| 数据库 | 已备份、恢复路径明确、Flyway 是迁移 owner | 没有备份、手工 SQL 没有 Flyway history、baseline-on-migrate 打开 |
+| AI worker | Linux + NVIDIA + CUDA worker 已就绪并加载真实模型 | Apple Silicon、fake runtime、checksum 缺失或 CPU-only worker |
 
-### 8.2 Release Artifact
+### 9.2 Release 制品
 
-Build and test the Java service before creating a release image:
+构建和测试 Java 服务：
 
 ```bash
 ./deploy/meeting-api-java.sh test
 ./deploy/meeting-api-java.sh image meeting-api:<release>
+```
 
-# Production linux/amd64 push from Apple Silicon or CI:
+生产 linux/amd64 镜像发布示例：
+
+```bash
 docker buildx build --platform linux/amd64 \
   -t registry.example.com/meeting-api:<release> \
   -f apps/meeting-api/Dockerfile \
   --push apps/meeting-api
 ```
 
-For production, pin images by digest in the release pipeline or prod overlay.
-The script's `--cross` helper is useful for local amd64 build sanity checks,
-but the production release pipeline should publish the canonical registry tag
-and digest.
-The prod deployment must include a matched set:
+生产必须使用一组匹配的镜像：
 
-| Image | Requirement |
-|-------|-------------|
-| `meeting-api` | Java 17 runtime image for the target node architecture |
-| `meeting-web` | Web image built from the same release commit |
-| `ai-worker` | CUDA image tag, for example `ai-worker:cuda-<release>` |
+| 镜像 | 要求 |
+|------|------|
+| `meeting-api` | Java 17 runtime 镜像，架构匹配目标节点 |
+| `meeting-web` | 同一个 release commit 构建出的 Web 镜像 |
+| `ai-worker` | CUDA 镜像，例如 `ai-worker:cuda-<release>` |
 
-Do not use an Apple Silicon arm64-only image on linux/amd64 nodes. Do not use
-the lean CPU/fake `ai-worker` image for prod, because readiness depends on
-real BGE/ASR/diarization dependencies and model weights.
+不要把 Apple Silicon arm64-only 镜像推给 linux/amd64 集群。不要在生产使用
+lean CPU/fake `ai-worker` 镜像，因为生产 readiness 依赖真实 BGE/ASR/
+diarization 依赖和模型权重。
 
-### 8.3 Infrastructure
+### 9.3 生产基础设施
 
-Recommended production dependency shape:
+推荐生产依赖形态：
 
-| Dependency | Production recommendation |
-|------------|---------------------------|
-| PostgreSQL | Managed RDS / Cloud SQL / self-managed HA PostgreSQL with pgvector |
-| RabbitMQ | Managed MQ or HA RabbitMQ, definitions applied by ops |
-| Object storage | S3 / OSS / equivalent, not in-cluster MinIO |
-| Secrets | Vault / ExternalSecrets / SealedSecrets |
-| KMS | Cloud KMS preferred; local KMS requires stable 32-byte base64 master key |
-| Monitoring | Managed Prometheus/Grafana or cluster monitoring stack |
+| 依赖 | 生产建议 |
+|------|----------|
+| PostgreSQL | 托管 RDS / Cloud SQL / 自管 HA PostgreSQL，并启用 pgvector |
+| RabbitMQ | 托管 MQ 或 HA RabbitMQ，definitions 由运维应用 |
+| 对象存储 | S3 / OSS / 等价对象存储，不建议生产内置单副本 MinIO |
+| Secret | Vault / ExternalSecrets / SealedSecrets |
+| KMS | 优先云 KMS；本地 KMS 必须使用稳定的 32 字节 base64 master key |
+| 监控 | 托管 Prometheus/Grafana 或集群监控栈 |
 
-Only if explicitly deploying in-cluster production dependencies:
+只有明确决定把生产依赖也部署到集群内时，才使用例外路径：
 
 ```bash
 ALLOW_IN_CLUSTER_PROD_DEPS=1 \
@@ -367,70 +441,66 @@ MINIO_ROOT_PASSWORD="<strong-password>" \
   ./deploy/deploy.sh k8s-deps prod
 ```
 
-That exception path is for controlled environments only. It is not the normal
-production recommendation.
+该路径只适合受控环境，不是默认生产建议。
 
-### 8.4 Secrets and Config
+### 9.4 Secret 和 Config
 
-`meeting-api-secret` must exist before rollout:
+`meeting-api-secret` 必须在 rollout 前存在：
 
-| Key | Requirement |
-|-----|-------------|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Real DB credentials |
-| `RABBITMQ_USER` / `RABBITMQ_PASS` | Real MQ credentials |
-| `AI_WORKER_CALLBACK_HMAC_SECRET` | Non-demo, 32+ bytes |
-| `AI_WORKER_INTERNAL_API_HMAC_SECRET` | Non-demo, different from callback secret |
-| `DASHSCOPE_API_KEY` | Real provider key |
-| `KMS_MASTER_KEY_ID` | Not `dev-kms-master-key` |
-| `MEETING_KMS_MASTER_KEY_BASE64` | Required if using local KMS gateway |
+| Key | 要求 |
+|-----|------|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | 真实数据库凭据 |
+| `RABBITMQ_USER` / `RABBITMQ_PASS` | 真实 MQ 凭据 |
+| `AI_WORKER_CALLBACK_HMAC_SECRET` | 非 demo，至少 32 字节 |
+| `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 非 demo，且不同于 callback secret |
+| `DASHSCOPE_API_KEY` | 真实 provider key |
+| `KMS_MASTER_KEY_ID` | 不能是 `dev-kms-master-key` |
+| `MEETING_KMS_MASTER_KEY_BASE64` | 使用本地 KMS gateway 时必填 |
 
-`ai-worker-secret` must contain the same HMAC pair used by `meeting-api`:
+`ai-worker-secret` 必须和 `meeting-api` 使用同一组 HMAC：
 
-| Key | Requirement |
-|-----|-------------|
-| `AI_WORKER_CALLBACK_HMAC_SECRET` | Same value as `meeting-api-secret` |
-| `AI_WORKER_INTERNAL_API_HMAC_SECRET` | Same value as `meeting-api-secret` |
-| `AI_WORKER_ADMIN_JWT_SECRET` | Non-demo admin secret |
+| Key | 要求 |
+|-----|------|
+| `AI_WORKER_CALLBACK_HMAC_SECRET` | 与 `meeting-api-secret` 相同 |
+| `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 与 `meeting-api-secret` 相同 |
+| `AI_WORKER_ADMIN_JWT_SECRET` | 非 demo 管理密钥 |
 
-Production config must be set through the prod overlay, ExternalSecret, or
-cluster platform values:
+生产配置必须通过 prod overlay、ExternalSecret 或平台配置注入：
 
-| Config | Production value |
-|--------|------------------|
-| `AI_WORKER_BASE_URL` | Cluster DNS / internal URL, never localhost |
-| `MEETING_TENANTS_ACTIVE` | Non-empty tenant list |
-| `MEETING_STORAGE_ENDPOINT` | Real in-cluster or cloud endpoint |
-| `STORAGE_TYPE` / `OSS_*` | Cloud object storage values when not using MinIO |
-| Auth mode | Not `in-memory` |
+| 配置 | 生产值 |
+|------|--------|
+| `AI_WORKER_BASE_URL` | 集群 DNS 或内部 URL，不能是 localhost |
+| `MEETING_TENANTS_ACTIVE` | 非空租户列表 |
+| `MEETING_STORAGE_ENDPOINT` | 集群内或云对象存储 endpoint |
+| `STORAGE_TYPE` / `OSS_*` | 不用 MinIO 时配置云对象存储 |
+| Auth mode | 不能是 `in-memory` |
 | `SPRING_FLYWAY_BASELINE_ON_MIGRATE` | `false` |
 
-Verify secrets before applying the bundle. `meeting-api-config` is rendered by
-Kustomize during apply, so review its prod values from the rendered manifest in
-§8.6.
+应用清单前检查 Secret：
 
 ```bash
 kubectl get secret meeting-api-secret -n meeting-prod
 kubectl get secret ai-worker-secret -n meeting-prod
 ```
 
-### 8.5 Database Migration
+### 9.5 数据库迁移
 
-Preferred path: let `meeting-api` run Flyway during startup. Before rollout:
+推荐路径是让 `meeting-api` 启动时运行 Flyway。生产 rollout 前：
 
-1. Take a database backup.
-2. Confirm restore ownership and target RTO/RPO.
-3. Review new `V*.sql` files.
-4. Keep `SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`.
-5. Do not run raw `psql` against production unless it is a break-glass action
-   and `flyway_schema_history` is repaired afterwards.
+1. 创建数据库备份。
+2. 明确恢复责任人、RTO 和 RPO。
+3. Review 新增 `V*.sql`。
+4. 保持 `SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`。
+5. 不要用裸 `psql` 执行生产迁移，除非是 break-glass 操作，并且之后修复
+   `flyway_schema_history`。
 
-If Flyway fails after the pod starts, stop the rollout and either apply a
-forward repair migration or restore from the verified backup. Do not disable
-`ProdProfileValidator` or turn baseline-on-migrate back on to force startup.
+如果 Flyway 在启动后失败，停止 rollout。选择前向修复 migration 或从已验证
+备份恢复，不要关闭 `ProdProfileValidator`，也不要重新打开 baseline-on-migrate
+强行启动。
 
-### 8.6 Rollout Order
+### 9.6 Rollout 顺序
 
-Render and inspect the prod bundle before applying it:
+先渲染并检查 prod 清单：
 
 ```bash
 kustomize build infra/meeting-infra/k8s/overlays/prod --enable-helm \
@@ -440,7 +510,7 @@ rg 'SPRING_PROFILES_ACTIVE|SPRING_FLYWAY_BASELINE_ON_MIGRATE|AI_WORKER_BASE_URL|
 kubectl diff -f deploy/.kustomize-prod.yaml
 ```
 
-Apply through the canonical deploy script:
+通过标准脚本部署：
 
 ```bash
 ./deploy/meeting-api-java.sh k8s prod
@@ -449,13 +519,16 @@ kubectl rollout status deployment/meeting-web -n meeting-prod --timeout=300s
 kubectl rollout status statefulset/ai-worker -n meeting-prod --timeout=600s
 ```
 
-If the deployment is intentionally observed by another release controller, use
-`./deploy/deploy.sh k8s-prod --no-wait` only when an operator is already
-watching rollout status and alerts.
+如果 rollout 由其他 release controller 观察，只有在已有人员盯着状态和告警时，
+才使用：
 
-### 8.7 Post-Deploy Verification
+```bash
+./deploy/deploy.sh k8s-prod --no-wait
+```
 
-Run these after rollout succeeds:
+### 9.7 上线后验证
+
+rollout 成功后执行：
 
 ```bash
 kubectl logs -n meeting-prod deployment/meeting-api --tail=300 \
@@ -465,27 +538,27 @@ curl -fsSL http://localhost:8080/actuator/health/readiness | jq .
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
 
-Acceptance criteria:
+验收标准：
 
-| Check | Expected result |
-|-------|-----------------|
-| Readiness | `UP` for rollout gate |
-| Aggregate health | `UP` after ai-worker and dependencies are online |
-| Logs | No `ProdProfileValidator`, Flyway, HMAC, KMS, DB, MQ, or storage errors |
-| RabbitMQ | Definitions loaded and queues not building unbounded backlog |
-| Outbox | `outboxBacklog` health is not DOWN |
-| AI worker | `/internal/ready` returns 200 and `/internal/hardware` shows CUDA |
+| 检查 | 期望 |
+|------|------|
+| Readiness | rollout gate 为 `UP` |
+| 聚合健康 | ai-worker 和依赖在线后为 `UP` |
+| 日志 | 无 `ProdProfileValidator`、Flyway、HMAC、KMS、DB、MQ、storage 错误 |
+| RabbitMQ | definitions 已加载，队列没有无界积压 |
+| Outbox | `outboxBacklog` 不是 DOWN |
+| AI worker | `/internal/ready` 返回 200，`/internal/hardware` 显示 CUDA |
 
-## 9. Database Migration
+## 10. 数据库迁移参考
 
-Preferred path: let `meeting-api` run Flyway during startup.
+首选：让 `meeting-api` 启动时自动运行 Flyway。
 
 ```bash
 kubectl rollout restart deployment/meeting-api -n meeting-dev
 kubectl rollout status deployment/meeting-api -n meeting-dev --timeout=300s
 ```
 
-Flyway CLI path:
+Flyway CLI 路径：
 
 ```bash
 docker run --rm \
@@ -498,7 +571,7 @@ docker run --rm \
   migrate
 ```
 
-SQL debug path:
+SQL debug 路径：
 
 ```bash
 ls apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V*.sql \
@@ -506,20 +579,20 @@ ls apps/meeting-api/meeting-api-infrastructure/src/main/resources/db/migration/V
   | xargs -I{} psql -h localhost -U meeting -d meeting -v ON_ERROR_STOP=1 -f {}
 ```
 
-Do not use raw `psql` for production migration unless you also handle
-`flyway_schema_history`. Raw SQL execution does not mark versions as applied.
+生产不要直接用裸 `psql` 迁移，除非同步处理 `flyway_schema_history`。裸 SQL
+不会把版本标记为已应用。
 
-## 10. Rollback
+## 11. 回滚
 
-| Failure point | Rollback action |
-|---------------|-----------------|
-| Image fails startup | Repoint overlay image tag to last known-good digest and re-apply |
-| Flyway migration fails before apply | Fix SQL and rerun against disposable DB |
-| Flyway migration partially applied | Stop rollout; restore DB backup or apply forward repair migration |
-| ProdProfileValidator fails | Fix Secret/ConfigMap; do not disable prod profile |
-| Health readiness fails | Inspect `/actuator/health/readiness`; check DB/MQ/object storage first |
+| 失败点 | 回滚动作 |
+|--------|----------|
+| 镜像启动失败 | 把 overlay 镜像 tag/digest 指回上一个已知可用版本后重新 apply |
+| Flyway 迁移应用前失败 | 修 SQL，并在一次性数据库上重跑 |
+| Flyway 部分应用失败 | 停止 rollout，恢复 DB 备份或提交前向修复 migration |
+| `ProdProfileValidator` 失败 | 修 Secret/ConfigMap，不要禁用 prod profile |
+| readiness 失败 | 看 `/actuator/health/readiness`，先查 DB/MQ/对象存储 |
 
-Useful commands:
+常用命令：
 
 ```bash
 kubectl describe pod -n meeting-prod -l app.kubernetes.io/name=meeting-api
@@ -527,35 +600,35 @@ kubectl logs -n meeting-prod deployment/meeting-api --tail=300
 kubectl rollout undo deployment/meeting-api -n meeting-prod
 ```
 
-## 11. Troubleshooting
+## 12. 排障
 
-| Symptom | Likely cause | Action |
-|---------|--------------|--------|
-| `Detected JDK version` | `JAVA_HOME` points to non-17 | `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` |
-| Testcontainers socket error | Docker socket discovery failed | Set Colima/OrbStack env vars |
-| `CreateContainerConfigError` | Secret missing | Create `meeting-api-secret` / `ai-worker-secret` before apply |
-| `ProdProfileValidator failed` | Prod config still has dev defaults | Compare against §8.3 table |
-| `/actuator/health` DOWN but readiness UP | `aiWorker` or dependency aggregate is down | Use readiness for rollout, aggregate for acceptance |
-| `outboxBacklog` DOWN | event publisher lag | Check `domain_events_outbox` and logs |
-| `MinIoHealthIndicator` DOWN | wrong `MEETING_STORAGE_ENDPOINT` | Use cluster DNS or cloud endpoint, not localhost |
-| LibreOffice export fails | missing writable temp or wrong architecture | Check `/tmp/soffice`, image arch, `LIBREOFFICE_BINARY=soffice` |
-| Flyway `relation already exists` | SQL was manually applied before Flyway | Use disposable DB, repair, or forward migration |
+| 现象 | 常见原因 | 处理 |
+|------|----------|------|
+| `Detected JDK version` | `JAVA_HOME` 指向非 17 | `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` |
+| Testcontainers socket 错误 | Docker socket 发现失败 | 确认 Docker 运行，设置对应 socket 环境变量 |
+| `CreateContainerConfigError` | Secret 缺失 | apply 前创建或同步 `meeting-api-secret` / `ai-worker-secret` |
+| `ProdProfileValidator failed` | prod config 仍有 dev 默认值 | 按 §9.4 对照检查 |
+| `/actuator/health` DOWN 但 readiness UP | `aiWorker` 或依赖聚合项未就绪 | rollout 看 readiness，验收看 aggregate |
+| `outboxBacklog` DOWN | 事件发布积压 | 查 `domain_events_outbox` 和应用日志 |
+| `MinIoHealthIndicator` DOWN | `MEETING_STORAGE_ENDPOINT` 错误 | 使用集群 DNS 或云 endpoint，不能用 localhost |
+| LibreOffice 导出失败 | 临时目录不可写或架构错误 | 查 `/tmp/soffice`、镜像架构、`LIBREOFFICE_BINARY=soffice` |
+| Flyway `relation already exists` | SQL 曾被手工执行 | 用 disposable DB 复现，repair 或提交前向 migration |
 
-## 12. Final Checklist
+## 13. 最终检查表
 
-Before starting a deployment window:
+部署窗口开始前确认：
 
-- `./deploy/meeting-api-java.sh test` exits 0.
-- Release image tag or digest is built for the target node architecture.
-- DB backup exists and restore drill is known.
-- `meeting-api-secret` is present in target namespace.
-- Prod profile values are non-demo.
-- Object storage endpoint is reachable from the pod.
-- RabbitMQ definitions are loaded.
-- `kubectl rollout status deployment/meeting-api` succeeds in staging/acceptance.
-- Aggregate `/actuator/health` is UP after ai-worker is online.
+- `./deploy/meeting-api-java.sh test` 退出码为 0。
+- release image tag 或 digest 已按目标节点架构构建。
+- DB 备份存在，恢复演练路径明确。
+- 目标 namespace 中存在 `meeting-api-secret`。
+- prod profile 相关值都是非 demo 值。
+- 对象存储 endpoint 可以从 pod 内访问。
+- RabbitMQ definitions 已加载。
+- `kubectl rollout status deployment/meeting-api` 已在 staging/acceptance 成功。
+- ai-worker 在线后，聚合 `/actuator/health` 为 `UP`。
 
-Related docs:
+相关文档：
 
 - `deploy/DEPLOY.md`
 - `docs/runbooks/phase-j-acceptance.md`
