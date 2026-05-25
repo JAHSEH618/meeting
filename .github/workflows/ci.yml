@@ -292,15 +292,28 @@ jobs:
           docker compose --profile full-stack \
               -f infra/meeting-infra/docker/compose/docker-compose.yml \
               up -d --quiet-pull
-          # Give meeting-api up to 3 min to apply Flyway + start the SSE channel.
+          # Poll the readiness probe rather than the aggregate health
+          # endpoint: AiWorkerHealthIndicator marks /actuator/health DOWN
+          # whenever ai-worker is unreachable, and ai-worker lives in the
+          # `workstation` profile that CI does not start. The readiness
+          # group ignores arbitrary HealthIndicators, so it flips UP as
+          # soon as Flyway + Tomcat are ready — exactly what E2E needs.
           for i in $(seq 1 36); do
-            if curl -fsSL http://localhost:8080/actuator/health > /dev/null 2>&1; then
-              echo "meeting-api up after ${i} attempts"
+            if curl -fsSL http://localhost:8080/actuator/health/readiness > /dev/null 2>&1; then
+              echo "meeting-api ready after ${i} attempts"
               break
             fi
             sleep 5
           done
-          curl -fsSL http://localhost:8080/actuator/health || (echo "meeting-api never came up"; exit 1)
+          if ! curl -fsSL http://localhost:8080/actuator/health/readiness; then
+            echo "::error::meeting-api never came up"
+            echo "── docker compose ps ──"
+            docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml ps
+            echo "── docker compose logs --no-color meeting-api ──"
+            docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+                logs --no-color --tail=400 meeting-api || true
+            exit 1
+          fi
 
       - name: Run vite dev server
         run: |

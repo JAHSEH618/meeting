@@ -24,6 +24,13 @@ public class TenantSessionContext {
     }
 
     private void setConfig(String key, String value) {
-        jdbcTemplate.update("SELECT set_config(?, ?, true)", key, value == null ? "" : value);
+        // set_config(...) is a SELECT that returns a row; JdbcTemplate.update()
+        // dispatches via executeUpdate() and PostgreSQL throws
+        // "A result was returned when none was expected". Use queryForObject so
+        // the row is consumed and the GUC is applied.
+        jdbcTemplate.queryForObject(
+            "SELECT set_config(?, ?, true)", String.class,
+            key, value == null ? "" : value
+        );
     }
 }

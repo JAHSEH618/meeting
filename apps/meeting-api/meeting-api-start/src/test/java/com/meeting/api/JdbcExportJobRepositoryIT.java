@@ -8,6 +8,7 @@ import com.meeting.api.client.enums.ExportType;
 import com.meeting.api.client.export.ExportRenderOptions;
 import com.meeting.api.domain.export.ExportJob;
 import com.meeting.api.infrastructure.persistence.export.JdbcExportJobRepository;
+import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
 import javax.sql.DataSource;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -39,9 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code update} mutates status / finishedAt as expected.</li>
  * </ul>
  *
- * Follows the pattern of {@code JdbcKnowledgeChunkRepositoryIT}:
- * {@link PGSimpleDataSource} (unpooled), one tenant context call per
- * test, and a {@code @BeforeEach} wipe so cases stay isolated.
+ * <p>Runs against a non-superuser role ({@code meeting_app}) so
+ * {@code FORCE ROW LEVEL SECURITY} actually applies — the Testcontainers
+ * default user is superuser and would otherwise bypass RLS, masking
+ * cross-tenant leaks. The main {@link JdbcTemplate} is backed by a
+ * {@link SingleConnectionDataSource} so {@code SET app.tenant_id} set in
+ * one statement is still in effect for the next JdbcTemplate call.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcExportJobRepositoryIT {
@@ -50,9 +55,12 @@ class JdbcExportJobRepositoryIT {
     private static final String TENANT_B = "tenant_exp_it_b";
     private static final String MEETING_A = "mtg_exp_it_a";
     private static final String MEETING_B = "mtg_exp_it_b";
+    private static final String APP_USER = "meeting_app";
+    private static final String APP_PASSWORD = "meeting_app_pass";
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-19T10:00:00Z");
 
     private PostgreSQLContainer<?> postgres;
+    private SingleConnectionDataSource appDs;
     private JdbcTemplate jdbc;
     private JdbcExportJobRepository repo;
 
@@ -74,20 +82,34 @@ class JdbcExportJobRepositoryIT {
             .load()
             .migrate();
 
-        DataSource ds = newDataSource();
-        jdbc = new JdbcTemplate(ds);
-        repo = new JdbcExportJobRepository(jdbc, new ObjectMapper());
+        // Seed roles + FK-required parent rows as the superuser so RLS
+        // doesn't interfere with bootstrap. Real test traffic runs as
+        // meeting_app below.
+        try (var conn = DriverManager.getConnection(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("DROP ROLE IF EXISTS " + APP_USER);
+            stmt.execute("CREATE ROLE " + APP_USER + " WITH LOGIN PASSWORD '" + APP_PASSWORD + "'");
+            stmt.execute("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO " + APP_USER);
+            stmt.execute("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO " + APP_USER);
+            stmt.execute("GRANT USAGE ON SCHEMA public TO " + APP_USER);
 
-        try (var conn = ds.getConnection(); Statement stmt = conn.createStatement()) {
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT_A + "', 'IT A') ON CONFLICT DO NOTHING");
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT_B + "', 'IT B') ON CONFLICT DO NOTHING");
             seedMeeting(stmt, TENANT_A, MEETING_A);
             seedMeeting(stmt, TENANT_B, MEETING_B);
         }
+
+        appDs = new SingleConnectionDataSource(
+            postgres.getJdbcUrl(), APP_USER, APP_PASSWORD, true /* suppressClose */);
+        appDs.setAutoCommit(true);
+        jdbc = new JdbcTemplate(appDs);
+        repo = new JdbcExportJobRepository(jdbc, new ObjectMapper());
     }
 
     @AfterAll
     void stop() {
+        if (appDs != null) appDs.destroy();
         if (postgres != null) postgres.stop();
     }
 
@@ -142,8 +164,8 @@ class JdbcExportJobRepositoryIT {
         Thread.sleep(2); // ensure stable ordering by created_at
         repo.save(sample("exp_it_claim_2", TENANT_A, MEETING_A, ExportStatus.QUEUED));
 
-        DataSource dsA = newDataSource();
-        DataSource dsB = newDataSource();
+        DataSource dsA = newAppDataSource();
+        DataSource dsB = newAppDataSource();
         try (var connA = dsA.getConnection(); var connB = dsB.getConnection()) {
             try (Statement s = connA.createStatement()) { s.execute("SET app.tenant_id = '" + TENANT_A + "'"); }
             try (Statement s = connB.createStatement()) { s.execute("SET app.tenant_id = '" + TENANT_A + "'"); }
@@ -204,6 +226,8 @@ class JdbcExportJobRepositoryIT {
             .exportType(initial.exportType()).format(initial.format())
             .dataBoundaryMode(initial.dataBoundaryMode())
             .status(ExportStatus.SUCCEEDED)
+            .inputTranscriptVersion(initial.inputTranscriptVersion())
+            .inputMinutesVersion(initial.inputMinutesVersion())
             .renderOptions(initial.renderOptions())
             .createdBy(initial.createdBy())
             .createdAt(initial.createdAt())
@@ -265,11 +289,11 @@ class JdbcExportJobRepositoryIT {
                 + "ON CONFLICT DO NOTHING");
     }
 
-    private DataSource newDataSource() {
+    private DataSource newAppDataSource() {
         PGSimpleDataSource ds = new PGSimpleDataSource();
         ds.setUrl(postgres.getJdbcUrl());
-        ds.setUser(postgres.getUsername());
-        ds.setPassword(postgres.getPassword());
+        ds.setUser(APP_USER);
+        ds.setPassword(APP_PASSWORD);
         return ds;
     }
 }

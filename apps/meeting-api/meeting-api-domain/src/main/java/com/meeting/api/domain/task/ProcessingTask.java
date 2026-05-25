@@ -194,7 +194,11 @@ public final class ProcessingTask {
     public void markJavaStepSucceeded(ProcessingStep stepName, OffsetDateTime now) {
         requireNonTerminal();
         ProcessingTaskStep step = requireJavaStep(stepName);
-        step.markSucceeded(100, null, null, null, now);
+        // attempt_count is part of the persisted step's unique key; if we
+        // drop it back to null here while markJavaStepRunning recorded
+        // task.attemptNo, the next save() lands on a different attempt and
+        // the old RUNNING row survives -> completeJavaPhase refuses to close.
+        step.markSucceeded(100, attemptNo, null, null, now);
         currentStep = stepName.name();
         touch(now);
     }
@@ -210,7 +214,7 @@ public final class ProcessingTask {
     public void markJavaStepFailed(ProcessingStep stepName, String errorCode, OffsetDateTime now) {
         requireNonTerminal();
         ProcessingTaskStep step = requireJavaStep(stepName);
-        step.markFailed(100, null, null, null, errorCode, now);
+        step.markFailed(100, attemptNo, null, null, errorCode, now);
         currentStep = stepName.name();
         lastErrorCode = errorCode;
         retryable = true;

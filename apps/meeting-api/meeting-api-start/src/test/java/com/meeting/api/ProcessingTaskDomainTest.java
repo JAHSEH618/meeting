@@ -111,6 +111,41 @@ class ProcessingTaskDomainTest {
         assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
     }
 
+    @Test
+    void javaStepTerminalStatesPreserveAttemptNoSoSameRowIsUpdated() {
+        // The JDBC step row is keyed by (task_id, step_name, attempt_count).
+        // If markJavaStepSucceeded/Failed drop attemptNo back to null while
+        // markJavaStepRunning recorded it as the task's attempt, the next
+        // INSERT...ON CONFLICT lands on a different attempt_count and a
+        // stale RUNNING row survives. completeJavaPhase then refuses to
+        // close the task because that row says "still in progress".
+        ProcessingTask succeededTask = ProcessingTask.create(
+            "task_java_ok", "tenant_01", "meeting_01", "MEETING_FULL_PIPELINE",
+            List.of(ProcessingStep.AUDIO_UPLOAD, ProcessingStep.SUMMARY),
+            now
+        );
+        succeededTask.markJavaStepRunning(ProcessingStep.SUMMARY, 50, now);
+        assertThat(succeededTask.step(ProcessingStep.SUMMARY).attemptNo())
+            .as("RUNNING records the task's attempt")
+            .isEqualTo(succeededTask.attemptNo());
+
+        succeededTask.markJavaStepSucceeded(ProcessingStep.SUMMARY, now.plusSeconds(1));
+        assertThat(succeededTask.step(ProcessingStep.SUMMARY).attemptNo())
+            .as("SUCCEEDED must keep the same attempt so the running row is updated, not duplicated")
+            .isEqualTo(succeededTask.attemptNo());
+
+        ProcessingTask failedTask = ProcessingTask.create(
+            "task_java_fail", "tenant_01", "meeting_01", "MEETING_FULL_PIPELINE",
+            List.of(ProcessingStep.AUDIO_UPLOAD, ProcessingStep.SUMMARY),
+            now
+        );
+        failedTask.markJavaStepRunning(ProcessingStep.SUMMARY, 25, now);
+        failedTask.markJavaStepFailed(ProcessingStep.SUMMARY, "LLM_ERROR", now.plusSeconds(1));
+        assertThat(failedTask.step(ProcessingStep.SUMMARY).attemptNo())
+            .as("FAILED must also preserve the running attempt")
+            .isEqualTo(failedTask.attemptNo());
+    }
+
     private ProcessingTask newTask() {
         return ProcessingTask.create(
             "task_01",

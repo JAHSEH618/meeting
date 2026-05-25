@@ -131,7 +131,11 @@ services:
     ports:
       - "${MEETING_API_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      # readiness ignores AiWorkerHealthIndicator; if we polled the
+      # aggregate /actuator/health instead, meeting-api would stay
+      # "unhealthy" whenever ai-worker is not part of the started
+      # profile — which also breaks the workstation depends_on chain.
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health/readiness"]
       interval: 30s
       timeout: 5s
       start_period: 60s
