@@ -407,6 +407,22 @@ docker buildx create --use 2>/dev/null || true
 单台 CentOS 从 0 跑通时，Java API 只需要本机 PostgreSQL/RabbitMQ 和远端
 阿里云 OSS。不要为 Java API 部署 MinIO。
 
+如果 `ai-worker` 原生跑在 Apple Silicon Mac 上，生产联调按下面顺序做：
+
+1. CentOS 启动 PostgreSQL 和 RabbitMQ。
+2. CentOS 配置阿里云 OSS、RabbitMQ、HMAC 和
+   `AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090`。
+3. CentOS 启动 `meeting-api`，并先用 `/actuator/health/readiness` 判断 Java
+   是否可以接流量。
+4. Mac 配置 `deploy/.ai-worker-apple-silicon.env.centos`，让 worker 连接
+   CentOS Java 和 CentOS RabbitMQ。
+5. Mac 启动 `ai-worker`。
+6. 在 CentOS 和 Mac 两侧分别做网络、HMAC、OSS 和聚合健康验证。
+
+Java 可以先于 Mac worker 启动。此时 `/actuator/health/readiness` 应该作为
+Java 启动门禁；聚合 `/actuator/health` 里的 `aiWorker` 可能暂时是 `DOWN`，
+等 Mac worker 启动并通过 HMAC 后再恢复为 `UP`。
+
 先启动 DB/MQ：
 
 ```bash
@@ -433,14 +449,13 @@ STORAGE_TYPE=oss \
 STORAGE_BUCKET_AUDIO=meeting-audio-auska \
 STORAGE_BUCKET_ARTIFACTS=meeting-artifacts \
 STORAGE_BUCKET_EXPORTS=meeting-exports \
-AI_WORKER_BASE_URL=http://ai-worker:8090 \
+AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090 \
   docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
   --profile full-stack up -d meeting-api
 ```
 
-如果 ai-worker 跑在 Apple Silicon Mac 上，而 Java API 跑在 CentOS 上，
-两者不在同一台机器，`AI_WORKER_BASE_URL` 必须改成 CentOS 能访问到的 Mac
-地址，不能使用 `localhost`、`127.0.0.1` 或 `host.docker.internal`：
+这里的 `AI_WORKER_BASE_URL` 必须是 CentOS 能访问到的 Mac 地址，不能使用
+`localhost`、`127.0.0.1` 或 `host.docker.internal`：
 
 ```bash
 AI_WORKER_BASE_URL=http://<apple-mac-lan-ip>:8090
@@ -457,7 +472,7 @@ AI_WORKER_BASE_URL=http://100.x.y.z:8090
 `deploy/.ai-worker-apple-silicon.env`。两边不一致时，Java 调 worker 或
 worker 回调 Java 都会失败。
 
-CentOS 到 Mac 的连通性必须先验证：
+Mac worker 启动后，CentOS 到 Mac 的连通性必须验证：
 
 ```bash
 curl -fsSL http://<apple-mac-lan-ip>:8090/internal/health

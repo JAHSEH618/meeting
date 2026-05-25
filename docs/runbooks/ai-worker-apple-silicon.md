@@ -339,7 +339,7 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 
 如果 `meeting-api` 已经部署在 CentOS 上，而 `ai-worker` 在 Apple Silicon Mac
 上原生运行，两者不在同一台机器，不能使用 `localhost` 或
-`host.docker.internal` 表示对方。必须同时配置两条跨机器链路：
+`host.docker.internal` 表示对方。必须同时配置三条跨机器链路：
 
 | 方向 | 需要能访问 | 用到的配置 |
 |------|------------|------------|
@@ -350,6 +350,24 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 
 推荐使用同一内网、Tailscale/WireGuard/VPN 或安全组白名单。不要把 RabbitMQ
 `5672` 对公网开放；至少只允许 Mac 的固定 IP 或 VPN IP 访问。
+
+跨机器部署顺序必须和 Java runbook 保持一致：
+
+1. CentOS 先启动 PostgreSQL 和 RabbitMQ。
+2. CentOS 配置阿里云 OSS、HMAC 和
+   `AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090`。
+3. CentOS 启动 `meeting-api`，并确认
+   `/actuator/health/readiness` 返回 200。
+4. Mac 配置 `deploy/.ai-worker-apple-silicon.env.centos`，让 worker 指向
+   CentOS Java 和 CentOS RabbitMQ。
+5. Mac 启动 `ai-worker`。
+6. 最后验证 Mac -> CentOS Java、Mac -> CentOS RabbitMQ、CentOS Java ->
+   Mac worker、HMAC 和聚合健康。
+
+不要先启动 Mac worker 再补 CentOS 侧依赖。worker 启动后需要连接 Java API
+和 RabbitMQ；如果 CentOS 侧还没准备好，worker 的队列消费、回调或就绪验证
+会失败。Java 可以先于 worker 启动，但 Java 聚合 health 里的 `aiWorker`
+在 worker 可达前可能是 `DOWN`，启动门禁以 readiness 为准。
 
 CentOS 防火墙示例，只允许 Mac 访问 Java 和 RabbitMQ：
 
