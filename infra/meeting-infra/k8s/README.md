@@ -25,9 +25,32 @@ terraform/
 > 路径统一写成 `infra/meeting-infra/k8s/...`，方便 deploy.sh、CI、
 > README、DEPLOY 之间互相对照。
 
+下面的 `kustomize build` **只用于本地渲染 / 审阅**清单：它不创建
+namespace、不创建 secrets、不装 PostgreSQL/RabbitMQ/MinIO 依赖、
+也没有传 `--enable-helm`，直接 `| kubectl apply -f -` 会让
+meeting-api Pod 落到 CrashLoopBackOff。
+
 ```bash
-kustomize build infra/meeting-infra/k8s/overlays/dev | kubectl apply -f -
+# 仅渲染清单到 stdout（review / diff / kubeconform 用）
+kustomize build infra/meeting-infra/k8s/overlays/dev
 kustomize build infra/meeting-infra/k8s/overlays/prod
+```
+
+实际部署走 `deploy/deploy.sh`，它会按顺序补齐：
+
+1. `./deploy/deploy.sh k8s-deps dev` — namespace + Bitnami
+   PostgreSQL+pgvector / RabbitMQ / MinIO；
+2. `./deploy/deploy.sh k8s-dev` — 创建 `meeting-api-secret` /
+   `ai-worker-secret`，`kustomize build --enable-helm` 渲染
+   overlay 后 `kubectl apply -f -`，并阻塞到 rollout 完成。
+
+```bash
+./deploy/deploy.sh k8s-deps dev    # 仅依赖（每环境一次）
+./deploy/deploy.sh k8s-dev         # 应用层 + 等待 rollout
+
+# 生产同理：
+./deploy/deploy.sh k8s-deps prod
+./deploy/deploy.sh k8s-prod
 ```
 
 > Phase 8.6 only ships the dev + prod overlays. The `staging/` directory

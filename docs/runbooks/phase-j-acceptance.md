@@ -6,47 +6,62 @@
 All commands assume the repo root unless noted. Capture each step's
 output into `infra/meeting-infra/acceptance-reports/<utc-date>/`.
 
+> **Acceptance environment**: until `overlays/staging/` lands, this
+> runbook runs entirely on the `meeting-dev` namespace / dev overlay /
+> local compose stack. References to "staging" in older revisions were
+> aspirational — treat every "staging cluster" mention as
+> "acceptance environment (meeting-dev)".
+
 ## J1 — Full-stack healthy
 
-Staging cluster up via either compose or K8s dev overlay.
+Bring up the acceptance environment (meeting-dev / local compose) and
+verify aggregate health + observability rules + dashboards.
 
 ```bash
-# Path A — local compose (canonical: use the bundled helper)
-./deploy/deploy.sh local
-# The helper boots full-stack (postgres/rabbitmq/minio/vault/meeting-api)
-# AND workstation (ai-worker) sequentially, then waits on /actuator/
-# health/readiness so AiWorkerHealthIndicator can't deadlock the gate.
-# Manual equivalent (must include BOTH profiles — ai-worker lives under
-# `workstation`, and without it the aggregate /actuator/health is DOWN
-# because AiWorkerHealthIndicator reports DOWN):
+# Path A — local compose (canonical: the bundled helper with the
+# observability profile turned on — Prometheus + Grafana are part of
+# the pass criteria below, the default `local` invocation omits them).
+./deploy/deploy.sh local --with-observability
+# Equivalent manual command (all three profiles must be explicit —
+# default compose only brings up the base infra; `full-stack` adds
+# meeting-api; `workstation` adds ai-worker; `observability` adds
+# Prometheus + Grafana):
 #   docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
-#       --profile full-stack --profile workstation up -d
+#       --profile full-stack --profile workstation --profile observability up -d
 curl -fsSL http://localhost:8080/actuator/health | jq .
 
-# Path B — kind / minikube (canonical: use the bundled helper)
+# Path B — kind / minikube (canonical: the bundled helpers in order).
 # The dev overlay's namespace is `meeting-dev` (see
 # infra/meeting-infra/k8s/overlays/dev/kustomization.yaml line 11). An
 # overlays/staging tree is reserved but currently empty — use the dev
 # overlay until staging-specific patches land.
 #
-# Preflight (one-time per cluster — `kubectl apply -k` alone will leave
-# the meeting-api Pod stuck on CrashLoopBackOff because the K8s base
-# only declares the app layer; dependencies + secrets + kind image
-# loading are explicit prerequisites — see deploy/DEPLOY.md §5.3.1–
-# §5.3.2):
+# `kubectl apply -k` alone leaves meeting-api in CrashLoopBackOff
+# because the K8s base only declares the app layer. Stage every
+# preflight explicitly:
+
+# 1. App images must exist locally before kind can load them. If you
+#    have not built recently, run `./deploy/deploy.sh build` first.
+docker image inspect meeting-api:dev meeting-web:dev ai-worker:dev \
+    >/dev/null 2>&1 || ./deploy/deploy.sh build
+
+# 2. Cluster + Bitnami chart deps. `k8s-deps dev` is the one-shot
+#    equivalent of DEPLOY.md §5.3.2 (namespace + postgres + rabbitmq +
+#    minio via `helm upgrade --install`).
 kind create cluster --name meeting-dev
-# 1. Bitnami chart deps inside the namespace (helm repo add ... first;
-#    see DEPLOY.md §二 K8s 工具清单 + §5.3.2 for the full helm upgrade
-#    --install commands for postgres/rabbitmq/minio).
-# 2. Load app images into the kind node so ImagePullPolicy:IfNotPresent
+./deploy/deploy.sh k8s-deps dev
+
+# 3. Load app images into the kind node so ImagePullPolicy:IfNotPresent
 #    finds them locally (skip on minikube — its docker env is shared):
 kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev \
     --name meeting-dev
-# 3. Deploy app layer through the canonical script — it creates
+
+# 4. Deploy app layer through the canonical script — it creates
 #    meeting-api-secret + ai-worker-secret, runs `kustomize build
 #    --enable-helm`, applies, and blocks on rollout status. Matches
 #    deploy/DEPLOY.md §5.5 / §5.6 line-for-line.
 ./deploy/deploy.sh k8s-dev
+
 kubectl port-forward -n meeting-dev svc/meeting-api 8080:8080 &
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
@@ -161,14 +176,12 @@ grep -c "passed (.*)" logs/e2e-*.log | sort
 ## J6 — K8s dev overlay on kind / minikube
 
 ```bash
-# Same preflight as J1 Path B — `kubectl apply -k` will not boot a
-# working stack on its own. Stand up Bitnami deps (postgres / rabbitmq /
-# minio) via DEPLOY.md §5.3.2, load app images into kind, and then
-# deploy through the canonical script (which is what deploy.sh
-# k8s-dev already runs end-to-end).
+# Same preflight chain as J1 Path B — `kubectl apply -k` will not boot
+# a working stack on its own.
+docker image inspect meeting-api:dev meeting-web:dev ai-worker:dev \
+    >/dev/null 2>&1 || ./deploy/deploy.sh build
 kind create cluster --name meeting-j6
-# Bitnami helm upgrade --install commands inside namespace meeting-dev:
-#   see deploy/DEPLOY.md §5.3.2 (postgres + rabbitmq + minio).
+./deploy/deploy.sh k8s-deps dev
 kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev \
     --name meeting-j6
 ./deploy/deploy.sh k8s-dev
@@ -220,7 +233,7 @@ an older branch.
 
 Follow `docs/runbooks/backup-recovery.md`:
 
-1. Take a `pg_basebackup` of the staging cluster.
+1. Take a `pg_basebackup` of the acceptance environment (meeting-dev) cluster.
 2. Drop the live database.
 3. Restore from base + WAL replay.
 4. Verify the last meeting row is present.
@@ -251,4 +264,4 @@ runbook from `phase7-acceptance.md` also passes manually.
    until the deploy team confirms).
 3. Update `final-check.md` block J to all-checked, bump the合计 row to
    53/53, and add a closing 备忘 paragraph linking back to this
-   runbook plus the staging environment details.
+   runbook plus the acceptance environment (meeting-dev) details.

@@ -157,6 +157,17 @@ local_up() {
     ensure_env
     check_deps
 
+    # `--with-observability` / `obs=1` 触发 Prometheus + Grafana profile —
+    # Phase J J1 的通过标准包含两个观察项（rules ≥ 12、5 个 dashboard 都
+    # 有 panel），不启动这条 profile 是无法验收的。默认关闭以保持本地
+    # smoke 的最小内存占用。
+    local with_observability=false
+    for arg in "$@"; do
+        case "$arg" in
+            --with-observability|--obs) with_observability=true ;;
+        esac
+    done
+
     cd "${INFRA_DIR}/docker/compose"
 
     log_info "启动基础设施容器 (PostgreSQL, RabbitMQ, MinIO, Vault)..."
@@ -180,6 +191,12 @@ local_up() {
     log_info "等待 ai-worker 就绪..."
     wait_for_service "ai-worker" 60 || { log_error "ai-worker 启动失败，已中止"; exit 1; }
 
+    if $with_observability; then
+        log_info "启动 observability 栈 (Prometheus, Grafana)..."
+        docker compose -f docker-compose.yml --profile observability up -d
+        log_ok "observability 启动中 —— Prometheus :9090, Grafana :3000"
+    fi
+
     log_ok "所有服务已启动"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
@@ -191,8 +208,13 @@ local_up() {
     echo "  PostgreSQL:       localhost:5432  (meeting/meeting_dev)"
     echo "  RabbitMQ 管理:    http://localhost:15672  (meeting/meeting_dev)"
     echo "  MinIO 控制台:     http://localhost:9001  (minioadmin/minioadmin)"
-    echo "  Prometheus:       http://localhost:9090  (--profile observability)"
-    echo "  Grafana:          http://localhost:3000  (--profile observability)"
+    if $with_observability; then
+        echo "  Prometheus:       http://localhost:9090  (--with-observability)"
+        echo "  Grafana:          http://localhost:3000  (--with-observability)"
+    else
+        echo "  Prometheus:       (off — re-run with --with-observability for Phase J J1)"
+        echo "  Grafana:          (off — re-run with --with-observability for Phase J J1)"
+    fi
     echo "═══════════════════════════════════════════════════════════════"
 }
 
@@ -248,6 +270,70 @@ wait_for_service() {
 
     log_error "${service} 在 ${max_wait}s 内未就绪"
     return 1
+}
+
+# ── K8s 命名空间内依赖（Bitnami helm charts）──────────────────────────────────
+# 把 deploy/DEPLOY.md §5.3.2 的 helm upgrade --install 一组命令收口到脚本里。
+# Phase J J1/J6 走 `k8s-deps <env>` 一次性建好 namespace + PostgreSQL+pgvector
+# + RabbitMQ（loadDefinition + securePassword=false）+ MinIO，避免人工照抄 doc
+# 把 fullnameOverride 漏掉、把 ConfigMap 写成 Secret 这种典型错误。
+k8s_deps_install() {
+    local env="${1:-dev}"
+    local ns="meeting-${env}"
+    local definitions="${INFRA_DIR}/docker/compose/rabbitmq/definitions.json"
+
+    log_step
+    log_step_title "K8s 命名空间内依赖部署: ${ns}"
+
+    check_dependency kubectl
+    check_dependency helm
+
+    log_info "确认 helm chart 仓库..."
+    helm repo list 2>/dev/null | grep -q '^bitnami\b' || \
+        helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm repo update bitnami >/dev/null
+
+    log_info "幂等创建 namespace ${ns}..."
+    kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "PostgreSQL + pgvector (image=pgvector/pgvector:pg15)..."
+    helm upgrade --install postgres bitnami/postgresql -n "${ns}" \
+        --set fullnameOverride=postgres \
+        --set image.registry=docker.io \
+        --set image.repository=pgvector/pgvector \
+        --set image.tag=pg15 \
+        --set auth.username=meeting \
+        --set auth.password=meeting_dev \
+        --set auth.database=meeting \
+        --set 'primary.initdb.scripts.enable-pgvector\.sql=CREATE EXTENSION IF NOT EXISTS vector;'
+
+    log_info "RabbitMQ + load definition Secret..."
+    if [ ! -f "${definitions}" ]; then
+        log_error "找不到 RabbitMQ definitions.json: ${definitions}"
+        exit 1
+    fi
+    kubectl -n "${ns}" create secret generic rabbitmq-definitions \
+        --from-file=load_definition.json="${definitions}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    helm upgrade --install rabbitmq bitnami/rabbitmq -n "${ns}" \
+        --set fullnameOverride=rabbitmq \
+        --set auth.username=meeting --set auth.password=meeting_dev \
+        --set auth.securePassword=false \
+        --set loadDefinition.enabled=true \
+        --set loadDefinition.existingSecret=rabbitmq-definitions
+
+    log_info "MinIO (单副本)..."
+    helm upgrade --install minio bitnami/minio -n "${ns}" \
+        --set fullnameOverride=minio \
+        --set auth.rootUser=minioadmin --set auth.rootPassword=minioadmin \
+        --set defaultBuckets="meeting-audio-auska meeting-artifacts meeting-exports"
+
+    log_info "等待依赖就绪 (PostgreSQL + RabbitMQ + MinIO)..."
+    kubectl -n "${ns}" rollout status statefulset/postgres --timeout=180s
+    kubectl -n "${ns}" rollout status statefulset/rabbitmq --timeout=180s
+    kubectl -n "${ns}" rollout status statefulset/minio    --timeout=120s
+
+    log_ok "命名空间 ${ns} 依赖就绪 — 接下来跑 ./deploy/deploy.sh k8s-${env}"
 }
 
 # ── K8s 部署 ──────────────────────────────────────────────────────────────────
@@ -551,7 +637,9 @@ show_help() {
     echo "用法:  ./deploy/deploy.sh <命令> [参数]"
     echo ""
     echo "本地开发:"
-    echo "  local              启动完整本地开发环境 (Docker Compose)"
+    echo "  local [--with-observability]"
+    echo "                     启动完整本地开发环境 (Docker Compose)"
+    echo "                     --with-observability 同时启 Prometheus/Grafana (J1 必需)"
     echo "  local-down         停止本地环境"
     echo "  local-status       查看本地服务状态"
     echo ""
@@ -560,6 +648,7 @@ show_help() {
     echo "  push <registry>    推送镜像到远程仓库"
     echo ""
     echo "Kubernetes:"
+    echo "  k8s-deps [env]           安装命名空间内依赖 (PostgreSQL/RabbitMQ/MinIO via Bitnami helm)"
     echo "  k8s-dev [--no-wait]      部署到 K8s 开发环境 (默认阻塞 rollout，失败即退出)"
     echo "  k8s-prod [--no-wait]     部署到 K8s 生产环境 (--no-wait 仅观察不阻塞)"
     echo "  k8s-status [env]   查看 K8s 部署状态"
@@ -589,11 +678,12 @@ main() {
     local cmd="${1:-help}"
 
     case "$cmd" in
-        local)              local_up ;;
+        local)              shift; local_up "$@" ;;
         local-down)         local_down ;;
         local-status)       local_status ;;
         build)              build_images ;;
         push)               push_images "${2:-}" "${3:-v0.1.0}" ;;
+        k8s-deps)           k8s_deps_install "${2:-dev}" ;;
         k8s-dev)            k8s_deploy "dev"  "${2:-}" ;;
         k8s-prod)           k8s_deploy "prod" "${2:-}" ;;
         k8s-status)         k8s_status "${2:-dev}" ;;

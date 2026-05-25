@@ -428,18 +428,27 @@ staging overlay 文件正式落地后，请同步更新本表、`infra/meeting-i
 
 ### 5.5 部署步骤（应用层）
 
+> §5.3.2 的依赖服务安装已经收口进 `./deploy/deploy.sh k8s-deps <env>`，
+> 命名空间 + PostgreSQL+pgvector + RabbitMQ（含 securePassword 修正 +
+> loadDefinition Secret）+ MinIO 都靠它一条命令拉起来。任何手动 helm
+> install 必须保持与该函数同步。
+
 ```bash
-# 1. 部署到开发环境
+# 1. 准备命名空间内依赖（每环境一次，等价于手抄 §5.3.2 的 helm 块）
+./deploy/deploy.sh k8s-deps dev
+
+# 2. 部署应用层到开发环境
 ./deploy/deploy.sh k8s-dev
 
-# 2. 部署到生产环境
+# 3. 生产环境（依赖 + 应用层各跑一次）
+./deploy/deploy.sh k8s-deps prod
 ./deploy/deploy.sh k8s-prod
 
-# 3. 查看状态
+# 4. 查看状态
 ./deploy/deploy.sh k8s-status dev
 ./deploy/deploy.sh k8s-status prod
 
-# 4. 销毁环境
+# 5. 销毁环境
 ./deploy/deploy.sh k8s-destroy dev
 ```
 
@@ -580,12 +589,12 @@ K8s 章节给出的是「一个 overlay 应用所有平台」的视角。下面�
 
 > **入口脚本（落盘版）**
 >
-> | 路径 | 用途 |
-> |------|------|
-> | `deploy/meeting-api-java.sh` | Java meeting-api 的 jar / image / compose / k8s / migrate 全流程一站式入口；屏蔽 JDK 17 自动探测、Maven Enforcer 触发、Flyway 三种迁移路径之间的差异。详见 §5·5.1。 |
-> | `deploy/ai-worker-apple-silicon.sh` | Apple Silicon 原生跑 `UV_EXTRAS=real-models`（BGE + Qwen3-ASR + pyannote 全量真实模型）；自动把 BGE 设到 MPS / fp32，ASR + diarization 落到 CPU，规避 MPS fp16 数值不稳与 ASR/diar 算子未实现的两个常见坑。详见 §5·5.2.C。 |
+> | 路径 | 用途 | 配套 runbook |
+> |------|------|-----|
+> | `deploy/meeting-api-java.sh` | Java meeting-api 的 jar / image / compose / k8s / migrate 全流程一站式入口；屏蔽 JDK 17 自动探测、Maven Enforcer 触发、Flyway 三种迁移路径之间的差异。 | `docs/runbooks/meeting-api-java.md` |
+> | `deploy/ai-worker-apple-silicon.sh` | Apple Silicon 原生跑 `UV_EXTRAS=real-models`（BGE + Qwen3-ASR + pyannote 全量真实模型）；自动把 BGE 设到 MPS / fp32，ASR + diarization 落到 CPU。 | `docs/runbooks/ai-worker-apple-silicon.md` |
 >
-> 这两条命令是 Phase J 验收和日常本地开发的默认通道，DEPLOY 文档其他章节里出现的命令都可以视作它们的展开。
+> 这两条命令是 Phase J 验收和日常本地开发的默认通道；DEPLOY 文档其他章节里出现的命令都可以视作它们的展开。详细步骤、故障排查、性能预期请看 runbook，本节只列概览。
 
 | 平台 | meeting-api (Java) | ai-worker (Python, fake) | ai-worker (Python, 真实模型) | meeting-web |
 |------|-------------------|------------------------|---------------------------|--------------|
