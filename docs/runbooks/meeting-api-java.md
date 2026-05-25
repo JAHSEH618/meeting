@@ -99,6 +99,114 @@ sudo firewall-cmd --add-port=8080/tcp --permanent
 sudo firewall-cmd --reload
 ```
 
+### 1.5 阿里云 OSS 云资源准备
+
+Java API 不再使用 MinIO，部署前先在阿里云侧准备 OSS。推荐把 OSS bucket
+和 CentOS/ECS/K8s 集群放在同一地域，生产优先使用内网 endpoint。
+
+需要确认的 OSS 信息：
+
+| 配置项 | 示例 | 说明 |
+|--------|------|------|
+| `OSS_REGION` | `cn-hangzhou` | bucket 所在地域。 |
+| `OSS_ENDPOINT` | `https://oss-cn-hangzhou.aliyuncs.com` | 公网 endpoint；本机不在阿里云内网时使用。 |
+| `OSS_ENDPOINT` | `https://oss-cn-hangzhou-internal.aliyuncs.com` | 内网 endpoint；ECS/K8s 与 bucket 同地域时优先使用。 |
+| `STORAGE_BUCKET_AUDIO` | `meeting-audio-auska` | 音频上传 bucket。 |
+| `STORAGE_BUCKET_ARTIFACTS` | `meeting-artifacts` | 中间产物 bucket。 |
+| `STORAGE_BUCKET_EXPORTS` | `meeting-exports` | 导出文件 bucket。 |
+| `OSS_ACCESS_KEY_ID` | `<ram-ak>` | 专用 RAM 用户或 STS 角色的 AccessKey ID。 |
+| `OSS_ACCESS_KEY_SECRET` | `<ram-sk>` | 专用 RAM 用户或 STS 角色的 AccessKey Secret。 |
+
+不要使用阿里云主账号 AK/SK。建议创建专用 RAM 用户或角色，只授权上述三个
+bucket 的对象级读写删除权限。
+
+最小 RAM policy 示例：
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:PutObject",
+        "oss:GetObject",
+        "oss:HeadObject",
+        "oss:DeleteObject"
+      ],
+      "Resource": [
+        "acs:oss:*:*:meeting-audio-auska/*",
+        "acs:oss:*:*:meeting-artifacts/*",
+        "acs:oss:*:*:meeting-exports/*"
+      ]
+    }
+  ]
+}
+```
+
+如果前端浏览器直接使用 Java API 返回的签名 URL 上传到 OSS，bucket 还需要
+配置 CORS。生产时把 `AllowedOrigin` 收紧到真实域名；本地联调可以临时加
+`http://localhost:3000`。
+
+```json
+[
+  {
+    "AllowedOrigin": [
+      "https://meeting.example.com",
+      "http://localhost:3000"
+    ],
+    "AllowedMethod": ["GET", "PUT", "HEAD"],
+    "AllowedHeader": ["*"],
+    "ExposeHeader": ["ETag", "x-oss-request-id"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+推荐同时开启：
+
+| OSS 设置 | 建议 |
+|----------|------|
+| 服务端加密 | 生产开启 SSE-OSS 或 KMS。 |
+| 生命周期 | 临时音频、中间产物、导出物按业务保留期自动过期。 |
+| 访问日志 | 生产开启，便于排查签名 URL、403、404、流量异常。 |
+| 公共访问 | bucket 保持私有，下载通过签名 URL。 |
+
+在 CentOS 上先验证网络能访问 OSS：
+
+```bash
+curl -I https://oss-cn-hangzhou.aliyuncs.com
+curl -I https://oss-cn-hangzhou-internal.aliyuncs.com
+```
+
+公网部署通常只能访问公网 endpoint；阿里云 ECS/K8s 同地域才应使用 internal
+endpoint。如果 internal endpoint 不通，不要强行配置，否则 Java API 启动后
+OSS 读写会失败。
+
+建议把部署环境变量保存到服务器本地的私有 env 文件，权限只给部署用户读取：
+
+```bash
+cat > deploy/.meeting-api-oss.env <<'EOF'
+STORAGE_TYPE=oss
+STORAGE_BUCKET_AUDIO=meeting-audio-auska
+STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
+STORAGE_BUCKET_EXPORTS=meeting-exports
+OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+OSS_REGION=cn-hangzhou
+OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
+OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
+EOF
+chmod 600 deploy/.meeting-api-oss.env
+```
+
+该文件不要提交到 Git。Compose 或 jar 启动前可以这样加载：
+
+```bash
+set -a
+. deploy/.meeting-api-oss.env
+set +a
+```
+
 ## 2. 预检
 
 每次部署前先执行：
@@ -314,17 +422,46 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d po
 启动 `meeting-api`，并显式切到 OSS：
 
 ```bash
+export OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+export OSS_REGION=cn-hangzhou
+export OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
+export OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
+export AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-callback-secret>
+export AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-internal-secret>
+
 STORAGE_TYPE=oss \
 STORAGE_BUCKET_AUDIO=meeting-audio-auska \
 STORAGE_BUCKET_ARTIFACTS=meeting-artifacts \
 STORAGE_BUCKET_EXPORTS=meeting-exports \
-OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com \
-OSS_REGION=cn-hangzhou \
-OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id> \
-OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret> \
 AI_WORKER_BASE_URL=http://ai-worker:8090 \
   docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
   --profile full-stack up -d meeting-api
+```
+
+如果 ai-worker 跑在 Apple Silicon Mac 上，而 Java API 跑在 CentOS 上，
+两者不在同一台机器，`AI_WORKER_BASE_URL` 必须改成 CentOS 能访问到的 Mac
+地址，不能使用 `localhost`、`127.0.0.1` 或 `host.docker.internal`：
+
+```bash
+AI_WORKER_BASE_URL=http://<apple-mac-lan-ip>:8090
+```
+
+建议使用 VPN/Tailscale/WireGuard 地址或固定内网 IP，例如：
+
+```bash
+AI_WORKER_BASE_URL=http://100.x.y.z:8090
+```
+
+同时把上面的 `AI_WORKER_CALLBACK_HMAC_SECRET` 和
+`AI_WORKER_INTERNAL_API_HMAC_SECRET` 复制到 Mac 侧
+`deploy/.ai-worker-apple-silicon.env`。两边不一致时，Java 调 worker 或
+worker 回调 Java 都会失败。
+
+CentOS 到 Mac 的连通性必须先验证：
+
+```bash
+curl -fsSL http://<apple-mac-lan-ip>:8090/internal/health
+curl -fsSL http://<apple-mac-lan-ip>:8090/internal/ready
 ```
 
 如果 ai-worker 也在同机 fake/runtime 容器运行：
@@ -353,6 +490,15 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
 ```bash
 ./deploy/deploy.sh health
 curl -fsSL http://localhost:8080/actuator/health | jq .
+```
+
+OSS 业务冒烟建议至少覆盖一次签名上传和下载。没有前端时，可以先从 API
+上传流程拿到签名 URL，再用 `curl -X PUT` 上传一个小文件，最后确认 Java
+侧完成上传时没有 `oss head failed` / `oss put failed` 日志。
+
+```bash
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml logs -f meeting-api \
+  | grep -E 'oss_gateway_initialized|oss put|oss head|OSS_'
 ```
 
 `./deploy/meeting-api-java.sh compose` 和 `./deploy/deploy.sh local` 仍然是本地
@@ -574,6 +720,25 @@ OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
 `https://oss-cn-hangzhou-internal.aliyuncs.com` / `cn-hangzhou`。如果 bucket
 不在杭州地域，或集群不能走阿里云内网 endpoint，先修改
 `infra/meeting-infra/k8s/overlays/prod/kustomization.yaml` 后再部署。
+
+如果生产前演练阶段让 Apple Silicon Mac 承担 ai-worker，而 Java API 在
+CentOS/K8s 上，必须把 `AI_WORKER_BASE_URL` 配成 CentOS/K8s 能访问到的
+Mac 地址：
+
+```bash
+AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090
+```
+
+这个值不能是 `localhost`、`127.0.0.1` 或 `host.docker.internal`，因为 Java
+和 Apple worker 不在同一台机器。推荐先在 CentOS 节点上执行：
+
+```bash
+curl -fsSL http://<apple-mac-ip-or-vpn-name>:8090/internal/ready | jq .
+```
+
+Mac 侧的 `AI_WORKER_MEETING_API_BASE_URL` / `AI_WORKER_JAVA_API_BASE_URL`
+也要反向指向 CentOS/K8s 暴露出来的 Java 地址，例如
+`http://<centos-ip-or-domain>:8080`。
 
 应用清单前检查 Secret：
 

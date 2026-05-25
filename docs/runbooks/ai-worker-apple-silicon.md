@@ -15,6 +15,7 @@ BGE embedding/rerank 使用 MPS，ASR 和说话人分离使用 CPU。脚本入�
 | 快速本地 worker 冒烟 | `./deploy/ai-worker-apple-silicon.sh stage && ./deploy/ai-worker-apple-silicon.sh run` | 使用确定性的 mock 权重，启动快。 |
 | 本地真实模型演示 | `HF_TOKEN=... ./deploy/ai-worker-apple-silicon.sh weights && ./deploy/ai-worker-apple-silicon.sh run` | 需要磁盘、内存、网络和模型 license。 |
 | 本地 Java + Mac 原生 worker 联调 | `meeting-api` 使用 `AI_WORKER_BASE_URL=http://host.docker.internal:8090`，worker 在 Mac 原生运行 | Compose 已支持该覆盖。 |
+| Mac worker 连接 CentOS Java | Mac `.env` 指向 `http://<centos-ip>:8080`，CentOS Java 的 `AI_WORKER_BASE_URL` 指向 `http://<mac-ip>:8090` | 需要双向网络和一致的 HMAC。 |
 | K8s / 生产 | 不使用本文档路径 | 使用 CUDA 镜像、GPU 节点池和生产模型卷。 |
 
 Apple Silicon 路径适合验证集成逻辑、HMAC callback、模型 wiring、
@@ -334,11 +335,120 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 | Java health | `components.aiWorker.status` 为 `UP` |
 | HMAC | Java 日志和 worker 日志没有 callback/internal HMAC 拒绝 |
 
-### 1.10 0-1 完成后保留的产物
+### 1.10 跨机器连接 CentOS 上的 meeting-api
+
+如果 `meeting-api` 已经部署在 CentOS 上，而 `ai-worker` 在 Apple Silicon Mac
+上原生运行，两者不在同一台机器，不能使用 `localhost` 或
+`host.docker.internal` 表示对方。必须同时配置两条跨机器链路：
+
+| 方向 | 需要能访问 | 用到的配置 |
+|------|------------|------------|
+| Mac ai-worker -> CentOS Java | `http://<centos-ip-or-domain>:8080` | `AI_WORKER_MEETING_API_BASE_URL`、`AI_WORKER_JAVA_API_BASE_URL` |
+| Mac ai-worker -> CentOS RabbitMQ | `<centos-ip-or-vpn-name>:5672` | `AI_WORKER_RABBITMQ_HOST` / `PORT` / `USERNAME` / `PASSWORD` |
+| CentOS Java -> Mac ai-worker | `http://<apple-mac-ip-or-vpn-name>:8090` | Java 侧 `AI_WORKER_BASE_URL` |
+| 双向 HMAC | 两边完全一致 | `AI_WORKER_CALLBACK_HMAC_SECRET`、`AI_WORKER_INTERNAL_API_HMAC_SECRET` |
+
+推荐使用同一内网、Tailscale/WireGuard/VPN 或安全组白名单。不要把 RabbitMQ
+`5672` 对公网开放；至少只允许 Mac 的固定 IP 或 VPN IP 访问。
+
+CentOS 防火墙示例，只允许 Mac 访问 Java 和 RabbitMQ：
+
+```bash
+sudo firewall-cmd --add-rich-rule='rule family=ipv4 source address=<apple-mac-ip>/32 port port=8080 protocol=tcp accept' --permanent
+sudo firewall-cmd --add-rich-rule='rule family=ipv4 source address=<apple-mac-ip>/32 port port=5672 protocol=tcp accept' --permanent
+sudo firewall-cmd --reload
+```
+
+Mac 上先创建 env，再编辑为 CentOS 地址：
+
+```bash
+./deploy/ai-worker-apple-silicon.sh env
+cp deploy/.ai-worker-apple-silicon.env deploy/.ai-worker-apple-silicon.env.centos
+```
+
+编辑 `deploy/.ai-worker-apple-silicon.env.centos`：
+
+```bash
+AI_WORKER_RABBITMQ_HOST=<centos-ip-or-vpn-name>
+AI_WORKER_RABBITMQ_PORT=5672
+AI_WORKER_RABBITMQ_USERNAME=meeting
+AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password>
+AI_WORKER_MEETING_API_BASE_URL=http://<centos-ip-or-domain>:8080
+AI_WORKER_JAVA_API_BASE_URL=http://<centos-ip-or-domain>:8080
+AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-centos-java>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-centos-java>
+AI_WORKER_ADMIN_JWT_SECRET=<local-admin-secret>
+```
+
+如果 CentOS Java 通过 HTTPS 域名暴露，优先写域名：
+
+```bash
+AI_WORKER_MEETING_API_BASE_URL=https://meeting-api.example.com
+AI_WORKER_JAVA_API_BASE_URL=https://meeting-api.example.com
+```
+
+CentOS Java 侧必须反向指向 Mac worker。Java 用 Docker/Compose 启动时，把
+`AI_WORKER_BASE_URL` 设置为 Mac 的可达地址。这里写的是 CentOS 访问 Mac 的
+地址，不是 Mac 自己看到的 `localhost`：
+
+```bash
+AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090
+AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-mac-worker>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-mac-worker>
+```
+
+如果 CentOS 无法直接访问 Mac 的 `8090`，不要用 `localhost` 凑合。先建立
+VPN/Tailscale/WireGuard，或把 ai-worker 部署到 CentOS/生产 CUDA 路径。
+
+Mac 侧也要允许 CentOS 访问 `8090`。macOS 防火墙开启时，需要允许当前终端、
+Python/uv 进程或 ai-worker 进程接收入站连接。
+
+启动 Mac worker：
+
+```bash
+set -a
+. deploy/.ai-worker-apple-silicon.env.centos
+set +a
+
+./deploy/ai-worker-apple-silicon.sh run
+```
+
+验证网络和 HMAC 前，先做基础连通性检查：
+
+```bash
+# Mac -> CentOS Java
+curl -fsSL http://<centos-ip-or-domain>:8080/actuator/health/readiness | jq .
+
+# Mac -> CentOS RabbitMQ
+nc -vz <centos-ip-or-vpn-name> 5672
+
+# CentOS -> Mac ai-worker，在 CentOS 上执行
+curl -fsSL http://<apple-mac-ip-or-vpn-name>:8090/internal/hardware | jq .
+curl -fsSL http://<apple-mac-ip-or-vpn-name>:8090/internal/ready | jq .
+```
+
+最终在 CentOS Java 上验证聚合健康：
+
+```bash
+curl -fsSL http://<centos-ip-or-domain>:8080/actuator/health | jq '.components.aiWorker'
+```
+
+常见阻断：
+
+| 现象 | 处理 |
+|------|------|
+| Mac 能访问 Java，但 Java 访问不到 Mac worker | 修 `AI_WORKER_BASE_URL`，确认 Mac 防火墙、VPN、路由和 `8090` 监听。 |
+| worker 能访问 Java，但收不到任务 | 检查 `AI_WORKER_RABBITMQ_HOST`、RabbitMQ 账号、CentOS 防火墙和队列定义。 |
+| HMAC rejected | 确认两边 callback/internal 两个 secret 分别一致，且两个 secret 彼此不同。 |
+| CentOS Java 聚合 health 中 `aiWorker` DOWN | 从 CentOS 直接 curl Mac `/internal/health`、`/internal/ready`，再查 Java `AI_WORKER_BASE_URL`。 |
+| 任一侧配置了 `localhost` | 改成对方机器可访问的 LAN/VPN/IP 或域名；跨机器部署里 `localhost` 永远只代表本机。 |
+
+### 1.11 0-1 完成后保留的产物
 
 | 文件 / 目录 | 是否提交 | 说明 |
 |-------------|----------|------|
 | `deploy/.ai-worker-apple-silicon.env` | 不提交 | 本地 HMAC/JWT 和连接信息。 |
+| `deploy/.ai-worker-apple-silicon.env.centos` | 不提交 | 指向 CentOS Java/RabbitMQ 的本地连接信息。 |
 | `deploy/.ai-worker-apple-silicon.env.checksums` | 不提交 | 本地 staged 权重 checksum。 |
 | `$AI_WORKER_MODELS_ROOT` | 不提交 | mock 或真实模型权重目录。 |
 | `apps/ai-worker/.venv` | 不提交 | uv 管理的本地虚拟环境。 |
