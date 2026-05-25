@@ -7,7 +7,6 @@ import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
-import com.meeting.api.domain.compliance.LegalHoldCheckPort;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.infrastructure.persistence.meeting.JdbcMeetingRepository;
 import com.meeting.api.infrastructure.tenant.TenantSessionContext;
@@ -81,6 +80,14 @@ class TenantScopedRlsIT {
             s.execute("INSERT INTO tenants (id, name) VALUES "
                 + "('tenant_rls_a', 'Tenant A'), "
                 + "('tenant_rls_b', 'Tenant B') ON CONFLICT DO NOTHING");
+            // meetings.created_by has an FK to users(id); without these
+            // rows MeetingApplicationService.create blows up the txn
+            // before reset() can clear the GUC. Run as superuser so RLS
+            // doesn't block the seed; live tests below run as meeting_app.
+            s.execute("INSERT INTO users (id, tenant_id, email, display_name) VALUES "
+                + "('user_a', 'tenant_rls_a', 'a@example.com', 'User A'), "
+                + "('user_b', 'tenant_rls_b', 'b@example.com', 'User B') "
+                + "ON CONFLICT DO NOTHING");
         }
 
         ds = newDataSource("meeting_app", "meeting_app_pass");

@@ -14,11 +14,12 @@ import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
+import com.meeting.api.infrastructure.mq.ProcessingTaskMessageValidator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +79,7 @@ class ProcessingTaskApplicationServiceTest {
     }
 
     @Test
-    void createSpeakerEnrollmentTaskAllowsNullMeetingIdAndCarriesProfileMetadata() {
+    void createSpeakerEnrollmentTaskAllowsNullMeetingIdAndCarriesProfileMetadata() throws Exception {
         InMemoryTaskRepository tasks = new InMemoryTaskRepository();
         CapturingPublisher publisher = new CapturingPublisher();
         ProcessingTaskApplicationService service = new ProcessingTaskApplicationService(
@@ -110,6 +111,20 @@ class ProcessingTaskApplicationServiceTest {
         assertThat(event.meetingId()).isNull();
         assertThat(event.taskType()).isEqualTo("SPEAKER_ENROLLMENT");
         assertThat(event.pipelineSteps()).containsExactly(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING);
+
+        // The outbox preflight (ProcessingTaskMessageValidator) and the
+        // contract schema both require expectedInputVersion.chunkStrategyVersion.
+        // Without this, the speaker enrollment row gets marked FAILED at
+        // the outbox before it ever reaches RabbitMQ.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expectedInputVersion =
+            (Map<String, Object>) event.payload().get("expectedInputVersion");
+        assertThat(expectedInputVersion)
+            .as("speaker enrollment payload must carry chunkStrategyVersion to pass the outbox preflight")
+            .containsEntry("chunkStrategyVersion", "v1");
+
+        String payloadJson = new ObjectMapper().writeValueAsString(event.payload());
+        ProcessingTaskMessageValidator.INSTANCE.validate(payloadJson, new ObjectMapper());
     }
 
     private static Clock fixedClock() {

@@ -455,7 +455,17 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             Map.entry("securityLevel", "INTERNAL"),
             Map.entry("attemptNo", task.attemptNo()),
             Map.entry("pipelineSteps", SPEAKER_ENROLLMENT_STEPS.stream().map(Enum::name).toList()),
-            Map.entry("expectedInputVersion", Map.of("modelVersion", "v1")),
+            // expectedInputVersion.chunkStrategyVersion is required by
+            // the contract schema (and ProcessingTaskMessageValidator)
+            // for every taskType, including SPEAKER_ENROLLMENT — even
+            // though the worker's speaker workflow doesn't chunk text.
+            // embeddingModelVersion is the version that semantically
+            // matters here; both fields keep schema validation and
+            // ai-worker payload parsing happy.
+            Map.entry("expectedInputVersion", Map.of(
+                "chunkStrategyVersion", "v1",
+                "embeddingModelVersion", "v1"
+            )),
             Map.entry("speakerProfileId", speakerProfileId),
             Map.entry("speakerEnrollmentId", speakerEnrollmentId),
             Map.entry("audioFileId", audioFileId),
