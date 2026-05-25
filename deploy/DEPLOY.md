@@ -88,6 +88,14 @@
 **K8s 演练 / Phase J 验收：**
 - `kubectl` ≥ 1.29（基线 K8s 版本，见 `.github/workflows/ci.yml` 的 `kubeconform -kubernetes-version 1.29.0`）。
 - `kustomize` ≥ 5.0（CLI 形式；`kubectl kustomize` 内置版本通常滞后，且不支持 `--enable-helm`，本仓库的 dev/prod overlay 暂未引用 helm chart，但 `deploy/deploy.sh:321` 已传该参数，缺它会在引入 helm chart 后突然报错）。
+- `helm` ≥ 3.x —— §5.3.1 / §5.3.2 的依赖服务安装命令全部依赖它。安装后一次性初始化所需的 chart 仓库（缺这一步直接 `helm install` 会报 `Error: repo "bitnami" not found`）：
+
+  ```bash
+  helm repo add bitnami https://charts.bitnami.com/bitnami
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  helm repo add jetstack https://charts.jetstack.io
+  helm repo update
+  ```
 - `kind` 或 `minikube`（J6 在本机起 K8s 集群）。
 - `kubeconform` ≥ 0.6.7（CI 用它做 manifest 校验；本地用同一个工具能避免 schema 抖动）。
 
@@ -292,11 +300,13 @@ overlay **之前**先准备好。CI 的 `kubeconform` 检查不会发现依赖�
 
 #### 5.3.1 集群级控制面（每集群一次）
 
+> 下面的 `helm install` 假设三个 chart 仓库已添加（`bitnami` / `ingress-nginx` / `jetstack`）。若本机首次运行，先按 §二 的 K8s 工具清单执行 `helm repo add ... && helm repo update`，否则会报 `Error: repo "..." not found`。所有命令都已改成 `helm upgrade --install`，可幂等重跑。
+
 | 组件 | 安装方式 | 验证命令 |
 |------|---------|---------|
-| Ingress Controller | `helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace`（kind 用 `kind-ingress-nginx` 预设） | `kubectl -n ingress-nginx get svc ingress-nginx-controller` 有 `EXTERNAL-IP`（或 NodePort） |
+| Ingress Controller | `helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace`（kind 用 `kind-ingress-nginx` 预设） | `kubectl -n ingress-nginx get svc ingress-nginx-controller` 有 `EXTERNAL-IP`（或 NodePort） |
 | StorageClass | EKS/GKE/AKS 内置；kind 用 `local-path-provisioner`（默认开启） | `kubectl get sc` 显示 `(default)` |
-| Cert-manager（仅生产 TLS） | `helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set installCRDs=true` | `kubectl -n cert-manager get pods` 全 `Ready` |
+| Cert-manager（仅生产 TLS） | `helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set installCRDs=true` | `kubectl -n cert-manager get pods` 全 `Ready` |
 
 #### 5.3.2 命名空间内依赖服务（每环境一次）
 
@@ -306,14 +316,19 @@ overlay 的 `meeting-api-config` ConfigMap 里覆盖 `POSTGRES_HOST` / `RABBITMQ
 
 ```bash
 NS=meeting-dev   # 或 meeting-prod
-kubectl create namespace "$NS"
+# namespace / secret / configmap 全部走 `kubectl create ... --dry-run=client
+# -o yaml | kubectl apply -f -` 的幂等模式：第一次创建、再跑时变成 apply，
+# 不会再因 "AlreadyExists" 中断部署演练。
+kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 
 # PostgreSQL + pgvector —— Bitnami chart 默认装的是无 pgvector 的镜像，
 # 必须把 image 指到 pgvector/pgvector，并在 init script 里 CREATE EXTENSION。
 # fullnameOverride=postgres 让 svc 名变成 `postgres`，对齐
 # meeting-api-config 的默认 POSTGRES_HOST（缺省 Bitnami 命名是
 # `<release>-postgresql`，会导致 meeting-api 在集群里解析不到主机名）。
-helm install postgres bitnami/postgresql -n "$NS" \
+# `helm upgrade --install` 取代 `helm install`：首次执行等价于 install，
+# 后续重跑直接走 upgrade，部署演练可反复执行。
+helm upgrade --install postgres bitnami/postgresql -n "$NS" \
   --set fullnameOverride=postgres \
   --set image.registry=docker.io \
   --set image.repository=pgvector/pgvector \
@@ -329,11 +344,17 @@ helm install postgres bitnami/postgresql -n "$NS" \
 # 且 chart 里硬编码读 key `load_definition.json`（snake_case，不要
 # 误写成 definitions.json）。fullnameOverride=rabbitmq 对齐 base
 # ConfigMap 的 RABBITMQ_HOST 默认值。
+# auth.securePassword=false 是 Bitnami 自身的兼容性要求：默认 true 时
+# chart 会强制生成 32 字符以上的强随机密码，与 loadDefinition 注入
+# 的 definitions.json 内置用户/密码不匹配，导致启动后用户加载不全。
+# 参考：bitnami/rabbitmq values.yaml `loadDefinition` 段说明。
 kubectl -n "$NS" create secret generic rabbitmq-definitions \
-  --from-file=load_definition.json=infra/meeting-infra/docker/compose/rabbitmq/definitions.json
-helm install rabbitmq bitnami/rabbitmq -n "$NS" \
+  --from-file=load_definition.json=infra/meeting-infra/docker/compose/rabbitmq/definitions.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade --install rabbitmq bitnami/rabbitmq -n "$NS" \
   --set fullnameOverride=rabbitmq \
   --set auth.username=meeting --set auth.password=meeting_dev \
+  --set auth.securePassword=false \
   --set loadDefinition.enabled=true \
   --set loadDefinition.existingSecret=rabbitmq-definitions
 
@@ -341,7 +362,7 @@ helm install rabbitmq bitnami/rabbitmq -n "$NS" \
 # base ConfigMap 默认 MINIO_ENDPOINT=http://minio:9000 对齐。
 # 生产环境改成 S3/OSS 后在 overlay 里覆盖 STORAGE_TYPE=oss +
 # OSS_ENDPOINT/OSS_REGION，不再装 chart。
-helm install minio bitnami/minio -n "$NS" \
+helm upgrade --install minio bitnami/minio -n "$NS" \
   --set fullnameOverride=minio \
   --set auth.rootUser=minioadmin --set auth.rootPassword=minioadmin \
   --set defaultBuckets="meeting-audio-auska meeting-artifacts meeting-exports"
@@ -430,12 +451,15 @@ NS=meeting-dev
 # Phase J 重点：ai-worker-secret 不再在 K8s base 里声明 placeholder（避免
 # kustomize apply 覆盖运维 / deploy.sh 刚创建好的真实 Secret）。任何环境
 # 必须在 kustomize apply 之前创建好它，否则 ai-worker Pod 会停在
-# CreateContainerConfigError。
+# CreateContainerConfigError。两个 secret 都走 `kubectl create ... |
+# kubectl apply -f -` 幂等模式，与 deploy.sh:281 的写法保持一致，方便
+# 部署演练反复执行。
 kubectl create secret generic ai-worker-secret \
   -n "$NS" \
   --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-secret> \
   --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
-  --from-literal=AI_WORKER_ADMIN_JWT_SECRET=<32-byte-secret>
+  --from-literal=AI_WORKER_ADMIN_JWT_SECRET=<32-byte-secret> \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # meeting-api-secret —— 生产用 SealedSecrets / Vault / ExternalSecret 替代
 kubectl create secret generic meeting-api-secret \
@@ -448,7 +472,8 @@ kubectl create secret generic meeting-api-secret \
   --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
   --from-literal=DASHSCOPE_API_KEY=<key> \
   --from-literal=KMS_MASTER_KEY_ID=<kms-key-id> \
-  --from-literal=MEETING_KMS_MASTER_KEY_BASE64=<base64-32-bytes>
+  --from-literal=MEETING_KMS_MASTER_KEY_BASE64=<base64-32-bytes> \
+  --dry-run=client -o yaml | kubectl apply -f -
 # KMS 说明（必读）：
 #   * KMS_MASTER_KEY_ID 是 ProdProfileValidator 检查的字段，不能是
 #     `dev-kms-master-key`，否则 prod profile 启动直接 fail。
