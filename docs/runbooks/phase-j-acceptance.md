@@ -11,19 +11,42 @@ output into `infra/meeting-infra/acceptance-reports/<utc-date>/`.
 Staging cluster up via either compose or K8s dev overlay.
 
 ```bash
-# Path A — local compose
-docker compose --profile full-stack \
-    -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
+# Path A — local compose (canonical: use the bundled helper)
+./deploy/deploy.sh local
+# The helper boots full-stack (postgres/rabbitmq/minio/vault/meeting-api)
+# AND workstation (ai-worker) sequentially, then waits on /actuator/
+# health/readiness so AiWorkerHealthIndicator can't deadlock the gate.
+# Manual equivalent (must include BOTH profiles — ai-worker lives under
+# `workstation`, and without it the aggregate /actuator/health is DOWN
+# because AiWorkerHealthIndicator reports DOWN):
+#   docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+#       --profile full-stack --profile workstation up -d
 curl -fsSL http://localhost:8080/actuator/health | jq .
 
-# Path B — kind / minikube
+# Path B — kind / minikube (canonical: use the bundled helper)
 # The dev overlay's namespace is `meeting-dev` (see
 # infra/meeting-infra/k8s/overlays/dev/kustomization.yaml line 11). An
 # overlays/staging tree is reserved but currently empty — use the dev
 # overlay until staging-specific patches land.
+#
+# Preflight (one-time per cluster — `kubectl apply -k` alone will leave
+# the meeting-api Pod stuck on CrashLoopBackOff because the K8s base
+# only declares the app layer; dependencies + secrets + kind image
+# loading are explicit prerequisites — see deploy/DEPLOY.md §5.3.1–
+# §5.3.2):
 kind create cluster --name meeting-dev
-kubectl apply -k infra/meeting-infra/k8s/overlays/dev
-kubectl rollout status deploy/meeting-api -n meeting-dev
+# 1. Bitnami chart deps inside the namespace (helm repo add ... first;
+#    see DEPLOY.md §二 K8s 工具清单 + §5.3.2 for the full helm upgrade
+#    --install commands for postgres/rabbitmq/minio).
+# 2. Load app images into the kind node so ImagePullPolicy:IfNotPresent
+#    finds them locally (skip on minikube — its docker env is shared):
+kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev \
+    --name meeting-dev
+# 3. Deploy app layer through the canonical script — it creates
+#    meeting-api-secret + ai-worker-secret, runs `kustomize build
+#    --enable-helm`, applies, and blocks on rollout status. Matches
+#    deploy/DEPLOY.md §5.5 / §5.6 line-for-line.
+./deploy/deploy.sh k8s-dev
 kubectl port-forward -n meeting-dev svc/meeting-api 8080:8080 &
 curl -fsSL http://localhost:8080/actuator/health | jq .
 ```
@@ -138,8 +161,17 @@ grep -c "passed (.*)" logs/e2e-*.log | sort
 ## J6 — K8s dev overlay on kind / minikube
 
 ```bash
+# Same preflight as J1 Path B — `kubectl apply -k` will not boot a
+# working stack on its own. Stand up Bitnami deps (postgres / rabbitmq /
+# minio) via DEPLOY.md §5.3.2, load app images into kind, and then
+# deploy through the canonical script (which is what deploy.sh
+# k8s-dev already runs end-to-end).
 kind create cluster --name meeting-j6
-kubectl apply -k infra/meeting-infra/k8s/overlays/dev
+# Bitnami helm upgrade --install commands inside namespace meeting-dev:
+#   see deploy/DEPLOY.md §5.3.2 (postgres + rabbitmq + minio).
+kind load docker-image meeting-api:dev meeting-web:dev ai-worker:dev \
+    --name meeting-j6
+./deploy/deploy.sh k8s-dev
 kubectl get pods -n meeting-dev --watch
 ```
 

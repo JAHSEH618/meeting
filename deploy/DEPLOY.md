@@ -140,9 +140,9 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
   --profile workstation up -d ai-worker
 
-# 第五步：启动前端开发服务器（仓库已 check in lockfile，与 deploy.sh
-# codegen 保持一致用 npm ci；如本机首次 clone、依赖未装可改 `npm ci`，
-# 平时增量改源码用 `npm run dev` 即可，不需要每次重装依赖）
+# 第五步：启动前端开发服务器（仓库 check in 了 package-lock.json，
+# 与 deploy.sh codegen 的 `npm ci` 保持一致：首次 clone 先运行
+# `npm ci`，之后日常迭代 `npm run dev` 即可，不需要每次重装依赖）
 cd apps/meeting-web && npm ci && npm run dev
 
 # 可选：启动可观测性栈
@@ -300,7 +300,7 @@ overlay **之前**先准备好。CI 的 `kubeconform` 检查不会发现依赖�
 
 #### 5.3.1 集群级控制面（每集群一次）
 
-> 下面的 `helm install` 假设三个 chart 仓库已添加（`bitnami` / `ingress-nginx` / `jetstack`）。若本机首次运行，先按 §二 的 K8s 工具清单执行 `helm repo add ... && helm repo update`，否则会报 `Error: repo "..." not found`。所有命令都已改成 `helm upgrade --install`，可幂等重跑。
+> 下面的 helm 命令假设三个 chart 仓库已添加（`bitnami` / `ingress-nginx` / `jetstack`）。若本机首次运行，先按 §二 的 K8s 工具清单执行 `helm repo add ... && helm repo update`，否则会报 `Error: repo "..." not found`。所有命令都已改成 `helm upgrade --install`，可幂等重跑。
 
 | 组件 | 安装方式 | 验证命令 |
 |------|---------|---------|
@@ -578,15 +578,30 @@ spec:
 
 K8s 章节给出的是「一个 overlay 应用所有平台」的视角。下面按运行平台拆开，列出实际遇到的差异点。表里 ❌ 表示不支持，⚠️ 表示能跑但仅限开发 / smoke。
 
+> **入口脚本（落盘版）**
+>
+> | 路径 | 用途 |
+> |------|------|
+> | `deploy/meeting-api-java.sh` | Java meeting-api 的 jar / image / compose / k8s / migrate 全流程一站式入口；屏蔽 JDK 17 自动探测、Maven Enforcer 触发、Flyway 三种迁移路径之间的差异。详见 §5·5.1。 |
+> | `deploy/ai-worker-apple-silicon.sh` | Apple Silicon 原生跑 `UV_EXTRAS=real-models`（BGE + Qwen3-ASR + pyannote 全量真实模型）；自动把 BGE 设到 MPS / fp32，ASR + diarization 落到 CPU，规避 MPS fp16 数值不稳与 ASR/diar 算子未实现的两个常见坑。详见 §5·5.2.C。 |
+>
+> 这两条命令是 Phase J 验收和日常本地开发的默认通道，DEPLOY 文档其他章节里出现的命令都可以视作它们的展开。
+
 | 平台 | meeting-api (Java) | ai-worker (Python, fake) | ai-worker (Python, 真实模型) | meeting-web |
 |------|-------------------|------------------------|---------------------------|--------------|
 | **Linux x86_64 + NVIDIA GPU**（生产） | ✅ JDK 17 / JRE 17 镜像直接跑 | ✅ | ✅ CUDA 13 wheel | ✅ |
 | **Linux x86_64 / CPU 服务器**（staging / 应急） | ✅ 同上 | ✅ | ⚠️ 仅 BGE / rerank 走 fp32 CPU；Qwen3-ASR 实测 ≥ 8× 实时延迟，建议下降为 fake-ASR | ✅ |
-| **macOS Apple Silicon (arm64)**（开发机） | ✅ 用 Temurin 17 arm64 原生镜像 | ✅ | ⚠️ MPS 可用但仅做 sanity check，FlagEmbedding 在 MPS 上未官方支持；生产请保持 fake | ✅ |
+| **macOS Apple Silicon (arm64)**（开发机） | ✅ 用 Temurin 17 arm64 原生镜像 | ✅ | ✅ 走 `deploy/ai-worker-apple-silicon.sh`：BGE → MPS / fp32，ASR + diarization → CPU。整机吞吐约为单卡 RTX 4080 的 1/10，不要拿到生产 | ✅ |
 | **macOS Intel** | ⚠️ Docker 跑得动，性能差；推荐远端开发 | ✅ | ❌ 无 CUDA、CPU 推理太慢 | ✅ |
 | **Windows + WSL2** | ✅ 同 Linux x86_64 | ✅ | ✅（NVIDIA GPU pass-through 必须装 `nvidia-container-toolkit` for WSL） | ✅ |
 
 ### 5·5.1 Java 路径（meeting-api）
+
+> 一站式入口：`./deploy/meeting-api-java.sh {test|jar|image|compose|k8s|migrate}`。
+> 脚本里封装了 JDK 17 自动探测（macOS `java_home -v 17`、`JAVA_HOME` 校验）、
+> Apple Silicon 上的 `buildx --platform linux/amd64` 跨架构镜像构建、
+> Flyway 三种迁移路径（rollout restart / docker / psql `ON_ERROR_STOP`）。
+> 下面四小节是分解视图，方便定位单一步骤。
 
 #### A. 直接跑 jar（最快验收启动逻辑）
 
@@ -679,9 +694,57 @@ uv run ai-worker-api
 curl -fsSL http://localhost:8090/internal/health
 ```
 
-> **不要**在 macOS 上尝试 `UV_EXTRAS=real-models`：`funasr` + `pyannote.audio` 的 CUDA-only 依赖在 arm64 上无 wheel，`uv sync` 会编译失败。开发期想试通模型 device 解析，可在 K8s 旁路一台 NVIDIA 节点起 ai-worker，本机 meeting-api / meeting-web 通过 `AI_WORKER_BASE_URL` 指过去。
+> **Apple Silicon (arm64) macOS 用户**：你可以装 `UV_EXTRAS=real-models`，详见下文 §5·5.2.C。**Intel macOS 不行**：`funasr` + `pyannote.audio` 的部分二进制依赖在 x86_64 macOS 上没有现成 wheel，`uv sync` 会编译失败。Linux + NVIDIA 走 §5·5.2.A，无 GPU 的 Linux 仍只能用 fake runtime。
 
-#### C. macOS Apple Silicon + MPS（仅 BGE / rerank 数值核对）
+#### C. macOS Apple Silicon 原生真实模型路径（全量模型 / 开发 + 单机演示）
+
+> 用 `./deploy/ai-worker-apple-silicon.sh` 一站式跑通；下面是脚本展开的等价手工流程，便于排查。
+
+```bash
+# 0. 一站式入口（推荐）
+./deploy/ai-worker-apple-silicon.sh stage     # 暂存 mock 权重（offline smoke）
+HF_TOKEN=hf_xxx ./deploy/ai-worker-apple-silicon.sh weights   # 拉真实权重
+./deploy/ai-worker-apple-silicon.sh run       # uv sync --extra real-models + 启动
+./deploy/ai-worker-apple-silicon.sh verify    # /internal/hardware + /internal/ready
+
+# 1. 装齐 real-models 依赖（FlagEmbedding + funasr + pyannote.audio）
+cd apps/ai-worker
+uv sync --extra dev --extra real-models       # 全部走 arm64 wheel / 源码安装
+
+# 2. 权重落盘 —— 默认 ${HOME}/meeting-models
+#    BGE / pyannote → HuggingFace；Qwen3-ASR → funasr hub 懒下载
+export AI_WORKER_MODELS_ROOT=${HOME}/meeting-models
+huggingface-cli download BAAI/bge-m3 --local-dir ${AI_WORKER_MODELS_ROOT}/bge-m3/v1
+huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir ${AI_WORKER_MODELS_ROOT}/bge-reranker-v2-m3/v1
+# pyannote 需要在 HF 页面接受 license 并导出 HF_TOKEN
+HF_TOKEN=hf_xxx huggingface-cli download pyannote/speaker-diarization-3.1 \
+  --local-dir ${AI_WORKER_MODELS_ROOT}/pyannote/v3.1
+
+# 3. Apple Silicon device 拆分 —— 别让 ASR / diarization 走 MPS
+export AI_WORKER_USE_FAKE_RUNTIME=false
+export AI_WORKER_USE_FAKE_ASR_RUNTIME=false
+export AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false
+export AI_WORKER_BGE_M3_DEVICE=mps
+export AI_WORKER_BGE_RERANKER_DEVICE=mps
+export AI_WORKER_BGE_M3_DTYPE=fp32       # MPS fp16 数值不稳
+export AI_WORKER_BGE_RERANKER_DTYPE=fp32
+export AI_WORKER_ASR_DEVICE=cpu          # funasr 算子未全 MPS 化
+export AI_WORKER_DIARIZATION_DEVICE=cpu  # pyannote 同上
+export AI_WORKER_BGE_M3_MODELS_DIR=${AI_WORKER_MODELS_ROOT}/bge-m3/v1
+export AI_WORKER_BGE_RERANKER_MODELS_DIR=${AI_WORKER_MODELS_ROOT}/bge-reranker-v2-m3/v1
+export AI_WORKER_QWEN3_ASR_MODELS_DIR=${AI_WORKER_MODELS_ROOT}/qwen3-asr-1.7b/v2026.05.1
+export AI_WORKER_PYANNOTE_MODELS_DIR=${AI_WORKER_MODELS_ROOT}/pyannote/v3.1
+
+# 4. 启动
+uv run ai-worker-api
+
+# 5. 验证 device 落点
+curl -fsSL http://localhost:8090/internal/hardware | jq .
+```
+
+吞吐预期：embedding/rerank 接近单卡 MPS 上限，ASR ≈ 0.5× 实时，diarization ≈ 1× 实时；整体大约是单卡 RTX 4080 的 1/10。**这是开发 / 演示通道，不要拿到 prod**。生产仍走 §5·5.2.A 的 NVIDIA + CUDA 镜像。
+
+#### D. macOS Apple Silicon + MPS（仅 BGE / rerank 数值核对）
 
 ```bash
 # 仅用于开发期对照 fp32 数值，绝不进生产。
