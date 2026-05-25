@@ -4,7 +4,6 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 
-import pytest
 
 from ai_worker.infrastructure.internal_api.auth import verify_hmac_signature
 

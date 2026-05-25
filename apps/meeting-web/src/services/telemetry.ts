@@ -65,7 +65,6 @@ let sink: TelemetrySink = {
   report(event) {
     // Default sink: log a redacted copy to console so we still see
     // errors during dev without leaking sensitive payload data.
-    // eslint-disable-next-line no-console
     console.warn("[telemetry]", redactEvent(event));
   },
 };

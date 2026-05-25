@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, Request
 
 from ai_worker.admin.envelopes import error, ok, passthrough
 from ai_worker.admin.java_client import JavaPublicClient

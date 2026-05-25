@@ -1,6 +1,7 @@
 import json
 import hashlib
 import hmac
+import secrets
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -17,9 +18,6 @@ def _sign(method: str, path: str, body: bytes, timestamp: str, nonce: str) -> st
         hashlib.sha256,
     ).hexdigest()
     return f"hmac-sha256={sig}"
-
-
-import secrets
 
 
 _nonce_counter = 0

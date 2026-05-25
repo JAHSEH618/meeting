@@ -36,8 +36,8 @@ import pytest
 
 oss2 = pytest.importorskip("oss2")
 
-from ai_worker.infrastructure.artifact_store import LocalArtifactStore
-from ai_worker.infrastructure.oss_artifact_store import OssArtifactStore
+from ai_worker.infrastructure.artifact_store import LocalArtifactStore  # noqa: E402
+from ai_worker.infrastructure.oss_artifact_store import OssArtifactStore  # noqa: E402
 
 
 _WRITER_AK = os.environ.get("OSS_ACCESS_KEY_ID")

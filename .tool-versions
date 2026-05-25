@@ -1,0 +1,14 @@
+# Toolchain pinning for local development.
+# - `asdf`, `mise`, `rtx`, `proto`, and `vfox` all read this file at the
+#   repo root and switch versions automatically when you cd in.
+# - CI uses the same versions in .github/workflows/ci.yml.
+#
+# Why the pin matters:
+# - meeting-api parent POM enforces Java 17 (Maven Enforcer rule
+#   `[17,18)` — apps/meeting-api/pom.xml). Java 21+ breaks the build.
+# - meeting-web's CI matrix runs Node 20 (.github/workflows/ci.yml);
+#   newer Node breaks @types resolutions on `tsc --noEmit`.
+# - ai-worker pyproject.toml requires Python 3.11.
+java 17.0.16
+nodejs 20.18.0
+python 3.11.9
