@@ -21,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final Clock clock;
 
+    @Autowired
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
@@ -46,7 +48,6 @@ public class ProcessingTaskCallbackApplicationService {
     ) {
         this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, Clock.systemUTC());
     }
-
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
@@ -66,7 +67,6 @@ public class ProcessingTaskCallbackApplicationService {
         this.applicationEventPublisher = applicationEventPublisher;
         this.clock = clock;
     }
-
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
         securityVerifier.verify(command.metadata());
         if (command.status() == StepStatus.RUNNING && command.progress() != null && command.progress() > 0) {
@@ -99,7 +99,6 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO heartbeat(StepProgressHeartbeatCommand command) {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
@@ -115,7 +114,6 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO completeWorkerPhase(CompleteWorkerPhaseCommand command) {
         securityVerifier.verify(command.metadata());
         if (!"WORKER_DAG".equals(command.phase())) {
@@ -156,7 +154,6 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(saved);
         });
     }
-
     public ProcessingTaskDTO fail(FailTaskCommand command) {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
@@ -176,7 +173,6 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO writeTranscript(TranscriptCallbackCommand command) {
         securityVerifier.verify(command.metadata());
         if (command.meetingId() == null || command.meetingId().isBlank()) {

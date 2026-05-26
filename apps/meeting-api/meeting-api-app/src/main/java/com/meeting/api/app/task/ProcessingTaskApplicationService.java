@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -81,6 +82,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     private final MeetingDocumentRepository meetingDocumentRepository;
     private final JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator;
 
+    @Autowired
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
         MeetingRepository meetingRepository,
@@ -90,7 +92,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
             Clock.systemUTC(), null, null, null);
     }
-
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
         MeetingRepository meetingRepository,
@@ -101,7 +102,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
             clock, null, null, null);
     }
-
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
         MeetingRepository meetingRepository,
@@ -114,7 +114,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
             clock, glossaryRepository, meetingDocumentRepository, null);
     }
-
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
         MeetingRepository meetingRepository,
@@ -190,7 +189,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return tenantScopedTransaction.execute(tenantId, null, null,
             () -> taskRepository.findLatestByMeetingId(tenantId, meetingId).map(ProcessingTaskAssembler::toDto));
     }
-
     public ProcessingTaskDTO createForCompletedAudioUpload(
         String tenantId,
         String meetingId,

@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -49,6 +50,7 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
     private final DeletionCertificateRepository certificateRepository;
     private final Clock clock;
 
+    @Autowired
     public DeletionJobApplicationService(
         TenantScopedTransaction tenantTx,
         DeletionJobRepository repo,
@@ -58,7 +60,6 @@ public class DeletionJobApplicationService implements DeletionJobFacade {
     ) {
         this(tenantTx, repo, legalHoldCheck, auditLogger, certificateRepository, Clock.systemUTC());
     }
-
     public DeletionJobApplicationService(
         TenantScopedTransaction tenantTx,
         DeletionJobRepository repo,

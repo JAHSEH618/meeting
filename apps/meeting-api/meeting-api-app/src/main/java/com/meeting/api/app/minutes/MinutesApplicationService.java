@@ -35,6 +35,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -67,6 +68,7 @@ public class MinutesApplicationService implements MinutesFacade {
     /** Token budget for glossary + reference document snippets (~2k chars, R3). */
     static final int WORKSTATION_CONTEXT_CHAR_BUDGET = 2048;
 
+    @Autowired
     public MinutesApplicationService(
         MeetingRepository meetingRepository,
         MinutesRepository minutesRepository,
@@ -78,7 +80,6 @@ public class MinutesApplicationService implements MinutesFacade {
         this(meetingRepository, minutesRepository, transcriptRepository, llmGateway,
             tenantScopedTransaction, objectMapper, Clock.systemUTC(), null, null, null, null, null);
     }
-
     public MinutesApplicationService(
         MeetingRepository meetingRepository,
         MinutesRepository minutesRepository,
@@ -91,7 +92,6 @@ public class MinutesApplicationService implements MinutesFacade {
         this(meetingRepository, minutesRepository, transcriptRepository, llmGateway,
             tenantScopedTransaction, objectMapper, clock, null, null, null, null, null);
     }
-
     public MinutesApplicationService(
         MeetingRepository meetingRepository,
         MinutesRepository minutesRepository,
@@ -107,7 +107,6 @@ public class MinutesApplicationService implements MinutesFacade {
             tenantScopedTransaction, objectMapper, clock, applicationEventPublisher, messagePublisher,
             null, null, null);
     }
-
     public MinutesApplicationService(
         MeetingRepository meetingRepository,
         MinutesRepository minutesRepository,
@@ -452,7 +451,6 @@ public class MinutesApplicationService implements MinutesFacade {
 
     private record ParsedMinutes(String title, String markdown, List<MinutesRepository.SectionRecord> sections) {
     }
-
     public static final class VersionConflictException extends RuntimeException {
         public VersionConflictException(String message) {
             super(message);

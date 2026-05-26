@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -52,6 +53,7 @@ public class MeetingApplicationService implements MeetingFacade {
     private final AuditEventLogger auditLogger;
     private final Clock clock;
 
+    @Autowired
     public MeetingApplicationService(
         MeetingRepository meetingRepository,
         MessagePublisher messagePublisher,
@@ -68,7 +70,6 @@ public class MeetingApplicationService implements MeetingFacade {
             Clock.systemUTC()
         );
     }
-
     public MeetingApplicationService(
         MeetingRepository meetingRepository,
         MessagePublisher messagePublisher,

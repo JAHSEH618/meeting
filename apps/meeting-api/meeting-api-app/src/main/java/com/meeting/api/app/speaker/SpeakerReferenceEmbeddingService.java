@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -47,6 +48,7 @@ public class SpeakerReferenceEmbeddingService {
     private final EmbeddingEnvelopeGateway envelopeGateway;
     private final Clock clock;
 
+    @Autowired
     public SpeakerReferenceEmbeddingService(
         SpeakerProfileRepository profileRepository,
         SpeakerEmbeddingRepository embeddingRepository,
@@ -54,7 +56,6 @@ public class SpeakerReferenceEmbeddingService {
     ) {
         this(profileRepository, embeddingRepository, envelopeGateway, Clock.systemUTC());
     }
-
     public SpeakerReferenceEmbeddingService(
         SpeakerProfileRepository profileRepository,
         SpeakerEmbeddingRepository embeddingRepository,
@@ -66,7 +67,6 @@ public class SpeakerReferenceEmbeddingService {
         this.envelopeGateway = envelopeGateway;
         this.clock = clock;
     }
-
     public List<ReferenceEmbedding> batchByPerson(String tenantId, List<String> personIds) {
         if (personIds == null || personIds.isEmpty()) {
             return List.of();
@@ -184,7 +184,6 @@ public class SpeakerReferenceEmbeddingService {
             throw new IllegalStateException(ex);
         }
     }
-
     public record ReferenceEmbedding(
         String personId,
         float[] values,

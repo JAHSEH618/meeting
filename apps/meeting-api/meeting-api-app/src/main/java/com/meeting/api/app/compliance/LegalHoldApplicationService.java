@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,6 +41,7 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
     private final AuditEventLogger auditLogger;
     private final Clock clock;
 
+    @Autowired
     public LegalHoldApplicationService(
         TenantScopedTransaction tenantTx,
         LegalHoldRepository repo,
@@ -47,7 +49,6 @@ public class LegalHoldApplicationService implements LegalHoldFacade {
     ) {
         this(tenantTx, repo, auditLogger, Clock.systemUTC());
     }
-
     public LegalHoldApplicationService(
         TenantScopedTransaction tenantTx,
         LegalHoldRepository repo,

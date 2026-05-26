@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +46,7 @@ public class BreakGlassApplicationService implements BreakGlassFacade {
     private final Clock clock;
     private final Duration approvalWindow;
 
+    @Autowired
     public BreakGlassApplicationService(
         TenantScopedTransaction tenantTx,
         BreakGlassRequestRepository repo,
@@ -53,7 +55,6 @@ public class BreakGlassApplicationService implements BreakGlassFacade {
     ) {
         this(tenantTx, repo, auditLogger, Clock.systemUTC(), Duration.ofHours(windowHours));
     }
-
     public BreakGlassApplicationService(
         TenantScopedTransaction tenantTx,
         BreakGlassRequestRepository repo,

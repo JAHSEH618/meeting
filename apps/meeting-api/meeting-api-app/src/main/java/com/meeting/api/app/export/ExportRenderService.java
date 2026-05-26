@@ -24,6 +24,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -76,6 +77,7 @@ public class ExportRenderService {
     private final String exportsBucket;
     private final long downloadTtlSeconds;
 
+    @Autowired
     public ExportRenderService(
         TenantScopedTransaction tenantTx,
         ExportJobRepository exportRepo,
@@ -91,7 +93,6 @@ public class ExportRenderService {
              storage, messagePublisher, Clock.systemUTC(), exportsBucket,
              Duration.ofHours(downloadTtlHours).toSeconds());
     }
-
     public ExportRenderService(
         TenantScopedTransaction tenantTx,
         ExportJobRepository exportRepo,
@@ -115,7 +116,6 @@ public class ExportRenderService {
         this.exportsBucket = exportsBucket;
         this.downloadTtlSeconds = downloadTtlSeconds;
     }
-
     public RenderOutcome render(ExportJobMessage msg) {
         // Short TX #1: claim row + markRunning (idempotent on RUNNING).
         ExportJob job = tenantTx.execute(msg.tenantId(), "system:export-consumer", msg.traceId(), () -> {

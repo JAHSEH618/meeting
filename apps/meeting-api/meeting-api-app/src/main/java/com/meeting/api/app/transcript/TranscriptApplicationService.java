@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,6 +36,7 @@ public class TranscriptApplicationService implements TranscriptFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public TranscriptApplicationService(
         MeetingRepository meetingRepository,
         TranscriptRepository transcriptRepository,
@@ -57,7 +59,6 @@ public class TranscriptApplicationService implements TranscriptFacade {
             Clock.systemUTC()
         );
     }
-
     public TranscriptApplicationService(
         MeetingRepository meetingRepository,
         TranscriptRepository transcriptRepository,
@@ -144,17 +145,14 @@ public class TranscriptApplicationService implements TranscriptFacade {
         riskRepository.markStaleForMeeting(tenantId, meetingId);
         knowledgeChunkRepository.markStaleForMeeting(tenantId, meetingId);
     }
-
     public static final class TranscriptVersionConflictException extends RuntimeException {
         private final int actualVersion;
         private final int expectedVersion;
-
         public TranscriptVersionConflictException(int actualVersion, int expectedVersion) {
             super("transcript version mismatch: expected=" + expectedVersion + " actual=" + actualVersion);
             this.actualVersion = actualVersion;
             this.expectedVersion = expectedVersion;
         }
-
         public int actualVersion() { return actualVersion; }
         public int expectedVersion() { return expectedVersion; }
     }

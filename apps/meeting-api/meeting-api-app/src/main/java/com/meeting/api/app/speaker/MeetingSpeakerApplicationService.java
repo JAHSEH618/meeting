@@ -12,6 +12,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,6 +35,7 @@ public class MeetingSpeakerApplicationService {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public MeetingSpeakerApplicationService(
         MeetingSpeakerRepository meetingSpeakerRepository,
         SpeakerProfileRepository speakerProfileRepository,
@@ -44,7 +46,6 @@ public class MeetingSpeakerApplicationService {
         this(meetingSpeakerRepository, speakerProfileRepository, transcriptRepository,
             knowledgeChunkRepository, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public MeetingSpeakerApplicationService(
         MeetingSpeakerRepository meetingSpeakerRepository,
         SpeakerProfileRepository speakerProfileRepository,
@@ -60,14 +61,12 @@ public class MeetingSpeakerApplicationService {
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.clock = clock;
     }
-
     public List<MeetingSpeakerDTO> list(String tenantId, String meetingId) {
         return tenantScopedTransaction.execute(tenantId, null, null,
             () -> meetingSpeakerRepository.findByMeeting(tenantId, meetingId).stream()
                 .map(MeetingSpeakerApplicationService::toDto)
                 .toList());
     }
-
     public void confirm(String tenantId, String meetingId, String speakerLabel,
                          String personId, String speakerProfileId, String confirmedBy) {
         if (personId == null || personId.isBlank()) {
@@ -96,7 +95,6 @@ public class MeetingSpeakerApplicationService {
             return null;
         });
     }
-
     public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy) {
         tenantScopedTransaction.execute(tenantId, rejectedBy, null, () -> {
             OffsetDateTime now = OffsetDateTime.now(clock);

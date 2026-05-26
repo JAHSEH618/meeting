@@ -1,5 +1,6 @@
 package com.meeting.api.start.health;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,10 +20,10 @@ public class OutboxBacklogHealthIndicator implements HealthIndicator {
     private final long warnThreshold;
     private final long downThreshold;
 
+    @Autowired
     public OutboxBacklogHealthIndicator(JdbcTemplate jdbc) {
         this(jdbc, 5_000L, 50_000L);
     }
-
     public OutboxBacklogHealthIndicator(JdbcTemplate jdbc, long warnThreshold, long downThreshold) {
         this.jdbc = jdbc;
         this.warnThreshold = warnThreshold;

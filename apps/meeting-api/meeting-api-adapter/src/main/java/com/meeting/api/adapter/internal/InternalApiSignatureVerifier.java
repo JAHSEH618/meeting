@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -28,19 +29,18 @@ public class InternalApiSignatureVerifier {
     private final long timestampSkewSeconds;
     private final Clock clock;
 
+    @Autowired
     public InternalApiSignatureVerifier(
         @Value("${meeting.security.internal-api.hmac-secret:${meeting.ai-worker.hmac-secret:change-me-internal-fallback}}") String secret,
         @Value("${meeting.security.internal-api.timestamp-skew-seconds:300}") long timestampSkewSeconds
     ) {
         this(secret, timestampSkewSeconds, Clock.systemUTC());
     }
-
     public InternalApiSignatureVerifier(String secret, long timestampSkewSeconds, Clock clock) {
         this.secret = secret;
         this.timestampSkewSeconds = timestampSkewSeconds;
         this.clock = clock;
     }
-
     public void verify(
         String method,
         String urlPathWithQuery,

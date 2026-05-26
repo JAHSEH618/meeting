@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -33,6 +34,7 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public SpeakerProfileApplicationService(
         SpeakerProfileRepository profileRepository,
         SpeakerEnrollmentRepository enrollmentRepository,
@@ -44,7 +46,6 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         this(profileRepository, enrollmentRepository, embeddingRepository,
             meetingSpeakerRepository, knowledgeChunkRepository, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public SpeakerProfileApplicationService(
         SpeakerProfileRepository profileRepository,
         SpeakerEnrollmentRepository enrollmentRepository,

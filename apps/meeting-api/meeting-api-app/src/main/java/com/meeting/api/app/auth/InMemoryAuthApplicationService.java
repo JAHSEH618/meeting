@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -36,10 +37,10 @@ public class InMemoryAuthApplicationService implements AuthFacade {
     private final Clock clock;
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
 
+    @Autowired
     public InMemoryAuthApplicationService() {
         this(Clock.systemUTC());
     }
-
     public InMemoryAuthApplicationService(Clock clock) {
         this.clock = clock;
     }

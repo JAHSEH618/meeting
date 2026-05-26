@@ -12,6 +12,7 @@ import com.meeting.api.domain.audit.AuditEventReadRepository.AuditQuery;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +30,7 @@ public class AuditQueryApplicationService implements AuditQueryFacade {
     private final Clock clock;
     private final Duration maxWindow;
 
+    @Autowired
     public AuditQueryApplicationService(
         AuditEventReadRepository repository,
         TenantScopedTransaction tenantTx,
@@ -36,7 +38,6 @@ public class AuditQueryApplicationService implements AuditQueryFacade {
     ) {
         this(repository, tenantTx, Clock.systemUTC(), Duration.ofDays(maxWindowDays));
     }
-
     public AuditQueryApplicationService(
         AuditEventReadRepository repository,
         TenantScopedTransaction tenantTx,

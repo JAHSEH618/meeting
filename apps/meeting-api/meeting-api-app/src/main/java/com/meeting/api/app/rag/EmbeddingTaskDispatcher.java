@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +48,6 @@ public class EmbeddingTaskDispatcher {
      * the bge-m3 GPU warm-up over multiple sentences.
      */
     public static final int MAX_CHUNKS_PER_TASK = 32;
-
     public static final String TASK_TYPE_TEXT_EMBEDDING = "TEXT_EMBEDDING";
     public static final String DEFAULT_EMBEDDING_MODEL_VERSION = "bge-m3-v1";
 
@@ -59,6 +59,7 @@ public class EmbeddingTaskDispatcher {
     private final Clock clock;
     private final int maxChunksPerTask;
 
+    @Autowired
     public EmbeddingTaskDispatcher(
         ProcessingTaskRepository taskRepository,
         MessagePublisher messagePublisher,
@@ -67,7 +68,6 @@ public class EmbeddingTaskDispatcher {
     ) {
         this(taskRepository, messagePublisher, metrics, clock, MAX_CHUNKS_PER_TASK);
     }
-
     public EmbeddingTaskDispatcher(
         ProcessingTaskRepository taskRepository,
         MessagePublisher messagePublisher,
@@ -114,7 +114,6 @@ public class EmbeddingTaskDispatcher {
             throw ex;
         }
     }
-
     public DispatchResult dispatch(KnowledgeChunkReindexRequestedEvent event) {
         List<KnowledgeChunkReindexRequestedEvent.ChunkRef> chunks = event.chunks();
         List<String> taskIds = new ArrayList<>();

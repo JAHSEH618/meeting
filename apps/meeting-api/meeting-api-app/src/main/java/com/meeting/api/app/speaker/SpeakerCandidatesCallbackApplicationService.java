@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -49,6 +50,7 @@ public class SpeakerCandidatesCallbackApplicationService {
     private final CallbackSecurityVerifier securityVerifier;
     private final Clock clock;
 
+    @Autowired
     public SpeakerCandidatesCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
@@ -63,7 +65,6 @@ public class SpeakerCandidatesCallbackApplicationService {
             speakerEmbeddingRepository, meetingSpeakerRepository, envelopeGateway,
             tenantScopedTransaction, securityVerifier, Clock.systemUTC());
     }
-
     public SpeakerCandidatesCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
@@ -85,7 +86,6 @@ public class SpeakerCandidatesCallbackApplicationService {
         this.securityVerifier = securityVerifier;
         this.clock = clock;
     }
-
     public void writeCandidates(SpeakerCandidatesCallbackCommand command) {
         securityVerifier.verify(command.metadata());
         tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {

@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,6 +33,7 @@ public class DocumentApplicationService implements DocumentFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public DocumentApplicationService(
         DocumentRepository documentRepository,
         KnowledgeChunkRepository knowledgeChunkRepository,
@@ -39,7 +41,6 @@ public class DocumentApplicationService implements DocumentFacade {
     ) {
         this(documentRepository, knowledgeChunkRepository, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public DocumentApplicationService(
         DocumentRepository documentRepository,
         KnowledgeChunkRepository knowledgeChunkRepository,

@@ -10,6 +10,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -32,10 +33,10 @@ public class LocalKmsGateway implements KmsGateway {
     private final SecretKeySpec masterKey;
     private final SecureRandom random;
 
+    @Autowired
     public LocalKmsGateway(@Value("${meeting.kms.master-key-base64:}") String masterKeyBase64) {
         this(decodeOrGenerate(masterKeyBase64));
     }
-
     public LocalKmsGateway(byte[] masterKeyBytes) {
         if (masterKeyBytes.length != DEK_BYTES) {
             throw new IllegalArgumentException("master key must be exactly 32 bytes (AES-256)");

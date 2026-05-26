@@ -9,6 +9,7 @@ import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -22,13 +23,13 @@ public class TaskStepProgressService {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public TaskStepProgressService(
         ProcessingTaskRepository taskRepository,
         TenantScopedTransaction tenantScopedTransaction
     ) {
         this(taskRepository, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public TaskStepProgressService(
         ProcessingTaskRepository taskRepository,
         TenantScopedTransaction tenantScopedTransaction,
@@ -38,7 +39,6 @@ public class TaskStepProgressService {
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.clock = clock;
     }
-
     public ProcessingTaskDTO beginJavaPhase(String tenantId, String taskId) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> {
             ProcessingTask task = load(tenantId, taskId);
@@ -49,7 +49,6 @@ public class TaskStepProgressService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO markStepRunning(String tenantId, String taskId, ProcessingStep stepName, int progress) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> {
             ProcessingTask task = load(tenantId, taskId);
@@ -57,7 +56,6 @@ public class TaskStepProgressService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO markStepSucceeded(String tenantId, String taskId, ProcessingStep stepName) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> {
             ProcessingTask task = load(tenantId, taskId);
@@ -65,7 +63,6 @@ public class TaskStepProgressService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO markStepFailed(String tenantId, String taskId, ProcessingStep stepName, String errorCode) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> {
             ProcessingTask task = load(tenantId, taskId);
@@ -73,7 +70,6 @@ public class TaskStepProgressService {
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
-
     public ProcessingTaskDTO completeJavaPhase(String tenantId, String taskId) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> {
             ProcessingTask task = load(tenantId, taskId);

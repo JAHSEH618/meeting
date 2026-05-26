@@ -24,7 +24,7 @@ public class AiWorkerHealthIndicator implements HealthIndicator {
     public Health health() {
         try {
             client.call(
-                "GET", "/internal/health", /* body */ null,
+                "GET", "/health", /* body */ null,
                 "__health_probe__", "req-health", "trace-health", /* timeoutMs */ 2000
             );
             return Health.up().build();

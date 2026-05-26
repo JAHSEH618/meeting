@@ -7,8 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.stereotype.Component;
 
 /**
  * Phase-1 {@link KmsKeyDestroyerPort} that walks the existing speaker
@@ -23,7 +21,6 @@ public class NoOpKmsKeyDestroyerPort implements KmsKeyDestroyerPort {
     private static final Logger log = LoggerFactory.getLogger(NoOpKmsKeyDestroyerPort.class);
 
     private final SpeakerEmbeddingRepository embeddingRepository;
-
     public NoOpKmsKeyDestroyerPort(SpeakerEmbeddingRepository embeddingRepository) {
         this.embeddingRepository = embeddingRepository;
     }

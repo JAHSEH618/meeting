@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -50,6 +51,7 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public MeetingDocumentApplicationService(
         MeetingRepository meetingRepository,
         DocumentRepository documentRepository,
@@ -60,7 +62,6 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
         this(meetingRepository, documentRepository, linkRepository, messagePublisher,
             tenantScopedTransaction, Clock.systemUTC());
     }
-
     public MeetingDocumentApplicationService(
         MeetingRepository meetingRepository,
         DocumentRepository documentRepository,

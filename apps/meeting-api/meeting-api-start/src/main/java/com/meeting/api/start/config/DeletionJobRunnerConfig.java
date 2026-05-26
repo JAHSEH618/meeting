@@ -17,10 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import com.meeting.api.domain.compliance.KmsKeyDestroyerPort;
-import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
-import com.meeting.api.infrastructure.gateway.compliance.NoOpKmsKeyDestroyerPort;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -43,7 +39,6 @@ public class DeletionJobRunnerConfig {
 
     private final DeletionJobRunner runner;
     private final List<String> tenantIds;
-
     public DeletionJobRunnerConfig(
         DeletionJobRepository repo,
         LegalHoldCheckPort legalHoldCheck,
@@ -73,12 +68,6 @@ public class DeletionJobRunnerConfig {
     @Bean
     public DeletionJobRunner deletionJobRunner() {
         return runner;
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(KmsKeyDestroyerPort.class)
-    public KmsKeyDestroyerPort kmsKeyDestroyerPort(SpeakerEmbeddingRepository embeddingRepository) {
-        return new NoOpKmsKeyDestroyerPort(embeddingRepository);
     }
 
     @Scheduled(

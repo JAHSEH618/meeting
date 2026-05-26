@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,6 +68,7 @@ public class ChunkingApplicationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
+    @Autowired
     public ChunkingApplicationService(
         TranscriptRepository transcriptRepository,
         MinutesRepository minutesRepository,
@@ -85,7 +87,6 @@ public class ChunkingApplicationService {
             documentChunkRepository, meetingRepository, knowledgeChunkRepository,
             ChunkStrategy.DEFAULT_ZH, eventPublisher, clock);
     }
-
     public ChunkingApplicationService(
         TranscriptRepository transcriptRepository,
         MinutesRepository minutesRepository,

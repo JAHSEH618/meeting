@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -59,6 +60,7 @@ public class ExtractionApplicationService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
+    @Autowired
     public ExtractionApplicationService(
         MeetingRepository meetingRepository,
         TranscriptRepository transcriptRepository,
@@ -71,7 +73,6 @@ public class ExtractionApplicationService {
     ) {
         this(meetingRepository, transcriptRepository, actionItemRepository, decisionRepository, riskRepository, llmGateway, tenantScopedTransaction, objectMapper, Clock.systemUTC());
     }
-
     public ExtractionApplicationService(
         MeetingRepository meetingRepository,
         TranscriptRepository transcriptRepository,
@@ -93,7 +94,6 @@ public class ExtractionApplicationService {
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
-
     public ExtractionSummary extractForTask(String tenantId, String meetingId, String taskId) {
         return tenantScopedTransaction.execute(tenantId, null, null, () -> doExtract(tenantId, meetingId, taskId));
     }

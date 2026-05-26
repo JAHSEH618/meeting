@@ -21,6 +21,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -50,6 +51,13 @@ public class HttpAiWorkerInternalClient implements AiWorkerInternalClient {
     private final HttpClient httpClient;
     private final Clock clock;
 
+    @Autowired
+    public HttpAiWorkerInternalClient(
+        AiWorkerInternalProperties properties,
+        ObjectMapper objectMapper
+    ) {
+        this(properties, objectMapper, Clock.systemUTC());
+    }
     public HttpAiWorkerInternalClient(
         AiWorkerInternalProperties properties,
         ObjectMapper objectMapper,

@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -24,6 +25,7 @@ public class ExtractionQueryService implements ExtractionFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public ExtractionQueryService(
         ActionItemRepository actionItemRepository,
         DecisionRepository decisionRepository,
@@ -32,7 +34,6 @@ public class ExtractionQueryService implements ExtractionFacade {
     ) {
         this(actionItemRepository, decisionRepository, riskRepository, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public ExtractionQueryService(
         ActionItemRepository actionItemRepository,
         DecisionRepository decisionRepository,

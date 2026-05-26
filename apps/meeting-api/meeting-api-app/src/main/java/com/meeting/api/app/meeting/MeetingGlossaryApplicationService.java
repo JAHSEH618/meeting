@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -50,6 +51,7 @@ public class MeetingGlossaryApplicationService implements MeetingGlossaryFacade 
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public MeetingGlossaryApplicationService(
         MeetingRepository meetingRepository,
         MeetingGlossaryRepository glossaryRepository,
@@ -58,7 +60,6 @@ public class MeetingGlossaryApplicationService implements MeetingGlossaryFacade 
     ) {
         this(meetingRepository, glossaryRepository, messagePublisher, tenantScopedTransaction, Clock.systemUTC());
     }
-
     public MeetingGlossaryApplicationService(
         MeetingRepository meetingRepository,
         MeetingGlossaryRepository glossaryRepository,

@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -59,6 +60,7 @@ public class DashScopeLlmGateway implements LlmGateway {
     private final Set<SecurityLevel> blockedSecurityLevels;
     private final Clock clock;
 
+    @Autowired
     public DashScopeLlmGateway(
         OpenAiCompatibleChatClient client,
         PromptTemplateRepository promptTemplateRepository,
@@ -78,7 +80,6 @@ public class DashScopeLlmGateway implements LlmGateway {
         this.blockedSecurityLevels = parseLevels(blockedLevelsCsv);
         this.clock = clock;
     }
-
     public DashScopeLlmGateway(
         OpenAiCompatibleChatClient client,
         PromptTemplateRepository promptTemplateRepository,

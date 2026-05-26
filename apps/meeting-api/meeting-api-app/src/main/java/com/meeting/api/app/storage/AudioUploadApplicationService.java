@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -48,6 +49,7 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
 
+    @Autowired
     public AudioUploadApplicationService(
         MeetingRepository meetingRepository,
         AudioUploadRepository uploadRepository,
@@ -66,7 +68,6 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
             Clock.systemUTC()
         );
     }
-
     public AudioUploadApplicationService(
         MeetingRepository meetingRepository,
         AudioUploadRepository uploadRepository,
