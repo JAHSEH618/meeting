@@ -37,20 +37,29 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ApiResponse<Void> logout(
-        @RequestHeader("Authorization") String authorization,
+        @RequestHeader(value = "Authorization", required = false) String authorization,
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
         @RequestHeader(value = "X-Trace-Id", required = false) String traceId
     ) {
-        authFacade.logout(authorization);
+        if (authorization != null && !authorization.isBlank()) {
+            authFacade.logout(authorization);
+        }
         return ApiResponse.ok(null, requestId, traceId);
     }
 
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<AuthUserDTO>> me(
-        @RequestHeader("Authorization") String authorization,
+        @RequestHeader(value = "Authorization", required = false) String authorization,
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
         @RequestHeader(value = "X-Trace-Id", required = false) String traceId
     ) {
+        if (authorization == null || authorization.isBlank()) {
+            return ResponseEntity.status(401).body(ApiResponse.failed(
+                com.meeting.api.client.common.ErrorInfo.of(com.meeting.api.client.common.ErrorCode.AUTH_REQUIRED, "authentication required", false),
+                requestId,
+                traceId
+            ));
+        }
         return authFacade.me(authorization)
             .map(user -> ResponseEntity.ok(ApiResponse.ok(user, requestId, traceId)))
             .orElseGet(() -> ResponseEntity.status(401).body(ApiResponse.failed(
