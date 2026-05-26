@@ -19,19 +19,19 @@
 
 ```mermaid
 graph TD
-    subgraph Java 机器 (CentOS/ECS)
-        java[meeting-api Java 17]
-        pg[PostgreSQL + pgvector]
-        mq[RabbitMQ Queue]
+    subgraph id1 ["Java 机器 (CentOS/ECS)"]
+        java["meeting-api Java 17"]
+        pg["PostgreSQL + pgvector"]
+        mq["RabbitMQ Queue"]
     end
 
-    subgraph AI Worker 机器 (Apple Silicon Mac)
-        worker[ai-worker-api native]
-        control[ai-worker-control.sh]
+    subgraph id2 ["AI Worker 机器 (Apple Silicon Mac)"]
+        worker["ai-worker-api native"]
+        control["ai-worker-control.sh"]
     end
 
-    subgraph 云资源 (阿里云)
-        oss[阿里云 OSS Bucket]
+    subgraph id3 ["云资源 (阿里云)"]
+        oss["阿里云 OSS Bucket"]
     end
 
     %% Flow lines
