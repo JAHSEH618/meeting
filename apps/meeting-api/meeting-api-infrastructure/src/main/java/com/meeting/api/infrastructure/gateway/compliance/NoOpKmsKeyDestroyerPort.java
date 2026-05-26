@@ -18,8 +18,6 @@ import org.springframework.stereotype.Component;
  * deployment's vault tooling. Replacing this bean with a vault-backed
  * implementation is enough to make destruction real.
  */
-@Component
-@ConditionalOnMissingBean(KmsKeyDestroyerPort.class)
 public class NoOpKmsKeyDestroyerPort implements KmsKeyDestroyerPort {
 
     private static final Logger log = LoggerFactory.getLogger(NoOpKmsKeyDestroyerPort.class);
