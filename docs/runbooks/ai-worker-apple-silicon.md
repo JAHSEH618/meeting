@@ -405,7 +405,22 @@ sudo firewall-cmd --add-rich-rule='rule family=ipv4 source address=<apple-mac-ip
 sudo firewall-cmd --reload
 ```
 
-Mac 上先创建 env，再编辑为 CentOS 地址：
+优先从 Java runbook 生成 `deploy/.ai-worker-apple-silicon.env.centos`，再复制到
+Mac。Apple 侧这些值必须和 CentOS Java 侧 `deploy/.meeting-api-prod.env`
+对应：
+
+| Apple worker 变量 | 来源 |
+|-------------------|------|
+| `AI_WORKER_RABBITMQ_HOST` | Java 机器的可达 IP / VPN 名 / 域名，不是容器内的 `rabbitmq`。 |
+| `AI_WORKER_RABBITMQ_PORT` | Java 侧 `RABBITMQ_PORT`。 |
+| `AI_WORKER_RABBITMQ_USERNAME` | Java 侧 `RABBITMQ_USER`。 |
+| `AI_WORKER_RABBITMQ_PASSWORD` | Java 侧 `RABBITMQ_PASS`。 |
+| `AI_WORKER_MEETING_API_BASE_URL` | `http://<centos-ip-or-domain>:8080`。 |
+| `AI_WORKER_JAVA_API_BASE_URL` | 同上，除非 Java 另有内部域名。 |
+| `AI_WORKER_CALLBACK_HMAC_SECRET` | Java 侧同名值。 |
+| `AI_WORKER_INTERNAL_API_HMAC_SECRET` | Java 侧同名值。 |
+
+如果没有从 Java 机器生成 env，Mac 上可以先创建 env，再手工编辑为 CentOS 地址：
 
 ```bash
 ./deploy/ai-worker-apple-silicon.sh env
@@ -421,8 +436,8 @@ AI_WORKER_RABBITMQ_USERNAME=meeting
 AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password>
 AI_WORKER_MEETING_API_BASE_URL=http://<centos-ip-or-domain>:8080
 AI_WORKER_JAVA_API_BASE_URL=http://<centos-ip-or-domain>:8080
-AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-centos-java>
-AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-centos-java>
+AI_WORKER_CALLBACK_HMAC_SECRET=<value-from-java-AI_WORKER_CALLBACK_HMAC_SECRET>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<value-from-java-AI_WORKER_INTERNAL_API_HMAC_SECRET>
 AI_WORKER_ADMIN_JWT_SECRET=<local-admin-secret>
 
 # 真实音频由 CentOS Java 写入阿里云 OSS 时必须配置。
@@ -446,8 +461,8 @@ CentOS Java 侧必须反向指向 Mac worker。Java 用 Docker/Compose 启动时
 
 ```bash
 AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090
-AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-mac-worker>
-AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-mac-worker>
+AI_WORKER_CALLBACK_HMAC_SECRET=<shared-callback-hmac-secret>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<shared-internal-hmac-secret>
 ```
 
 如果 CentOS 无法直接访问 Mac 的 `8090`，不要用 `localhost` 凑合。先建立

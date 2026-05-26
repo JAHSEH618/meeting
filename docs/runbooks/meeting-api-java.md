@@ -525,9 +525,18 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d po
 
 ### 7.3 准备 Java 侧 Secret 和 OSS 环境
 
-在 CentOS/ECS 上生成并保存 HMAC。后续把同样的两个值同步给 Worker 机器：
+在 CentOS/ECS 上先确定两台机器要共享的值。RabbitMQ 用户名/密码由 Java
+机器启动 RabbitMQ 时使用，Apple worker 必须用同一组值连接队列；HMAC 也
+只生成一次，然后同时写入 Java 和 worker env：
 
 ```bash
+export JAVA_HOST=<java-host-or-domain>
+export WORKER_HOST=<worker-host-or-vpn-name>
+
+export RABBITMQ_PORT=5672
+export RABBITMQ_USER=meeting
+export RABBITMQ_PASS=<rabbitmq-password>
+
 export AI_WORKER_CALLBACK_HMAC_SECRET="$(openssl rand -hex 32)"
 export AI_WORKER_INTERNAL_API_HMAC_SECRET="$(openssl rand -hex 32)"
 test "$AI_WORKER_CALLBACK_HMAC_SECRET" != "$AI_WORKER_INTERNAL_API_HMAC_SECRET"
@@ -536,7 +545,12 @@ test "$AI_WORKER_CALLBACK_HMAC_SECRET" != "$AI_WORKER_INTERNAL_API_HMAC_SECRET"
 建议把 Java 侧环境变量保存为仅部署用户可读的文件：
 
 ```bash
-cat > deploy/.meeting-api-prod.env <<'EOF'
+cat > deploy/.meeting-api-prod.env <<EOF
+# Two-machine deployment coordinates. These are used by this runbook to
+# derive Java and Apple worker env files.
+JAVA_HOST=${JAVA_HOST}
+WORKER_HOST=${WORKER_HOST}
+
 STORAGE_TYPE=oss
 STORAGE_BUCKET_AUDIO=meeting-audio-auska
 STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
@@ -545,12 +559,21 @@ OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
 OSS_REGION=cn-hangzhou
 OSS_ACCESS_KEY_ID=<java-writer-ram-access-key-id>
 OSS_ACCESS_KEY_SECRET=<java-writer-ram-access-key-secret>
-AI_WORKER_BASE_URL=http://<worker-host>:8090
-AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-worker>
-AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-worker>
+
+RABBITMQ_PORT=${RABBITMQ_PORT}
+RABBITMQ_USER=${RABBITMQ_USER}
+RABBITMQ_PASS=${RABBITMQ_PASS}
+
+AI_WORKER_BASE_URL=http://${WORKER_HOST}:8090
+AI_WORKER_CALLBACK_HMAC_SECRET=${AI_WORKER_CALLBACK_HMAC_SECRET}
+AI_WORKER_INTERNAL_API_HMAC_SECRET=${AI_WORKER_INTERNAL_API_HMAC_SECRET}
 EOF
 chmod 600 deploy/.meeting-api-prod.env
 ```
+
+这份文件里的 `RABBITMQ_USER` / `RABBITMQ_PASS` 会被 Compose 的 RabbitMQ
+服务、`meeting-api` 容器和 Apple worker 共同使用。不要在 Apple 侧重新编一套
+RabbitMQ 密码。
 
 ECS/K8s 与 bucket 在同地域同 VPC 时，把 `OSS_ENDPOINT` 改为内网 endpoint。
 不确定时先用 `curl -I "$OSS_ENDPOINT"` 从 CentOS/ECS 验证。
@@ -581,22 +604,29 @@ AI_WORKER_BASE_URL=http://100.x.y.z:8090
 
 ### 7.4 准备 Worker 机器
 
-同时把上面的 `AI_WORKER_CALLBACK_HMAC_SECRET` 和
+同时把上面的 `RABBITMQ_*`、`AI_WORKER_CALLBACK_HMAC_SECRET` 和
 `AI_WORKER_INTERNAL_API_HMAC_SECRET` 同步到 Worker 机器。两边不一致时，
-Java 调 worker 或 worker 回调 Java 都会失败。
+worker 收不到任务，或者 Java 调 worker / worker 回调 Java 会失败。
 
 Apple Silicon 验收 worker 的详细步骤见
-`docs/runbooks/ai-worker-apple-silicon.md`。Worker 机器的关键配置应长这样：
+`docs/runbooks/ai-worker-apple-silicon.md`。在 CentOS/ECS 上加载 Java env 后，
+可以直接生成要复制到 Apple worker 的 env：
 
 ```bash
-AI_WORKER_RABBITMQ_HOST=<java-host>
-AI_WORKER_RABBITMQ_PORT=5672
-AI_WORKER_RABBITMQ_USERNAME=meeting
-AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password>
-AI_WORKER_MEETING_API_BASE_URL=http://<java-host>:8080
-AI_WORKER_JAVA_API_BASE_URL=http://<java-host>:8080
-AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-java>
-AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-java>
+set -a
+. deploy/.meeting-api-prod.env
+set +a
+
+cat > deploy/.ai-worker-apple-silicon.env.centos <<EOF
+AI_WORKER_RABBITMQ_HOST=${JAVA_HOST}
+AI_WORKER_RABBITMQ_PORT=${RABBITMQ_PORT}
+AI_WORKER_RABBITMQ_USERNAME=${RABBITMQ_USER}
+AI_WORKER_RABBITMQ_PASSWORD=${RABBITMQ_PASS}
+AI_WORKER_MEETING_API_BASE_URL=http://${JAVA_HOST}:8080
+AI_WORKER_JAVA_API_BASE_URL=http://${JAVA_HOST}:8080
+AI_WORKER_CALLBACK_HMAC_SECRET=${AI_WORKER_CALLBACK_HMAC_SECRET}
+AI_WORKER_INTERNAL_API_HMAC_SECRET=${AI_WORKER_INTERNAL_API_HMAC_SECRET}
+AI_WORKER_ADMIN_JWT_SECRET=<local-admin-secret>
 
 # 真实音频来自阿里云 OSS 时必须开启。只做健康检查或 HMAC 冒烟时可以先不配。
 AI_WORKER_STORAGE_BACKEND=oss
@@ -604,6 +634,8 @@ AI_WORKER_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
 AI_WORKER_OSS_REGION=cn-hangzhou
 AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id>
 AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret>
+EOF
+chmod 600 deploy/.ai-worker-apple-silicon.env.centos
 ```
 
 `AI_WORKER_OSS_*` 使用 worker 只读 RAM 凭据，不要复用 Java 写权限 AK/SK。
@@ -718,8 +750,8 @@ OSS_REGION: "cn-hangzhou"
 kubectl create secret generic ai-worker-secret \
   -n meeting-dev \
   --from-literal=AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password> \
-  --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-java> \
-  --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-java> \
+  --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<callback-secret-from-meeting-api-secret> \
+  --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<internal-secret-from-meeting-api-secret> \
   --from-literal=AI_WORKER_ADMIN_JWT_SECRET=<admin-jwt-secret> \
   --from-literal=AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id> \
   --from-literal=AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret> \
