@@ -243,16 +243,16 @@ interface SpeakerEnrollPanelProps {
 }
 
 function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnrollPanelProps) {
-  const [tab, setTab] = useState<"record" | "upload" | "manual">("record");
+  const [tab, setTab] = useState<"record" | "upload">("record");
   const [sampleTextIdx, setSampleTextIdx] = useState(0);
   const [recording, setRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordDuration, setRecordDuration] = useState(0);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [manualFileId, setManualFileId] = useState("");
   const [statusText, setStatusText] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
+  const [pollingEnrollmentId, setPollingEnrollmentId] = useState<string | null>(null);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -267,6 +267,35 @@ function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnr
       if (interval) clearInterval(interval);
     };
   }, [recording]);
+
+  // Polling speaker enrollment status for real-time success alert popup
+  useEffect(() => {
+    if (!pollingEnrollmentId) return;
+
+    let timer: NodeJS.Timeout;
+    const poll = async () => {
+      try {
+        const resp = await listSpeakerEnrollments(profileId);
+        const match = resp.items.find((e) => e.enrollmentId === pollingEnrollmentId);
+        if (match) {
+          if (match.enrollmentStatus === "SUCCEEDED") {
+            alert("🎉 声纹注册成功！");
+            setPollingEnrollmentId(null);
+            onEnrollSuccess();
+          } else if (match.enrollmentStatus === "FAILED") {
+            alert("❌ 声纹注册失败，请重新录制清晰明亮的音频进行尝试！");
+            setPollingEnrollmentId(null);
+            onEnrollSuccess();
+          }
+        }
+      } catch (e) {
+        console.error("Failed to poll speaker enrollment status:", e);
+      }
+    };
+
+    timer = setInterval(poll, 1500);
+    return () => clearInterval(timer);
+  }, [pollingEnrollmentId, profileId, onEnrollSuccess]);
 
   const handleNextText = () => {
     setSampleTextIdx((prev) => (prev + 1) % SAMPLE_TEXTS.length);
@@ -323,17 +352,10 @@ function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnr
         if (!recordedBlob) throw new Error("请先录音");
         fileBlob = recordedBlob;
         fileName = `voice_enroll_${profileId}_${Date.now()}.webm`;
-      } else if (tab === "upload") {
+      } else {
         if (!uploadFile) throw new Error("请先选择音频文件");
         fileBlob = uploadFile;
         fileName = uploadFile.name;
-      } else {
-        if (!manualFileId.trim()) throw new Error("请输入参考音频文件 ID");
-        setStatusText("正在注册声纹档案...");
-        await createSpeakerEnrollment(profileId, manualFileId.trim());
-        setManualFileId("");
-        onEnrollSuccess();
-        return;
       }
 
       const meetingId = await getOrCreateSystemMeeting();
@@ -374,12 +396,17 @@ function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnr
         throw new Error("完成上传失败，未生成 File ID");
       }
 
-      setStatusText("正在完成声纹注册...");
-      await createSpeakerEnrollment(profileId, completedSession.fileId);
+      setStatusText("正在提交声纹注册任务...");
+      const enrollment = await createSpeakerEnrollment(profileId, completedSession.fileId);
       
-      setRecordedBlob(null);
-      setUploadFile(null);
-      onEnrollSuccess();
+      if (enrollment && enrollment.enrollmentId) {
+        setPollingEnrollmentId(enrollment.enrollmentId);
+        setRecordedBlob(null);
+        setUploadFile(null);
+        setError(null);
+      } else {
+        throw new Error("声纹档案注册返回数据异常");
+      }
     } catch (cause: any) {
       setError(cause.message || String(cause));
     } finally {
@@ -425,7 +452,7 @@ function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnr
           className={`button ${tab === "record" ? "primary" : ""}`}
           style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
           onClick={() => setTab("record")}
-          disabled={enrolling}
+          disabled={enrolling || !!pollingEnrollmentId}
         >
           🎙️ 当场录音
         </button>
@@ -434,152 +461,143 @@ function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: SpeakerEnr
           className={`button ${tab === "upload" ? "primary" : ""}`}
           style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
           onClick={() => setTab("upload")}
-          disabled={enrolling}
+          disabled={enrolling || !!pollingEnrollmentId}
         >
           📁 上传文件
         </button>
-        <button
-          type="button"
-          className={`button ${tab === "manual" ? "primary" : ""}`}
-          style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
-          onClick={() => setTab("manual")}
-          disabled={enrolling}
-        >
-          ✍️ 手动输入 ID
-        </button>
       </div>
 
-      {tab === "record" ? (
-        <div className="stack" style={{ gap: "10px" }}>
-          <div className="sample-text-card stack" style={{ background: "#f8fafc", border: "1px dashed #cbd5e1", padding: "14px", borderRadius: "8px" }}>
-            <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <span className="muted" style={{ fontSize: "12px" }}>请大声朗读以下文本（声音需清晰自然）：</span>
-              <button
-                type="button"
-                className="button link"
-                style={{ minHeight: "auto", border: "none", background: "none", color: "#176b87", padding: 0, fontSize: "12px", fontWeight: "600" }}
-                onClick={handleNextText}
-                disabled={recording || enrolling}
-              >
-                换一句 🔄
-              </button>
-            </div>
-            <p className="sample-text-body" style={{ margin: "10px 0 4px", fontSize: "15px", fontWeight: "500", lineHeight: "1.6", color: "#1e293b" }}>
-              “ {SAMPLE_TEXTS[sampleTextIdx]} ”
-            </p>
-          </div>
-
-          <div className="toolbar" style={{ gap: "12px", alignItems: "center" }}>
-            {recording ? (
-              <button
-                type="button"
-                className="button pulse-recording"
-                style={{ padding: "8px 16px" }}
-                onClick={stopRecording}
-              >
-                🛑 停止录音 ({formatDuration(recordDuration)})
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="button primary"
-                style={{ padding: "8px 16px" }}
-                onClick={startRecording}
-                disabled={enrolling}
-              >
-                🎙️ 开始录音
-              </button>
-            )}
-
-            {recordedBlob && !recording ? (
-              <div className="toolbar" style={{ alignItems: "center", gap: "8px" }}>
-                <audio src={URL.createObjectURL(recordedBlob)} controls style={{ height: "36px", maxWidth: "260px" }} />
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {tab === "upload" ? (
-        <div className="stack" style={{ gap: "8px" }}>
-          <label className="upload-dropzone" style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            border: "2px dashed #cbd5e1",
-            borderRadius: "8px",
-            cursor: "pointer",
-            background: "#f8fafc",
-            transition: "all 0.2s ease"
-          }}>
-            <input
-              type="file"
-              accept="audio/*,.wav,.mp3,.m4a"
-              disabled={enrolling}
-              onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-              style={{ display: "none" }}
-            />
-            <span style={{ fontSize: "28px" }}>📁</span>
-            <span style={{ fontWeight: 500, marginTop: "8px", color: "#475569", fontSize: "14px" }}>
-              {uploadFile ? uploadFile.name : "点击选择音频文件 (MP3, WAV, M4A)"}
-            </span>
-            {uploadFile && (
-              <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
-                大小: {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
-              </span>
-            )}
-          </label>
-        </div>
-      ) : null}
-
-      {tab === "manual" ? (
-        <div className="stack" style={{ gap: "8px" }}>
-          <input
-            className="field input"
-            style={{
-              width: "100%",
-              minHeight: "38px",
-              border: "1px solid #c7d0dc",
-              borderRadius: "6px",
-              padding: "8px 10px",
-              background: "#ffffff"
-            }}
-            value={manualFileId}
-            disabled={enrolling}
-            onChange={(e) => setManualFileId(e.target.value)}
-            placeholder="请输入已上传音频的 File ID (例如 fil_xxx)"
-          />
-        </div>
-      ) : null}
-
-      {statusText ? (
-        <div className="loading-status toolbar" style={{ alignItems: "center", gap: "8px", color: "#176b87", marginTop: "4px" }}>
+      {pollingEnrollmentId ? (
+        <div className="stack" style={{ gap: "10px", alignItems: "center", justifyContent: "center", padding: "20px", background: "#f0fdf4", border: "1px dashed #4ade80", borderRadius: "8px", textAlign: "center" }}>
           <span className="spinner" style={{
             display: "inline-block",
-            width: "14px",
-            height: "14px",
-            border: "2px solid rgba(23, 107, 135, 0.15)",
-            borderTopColor: "#176b87",
+            width: "24px",
+            height: "24px",
+            border: "3px solid rgba(22, 101, 52, 0.15)",
+            borderTopColor: "#166534",
             borderRadius: "50%",
             animation: "enroll-spin 1s linear infinite"
           }} />
-          <span style={{ fontSize: "13px", fontWeight: "500" }}>{statusText}</span>
+          <div className="stack" style={{ gap: "4px" }}>
+            <span style={{ fontSize: "14px", fontWeight: "600", color: "#166534" }}>🎙️ 音频上传成功，后端正在提取并注册声纹...</span>
+            <span style={{ fontSize: "12px", color: "#4b5563" }}>正在等待机器学习特征匹配完成，完成后将自动为您弹窗提示！</span>
+          </div>
         </div>
-      ) : null}
+      ) : (
+        <>
+          {tab === "record" ? (
+            <div className="stack" style={{ gap: "10px" }}>
+              <div className="sample-text-card stack" style={{ background: "#f8fafc", border: "1px dashed #cbd5e1", padding: "14px", borderRadius: "8px" }}>
+                <div className="toolbar" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="muted" style={{ fontSize: "12px" }}>请大声朗读以下文本（声音需清晰自然）：</span>
+                  <button
+                    type="button"
+                    className="button link"
+                    style={{ minHeight: "auto", border: "none", background: "none", color: "#176b87", padding: 0, fontSize: "12px", fontWeight: "600" }}
+                    onClick={handleNextText}
+                    disabled={recording || enrolling}
+                  >
+                    换一句 🔄
+                  </button>
+                </div>
+                <p className="sample-text-body" style={{ margin: "10px 0 4px", fontSize: "15px", fontWeight: "500", lineHeight: "1.6", color: "#1e293b" }}>
+                  “ {SAMPLE_TEXTS[sampleTextIdx]} ”
+                </p>
+              </div>
 
-      <div className="toolbar" style={{ marginTop: "8px" }}>
-        <button
-          type="button"
-          className="button primary"
-          style={{ minHeight: "38px", padding: "8px 24px" }}
-          disabled={enrolling || (tab === "record" && !recordedBlob) || (tab === "upload" && !uploadFile) || (tab === "manual" && !manualFileId.trim())}
-          onClick={handleEnroll}
-        >
-          {enrolling ? "正在处理..." : "提交注册"}
-        </button>
-      </div>
+              <div className="toolbar" style={{ gap: "12px", alignItems: "center" }}>
+                {recording ? (
+                  <button
+                    type="button"
+                    className="button pulse-recording"
+                    style={{ padding: "8px 16px" }}
+                    onClick={stopRecording}
+                  >
+                    🛑 停止录音 ({formatDuration(recordDuration)})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="button primary"
+                    style={{ padding: "8px 16px" }}
+                    onClick={startRecording}
+                    disabled={enrolling}
+                  >
+                    🎙️ 开始录音
+                  </button>
+                )}
+
+                {recordedBlob && !recording ? (
+                  <div className="toolbar" style={{ alignItems: "center", gap: "8px" }}>
+                    <audio src={URL.createObjectURL(recordedBlob)} controls style={{ height: "36px", maxWidth: "260px" }} />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {tab === "upload" ? (
+            <div className="stack" style={{ gap: "8px" }}>
+              <label className="upload-dropzone" style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "24px",
+                border: "2px dashed #cbd5e1",
+                borderRadius: "8px",
+                cursor: "pointer",
+                background: "#f8fafc",
+                transition: "all 0.2s ease"
+              }}>
+                <input
+                  type="file"
+                  accept="audio/*,.wav,.mp3,.m4a"
+                  disabled={enrolling}
+                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  style={{ display: "none" }}
+                />
+                <span style={{ fontSize: "28px" }}>📁</span>
+                <span style={{ fontWeight: 500, marginTop: "8px", color: "#475569", fontSize: "14px" }}>
+                  {uploadFile ? uploadFile.name : "点击选择音频文件 (MP3, WAV, M4A)"}
+                </span>
+                {uploadFile && (
+                  <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
+                    大小: {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                )}
+              </label>
+            </div>
+          ) : null}
+
+          {statusText ? (
+            <div className="loading-status toolbar" style={{ alignItems: "center", gap: "8px", color: "#176b87", marginTop: "4px" }}>
+              <span className="spinner" style={{
+                display: "inline-block",
+                width: "14px",
+                height: "14px",
+                border: "2px solid rgba(23, 107, 135, 0.15)",
+                borderTopColor: "#176b87",
+                borderRadius: "50%",
+                animation: "enroll-spin 1s linear infinite"
+              }} />
+              <span style={{ fontSize: "13px", fontWeight: "500" }}>{statusText}</span>
+            </div>
+          ) : null}
+
+          <div className="toolbar" style={{ marginTop: "8px" }}>
+            <button
+              type="button"
+              className="button primary"
+              style={{ minHeight: "38px", padding: "8px 24px" }}
+              disabled={enrolling || (tab === "record" && !recordedBlob) || (tab === "upload" && !uploadFile)}
+              onClick={handleEnroll}
+            >
+              {enrolling ? "正在处理..." : "提交注册"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -12,6 +12,9 @@ import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
+import com.meeting.api.app.task.ProcessingTaskApplicationService;
+import com.meeting.api.domain.storage.MeetingFile;
+import com.meeting.api.domain.storage.MeetingFileRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -32,6 +35,8 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
     private final MeetingSpeakerRepository meetingSpeakerRepository;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final TenantScopedTransaction tenantScopedTransaction;
+    private final ProcessingTaskApplicationService processingTaskService;
+    private final MeetingFileRepository meetingFileRepository;
     private final Clock clock;
 
     @Autowired
@@ -41,10 +46,13 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         SpeakerEmbeddingRepository embeddingRepository,
         MeetingSpeakerRepository meetingSpeakerRepository,
         KnowledgeChunkRepository knowledgeChunkRepository,
-        TenantScopedTransaction tenantScopedTransaction
+        TenantScopedTransaction tenantScopedTransaction,
+        ProcessingTaskApplicationService processingTaskService,
+        MeetingFileRepository meetingFileRepository
     ) {
         this(profileRepository, enrollmentRepository, embeddingRepository,
-            meetingSpeakerRepository, knowledgeChunkRepository, tenantScopedTransaction, Clock.systemUTC());
+            meetingSpeakerRepository, knowledgeChunkRepository, tenantScopedTransaction,
+            processingTaskService, meetingFileRepository, Clock.systemUTC());
     }
     public SpeakerProfileApplicationService(
         SpeakerProfileRepository profileRepository,
@@ -55,12 +63,29 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         TenantScopedTransaction tenantScopedTransaction,
         Clock clock
     ) {
+        this(profileRepository, enrollmentRepository, embeddingRepository,
+            meetingSpeakerRepository, knowledgeChunkRepository, tenantScopedTransaction,
+            null, null, clock);
+    }
+    public SpeakerProfileApplicationService(
+        SpeakerProfileRepository profileRepository,
+        SpeakerEnrollmentRepository enrollmentRepository,
+        SpeakerEmbeddingRepository embeddingRepository,
+        MeetingSpeakerRepository meetingSpeakerRepository,
+        KnowledgeChunkRepository knowledgeChunkRepository,
+        TenantScopedTransaction tenantScopedTransaction,
+        ProcessingTaskApplicationService processingTaskService,
+        MeetingFileRepository meetingFileRepository,
+        Clock clock
+    ) {
         this.profileRepository = profileRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.embeddingRepository = embeddingRepository;
         this.meetingSpeakerRepository = meetingSpeakerRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.tenantScopedTransaction = tenantScopedTransaction;
+        this.processingTaskService = processingTaskService;
+        this.meetingFileRepository = meetingFileRepository;
         this.clock = clock;
     }
 
@@ -73,7 +98,7 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
     ) {
         this(profileRepository, enrollmentRepository,
             new NoOpEmbeddingRepo(), new NoOpMeetingSpeakerRepo(), new NoOpKnowledgeChunkRepo(),
-            tenantScopedTransaction, clock);
+            tenantScopedTransaction, null, null, clock);
     }
 
     @Override
@@ -179,6 +204,27 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
                 now
             );
             enrollmentRepository.save(rec);
+
+            // Automatically trigger the speaker enrollment task if dependencies are available
+            if (processingTaskService != null && meetingFileRepository != null) {
+                try {
+                    MeetingFile file = meetingFileRepository.findById(command.tenantId(), command.sourceAudioFileId())
+                        .orElseThrow(() -> new IllegalArgumentException("audio file not found: " + command.sourceAudioFileId()));
+                    processingTaskService.createForSpeakerEnrollment(
+                        command.tenantId(),
+                        command.speakerProfileId(),
+                        enrollmentId,
+                        file.fileId(),
+                        file.uri(),
+                        "zh",
+                        command.createdBy(),
+                        command.traceId()
+                    );
+                } catch (Exception e) {
+                    log.error("Failed to automatically start speaker enrollment task", e);
+                }
+            }
+
             return toDto(rec);
         });
     }
