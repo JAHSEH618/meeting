@@ -172,6 +172,11 @@ public class HttpAiWorkerInternalClient implements AiWorkerInternalClient {
         }
 
         if (status == 200) {
+            // Special exemption: health, ready, and hardware endpoints return unwrapped flat JSON
+            if (fullPath.endsWith("/health") || fullPath.endsWith("/ready") || fullPath.endsWith("/hardware")) {
+                return envelope;
+            }
+
             JsonNode data = envelope.get("data");
             if (data == null || data.isNull()) {
                 throw new AiWorkerContractException(
