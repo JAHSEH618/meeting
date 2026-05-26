@@ -19,6 +19,17 @@ public class JdbcSpeakerProfileRepository implements SpeakerProfileRepository {
 
     @Override
     public SpeakerProfile save(SpeakerProfile profile) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO persons (id, tenant_id, display_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            profile.personId(),
+            profile.tenantId(),
+            (profile.displayNameSnapshot() == null || profile.displayNameSnapshot().isBlank()) ? profile.personId() : profile.displayNameSnapshot()
+        );
+
         int updated = jdbcTemplate.update(
             """
             INSERT INTO speaker_profiles (

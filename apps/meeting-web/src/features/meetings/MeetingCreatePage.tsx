@@ -23,8 +23,8 @@ export function MeetingCreatePage() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((displayName, index) => ({
-          personId: `person_${index + 1}`,
+        .map((displayName) => ({
+          personId: "",
           displayName,
           role: "participant",
         }));
