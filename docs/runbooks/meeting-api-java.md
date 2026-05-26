@@ -1,9 +1,10 @@
 # meeting-api Java 部署运行手册
 
-本文档是 `meeting-api` Java 服务的详细部署手册，覆盖本地验证、单台
-CentOS 服务器 Docker/Compose 部署、K8s 开发/验收部署，以及生产 K8s 部署
-前后的门禁、回滚和排障。脚本入口以 `deploy/meeting-api-java.sh` 为准，
-共享的基础设施、镜像、K8s overlay 和环境变量说明见 `deploy/DEPLOY.md`。
+本文档是 `meeting-api` Java 服务的详细部署手册，覆盖本地验证、CentOS/ECS
+Java 部署、两台机器联调、K8s 开发/验收部署，以及
+生产 K8s 部署前后的门禁、回滚和排障。脚本入口以
+`deploy/meeting-api-java.sh` 为准，共享的基础设施、镜像、K8s overlay 和
+环境变量说明见 `deploy/DEPLOY.md`。
 
 `apps/meeting-api` 是 Spring Boot 3.3 / Java 17 的模块化单体，分为六个
 Maven 模块：
@@ -23,7 +24,7 @@ Maven 模块：
 |------|------------------|----------|------|
 | 本地 Java 冒烟 | 可以 | `./deploy/meeting-api-java.sh compose` | 启动依赖、`meeting-api` 和 fake `ai-worker`。 |
 | 本地验收 | 可以，建议带观测组件 | `./deploy/meeting-api-java.sh compose --with-observability` | Prometheus/Grafana 规则检查需要这个模式。 |
-| 单台 CentOS 服务器 | 可以，直接接阿里云 OSS | 手工启动 PostgreSQL/RabbitMQ，然后用 `STORAGE_TYPE=oss` 启动 Java | 不再部署 MinIO。 |
+| 两机生产演练 | 可以，直接接阿里云 OSS | CentOS/ECS 启动 Java + DB/MQ，独立 worker 连接过来 | 不再部署 MinIO，不把真实 worker 放在 Java 同机。 |
 | K8s dev / acceptance | 可以，先安装工具 | 准备 PostgreSQL/RabbitMQ + OSS Secret 后手工 `kustomize build` / `kubectl apply` | kind/minikube 需要先 build 并 load 镜像。 |
 | 生产 K8s | 不能直接复用 dev 默认值 | ExternalSecrets/Vault + 托管依赖，然后 `./deploy/meeting-api-java.sh k8s prod` | 禁止 dev 密码、localhost、in-memory auth 和 fake worker。 |
 
@@ -33,6 +34,45 @@ Java API 的对象存储统一直接对接阿里云 OSS：`STORAGE_TYPE=oss`，
 生产部署不执行 `k8s-deps prod`；默认推荐托管 PostgreSQL/RabbitMQ、
 阿里云 OSS、prod overlay 和
 ExternalSecrets/Vault/SealedSecrets 注入配置。
+
+## 0.1 标准两机拓扑
+
+生产演练和准生产联调按两台机器拆开，不把 Java API 和真实模型 worker 放在
+同一台机器上：
+
+| 角色 | 推荐机器 | 运行内容 | 关键要求 |
+|------|----------|----------|----------|
+| Java 机器 | CentOS/ECS 或 K8s worker node | `meeting-api`、PostgreSQL/RabbitMQ 连接、Java 写 OSS | `STORAGE_TYPE=oss`，使用阿里云 OSS 写权限 RAM 凭据。 |
+| Worker 机器 | Apple Silicon Mac 用于验收演示；生产为 Linux + NVIDIA GPU | `ai-worker`、真实模型、队列消费、回调 Java | 连接 Java 机器的 RabbitMQ 和 HTTP 地址；生产不能使用 Apple Silicon。 |
+| 云资源 | 阿里云 OSS | 音频、产物、导出文件 bucket | bucket 私有，生产优先内网 endpoint，RAM 权限最小化。 |
+
+两机部署时不能使用 `localhost` 表示对方：
+
+| 配置位置 | 变量 | 标准值 |
+|----------|------|--------|
+| Java 机器 | `AI_WORKER_BASE_URL` | `http://<worker-ip-or-vpn-name>:8090` |
+| Worker 机器 | `AI_WORKER_MEETING_API_BASE_URL` | `http://<java-ip-or-domain>:8080` |
+| Worker 机器 | `AI_WORKER_JAVA_API_BASE_URL` | `http://<java-ip-or-domain>:8080` |
+| Worker 机器 | `AI_WORKER_RABBITMQ_HOST` | `<java-ip-or-vpn-name>` 或托管 MQ 内网地址 |
+| 双方 | `AI_WORKER_CALLBACK_HMAC_SECRET` | 完全一致，用于 worker 回调 Java |
+| 双方 | `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 完全一致，用于 Java 调 worker internal API，且不能等于 callback secret |
+| Java 机器 | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | Java 专用写权限 RAM 凭据 |
+| Worker 机器 | `AI_WORKER_STORAGE_BACKEND` | 真实音频处理时设置为 `oss` |
+| Worker 机器 | `AI_WORKER_OSS_ACCESS_KEY_ID` / `AI_WORKER_OSS_ACCESS_KEY_SECRET` | worker 专用只读 RAM 凭据 |
+
+推荐执行顺序：
+
+1. 先确认 Java 机器、Worker 机器、OSS bucket、RabbitMQ 地址都已经确定。
+2. 在 Java 机器生成两组 HMAC secret，并记录到受控 Secret 管理系统。
+3. 在阿里云创建 Java 写权限 RAM 凭据和 worker 只读 RAM 凭据。
+4. 在 Java 机器启动 PostgreSQL/RabbitMQ，或接入托管 DB/MQ。
+5. 在 Java 机器用 `STORAGE_TYPE=oss` 和 Java 写权限 OSS 凭据启动
+   `meeting-api`。
+6. 在 Worker 机器配置 Java URL、RabbitMQ、相同 HMAC、worker 只读 OSS
+   凭据。
+7. 启动 Worker 机器上的 `ai-worker`。
+8. 依次验证 Java readiness、Worker readiness、双向 HTTP、RabbitMQ 消费、
+   HMAC 和 OSS 上传/读取。
 
 ## 1. 从 0 开始的 CentOS 准备
 
@@ -117,10 +157,14 @@ Java API 不再使用 MinIO，部署前先在阿里云侧准备 OSS。推荐把 
 | `OSS_ACCESS_KEY_ID` | `<ram-ak>` | 专用 RAM 用户或 STS 角色的 AccessKey ID。 |
 | `OSS_ACCESS_KEY_SECRET` | `<ram-sk>` | 专用 RAM 用户或 STS 角色的 AccessKey Secret。 |
 
-不要使用阿里云主账号 AK/SK。建议创建专用 RAM 用户或角色，只授权上述三个
-bucket 的对象级读写删除权限。
+不要使用阿里云主账号 AK/SK。建议至少拆成两套 RAM 凭据：
 
-最小 RAM policy 示例：
+| 凭据 | 使用方 | 权限边界 |
+|------|--------|----------|
+| Java 写权限凭据 | `meeting-api` | 对三个业务 bucket 执行 `PutObject`、`GetObject`、`HeadObject`、`DeleteObject`。 |
+| Worker 只读凭据 | `ai-worker` | 只允许 `GetObject`、`HeadObject`；worker 不能直接写入或删除 OSS 对象。 |
+
+Java 写权限最小 RAM policy 示例：
 
 ```json
 {
@@ -133,6 +177,29 @@ bucket 的对象级读写删除权限。
         "oss:GetObject",
         "oss:HeadObject",
         "oss:DeleteObject"
+      ],
+      "Resource": [
+        "acs:oss:*:*:meeting-audio-auska/*",
+        "acs:oss:*:*:meeting-artifacts/*",
+        "acs:oss:*:*:meeting-exports/*"
+      ]
+    }
+  ]
+}
+```
+
+Worker 只读 RAM policy 示例。真实音频处理时，Apple Silicon worker 或生产
+CUDA worker 需要用它读取 Java 写入的 `oss://...` 音频和引用文件：
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:GetObject",
+        "oss:HeadObject"
       ],
       "Resource": [
         "acs:oss:*:*:meeting-audio-auska/*",
@@ -193,8 +260,8 @@ STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
 STORAGE_BUCKET_EXPORTS=meeting-exports
 OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
 OSS_REGION=cn-hangzhou
-OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
-OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
+OSS_ACCESS_KEY_ID=<java-writer-ram-access-key-id>
+OSS_ACCESS_KEY_SECRET=<java-writer-ram-access-key-secret>
 EOF
 chmod 600 deploy/.meeting-api-oss.env
 ```
@@ -339,8 +406,8 @@ export STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
 export STORAGE_BUCKET_EXPORTS=meeting-exports
 export OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
 export OSS_REGION=cn-hangzhou
-export OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
-export OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
+export OSS_ACCESS_KEY_ID=<java-writer-ram-access-key-id>
+export OSS_ACCESS_KEY_SECRET=<java-writer-ram-access-key-secret>
 
 export AI_WORKER_BASE_URL=http://localhost:8090
 export AI_WORKER_CALLBACK_HMAC_SECRET=change-me-callback-secret-32bytes
@@ -402,26 +469,42 @@ docker buildx create --use 2>/dev/null || true
 | Spring Boot jar | `meeting-api-start` |
 | `/tmp` 和 `/tmp/soffice` 可写目录 | K8s 运行和 LibreOffice 转换需要 |
 
-## 7. 单台 CentOS + 阿里云 OSS 部署
+## 7. 两机部署：CentOS Java + 独立 ai-worker + 阿里云 OSS
 
-单台 CentOS 从 0 跑通时，Java API 只需要本机 PostgreSQL/RabbitMQ 和远端
-阿里云 OSS。不要为 Java API 部署 MinIO。
+本节是生产演练的标准手工路径：Java API 跑在 CentOS/ECS 上，真实模型
+`ai-worker` 跑在另一台机器上，Java 对象存储直接使用阿里云 OSS。不要为
+Java API 部署 MinIO，也不要把 Apple Silicon worker 当成生产 serving。
 
-如果 `ai-worker` 原生跑在 Apple Silicon Mac 上，生产联调按下面顺序做：
+变量约定：
 
-1. CentOS 启动 PostgreSQL 和 RabbitMQ。
-2. CentOS 配置阿里云 OSS、RabbitMQ、HMAC 和
-   `AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090`。
-3. CentOS 启动 `meeting-api`，并先用 `/actuator/health/readiness` 判断 Java
-   是否可以接流量。
-4. Mac 配置 `deploy/.ai-worker-apple-silicon.env.centos`，让 worker 连接
-   CentOS Java 和 CentOS RabbitMQ。
-5. Mac 启动 `ai-worker`。
-6. 在 CentOS 和 Mac 两侧分别做网络、HMAC、OSS 和聚合健康验证。
+| 名称 | 示例 | 含义 |
+|------|------|------|
+| `<java-host>` | `10.0.1.10` 或 `meeting-api.internal` | CentOS/ECS 上 `meeting-api` 对 worker 暴露的地址。 |
+| `<worker-host>` | `10.0.2.20` 或 Tailscale IP | worker 对 CentOS/ECS 暴露的地址。 |
+| `<oss-endpoint>` | `https://oss-cn-hangzhou.aliyuncs.com` | CentOS 不在阿里云内网时使用公网 endpoint。 |
+| `<oss-internal-endpoint>` | `https://oss-cn-hangzhou-internal.aliyuncs.com` | ECS/K8s 与 bucket 同地域同 VPC 时优先使用。 |
+
+逐步执行：
+
+1. 在 CentOS/ECS 上确认 `8080` 只对可信入口、Worker 机器或负载均衡开放。
+2. 在 CentOS/ECS 上确认 RabbitMQ `5672` 只允许 Worker 机器或 VPN 网段访问。
+3. 在 Worker 机器上确认 `8090` 只允许 CentOS/ECS 或内部网段访问。
+4. 在阿里云创建三个私有 bucket，并准备 Java 写权限 RAM 凭据。
+5. 如果 worker 需要处理真实 OSS 音频，再创建 worker 只读 RAM 凭据。
+6. 在 CentOS/ECS 上生成两组 HMAC secret；不要使用脚本默认 demo 值。
+7. CentOS/ECS 配置 `AI_WORKER_BASE_URL=http://<worker-host>:8090`。
+8. Worker 机器配置 `AI_WORKER_MEETING_API_BASE_URL=http://<java-host>:8080`、
+   `AI_WORKER_JAVA_API_BASE_URL=http://<java-host>:8080` 和
+   `AI_WORKER_RABBITMQ_HOST=<java-host>`。
+9. 双方使用完全相同的 `AI_WORKER_CALLBACK_HMAC_SECRET` 和
+   `AI_WORKER_INTERNAL_API_HMAC_SECRET`。
+10. 启动顺序固定为 DB/MQ、Java、worker、双向验证、业务冒烟。
 
 Java 可以先于 Mac worker 启动。此时 `/actuator/health/readiness` 应该作为
 Java 启动门禁；聚合 `/actuator/health` 里的 `aiWorker` 可能暂时是 `DOWN`，
 等 Mac worker 启动并通过 HMAC 后再恢复为 `UP`。
+
+### 7.1 启动 PostgreSQL 和 RabbitMQ
 
 先启动 DB/MQ：
 
@@ -429,36 +512,65 @@ Java 启动门禁；聚合 `/actuator/health` 里的 `aiWorker` 可能暂时是 
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d postgres rabbitmq
 ```
 
+生产不要把单节点 Compose DB/MQ 当成高可用方案；这一步只用于 CentOS 单机
+演练。正式生产应接入托管 PostgreSQL/RabbitMQ 或自管 HA 集群。
+
+### 7.2 构建 Java 镜像
+
 构建镜像：
 
 ```bash
 ./deploy/meeting-api-java.sh image meeting-api:dev
 ```
 
-启动 `meeting-api`，并显式切到 OSS：
+### 7.3 准备 Java 侧 Secret 和 OSS 环境
+
+在 CentOS/ECS 上生成并保存 HMAC。后续把同样的两个值同步给 Worker 机器：
 
 ```bash
-export OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
-export OSS_REGION=cn-hangzhou
-export OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id>
-export OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret>
-export AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-callback-secret>
-export AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-internal-secret>
+export AI_WORKER_CALLBACK_HMAC_SECRET="$(openssl rand -hex 32)"
+export AI_WORKER_INTERNAL_API_HMAC_SECRET="$(openssl rand -hex 32)"
+test "$AI_WORKER_CALLBACK_HMAC_SECRET" != "$AI_WORKER_INTERNAL_API_HMAC_SECRET"
+```
 
-STORAGE_TYPE=oss \
-STORAGE_BUCKET_AUDIO=meeting-audio-auska \
-STORAGE_BUCKET_ARTIFACTS=meeting-artifacts \
-STORAGE_BUCKET_EXPORTS=meeting-exports \
-AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090 \
-  docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
+建议把 Java 侧环境变量保存为仅部署用户可读的文件：
+
+```bash
+cat > deploy/.meeting-api-prod.env <<'EOF'
+STORAGE_TYPE=oss
+STORAGE_BUCKET_AUDIO=meeting-audio-auska
+STORAGE_BUCKET_ARTIFACTS=meeting-artifacts
+STORAGE_BUCKET_EXPORTS=meeting-exports
+OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+OSS_REGION=cn-hangzhou
+OSS_ACCESS_KEY_ID=<java-writer-ram-access-key-id>
+OSS_ACCESS_KEY_SECRET=<java-writer-ram-access-key-secret>
+AI_WORKER_BASE_URL=http://<worker-host>:8090
+AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-worker>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-worker>
+EOF
+chmod 600 deploy/.meeting-api-prod.env
+```
+
+ECS/K8s 与 bucket 在同地域同 VPC 时，把 `OSS_ENDPOINT` 改为内网 endpoint。
+不确定时先用 `curl -I "$OSS_ENDPOINT"` 从 CentOS/ECS 验证。
+
+加载环境变量并启动 `meeting-api`：
+
+```bash
+set -a
+. deploy/.meeting-api-prod.env
+set +a
+
+docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
   --profile full-stack up -d meeting-api
 ```
 
-这里的 `AI_WORKER_BASE_URL` 必须是 CentOS 能访问到的 Mac 地址，不能使用
+这里的 `AI_WORKER_BASE_URL` 必须是 CentOS/ECS 能访问到的 worker 地址，不能使用
 `localhost`、`127.0.0.1` 或 `host.docker.internal`：
 
 ```bash
-AI_WORKER_BASE_URL=http://<apple-mac-lan-ip>:8090
+AI_WORKER_BASE_URL=http://<worker-host>:8090
 ```
 
 建议使用 VPN/Tailscale/WireGuard 地址或固定内网 IP，例如：
@@ -467,19 +579,46 @@ AI_WORKER_BASE_URL=http://<apple-mac-lan-ip>:8090
 AI_WORKER_BASE_URL=http://100.x.y.z:8090
 ```
 
-同时把上面的 `AI_WORKER_CALLBACK_HMAC_SECRET` 和
-`AI_WORKER_INTERNAL_API_HMAC_SECRET` 复制到 Mac 侧
-`deploy/.ai-worker-apple-silicon.env`。两边不一致时，Java 调 worker 或
-worker 回调 Java 都会失败。
+### 7.4 准备 Worker 机器
 
-Mac worker 启动后，CentOS 到 Mac 的连通性必须验证：
+同时把上面的 `AI_WORKER_CALLBACK_HMAC_SECRET` 和
+`AI_WORKER_INTERNAL_API_HMAC_SECRET` 同步到 Worker 机器。两边不一致时，
+Java 调 worker 或 worker 回调 Java 都会失败。
+
+Apple Silicon 验收 worker 的详细步骤见
+`docs/runbooks/ai-worker-apple-silicon.md`。Worker 机器的关键配置应长这样：
 
 ```bash
-curl -fsSL http://<apple-mac-lan-ip>:8090/internal/health
-curl -fsSL http://<apple-mac-lan-ip>:8090/internal/ready
+AI_WORKER_RABBITMQ_HOST=<java-host>
+AI_WORKER_RABBITMQ_PORT=5672
+AI_WORKER_RABBITMQ_USERNAME=meeting
+AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password>
+AI_WORKER_MEETING_API_BASE_URL=http://<java-host>:8080
+AI_WORKER_JAVA_API_BASE_URL=http://<java-host>:8080
+AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-java>
+AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-java>
+
+# 真实音频来自阿里云 OSS 时必须开启。只做健康检查或 HMAC 冒烟时可以先不配。
+AI_WORKER_STORAGE_BACKEND=oss
+AI_WORKER_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+AI_WORKER_OSS_REGION=cn-hangzhou
+AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id>
+AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret>
 ```
 
-如果 ai-worker 也在同机 fake/runtime 容器运行：
+`AI_WORKER_OSS_*` 使用 worker 只读 RAM 凭据，不要复用 Java 写权限 AK/SK。
+如果 worker 与 OSS bucket 位于阿里云同地域同 VPC，endpoint 也应改为内网
+endpoint。
+
+Worker 启动后，CentOS/ECS 到 worker 的连通性必须验证：
+
+```bash
+curl -fsSL http://<worker-host>:8090/internal/health
+curl -fsSL http://<worker-host>:8090/internal/ready
+```
+
+如果 ai-worker 也在同机 fake/runtime 容器运行，只能作为本地开发捷径，不是
+本节推荐的两机路径：
 
 ```bash
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
@@ -551,8 +690,8 @@ kubectl create secret generic meeting-api-secret \
   --from-literal=POSTGRES_PASSWORD=<postgres-password> \
   --from-literal=RABBITMQ_USER=meeting \
   --from-literal=RABBITMQ_PASS=<rabbitmq-password> \
-  --from-literal=OSS_ACCESS_KEY_ID=<aliyun-ram-access-key-id> \
-  --from-literal=OSS_ACCESS_KEY_SECRET=<aliyun-ram-access-key-secret> \
+  --from-literal=OSS_ACCESS_KEY_ID=<java-writer-ram-access-key-id> \
+  --from-literal=OSS_ACCESS_KEY_SECRET=<java-writer-ram-access-key-secret> \
   --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<32-byte-secret> \
   --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<32-byte-secret> \
   --from-literal=DASHSCOPE_API_KEY=<dashscope-key> \
@@ -572,6 +711,29 @@ OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com"
 OSS_REGION: "cn-hangzhou"
 ```
 
+如果 dev/acceptance 的 `ai-worker` 也要消费真实 `oss://...` 音频，`ai-worker`
+侧还必须切到 OSS read-path，并把只读 RAM 凭据放进 `ai-worker-secret`：
+
+```bash
+kubectl create secret generic ai-worker-secret \
+  -n meeting-dev \
+  --from-literal=AI_WORKER_RABBITMQ_PASSWORD=<rabbitmq-password> \
+  --from-literal=AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-java> \
+  --from-literal=AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-java> \
+  --from-literal=AI_WORKER_ADMIN_JWT_SECRET=<admin-jwt-secret> \
+  --from-literal=AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id> \
+  --from-literal=AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret> \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+对应的 `ai-worker-config` 需要包含：
+
+```yaml
+AI_WORKER_STORAGE_BACKEND: "oss"
+AI_WORKER_OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com"
+AI_WORKER_OSS_REGION: "cn-hangzhou"
+```
+
 如果 K8s 集群和 OSS bucket 在同地域同 VPC，优先使用内网 endpoint，例如：
 
 ```yaml
@@ -583,7 +745,7 @@ OSS_ENDPOINT: "https://oss-cn-hangzhou-internal.aliyuncs.com"
 ```bash
 kustomize build infra/meeting-infra/k8s/overlays/dev --enable-helm \
   > deploy/.kustomize-dev.yaml
-rg 'STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION|POSTGRES_HOST|RABBITMQ_HOST' \
+rg 'STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION|AI_WORKER_STORAGE_BACKEND|AI_WORKER_OSS|POSTGRES_HOST|RABBITMQ_HOST' \
   deploy/.kustomize-dev.yaml
 kubectl apply -f deploy/.kustomize-dev.yaml
 ```
@@ -705,8 +867,9 @@ diarization 依赖和模型权重。
 | `AI_WORKER_CALLBACK_HMAC_SECRET` | 与 `meeting-api-secret` 相同 |
 | `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 与 `meeting-api-secret` 相同 |
 | `AI_WORKER_ADMIN_JWT_SECRET` | 非 demo 管理密钥 |
+| `AI_WORKER_OSS_ACCESS_KEY_ID` / `AI_WORKER_OSS_ACCESS_KEY_SECRET` | worker 只读 RAM 凭据，只允许读 OSS 对象 |
 
-OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
+Java 写权限 OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
 
 | 能力 | 用途 |
 |------|------|
@@ -714,7 +877,8 @@ OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
 | `oss:GetObject` / `oss:HeadObject` | 完成上传后确认对象存在和大小、下载预签名 |
 | `oss:DeleteObject` | 删除会议、导出物或清理任务 |
 
-不要使用主账号 AK/SK。生产建议使用专用 RAM 用户或 STS 角色，并限制到
+worker 只读 OSS RAM 策略只允许 `oss:GetObject` / `oss:HeadObject`。不要使用
+主账号 AK/SK。生产建议使用专用 RAM 用户或 STS 角色，并限制到
 `STORAGE_BUCKET_AUDIO`、`STORAGE_BUCKET_ARTIFACTS`、`STORAGE_BUCKET_EXPORTS`
 对应 bucket。
 
@@ -728,6 +892,8 @@ OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
 | `OSS_ENDPOINT` | 阿里云 OSS endpoint，ECS/K8s 同地域优先内网 endpoint |
 | `OSS_REGION` | OSS bucket 所在地域，例如 `cn-hangzhou` |
 | `STORAGE_BUCKET_AUDIO` / `STORAGE_BUCKET_ARTIFACTS` / `STORAGE_BUCKET_EXPORTS` | 已存在的 OSS bucket 名 |
+| `AI_WORKER_STORAGE_BACKEND` | 真实音频处理固定为 `oss` |
+| `AI_WORKER_OSS_ENDPOINT` / `AI_WORKER_OSS_REGION` | 与 Java 侧 OSS endpoint/region 对齐，优先内网 endpoint |
 | Auth mode | 不能是 `in-memory` |
 | `SPRING_FLYWAY_BASELINE_ON_MIGRATE` | `false` |
 
@@ -735,6 +901,9 @@ OSS RAM 策略至少要覆盖目标 bucket 的对象读写生命周期：
 `https://oss-cn-hangzhou-internal.aliyuncs.com` / `cn-hangzhou`。如果 bucket
 不在杭州地域，或集群不能走阿里云内网 endpoint，先修改
 `infra/meeting-infra/k8s/overlays/prod/kustomization.yaml` 后再部署。
+如果生产 `ai-worker` 需要直接读取 OSS 音频，也要在同一个 overlay 或
+ExternalSecret 中补齐 `AI_WORKER_STORAGE_BACKEND=oss`、
+`AI_WORKER_OSS_ENDPOINT`、`AI_WORKER_OSS_REGION` 和 worker 只读 RAM 凭据。
 
 如果生产前演练阶段让 Apple Silicon Mac 承担 ai-worker，而 Java API 在
 CentOS/K8s 上，必须把 `AI_WORKER_BASE_URL` 配成 CentOS/K8s 能访问到的
@@ -784,7 +953,7 @@ kubectl get secret ai-worker-secret -n meeting-prod
 ```bash
 kustomize build infra/meeting-infra/k8s/overlays/prod --enable-helm \
   > deploy/.kustomize-prod.yaml
-rg 'SPRING_PROFILES_ACTIVE|SPRING_FLYWAY_BASELINE_ON_MIGRATE|AI_WORKER_BASE_URL|MEETING_TENANTS_ACTIVE|STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION' \
+rg 'SPRING_PROFILES_ACTIVE|SPRING_FLYWAY_BASELINE_ON_MIGRATE|AI_WORKER_BASE_URL|MEETING_TENANTS_ACTIVE|STORAGE_TYPE|OSS_ENDPOINT|OSS_REGION|AI_WORKER_STORAGE_BACKEND|AI_WORKER_OSS' \
   deploy/.kustomize-prod.yaml
 kubectl diff -f deploy/.kustomize-prod.yaml
 ```
@@ -904,6 +1073,8 @@ kubectl rollout undo deployment/meeting-api -n meeting-prod
 - 目标 namespace 中存在 `meeting-api-secret`。
 - prod profile 相关值都是非 demo 值。
 - 对象存储 endpoint 可以从 pod 内访问。
+- `meeting-api` 使用 Java 写权限 OSS 凭据，`ai-worker` 使用 worker 只读 OSS
+  凭据，二者没有复用同一组 AK/SK。
 - RabbitMQ definitions 已加载。
 - `kubectl rollout status deployment/meeting-api` 已在 staging/acceptance 成功。
 - ai-worker 在线后，聚合 `/actuator/health` 为 `UP`。

@@ -15,14 +15,39 @@ BGE embedding/rerank 使用 MPS，ASR 和说话人分离使用 CPU。脚本入�
 | 快速本地 worker 冒烟 | `./deploy/ai-worker-apple-silicon.sh stage && ./deploy/ai-worker-apple-silicon.sh run` | 使用确定性的 mock 权重，启动快。 |
 | 本地真实模型演示 | `HF_TOKEN=... ./deploy/ai-worker-apple-silicon.sh weights && ./deploy/ai-worker-apple-silicon.sh run` | 需要磁盘、内存、网络和模型 license。 |
 | 本地 Java + Mac 原生 worker 联调 | `meeting-api` 使用 `AI_WORKER_BASE_URL=http://host.docker.internal:8090`，worker 在 Mac 原生运行 | Compose 已支持该覆盖。 |
-| Mac worker 连接 CentOS Java | Mac `.env` 指向 `http://<centos-ip>:8080`，CentOS Java 的 `AI_WORKER_BASE_URL` 指向 `http://<mac-ip>:8090` | 需要双向网络和一致的 HMAC。 |
+| Mac worker 连接 CentOS Java | Mac `.env` 指向 `http://<centos-ip>:8080`，CentOS Java 的 `AI_WORKER_BASE_URL` 指向 `http://<mac-ip>:8090` | 需要双向网络、一致 HMAC；真实音频还需要 worker 只读 OSS 凭据。 |
 | K8s / 生产 | 不使用本文档路径 | 使用 CUDA 镜像、GPU 节点池和生产模型卷。 |
 
 Apple Silicon 路径适合验证集成逻辑、HMAC callback、模型 wiring、
 readiness、checksum guard 和 UI workstation 流程。不适合做生产吞吐、
 延迟或 SLO 评估。
 
-## 0.1 生产边界和交接要求
+## 0.1 标准两机联调拓扑
+
+本文档里的 Apple Silicon worker 默认部署在独立 Mac 上，Java API 默认部署在
+另一台 CentOS/ECS 或 K8s 机器上。两机联调的目标是验证真实模型、队列、HMAC
+和 OSS read-path；生产 serving 仍然要换成 Linux + NVIDIA + CUDA worker。
+
+| 角色 | 机器 | 负责内容 | 不能做的事 |
+|------|------|----------|------------|
+| Java 机器 | CentOS/ECS 或 K8s | `meeting-api`、PostgreSQL/RabbitMQ 连接、阿里云 OSS 写入、签名 URL | 不能用 MinIO 作为生产标准对象存储。 |
+| Worker 机器 | Apple Silicon Mac | `ai-worker` 真实模型、RabbitMQ 消费、回调 Java、从 OSS 读取音频 | 不能承接生产流量或生产 SLO。 |
+| 云资源 | 阿里云 OSS | `meeting-api` 写音频/导出物，worker 用只读凭据读取 `oss://...` | bucket 不能公开读写，不能使用主账号 AK/SK。 |
+
+两机联调必须使用双方都能访问的内网 IP、VPN IP 或域名：
+
+| 方向 | 正确配置 | 禁止值 |
+|------|----------|--------|
+| Java -> Mac worker | Java 侧 `AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090` | `localhost`、`127.0.0.1`、`host.docker.internal` |
+| Mac worker -> Java | Mac 侧 `AI_WORKER_MEETING_API_BASE_URL=http://<centos-ip-or-domain>:8080` | `localhost`，除非 Java 真的也在 Mac 本机 |
+| Mac worker -> RabbitMQ | Mac 侧 `AI_WORKER_RABBITMQ_HOST=<centos-ip-or-vpn-name>` | 对公网开放的 RabbitMQ |
+| Mac worker -> OSS | Mac 侧 `AI_WORKER_STORAGE_BACKEND=oss` + `AI_WORKER_OSS_*` | 复用 Java 写权限 AK/SK |
+
+真实音频处理时，Java 的 OSS 凭据是写权限，worker 的 OSS 凭据是只读权限。
+worker 只需要 `oss:GetObject` / `oss:HeadObject` 来读取 Java 写入的音频和引用
+文件，不应具备 `PutObject` 或 `DeleteObject`。
+
+## 0.2 生产边界和交接要求
 
 本文档可以为生产 readiness 提供验证证据，但不能成为生产 runtime。生产
 ai-worker serving 必须使用 Linux + NVIDIA + CUDA 路径。
@@ -73,6 +98,7 @@ Vault、ExternalSecrets、SealedSecrets 或目标平台的 Secret Manager。
 | 模型 checksum 缺失或不匹配 | 停止，重新 stage 权重并更新期望 checksum。 |
 | 部署账号未接受 pyannote license | 停止，完成 license 审批后再 promote。 |
 | 生产清单引用 Mac `.env` 文件 | 停止，替换为生产 Secret Manager 值。 |
+| worker 使用 Java 写权限 OSS AK/SK | 停止，替换为 worker 只读 RAM 凭据。 |
 | `/internal/hardware` 显示 `cuda.available=false` | 停止，检查调度、驱动、镜像或 torch/CUDA 构建。 |
 
 ## 1. 从 0 到 1 部署步骤
@@ -339,12 +365,13 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 
 如果 `meeting-api` 已经部署在 CentOS 上，而 `ai-worker` 在 Apple Silicon Mac
 上原生运行，两者不在同一台机器，不能使用 `localhost` 或
-`host.docker.internal` 表示对方。必须同时配置三条跨机器链路：
+`host.docker.internal` 表示对方。必须同时配置四条跨机器链路：
 
 | 方向 | 需要能访问 | 用到的配置 |
 |------|------------|------------|
 | Mac ai-worker -> CentOS Java | `http://<centos-ip-or-domain>:8080` | `AI_WORKER_MEETING_API_BASE_URL`、`AI_WORKER_JAVA_API_BASE_URL` |
 | Mac ai-worker -> CentOS RabbitMQ | `<centos-ip-or-vpn-name>:5672` | `AI_WORKER_RABBITMQ_HOST` / `PORT` / `USERNAME` / `PASSWORD` |
+| Mac ai-worker -> 阿里云 OSS | `https://<oss-endpoint>` | `AI_WORKER_STORAGE_BACKEND=oss`、`AI_WORKER_OSS_ENDPOINT` / `REGION` / 只读 AK/SK |
 | CentOS Java -> Mac ai-worker | `http://<apple-mac-ip-or-vpn-name>:8090` | Java 侧 `AI_WORKER_BASE_URL` |
 | 双向 HMAC | 两边完全一致 | `AI_WORKER_CALLBACK_HMAC_SECRET`、`AI_WORKER_INTERNAL_API_HMAC_SECRET` |
 
@@ -354,15 +381,16 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 跨机器部署顺序必须和 Java runbook 保持一致：
 
 1. CentOS 先启动 PostgreSQL 和 RabbitMQ。
-2. CentOS 配置阿里云 OSS、HMAC 和
+2. CentOS 配置阿里云 OSS 写权限凭据、HMAC 和
    `AI_WORKER_BASE_URL=http://<apple-mac-ip-or-vpn-name>:8090`。
 3. CentOS 启动 `meeting-api`，并确认
    `/actuator/health/readiness` 返回 200。
 4. Mac 配置 `deploy/.ai-worker-apple-silicon.env.centos`，让 worker 指向
-   CentOS Java 和 CentOS RabbitMQ。
-5. Mac 启动 `ai-worker`。
-6. 最后验证 Mac -> CentOS Java、Mac -> CentOS RabbitMQ、CentOS Java ->
-   Mac worker、HMAC 和聚合健康。
+   CentOS Java、CentOS RabbitMQ 和阿里云 OSS。
+5. Mac 使用 worker 只读 RAM 凭据开启 OSS read-path。
+6. Mac 启动 `ai-worker`。
+7. 最后验证 Mac -> CentOS Java、Mac -> CentOS RabbitMQ、Mac -> OSS、
+   CentOS Java -> Mac worker、HMAC 和聚合健康。
 
 不要先启动 Mac worker 再补 CentOS 侧依赖。worker 启动后需要连接 Java API
 和 RabbitMQ；如果 CentOS 侧还没准备好，worker 的队列消费、回调或就绪验证
@@ -396,6 +424,13 @@ AI_WORKER_JAVA_API_BASE_URL=http://<centos-ip-or-domain>:8080
 AI_WORKER_CALLBACK_HMAC_SECRET=<same-callback-secret-as-centos-java>
 AI_WORKER_INTERNAL_API_HMAC_SECRET=<same-internal-secret-as-centos-java>
 AI_WORKER_ADMIN_JWT_SECRET=<local-admin-secret>
+
+# 真实音频由 CentOS Java 写入阿里云 OSS 时必须配置。
+AI_WORKER_STORAGE_BACKEND=oss
+AI_WORKER_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+AI_WORKER_OSS_REGION=cn-hangzhou
+AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id>
+AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret>
 ```
 
 如果 CentOS Java 通过 HTTPS 域名暴露，优先写域名：
@@ -421,6 +456,12 @@ VPN/Tailscale/WireGuard，或把 ai-worker 部署到 CentOS/生产 CUDA 路径�
 Mac 侧也要允许 CentOS 访问 `8090`。macOS 防火墙开启时，需要允许当前终端、
 Python/uv 进程或 ai-worker 进程接收入站连接。
 
+`AI_WORKER_OSS_*` 必须使用 worker 只读 RAM 凭据。不要把 Java 侧
+`OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` 复制给 worker；Java 负责写入
+OSS，worker 只负责读取 `oss://...` 音频和引用文件。如果 Mac 不在阿里云内网，
+使用公网 OSS endpoint；只有 worker 也在同地域 VPC 内时才使用 internal
+endpoint。
+
 启动 Mac worker：
 
 ```bash
@@ -440,6 +481,9 @@ curl -fsSL http://<centos-ip-or-domain>:8080/actuator/health/readiness | jq .
 # Mac -> CentOS RabbitMQ
 nc -vz <centos-ip-or-vpn-name> 5672
 
+# Mac -> 阿里云 OSS endpoint，只验证网络和 TLS；403/404 也说明 endpoint 可达
+curl -I https://oss-cn-hangzhou.aliyuncs.com
+
 # CentOS -> Mac ai-worker，在 CentOS 上执行
 curl -fsSL http://<apple-mac-ip-or-vpn-name>:8090/internal/hardware | jq .
 curl -fsSL http://<apple-mac-ip-or-vpn-name>:8090/internal/ready | jq .
@@ -457,6 +501,7 @@ curl -fsSL http://<centos-ip-or-domain>:8080/actuator/health | jq '.components.a
 |------|------|
 | Mac 能访问 Java，但 Java 访问不到 Mac worker | 修 `AI_WORKER_BASE_URL`，确认 Mac 防火墙、VPN、路由和 `8090` 监听。 |
 | worker 能访问 Java，但收不到任务 | 检查 `AI_WORKER_RABBITMQ_HOST`、RabbitMQ 账号、CentOS 防火墙和队列定义。 |
+| worker 任务启动后读不到音频 | 检查 `AI_WORKER_STORAGE_BACKEND=oss`、`AI_WORKER_OSS_ENDPOINT`、只读 RAM 权限和 bucket/key 是否存在。 |
 | HMAC rejected | 确认两边 callback/internal 两个 secret 分别一致，且两个 secret 彼此不同。 |
 | CentOS Java 聚合 health 中 `aiWorker` DOWN | 从 CentOS 直接 curl Mac `/internal/health`、`/internal/ready`，再查 Java `AI_WORKER_BASE_URL`。 |
 | 任一侧配置了 `localhost` | 改成对方机器可访问的 LAN/VPN/IP 或域名；跨机器部署里 `localhost` 永远只代表本机。 |
@@ -632,6 +677,20 @@ mv deploy/.ai-worker-apple-silicon.env deploy/.ai-worker-apple-silicon.env.old
 ```
 
 该文件只用于本地。不要提交，不要复制到生产，不要作为 K8s Secret 来源。
+
+跨机器连接 CentOS Java 且音频对象已经写入阿里云 OSS 时，需要在这个 env
+文件的副本里额外加入：
+
+```bash
+AI_WORKER_STORAGE_BACKEND=oss
+AI_WORKER_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+AI_WORKER_OSS_REGION=cn-hangzhou
+AI_WORKER_OSS_ACCESS_KEY_ID=<worker-readonly-ram-access-key-id>
+AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker-readonly-ram-access-key-secret>
+```
+
+这组 `AI_WORKER_OSS_*` 是 worker 只读凭据，不等同于 Java API 使用的
+`OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` 写权限凭据。
 
 ## 7. 与 meeting-api 联调
 
@@ -812,6 +871,9 @@ uv cache clean
 - `uv sync --extra dev --extra real-models` 完成。
 - 模型目录存在于 `AI_WORKER_MODELS_ROOT` 下。
 - HMAC 值和 meeting-api 一致。
+- 两机联调时没有把 `localhost` / `127.0.0.1` / `host.docker.internal` 写成对方机器地址。
+- 真实 OSS 音频联调时已设置 `AI_WORKER_STORAGE_BACKEND=oss` 和 worker 只读
+  `AI_WORKER_OSS_*` 凭据。
 - `/internal/hardware` 显示 BGE 在 `mps`，ASR/diarization 在 `cpu`。
 - `/internal/ready` 返回 200。
 - 至少一个短 PCM WAV 样本完成冒烟。
