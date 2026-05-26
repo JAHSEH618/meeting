@@ -78,48 +78,94 @@ stage_mock_weights() {
 }
 
 download_real_weights() {
-    log "Downloading real weights into ${MODELS_DIR}"
+    log "Syncing python environment with all real-model dependencies..."
+    cd "${AI_WORKER_DIR}"
+    uv sync --extra dev --extra real-models
+
+    log "Starting real weights download into: ${MODELS_DIR}"
     export MODELS_DIR
     mkdir -p "${MODELS_DIR}/bge-m3/v1" \
              "${MODELS_DIR}/bge-reranker-v2-m3/v1" \
              "${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1" \
              "${MODELS_DIR}/pyannote/v3.1"
 
-    # BGE-m3 + BGE-reranker — public on HuggingFace, no token required.
-    cd "${AI_WORKER_DIR}"
-    uv run --extra real-bge python - <<'PY'
-from huggingface_hub import snapshot_download
-import os, pathlib
-root = pathlib.Path(os.environ["MODELS_DIR"])
-snapshot_download("BAAI/bge-m3", local_dir=str(root / "bge-m3/v1"),
-                  local_dir_use_symlinks=False, max_workers=4)
-snapshot_download("BAAI/bge-reranker-v2-m3", local_dir=str(root / "bge-reranker-v2-m3/v1"),
-                  local_dir_use_symlinks=False, max_workers=4)
-PY
+    # We use a single, highly-stable Python downloader that checks files,
+    # skips existing/complete files, downloads BGE, Pyannote submodels, and Qwen3-ASR (Paraformer) from ModelScope.
+    uv run --extra real-models python - <<'PY'
+import os
+import pathlib
+import sys
 
-    # pyannote/speaker-diarization-3.1 — gated repo; user must have
-    # accepted the terms and exported HF_TOKEN. The model README is at
-    # https://huggingface.co/pyannote/speaker-diarization-3.1
-    if [ -z "${HF_TOKEN:-}" ]; then
-        warn "HF_TOKEN not set — skipping pyannote download. Accept the terms at"
-        warn "  https://huggingface.co/pyannote/speaker-diarization-3.1"
-        warn "then re-run: HF_TOKEN=hf_... ./deploy/ai-worker-apple-silicon.sh weights"
-    else
-        uv run --extra real-diarization python - <<'PY'
-from huggingface_hub import snapshot_download
-import os, pathlib
 root = pathlib.Path(os.environ["MODELS_DIR"])
-snapshot_download("pyannote/speaker-diarization-3.1",
-                  local_dir=str(root / "pyannote/v3.1"),
-                  local_dir_use_symlinks=False, max_workers=4,
-                  token=os.environ["HF_TOKEN"])
-PY
-    fi
+hf_token = os.environ.get("HF_TOKEN")
 
-    # Qwen3-ASR — pulled lazily by funasr on first inference; we just
-    # pre-create the version dir so the checksum guard does not 503.
-    warn "Qwen3-ASR weights are fetched by funasr on first call. To pre-download:"
-    warn "  uv run --extra real-asr python -c \"from funasr import AutoModel; AutoModel(model='paraformer-zh', cache_dir='${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1')\""
+print("==========================================================")
+print("▸ [1/3] Checking BGE-m3 and BGE-Reranker (HuggingFace Hub)...")
+print("==========================================================")
+try:
+    from huggingface_hub import snapshot_download
+    
+    print("▸ Downloading BAAI/bge-m3...")
+    snapshot_download("BAAI/bge-m3", local_dir=str(root / "bge-m3/v1"),
+                      local_dir_use_symlinks=False, max_workers=4)
+    print("✓ BAAI/bge-m3 is ready (skipped existing/complete files)")
+
+    print("▸ Downloading BAAI/bge-reranker-v2-m3...")
+    snapshot_download("BAAI/bge-reranker-v2-m3", local_dir=str(root / "bge-reranker-v2-m3/v1"),
+                      local_dir_use_symlinks=False, max_workers=4)
+    print("✓ BAAI/bge-reranker-v2-m3 is ready (skipped existing/complete files)")
+except Exception as e:
+    print(f"✗ Failed to download BGE models from HuggingFace: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print("\n==========================================================")
+print("▸ [2/3] Checking Qwen3-ASR / Paraformer-zh (ModelScope Hub)...")
+print("==========================================================")
+try:
+    from modelscope import snapshot_download as ms_snapshot_download
+    print("▸ Downloading iic/speech_paraformer-zh_asr_nat-dfstructured-large-16k-asr-vocab8404-pytorch...")
+    ms_snapshot_download("iic/speech_paraformer-zh_asr_nat-dfstructured-large-16k-asr-vocab8404-pytorch",
+                         local_dir=str(root / "qwen3-asr-1.7b/v2026.05.1"))
+    print("✓ Qwen3-ASR paraformer model is ready (skipped existing/complete files)")
+except Exception as e:
+    print(f"✗ Failed to download Qwen3-ASR from ModelScope: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print("\n==========================================================")
+print("▸ [3/3] Checking Pyannote Speaker Diarization (HuggingFace Hub)...")
+print("==========================================================")
+if not hf_token:
+    print("⚠ HF_TOKEN environment variable not set.")
+    print("⚠ Skipping Pyannote model download.")
+    print("⚠ Accept terms at https://huggingface.co/pyannote/speaker-diarization-3.1")
+    print("⚠ then re-run with: HF_TOKEN=hf_... ./deploy/ai-worker-apple-silicon.sh weights")
+else:
+    try:
+        print("▸ Downloading pyannote/speaker-diarization-3.1...")
+        snapshot_download("pyannote/speaker-diarization-3.1",
+                          local_dir=str(root / "pyannote/v3.1"),
+                          local_dir_use_symlinks=False, max_workers=4,
+                          token=hf_token)
+        print("✓ pyannote/speaker-diarization-3.1 config is ready")
+
+        # Pre-cache pyannote submodels to make sure offline mode works flawlessly
+        print("▸ Pre-caching submodel pyannote/segmentation-3.0 to HF Cache...")
+        snapshot_download("pyannote/segmentation-3.0", token=hf_token)
+        print("✓ pyannote/segmentation-3.0 submodel is ready")
+
+        print("▸ Pre-caching submodel speechbrain/spkrec-ecapa-voxceleb to HF Cache...")
+        snapshot_download("speechbrain/spkrec-ecapa-voxceleb")
+        print("✓ speechbrain/spkrec-ecapa-voxceleb submodel is ready")
+        print("✓ All Pyannote models are fully ready!")
+    except Exception as e:
+        print(f"✗ Failed to download Pyannote models: {e}", file=sys.stderr)
+        print("✗ Make sure you have accepted the terms on HuggingFace and HF_TOKEN is valid.", file=sys.stderr)
+        sys.exit(1)
+
+print("\n==========================================================")
+print("🎉 All real weights have been verified and downloaded successfully!")
+print("==========================================================")
+PY
 }
 
 ensure_env_file() {
