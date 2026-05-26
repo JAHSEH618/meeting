@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,6 +35,7 @@ public class SpeakerProfileDeletionExecutor implements DeletionExecutorPort {
     private final KmsKeyDestroyerPort kmsDestroyer;
     private final Clock clock;
 
+    @Autowired
     public SpeakerProfileDeletionExecutor(
         SpeakerProfileRepository profileRepository,
         SpeakerEmbeddingRepository embeddingRepository,
