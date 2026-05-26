@@ -35,11 +35,11 @@ graph TD
     end
 
     %% Flow lines
-    java -->|1. 写入音频/导出物| oss
-    java -->|2. 发送 AI 任务/HMAC| mq
-    worker -->|3. 监听队列/拉取任务| mq
-    worker -->|4. 只读凭据拉取音频| oss
-    worker -->|5. 推理完毕回调/HMAC| java
+    java -->|"1、写入音频/导出物"| oss
+    java -->|"2、发送 AI 任务/HMAC"| mq
+    worker -->|"3、监听队列/拉取任务"| mq
+    worker -->|"4、只读凭据拉取音频"| oss
+    worker -->|"5、推理完毕回调/HMAC"| java
 
     style java fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
     style worker fill:#efebe9,stroke:#5d4037,stroke-width:2px
