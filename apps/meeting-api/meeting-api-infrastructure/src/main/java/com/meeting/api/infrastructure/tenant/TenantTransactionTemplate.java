@@ -19,10 +19,25 @@ public class TenantTransactionTemplate implements TenantScopedTransaction {
     public <T> T execute(String tenantId, String userId, String requestId, Supplier<T> callback) {
         return transactionTemplate.execute(status -> {
             tenantSessionContext.set(tenantId, userId, requestId);
+            Throwable primaryException = null;
             try {
                 return callback.get();
+            } catch (Throwable t) {
+                primaryException = t;
+                throw t;
             } finally {
-                tenantSessionContext.reset();
+                try {
+                    tenantSessionContext.reset();
+                } catch (Throwable resetEx) {
+                    if (primaryException != null) {
+                        primaryException.addSuppressed(resetEx);
+                    } else {
+                        if (resetEx instanceof RuntimeException) {
+                            throw (RuntimeException) resetEx;
+                        }
+                        throw new RuntimeException(resetEx);
+                    }
+                }
             }
         });
     }
