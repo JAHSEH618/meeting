@@ -14,14 +14,12 @@ import type { AudioUploadSession } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import { sha256Hex } from "@shared/utils/sha256-stream";
 import { initialUploadState, uploadReducer, type UploadPartState } from "./upload-reducer";
+import { AudioUploadSummary } from "./AudioUploadSummary";
+import { AudioPartList } from "./AudioPartList";
 
 const DEFAULT_CONCURRENCY = 3;
 const MAX_PART_RETRIES = 3;
 const SESSION_STORAGE_PREFIX = "meeting.audioUpload.";
-// Single-PUT mode cap — the server-side `MAX_SINGLE_PUT_BYTES` in
-// `AudioUploadApplicationService` is Integer.MAX_VALUE (≈ 2 GiB). Reject
-// here so the user gets a clear local error before we spend minutes
-// hashing a file that the API would refuse anyway.
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 export function AudioUploadPage() {
@@ -58,7 +56,7 @@ export function AudioUploadPage() {
             const task = await getLatestMeetingTask(meetingId);
             if (!cancelled) navigate(`/meetings/${meetingId}/tasks/${task.taskId}`, { replace: true });
           } catch {
-            // remain on this page; user can navigate manually
+            /* remain on this page; user can navigate manually */
           }
           return;
         }
@@ -204,25 +202,26 @@ export function AudioUploadPage() {
 
   return (
     <main className="page">
-      <div className="page-header">
+      <header className="page-header">
         <div>
           <h1 className="page-title">音频上传</h1>
-          <p className="muted">{meetingId}</p>
+          <p className="page-subtitle"><span translate="no">{meetingId}</span></p>
         </div>
-        <div className="toolbar">
+        <div className="page-actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/transcript`}>转录</Link>
         </div>
-      </div>
+      </header>
 
       {state.errorCode ? <div className="error" role="alert">{getUserMessage(state.errorCode)}</div> : null}
       {message ? <div className="error" role="alert">{message}</div> : null}
 
       <section className="card stack">
         <div className="field">
-          <label htmlFor="audio-file">音频文件</label>
+          <label className="field__label" htmlFor="audio-file">音频文件</label>
           <input
             id="audio-file"
+            name="audioFile"
             type="file"
             accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg"
             onChange={(event) => {
@@ -234,18 +233,17 @@ export function AudioUploadPage() {
           />
         </div>
 
-        {file ? (
-          <div className="upload-summary">
-            <div><span className="muted">文件名</span><strong>{file.name}</strong></div>
-            <div><span className="muted">大小</span><strong>{formatBytes(file.size)}</strong></div>
-            <div><span className="muted">类型</span><strong>{file.type || "application/octet-stream"}</strong></div>
-          </div>
-        ) : null}
+        <AudioUploadSummary
+          file={file}
+          session={state.session}
+          status={state.status}
+        />
 
         <div className="field" style={{ maxWidth: 240 }}>
-          <label htmlFor="upload-concurrency">并发数</label>
+          <label className="field__label" htmlFor="upload-concurrency">并发数</label>
           <input
             id="upload-concurrency"
+            name="concurrency"
             type="number"
             min={1}
             max={5}
@@ -255,35 +253,43 @@ export function AudioUploadPage() {
         </div>
 
         <div className="toolbar">
-          <button className="primary" type="button" disabled={!file || isBusy(state.status) || hasActiveSession(state)} onClick={startUpload}>
+          <button
+            className="button button--primary"
+            type="button"
+            disabled={!file || isBusy(state.status) || hasActiveSession(state)}
+            onClick={startUpload}
+          >
             {buttonText(state.status)}
           </button>
-          <button type="button" disabled={!state.session || state.status === "completed"} onClick={abort}>取消上传</button>
-          <button type="button" disabled={!state.session || !file || isBusy(state.status)} onClick={resume}>继续上传</button>
+          <button
+            type="button"
+            className="button"
+            disabled={!state.session || state.status === "completed"}
+            onClick={abort}
+          >
+            取消上传
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!state.session || !file || isBusy(state.status)}
+            onClick={resume}
+          >
+            继续上传
+          </button>
         </div>
       </section>
 
       <section className="card stack">
         <div className="toolbar">
           <strong>上传状态</strong>
-          <span className="badge">{state.status}</span>
-          {state.session ? <span className="muted">{state.session.uploadId}</span> : null}
-          {state.session ? <span className="muted">过期时间 {formatTime(state.session.expiresAt)}</span> : null}
+          <span className="pill pill--info">{state.status}</span>
         </div>
-        <div className="progress-bar"><span style={{ width: `${state.progress}%` }} /></div>
-        <p className="muted">{completedCount} / {state.parts.length} parts</p>
-        {state.parts.length > 0 ? (
-          <div className="part-grid">
-            {state.parts.map((part) => (
-              <div className="part-tile" key={part.partNumber}>
-                <strong>#{part.partNumber}</strong>
-                <span className="badge">{part.status}</span>
-                <span className="muted">{formatBytes(part.sizeBytes)}</span>
-                <span className="muted">retry {part.attempts}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div className="progress" aria-label="upload-progress">
+          <span style={{ display: "block", height: "100%", width: `${state.progress}%`, background: "var(--accent)" }} />
+        </div>
+        <p className="page-subtitle">{completedCount} / {state.parts.length} parts</p>
+        <AudioPartList parts={state.parts} />
       </section>
     </main>
   );
@@ -295,9 +301,6 @@ async function buildParts(
   fileSha256: string,
 ): Promise<UploadPartState[]> {
   const count = Math.ceil(file.size / partSizeBytes);
-  // Single-PUT mode: when the server has coerced partSize >= fileSize the
-  // only part is the full file, so reuse the already-computed fileSha256
-  // instead of streaming the file a second time.
   if (count === 1) {
     return [
       {
@@ -358,14 +361,8 @@ function validateFile(file: File) {
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-}
-
 function formatTime(value: string): string {
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString("zh-CN");
 }
 
 function isBusy(status: string): boolean {
@@ -373,9 +370,9 @@ function isBusy(status: string): boolean {
 }
 
 function buttonText(status: string): string {
-  if (status === "preparing") return "准备中";
-  if (status === "uploading") return "上传中";
-  if (status === "completing") return "完成中";
+  if (status === "preparing") return "准备中…";
+  if (status === "uploading") return "上传中…";
+  if (status === "completing") return "完成中…";
   if (status === "completed") return "已完成";
   return "开始上传";
 }

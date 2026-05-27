@@ -53,6 +53,17 @@ class _StubJavaClient(JavaPublicClient):
         return self._respond(method, path)
 
     def _respond(self, method: str, path: str) -> httpx.Response:
+        if path == "/api/meetings" and method == "GET":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": [
+                    {"meetingId": "m_01", "title": "测试会议",
+                     "securityLevel": "INTERNAL", "status": "READY",
+                     "language": "zh", "createdAt": "2026-05-27T10:00:00Z"},
+                ],
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
         if path.startswith("/api/meetings/") and path.endswith("/processing-tasks/latest"):
             return httpx.Response(200, json={
                 "success": True,
@@ -151,3 +162,22 @@ async def test_attach_document_passthrough(app: FastAPI, auth_headers: dict[str,
     stub: _StubJavaClient = app.state.java_stub
     attach = next(c for c in stub.received if c["path"] == "/api/meetings/m_01/documents")
     assert attach["body"] == {"documentId": "doc_01", "role": "REFERENCE"}
+
+
+@pytest.mark.asyncio
+async def test_list_meetings_proxies_java_public_api(app: FastAPI, auth_headers: dict[str, str]):
+    """Iceberg refactor — landing page wires through to /api/meetings."""
+    async with _client(app) as client:
+        response = await client.get("/admin/meetings", headers={
+            "Authorization": auth_headers["Authorization"],
+            "X-Request-Id": auth_headers["X-Request-Id"],
+            "X-Trace-Id": auth_headers["X-Trace-Id"],
+        })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert isinstance(body["data"], list)
+    assert body["data"][0]["meetingId"] == "m_01"
+    stub: _StubJavaClient = app.state.java_stub
+    list_call = next(c for c in stub.received if c["method"] == "GET" and c["path"] == "/api/meetings")
+    assert list_call["tenant"] == "tenant_01"

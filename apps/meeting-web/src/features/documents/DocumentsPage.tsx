@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  createDocument,
-  deleteDocument,
-  listDocuments,
-  reindexDocument,
-  type ApiClientError,
-} from "@shared/api/client";
-import type { Document, SecurityLevel } from "@shared/api/types";
+  useDocumentsQuery,
+  useCreateDocument,
+  useDeleteDocument,
+  useReindexDocument,
+} from "./queries";
+import type { ApiClientError } from "@shared/api/client";
+import type { SecurityLevel } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { formatDate } from "@shared/utils/formatters";
 
 const SECURITY_LEVELS: SecurityLevel[] = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"];
 
@@ -18,11 +19,24 @@ const DOCUMENT_TYPES = ["PDF", "DOCX", "MARKDOWN", "TXT"] as const;
 type DocumentType = (typeof DOCUMENT_TYPES)[number];
 const DEFAULT_DOCUMENT_TYPE: DocumentType = "PDF";
 
+const INDEX_TONE: Record<string, string> = {
+  ACTIVE: "pill--success",
+  PENDING: "pill--info",
+  INDEXING: "pill--info",
+  STALE: "pill--warn",
+  FAILED: "pill--danger",
+};
+
 export function DocumentsPage() {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const { data, isPending } = useDocumentsQuery();
+  const create = useCreateDocument();
+  const remove = useDeleteDocument();
+  const reindex = useReindexDocument();
+
+  const documents = useMemo(() => {
+    const items = data?.items ?? [];
+    return [...items].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [data]);
 
   const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
@@ -30,28 +44,14 @@ export function DocumentsPage() {
   const [documentType, setDocumentType] = useState<DocumentType>(DEFAULT_DOCUMENT_TYPE);
   const [securityLevel, setSecurityLevel] = useState<SecurityLevel>("INTERNAL");
   const [contentHash, setContentHash] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await listDocuments();
-      // Sort newest first so freshly registered docs surface at the top.
-      const sorted = [...resp.items].sort(
-        (a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
-      );
-      setDocuments(sorted);
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "加载文档列表失败");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const apiErr = (create.error ?? remove.error ?? reindex.error) as ApiClientError | null;
+  const apiErrMsg = apiErr
+    ? (apiErr.code ? getUserMessage(apiErr.code) : "操作失败")
+    : null;
+  const displayError = formError ?? apiErrMsg;
 
   const resetCreateForm = () => {
     setTitle("");
@@ -63,12 +63,12 @@ export function DocumentsPage() {
 
   const handleCreate = async () => {
     if (!title.trim() || !fileId.trim()) {
-      setError("请填写文档标题和 fileId");
+      setFormError("请填写文档标题和 fileId");
       return;
     }
-    setError(null);
+    setFormError(null);
     try {
-      await createDocument({
+      await create.mutateAsync({
         title: title.trim(),
         fileId: fileId.trim(),
         documentType,
@@ -77,24 +77,16 @@ export function DocumentsPage() {
       });
       setShowCreate(false);
       resetCreateForm();
-      await reload();
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "登记文档失败");
+    } catch {
+      /* surfaces via apiErrMsg */
     }
   };
 
-  const handleDelete = async (documentId: string, title: string) => {
-    if (!window.confirm(`确认删除文档「${title}」？关联的知识块也会被清理。`)) {
-      return;
-    }
+  const handleDelete = async (documentId: string, docTitle: string) => {
+    if (!window.confirm(`确认删除文档「${docTitle}」？关联的知识块也会被清理。`)) return;
     setPendingId(documentId);
     try {
-      await deleteDocument(documentId);
-      await reload();
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "删除失败");
+      await remove.mutateAsync(documentId);
     } finally {
       setPendingId(null);
     }
@@ -102,13 +94,8 @@ export function DocumentsPage() {
 
   const handleReindex = async (documentId: string) => {
     setPendingId(documentId);
-    setError(null);
     try {
-      await reindexDocument(documentId);
-      await reload();
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "重新索引失败");
+      await reindex.mutateAsync(documentId);
     } finally {
       setPendingId(null);
     }
@@ -116,90 +103,102 @@ export function DocumentsPage() {
 
   return (
     <div className="page">
-      <div className="page-header">
+      <header className="page-header">
         <div>
           <h1 className="page-title">知识库文档</h1>
-          <p className="muted">用于 RAG 检索的文档元数据登记 + 索引重建。</p>
+          <p className="page-subtitle">用于问答检索的文档元数据登记与索引重建。</p>
         </div>
-        <div className="toolbar">
+        <div className="page-actions">
           <button
             type="button"
-            className="button primary"
+            className="button button--primary"
             onClick={() => setShowCreate((v) => !v)}
             aria-expanded={showCreate}
           >
             {showCreate ? "收起表单" : "登记文档"}
           </button>
         </div>
-      </div>
+      </header>
 
-      {error ? (
-        <div className="error" role="alert">
-          {error}
-        </div>
+      {displayError ? (
+        <div className="error" role="alert">{displayError}</div>
       ) : null}
 
       {showCreate ? (
         <div className="card stack" aria-label="登记文档表单">
-          <p className="muted">{FILE_ID_HINT}</p>
-          <label className="stack">
-            <span>标题</span>
+          <p className="page-subtitle">{FILE_ID_HINT}</p>
+          <div className="field">
+            <label className="field__label" htmlFor="doc-title">标题</label>
             <input
+              id="doc-title"
+              name="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例：2026 Q2 路线图"
+              autoComplete="off"
             />
-          </label>
-          <label className="stack">
-            <span>fileId</span>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="doc-file-id">fileId</label>
             <input
+              id="doc-file-id"
+              name="fileId"
               value={fileId}
               onChange={(e) => setFileId(e.target.value)}
               placeholder="例：file_doc_abc"
+              autoComplete="off"
             />
-          </label>
-          <label className="stack">
-            <span>类型</span>
-            <select value={documentType} onChange={(e) => setDocumentType(e.target.value as DocumentType)}>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="doc-type">类型</label>
+            <select
+              id="doc-type"
+              name="documentType"
+              value={documentType}
+              onChange={(e) => setDocumentType(e.target.value as DocumentType)}
+            >
               {DOCUMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+                <option key={t} value={t}>{t}</option>
               ))}
             </select>
-          </label>
-          <label className="stack">
-            <span>密级</span>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="doc-security">密级</label>
             <select
+              id="doc-security"
+              name="securityLevel"
               value={securityLevel}
               onChange={(e) => setSecurityLevel(e.target.value as SecurityLevel)}
             >
               {SECURITY_LEVELS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
-          </label>
-          <label className="stack">
-            <span>SHA-256（可选）</span>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="doc-hash">SHA-256（可选）</label>
             <input
+              id="doc-hash"
+              name="contentHash"
               value={contentHash}
               onChange={(e) => setContentHash(e.target.value)}
               placeholder="留空表示尚未计算"
+              autoComplete="off"
             />
-          </label>
+          </div>
           <div className="toolbar">
-            <button type="button" className="button primary" onClick={() => void handleCreate()}>
-              提交
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => void handleCreate()}
+              disabled={create.isPending}
+            >
+              {create.isPending ? "提交中…" : "提交"}
             </button>
             <button
               type="button"
-              className="button"
-              onClick={() => {
-                setShowCreate(false);
-                resetCreateForm();
-              }}
+              className="button button--ghost"
+              onClick={() => { setShowCreate(false); resetCreateForm(); setFormError(null); }}
             >
               取消
             </button>
@@ -207,44 +206,46 @@ export function DocumentsPage() {
         </div>
       ) : null}
 
-      {loading ? <p className="muted">加载中</p> : null}
-
-      {!loading && documents.length === 0 ? (
-        <p className="muted">还没有任何文档。点击右上角“登记文档”开始。</p>
+      {isPending ? <p className="page-subtitle" aria-live="polite">加载中…</p> : null}
+      {!isPending && documents.length === 0 ? (
+        <div className="empty-state">
+          <strong>还没有任何文档</strong>
+          <span>点击右上「登记文档」开始。</span>
+        </div>
       ) : null}
 
       <div className="stack">
         {documents.map((doc) => (
-          <article key={doc.documentId} className="card stack" aria-label={`document-${doc.documentId}`}>
+          <article
+            key={doc.documentId}
+            className="card stack"
+            aria-label={`document-${doc.documentId}`}
+          >
             <div className="toolbar">
               <strong>{doc.title}</strong>
-              <span className="badge">{doc.documentType}</span>
-              <span className="badge">{doc.securityLevel}</span>
-              <span className="badge">{doc.status}</span>
-              <span className="muted">索引: {doc.textExtractionStatus}</span>
+              <span className="pill pill--neutral">{doc.documentType}</span>
+              <span className="pill pill--info">{doc.securityLevel}</span>
+              <span className={`pill ${INDEX_TONE[doc.status] ?? "pill--neutral"}`}>
+                {doc.status}
+              </span>
+              <span className="page-subtitle">索引: {doc.textExtractionStatus}</span>
             </div>
             <dl className="grid">
               <div>
-                <dt className="muted">documentId</dt>
-                <dd>
-                  <code>{doc.documentId}</code>
-                </dd>
+                <dt className="page-subtitle">documentId</dt>
+                <dd><code translate="no">{doc.documentId}</code></dd>
               </div>
               <div>
-                <dt className="muted">fileId</dt>
-                <dd>
-                  <code>{doc.fileId}</code>
-                </dd>
+                <dt className="page-subtitle">fileId</dt>
+                <dd><code translate="no">{doc.fileId}</code></dd>
               </div>
               <div>
-                <dt className="muted">contentHash</dt>
-                <dd>
-                  <code>{doc.contentHash ?? "（未计算）"}</code>
-                </dd>
+                <dt className="page-subtitle">contentHash</dt>
+                <dd><code translate="no">{doc.contentHash ?? "（未计算）"}</code></dd>
               </div>
               <div>
-                <dt className="muted">创建时间</dt>
-                <dd>{doc.createdAt}</dd>
+                <dt className="page-subtitle">创建时间</dt>
+                <dd>{formatDate(doc.createdAt)}</dd>
               </div>
             </dl>
             <div className="toolbar">

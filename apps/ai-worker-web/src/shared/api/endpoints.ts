@@ -52,6 +52,9 @@ export const createMeeting = (body: {
   participants: Array<{ personId: string; displayName: string; role: string }>;
 }) => apiCall<MeetingSummaryDTO>(`${API}/meetings`, { method: "POST", body });
 
+export const listAdminMeetings = () =>
+  apiCall<MeetingSummaryDTO[]>(`${API}/meetings`);
+
 export const getMeetingAggregate = (meetingId: string) =>
   apiCall<MeetingAggregateDTO>(`${API}/meetings/${encodeURIComponent(meetingId)}`);
 

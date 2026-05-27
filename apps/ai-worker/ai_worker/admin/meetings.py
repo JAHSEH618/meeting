@@ -62,6 +62,25 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
 
     # ── meeting lifecycle ───────────────────────────────────────────────
+    @router.get("/meetings", status_code=200)
+    async def list_meetings(
+        claims: AdminClaims = Depends(admin_claims_dependency),
+        x_request_id: str | None = Header(None, alias="X-Request-Id"),
+        x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
+    ):
+        """List meetings visible to the operator.
+
+        Proxies ``GET /api/meetings`` so the landing page on the workstation
+        can render a real list instead of the "waiting for admin BFF" stub.
+        Tenant + RLS scoping happens server-side via the JWT-derived
+        ``TenantContext``; nothing to filter here.
+        """
+        response = await java_client.request(
+            "GET", "/api/meetings",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+        )
+        return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
+
     @router.post("/meetings", status_code=200)
     async def create_meeting(
         request: Request,
