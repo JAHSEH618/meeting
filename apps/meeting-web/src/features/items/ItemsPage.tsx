@@ -191,14 +191,19 @@ interface ItemCardProps {
 }
 
 function ItemCard({ id, title, description, evidence, acceptanceStatus, staleStatus, badges, kind, pending, onAccept, onReject }: ItemCardProps) {
+  const tone =
+    acceptanceStatus === "ACCEPTED" ? "pill--success"
+    : acceptanceStatus === "REJECTED" ? "pill--danger"
+    : acceptanceStatus === "NEEDS_REVIEW" ? "pill--warn"
+    : "pill--info";
   return (
-    <article className="card stack" data-item-id={id}>
+    <article className="card stack item-card" data-item-id={id} data-status={acceptanceStatus}>
       <div className="toolbar">
         <strong>{title}</strong>
-        <span className="badge" data-acceptance={acceptanceStatus}>{acceptanceLabel(acceptanceStatus)}</span>
-        {staleStatus && staleStatus !== "ACTIVE" ? <span className="badge">{staleStatus}</span> : null}
+        <span className={`pill ${tone}`} data-acceptance={acceptanceStatus}>{acceptanceLabel(acceptanceStatus)}</span>
+        {staleStatus && staleStatus !== "ACTIVE" ? <span className="pill pill--warn">{staleStatus}</span> : null}
         {badges.filter(Boolean).map((label) => (
-          <span key={label} className="muted">{label}</span>
+          <span key={label} className="page-subtitle">{label}</span>
         ))}
       </div>
       {description ? <p>{description}</p> : null}

@@ -587,3 +587,8 @@
   gap: var(--space-3);
   max-width: 560px;
 }
+
+.item-card[data-status="DRAFT"] { border-left: 3px solid var(--accent); }
+.item-card[data-status="ACCEPTED"] { border-left: 3px solid var(--success); }
+.item-card[data-status="REJECTED"] { border-left: 3px solid var(--danger); opacity: 0.75; }
+.item-card[data-status="NEEDS_REVIEW"] { border-left: 3px solid var(--warn); }

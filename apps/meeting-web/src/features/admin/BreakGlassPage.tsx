@@ -120,7 +120,7 @@ export function BreakGlassPage() {
     <main className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">紧急访问（Break-Glass）</h1>
+          <h1 className="page-title">应急访问</h1>
           <p className="muted">
             申请、审批和拒绝对 CONFIDENTIAL / SECRET 资源的临时访问。审批默认 4 小时窗口；过期后自动失效。
             申请人不能审批自己的申请。
