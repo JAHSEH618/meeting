@@ -16,16 +16,19 @@
     "codegen": "openapi-typescript ../../packages/meeting-contracts/openapi/public-api.yaml -o src/shared/api/types.gen.ts"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.100.14",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "react-router-dom": "^6.26.0",
     "rehype-sanitize": "^6.0.0",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
+    "@tanstack/react-query-devtools": "^5.100.14",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.0",
     "@types/js-yaml": "^4.0.9",

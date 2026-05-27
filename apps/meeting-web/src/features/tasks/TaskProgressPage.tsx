@@ -1,191 +1,177 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { cancelTask, getTask, retryTask, subscribeTaskEvents } from "@shared/api/client";
-import type { ApiClientError, TaskEventSubscription } from "@shared/api/client";
-import type { ProcessingTask, ProcessingTaskStatus } from "@shared/api/types";
-import { createInitialSnapshot, sseReducer, type TaskSnapshot } from "@shared/utils/sse-reducer";
+import { useTaskEventsStream } from "@shared/queries/useTaskEventsStream";
+import { useRetryTask, useCancelTask } from "./queries";
+import { PhaseStrip } from "@shared/components/PhaseStrip";
+import { SourceLabel } from "@shared/components/SourceLabel";
 import { getUserMessage } from "@shared/utils/error-mapper";
 
-const TERMINAL_STATUSES: ProcessingTaskStatus[] = [
-  "SUCCEEDED",
-  "PARTIAL_SUCCEEDED",
-  "FAILED",
-  "CANCELLED",
-];
+const STATUS_LABEL: Record<string, string> = {
+  PENDING: "等待中",
+  QUEUED: "已排队",
+  RUNNING: "进行中",
+  SUCCEEDED: "已完成",
+  PARTIAL_SUCCEEDED: "部分完成",
+  FAILED: "失败",
+  CANCELLED: "已取消",
+  ORPHANED: "已回收",
+  CANCEL_PENDING: "取消中",
+};
 
-const POLL_INTERVAL_MS = 3000;
+const STATUS_DOT: Record<string, string> = {
+  PENDING: "dot",
+  QUEUED: "dot dot--info",
+  RUNNING: "dot dot--info",
+  SUCCEEDED: "dot dot--success",
+  PARTIAL_SUCCEEDED: "dot dot--warn",
+  FAILED: "dot dot--danger",
+  CANCELLED: "dot",
+  ORPHANED: "dot dot--danger",
+  CANCEL_PENDING: "dot dot--warn",
+};
 
-function snapshotFromTask(task: ProcessingTask): TaskSnapshot {
-  return {
-    ...createInitialSnapshot(),
-    taskId: task.taskId,
-    meetingId: task.meetingId ?? "",
-    status: task.status,
-    phase: task.phase,
-    attemptNo: task.attemptNo,
-    currentStep: task.currentStep ?? null,
-    lastErrorCode: task.lastErrorCode ?? null,
-    retryable: task.retryable ?? false,
-    steps: task.steps,
-    completedSteps: task.steps.filter((step) => step.status === "SUCCEEDED").map((step) => step.stepName),
-    leaseExpiresAt: "leaseExpiresAt" in task ? String(task.leaseExpiresAt ?? "") : undefined,
-  };
-}
-
-function isTerminal(status: ProcessingTaskStatus | string | null): boolean {
-  if (status === null) return false;
-  return TERMINAL_STATUSES.some((terminal) => terminal === status);
-}
+const STEP_STATUS_PILL: Record<string, string> = {
+  PENDING: "pill--neutral",
+  QUEUED: "pill--neutral",
+  RUNNING: "pill--info",
+  SUCCEEDED: "pill--success",
+  FAILED: "pill--danger",
+  SKIPPED: "pill--neutral",
+};
 
 export function TaskProgressPage() {
   const { meetingId = "", taskId = "" } = useParams();
-  const [snapshot, setSnapshot] = useState<TaskSnapshot>(createInitialSnapshot());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionMode, setConnectionMode] = useState<"SSE" | "POLLING">("SSE");
-  const lastEventId = useRef<string | null>(null);
-  const subscription = useRef<TaskEventSubscription | null>(null);
+  const { snapshot, connectionMode } = useTaskEventsStream(taskId);
+  const retry = useRetryTask();
+  const cancel = useCancelTask();
 
   const totalProgress = useMemo(() => {
     if (snapshot.steps.length === 0) return 0;
-    return Math.round(snapshot.steps.reduce((sum, step) => sum + step.progress, 0) / snapshot.steps.length);
+    return Math.round(snapshot.steps.reduce((sum, s) => sum + s.progress, 0) / snapshot.steps.length);
   }, [snapshot.steps]);
 
-  useEffect(() => {
-    if (!taskId) return;
-    let cancelled = false;
-
-    async function loadSnapshot() {
-      try {
-        const task = await getTask(taskId);
-        if (!cancelled) setSnapshot(snapshotFromTask(task));
-      } catch (cause) {
-        const apiError = cause as ApiClientError;
-        if (!cancelled) setError(apiError.code ? getUserMessage(apiError.code) : "任务加载失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void loadSnapshot();
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId]);
-
-  useEffect(() => {
-    if (!taskId || loading) return;
-    if (isTerminal(snapshot.status)) return;
-    setConnectionMode("SSE");
-    subscription.current = subscribeTaskEvents(taskId, {
-      lastEventId: lastEventId.current,
-      onEvent: (event) => {
-        lastEventId.current = event.eventId;
-        setSnapshot((current) => sseReducer(current.taskId ? current : createInitialSnapshot(), event));
-      },
-      onFallback: () => setConnectionMode("POLLING"),
-    });
-    return () => {
-      subscription.current?.close();
-      subscription.current = null;
-    };
-  }, [taskId, loading, snapshot.status]);
-
-  useEffect(() => {
-    if (connectionMode !== "POLLING" || !taskId) return;
-    if (isTerminal(snapshot.status)) return;
-    const timer = window.setInterval(() => {
-      void getTask(taskId)
-        .then((task) => setSnapshot(snapshotFromTask(task)))
-        .catch(() => {
-          // ignore transient polling failures; next tick retries
-        });
-    }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [connectionMode, taskId, snapshot.status]);
-
-  async function retry() {
-    try {
-      const task = await retryTask(taskId);
-      setSnapshot(snapshotFromTask(task));
-      setError(null);
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "重试失败");
-    }
-  }
-
-  async function cancel() {
-    try {
-      const task = await cancelTask(taskId);
-      setSnapshot(snapshotFromTask(task));
-      setError(null);
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "取消失败");
-    }
-  }
+  const isTerminal =
+    snapshot.status &&
+    ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"].includes(snapshot.status as string);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <div className="page">
+      <header className="page-header">
         <div>
           <h1 className="page-title">任务进度</h1>
-          <p className="muted">{taskId}</p>
+          <p className="page-subtitle"><span translate="no">{taskId}</span></p>
         </div>
-        <div className="toolbar">
+        <div className="page-actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
-          <button type="button" onClick={retry} disabled={!snapshot.retryable}>重试</button>
-          <button type="button" onClick={cancel} disabled={snapshot.status === "CANCELLED" || snapshot.status === "SUCCEEDED"}>取消</button>
+          <button
+            type="button"
+            className="button"
+            disabled={!snapshot.retryable || retry.isPending}
+            onClick={() => retry.mutate(taskId)}
+          >
+            {retry.isPending ? "重试中…" : "重试"}
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!!isTerminal || cancel.isPending}
+            onClick={() => cancel.mutate(taskId)}
+          >
+            {cancel.isPending ? "取消中…" : "取消"}
+          </button>
+          <span className="pill" aria-label="连接模式">
+            <span className={
+              connectionMode === "SSE"
+                ? "dot dot--success"
+                : connectionMode === "POLLING"
+                  ? "dot dot--warn"
+                  : "dot"
+            } />
+            {connectionMode === "SSE" ? "SSE" : connectionMode === "POLLING" ? "轮询" : "已结束"}
+          </span>
         </div>
-      </div>
-
-      {loading ? <p className="muted">加载中</p> : null}
-      {error ? <div className="error" role="alert">{error}</div> : null}
+      </header>
 
       <section className="grid" aria-live="polite">
-        <div className="card">
-          <div className="muted">状态</div>
-          <h2>{snapshot.status}</h2>
+        <div className="metric">
+          <div className="metric__label">状态</div>
+          <div className="metric__value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={STATUS_DOT[snapshot.status as string] ?? "dot"} />
+            <span>{snapshot.status}</span>
+          </div>
+          <div className="page-subtitle">{STATUS_LABEL[snapshot.status as string] ?? ""}</div>
         </div>
-        <div className="card">
-          <div className="muted">阶段</div>
-          <h2>{snapshot.phase ?? "-"}</h2>
+        <div className="metric">
+          <div className="metric__label">阶段</div>
+          <div className="metric__value" style={{ fontSize: 16 }}>{snapshot.phase ?? "—"}</div>
+          <PhaseStrip phase={snapshot.phase} />
         </div>
-        <div className="card">
-          <div className="muted">连接</div>
-          <h2>{isTerminal(snapshot.status) ? "已结束" : connectionMode === "POLLING" ? "轮询" : "SSE"}</h2>
+        <div className="metric">
+          <div className="metric__label">尝试</div>
+          <div className="metric__value">{snapshot.attemptNo}</div>
         </div>
-        <div className="card">
-          <div className="muted">尝试次数</div>
-          <h2>{snapshot.attemptNo}</h2>
+        <div className="metric">
+          <div className="metric__label">总体进度</div>
+          <div className="metric__value">{totalProgress}%</div>
+          <div className="progress">
+            <span style={{ display: "block", height: "100%", width: `${totalProgress}%`, background: "var(--accent)" }} />
+          </div>
         </div>
       </section>
+
+      {snapshot.lastErrorCode ? (
+        <div className="banner banner--danger" role="alert">
+          <strong className="banner__title">最近错误</strong>
+          <span className="banner__body">
+            {getUserMessage(snapshot.lastErrorCode)} · <code translate="no">{snapshot.lastErrorCode}</code>
+          </span>
+        </div>
+      ) : null}
 
       <section className="card stack">
         <div className="toolbar">
-          <strong>总体进度</strong>
-          <span className="badge">{totalProgress}%</span>
-          {snapshot.currentStep ? <span className="muted">当前 step: {snapshot.currentStep}</span> : null}
-          {snapshot.lastErrorCode ? <span className="error">{getUserMessage(snapshot.lastErrorCode)}</span> : null}
+          <strong>步骤</strong>
+          {snapshot.currentStep ? (
+            <span className="page-subtitle">当前 step: {snapshot.currentStep}</span>
+          ) : null}
         </div>
-        <div className="progress-bar"><span style={{ width: `${totalProgress}%` }} /></div>
-        <div className="step-list">
-          {snapshot.steps.map((step) => (
-            <div className="step-row" key={step.stepName}>
-              <strong>{step.stepName}</strong>
-              <span className="badge">{step.status}</span>
-              <div className="progress-bar" aria-label={`${step.stepName} progress`}>
-                <span style={{ width: `${step.progress}%` }} />
-              </div>
-              <span>{step.progress}%</span>
-              <span className="muted">{step.source}</span>
-              <span className="muted">attempt {step.attemptNo ?? "-"}</span>
-              <span className="muted">{step.retryable ? "retryable" : ""}</span>
-            </div>
-          ))}
-        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>步骤</th>
+              <th>状态</th>
+              <th>进度</th>
+              <th>来源</th>
+              <th className="num">尝试</th>
+            </tr>
+          </thead>
+          <tbody>
+            {snapshot.steps.map((step) => (
+              <tr key={step.stepName}>
+                <td>
+                  <strong>{step.stepName}</strong>
+                  {step.stepName === "AUDIO_UPLOAD" ? (
+                    <div className="page-subtitle">已完成于任务创建时</div>
+                  ) : null}
+                </td>
+                <td>
+                  <span className={`pill ${STEP_STATUS_PILL[step.status] ?? "pill--neutral"}`}>
+                    {step.status}
+                  </span>
+                </td>
+                <td style={{ minWidth: 160 }}>
+                  <div className="progress">
+                    <span style={{ display: "block", height: "100%", width: `${step.progress}%`, background: "var(--accent)" }} />
+                  </div>
+                  <span className="page-subtitle">{step.progress}%</span>
+                </td>
+                <td><SourceLabel source={step.source ?? null} /></td>
+                <td className="num">{step.attemptNo ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
-    </main>
+    </div>
   );
 }

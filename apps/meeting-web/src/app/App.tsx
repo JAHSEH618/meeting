@@ -1,15 +1,13 @@
 import { Suspense, lazy } from "react";
-import { Routes, Route, Navigate, NavLink, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, NavLink, Outlet, Link } from "react-router-dom";
 import { AuthGuard } from "./AuthGuard";
+import { SkipLink } from "@shared/components/SkipLink";
 import "./app.css";
 import { LoginPage } from "@features/auth/LoginPage";
 import { MeetingListPage } from "@features/meetings/MeetingListPage";
 import { MeetingCreatePage } from "@features/meetings/MeetingCreatePage";
 import { MeetingDetailPage } from "@features/meetings/MeetingDetailPage";
 
-// Heavy routes are loaded on demand so the first-screen bundle stays
-// under the 200 KB gzip budget (web SPEC §6). Vite emits a separate
-// chunk per lazy() call.
 const AudioUploadPage = lazy(() =>
   import("@features/audio/AudioUploadPage").then((m) => ({ default: m.AudioUploadPage })),
 );
@@ -58,7 +56,9 @@ const TaskProgressPage = lazy(() =>
 );
 
 const RouteFallback = () => (
-  <div className="route-fallback" aria-busy="true" role="status">加载中…</div>
+  <div className="page" aria-busy="true" role="status" aria-live="polite">
+    加载中…
+  </div>
 );
 
 export function App() {
@@ -139,17 +139,71 @@ export function App() {
 function Shell() {
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">本地会议智能系统</div>
-        <nav className="topnav" aria-label="主导航">
-          <NavLink to="/meetings">会议</NavLink>
-          <NavLink to="/documents">文档</NavLink>
-          <NavLink to="/rag">RAG</NavLink>
-          <NavLink to="/speaker-profiles">声纹档案</NavLink>
-          <NavLink to="/admin/legal-holds">合规</NavLink>
+      <SkipLink />
+      <aside className="shell__rail" aria-label="主导航">
+        <div className="shell__brand">会议系统</div>
+        <Link className="button button--primary" to="/meetings/new">+ 新建会议</Link>
+
+        <nav className="shell__rail-section" aria-labelledby="rail-work">
+          <h3 id="rail-work">工作</h3>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/meetings"
+          >
+            会议
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/documents"
+          >
+            文档
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/rag"
+          >
+            问答
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/speaker-profiles"
+          >
+            声纹档案
+          </NavLink>
         </nav>
-      </header>
-      <Outlet />
+
+        <nav className="shell__rail-section" aria-labelledby="rail-compliance">
+          <h3 id="rail-compliance">合规</h3>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/admin/legal-holds"
+          >
+            法律保留
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/admin/deletion-jobs"
+          >
+            删除任务
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/admin/break-glass"
+          >
+            应急访问
+          </NavLink>
+          <NavLink
+            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
+            to="/admin/audit-events"
+          >
+            审计
+          </NavLink>
+        </nav>
+      </aside>
+
+      <main id="main-content" className="shell__main">
+        <Outlet />
+      </main>
     </div>
   );
 }
