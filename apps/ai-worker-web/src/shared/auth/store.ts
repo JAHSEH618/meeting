@@ -56,6 +56,14 @@ export function redirectToLogin(): void {
   // only routes /admin and /workstation, so any K8s deploy needs (1) or (2).
   const runtimeUrl = window.__WORKSTATION_CONFIG__?.authLoginUrl;
   const loginUrl = runtimeUrl ?? import.meta.env.VITE_AUTH_LOGIN_URL ?? "/auth/login";
+
+  // Prevent infinite redirect loops if we are already on the target login page
+  const currentUrl = window.location.href;
+  if (currentUrl.includes("/auth/login") || (runtimeUrl && currentUrl.includes(runtimeUrl))) {
+    console.warn("Already on login page or redirect loop detected. Stopping redirect.");
+    return;
+  }
+
   const redirect = encodeURIComponent(window.location.href);
   const sep = loginUrl.includes("?") ? "&" : "?";
   window.location.assign(`${loginUrl}${sep}redirect=${redirect}`);
