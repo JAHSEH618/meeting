@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  listDocuments,
-  listMeetings,
-  ragQuery,
-  type ApiClientError,
-} from "@shared/api/client";
+import { useRagScopeQuery, useRagAsk } from "./queries";
 import { SafeMarkdown } from "@shared/components/SafeMarkdown";
 import type {
   Document,
@@ -16,6 +11,8 @@ import type {
   MeetingSegmentCitation,
 } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import type { ApiClientError } from "@shared/api/client";
+import { formatMs } from "@shared/utils/formatters";
 
 const MIN_TOP_N = 1;
 const MAX_TOP_N = 20;
@@ -27,7 +24,8 @@ const COVERAGE_LABEL: Record<RagAnswerCoverage, string> = {
 };
 
 const COVERAGE_HINT: Record<RagAnswerCoverage, string> = {
-  TRANSCRIPT_ONLY: "本次回答只引用了会议转写片段。若希望也覆盖文档知识库，请在范围中勾选相关文档或在文档页确认其索引状态。",
+  TRANSCRIPT_ONLY:
+    "本次回答只引用了会议转写片段。若希望也覆盖文档知识库，请在范围中勾选相关文档或在文档页确认其索引状态。",
   FULL: "本次回答综合了会议转写与文档知识库。",
 };
 
@@ -35,16 +33,6 @@ type Citation = MeetingSegmentCitation | DocumentChunkCitation;
 
 function isMeetingCitation(c: Citation): c is MeetingSegmentCitation {
   return c.type === "MEETING_SEGMENT";
-}
-
-function formatMs(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return h > 0
-    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-    : `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function RagPage() {
@@ -58,39 +46,33 @@ export function RagPage() {
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
 
   const [answer, setAnswer] = useState<RagAnswerDTO | null>(null);
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scopeOpen, setScopeOpen] = useState(false);
-  const [scopeLoadError, setScopeLoadError] = useState<string | null>(null);
 
-  const loadScopeOptions = useCallback(async () => {
-    setScopeLoadError(null);
-    try {
-      const [meetingsResp, documentsResp] = await Promise.all([
-        listMeetings(),
-        listDocuments(),
-      ]);
-      setMeetings(meetingsResp.items);
-      setDocuments(documentsResp.items);
-    } catch (cause) {
-      const apiError = cause as ApiClientError;
-      setScopeLoadError(apiError.code ? getUserMessage(apiError.code) : "范围数据加载失败");
-    }
-  }, []);
+  const scope = useRagScopeQuery();
+  const ask = useRagAsk();
 
   useEffect(() => {
-    void loadScopeOptions();
-  }, [loadScopeOptions]);
+    if (scope.data) {
+      setMeetings(scope.data.meetings);
+      setDocuments(scope.data.documents);
+    }
+  }, [scope.data]);
 
-  const handleAsk = async () => {
+  const scopeLoadError = scope.error
+    ? ((scope.error as ApiClientError).code
+        ? getUserMessage((scope.error as ApiClientError).code!)
+        : "范围数据加载失败")
+    : null;
+
+  const handleAsk = useCallback(async () => {
     if (!question.trim()) {
       setError("请先输入问题");
       return;
     }
     setError(null);
-    setPending(true);
     try {
-      const result = await ragQuery({
+      const result = await ask.mutateAsync({
         question: question.trim(),
         scope: {
           meetingIds: Array.from(selectedMeetings),
@@ -104,18 +86,13 @@ export function RagPage() {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "RAG 查询失败");
       setAnswer(null);
-    } finally {
-      setPending(false);
     }
-  };
+  }, [ask, question, selectedMeetings, selectedDocuments, topN, includeStale]);
 
   const toggle = (set: Set<string>, id: string): Set<string> => {
     const next = new Set(set);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     return next;
   };
 
@@ -131,62 +108,58 @@ export function RagPage() {
 
   return (
     <div className="page">
-      <div className="page-header">
+      <header className="page-header">
         <div>
-          <h1 className="page-title">RAG 问答</h1>
-          <p className="muted">
+          <h1 className="page-title">问答</h1>
+          <p className="page-subtitle">
             基于已索引的会议转写与文档生成带引用的回答。所有候选片段都会经过 Java 端的二次权限校验。
           </p>
         </div>
-      </div>
+      </header>
 
       {error ? (
-        <div className="error" role="alert">
-          {error}
-        </div>
+        <div className="error" role="alert">{error}</div>
       ) : null}
 
-      <div className="card stack">
-        <label className="stack">
-          <span>问题</span>
+      <section className="card stack">
+        <div className="field">
+          <label className="field__label" htmlFor="rag-question">问题</label>
           <textarea
+            id="rag-question"
+            name="ragQuestion"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={3}
             placeholder="例：上周关于价格策略的会议得出了什么结论？"
             aria-label="rag-question-input"
           />
-        </label>
+        </div>
 
         <details
           open={scopeOpen}
           onToggle={(e) => setScopeOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>
-            范围：<span className="muted">{scopeSummary}</span>
+            范围：<span className="page-subtitle">{scopeSummary}</span>
           </summary>
           {scopeLoadError ? (
-            <div className="error" role="alert">
-              {scopeLoadError}
-            </div>
+            <div className="error" role="alert">{scopeLoadError}</div>
           ) : null}
           <div className="grid">
             <fieldset className="stack">
               <legend>会议</legend>
               {meetings.length === 0 ? (
-                <p className="muted">暂无可选会议</p>
+                <p className="page-subtitle">暂无可选会议</p>
               ) : (
                 meetings.map((mtg) => (
                   <label key={mtg.meetingId} className="toolbar">
                     <input
                       type="checkbox"
                       checked={selectedMeetings.has(mtg.meetingId)}
-                      onChange={() =>
-                        setSelectedMeetings((s) => toggle(s, mtg.meetingId))
-                      }
+                      onChange={() => setSelectedMeetings((s) => toggle(s, mtg.meetingId))}
                     />
                     <span>{mtg.title}</span>
-                    <span className="muted">{mtg.meetingId}</span>
+                    <span className="page-subtitle" translate="no">{mtg.meetingId}</span>
                   </label>
                 ))
               )}
@@ -194,19 +167,17 @@ export function RagPage() {
             <fieldset className="stack">
               <legend>文档</legend>
               {documents.length === 0 ? (
-                <p className="muted">暂无可选文档</p>
+                <p className="page-subtitle">暂无可选文档</p>
               ) : (
                 documents.map((doc) => (
                   <label key={doc.documentId} className="toolbar">
                     <input
                       type="checkbox"
                       checked={selectedDocuments.has(doc.documentId)}
-                      onChange={() =>
-                        setSelectedDocuments((s) => toggle(s, doc.documentId))
-                      }
+                      onChange={() => setSelectedDocuments((s) => toggle(s, doc.documentId))}
                     />
                     <span>{doc.title}</span>
-                    <span className="muted">{doc.documentId}</span>
+                    <span className="page-subtitle" translate="no">{doc.documentId}</span>
                   </label>
                 ))
               )}
@@ -238,23 +209,21 @@ export function RagPage() {
               onChange={(e) => setIncludeStale(e.target.checked)}
               aria-label="includeStale"
             />
-            <span>包含 stale 片段</span>
+            <span>包含已过期片段</span>
           </label>
           <button
             type="button"
-            className="button primary"
+            className="button button--primary"
             onClick={() => void handleAsk()}
-            disabled={pending}
+            disabled={ask.isPending}
           >
-            {pending ? "查询中…" : "提问"}
+            {ask.isPending ? "查询中…" : "提问"}
           </button>
         </div>
-      </div>
+      </section>
 
-      {pending ? (
-        <p className="muted" aria-live="polite">
-          正在检索 + 推理…
-        </p>
+      {ask.isPending ? (
+        <p className="page-subtitle" aria-live="polite">正在检索 + 推理…</p>
       ) : null}
 
       {answer ? <AnswerCard answer={answer} /> : null}
@@ -268,26 +237,26 @@ function AnswerCard({ answer }: { answer: RagAnswerDTO }) {
     <div className="card stack" aria-label="rag-answer">
       <div className="toolbar">
         <strong>回答</strong>
-        <span className="badge" aria-label="rag-coverage">
+        <span className="pill pill--info" aria-label="rag-coverage">
           {COVERAGE_LABEL[answer.coverage]}
         </span>
         {noCitations ? (
-          <span className="badge" style={{ background: "#fdf2d9", color: "#92580c" }}>
-            无引用 — 仅供参考
-          </span>
-        ) : null}
+          <span className="pill pill--warn">无引用 — 仅供参考</span>
+        ) : (
+          <span className="pill pill--neutral">{answer.citations.length} 条引用</span>
+        )}
       </div>
-      <p className="muted">{COVERAGE_HINT[answer.coverage]}</p>
+      <p className="page-subtitle">{COVERAGE_HINT[answer.coverage]}</p>
       <SafeMarkdown source={answer.answer} ariaLabel="rag-answer-body" />
 
       {noCitations ? (
-        <p className="muted">
+        <p className="page-subtitle">
           模型未明确指明引用来源。回答可能基于隐含上下文，建议追问以确认依据。
         </p>
       ) : (
         <div className="stack">
           <strong>引用</strong>
-          <ol className="stack">
+          <ol className="stack" style={{ paddingLeft: 20 }}>
             {answer.citations.map((citation, idx) => (
               <li key={`${citation.type}-${idx}`}>
                 <CitationItem citation={citation} index={idx + 1} />
@@ -308,12 +277,10 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
     return (
       <article className="card stack" aria-label={`citation-${index}`}>
         <div className="toolbar">
-          <span className="badge">会议片段</span>
+          <span className="pill pill--info">会议片段</span>
           <strong>{citation.meetingTitle}</strong>
-          <span className="muted">{citation.speaker}</span>
-          <span className="muted">
-            {formatMs(citation.startMs)} – {formatMs(citation.endMs)}
-          </span>
+          <span className="page-subtitle">{citation.speaker}</span>
+          <span className="page-subtitle">{formatMs(citation.startMs)} – {formatMs(citation.endMs)}</span>
         </div>
         <blockquote style={{ margin: 0 }}>
           <SafeMarkdown source={citation.content} />
@@ -325,9 +292,9 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
   return (
     <article className="card stack" aria-label={`citation-${index}`}>
       <div className="toolbar">
-        <span className="badge">文档块</span>
+        <span className="pill pill--info">文档块</span>
         <strong>{citation.documentTitle}</strong>
-        {citation.page > 0 ? <span className="muted">第 {citation.page} 页</span> : null}
+        {citation.page > 0 ? <span className="page-subtitle">第 {citation.page} 页</span> : null}
       </div>
       <blockquote style={{ margin: 0 }}>
         <SafeMarkdown source={citation.content} />
