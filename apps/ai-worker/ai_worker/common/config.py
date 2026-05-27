@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     #   AI_WORKER_ADMIN_JWT_SECRET=<32+ random bytes shared with Java>
     # JWKS path is reserved for the asymmetric-key migration (see docs).
     java_api_base_url: str | None = None
-    admin_jwt_secret: str = "dev-admin-secret"
+    admin_jwt_secret: str = "dev-admin-secret-32-bytes-fixedXX"
     admin_jwt_audience: str = "ai-worker-admin"
     admin_jwt_issuer: str = "meeting-api"
     admin_jwt_required_role: str = "ADMIN"
@@ -100,10 +100,12 @@ class Settings(BaseSettings):
     admin_session_ttl_seconds: int = 24 * 60 * 60
     admin_session_cleanup_interval_seconds: int = 5 * 60
     admin_ui_dist_path: str | None = None
-    # Workstation runtime config — served at GET /workstation/runtime-config.js
+    # Workstation runtime config — served at GET /workstation/runtime-config.json
     # so the SPA can read window.__WORKSTATION_CONFIG__ at runtime and we can
     # flip the Java login URL per environment without rebuilding the image.
-    # ``None`` falls through to the SPA's build-time / same-host default.
+    # ``None`` falls through to the SPA's build-time setting. If neither is
+    # configured, the SPA uses its own /workstation/login page and posts to
+    # Java /api/auth/login through the same-origin /api path.
     auth_login_url: str | None = None
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")
 

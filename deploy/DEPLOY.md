@@ -586,7 +586,7 @@ spec:
 - 前端 `vite.config.ts` 设 `base: "/workstation/"`，构建出的 `index.html` 引用 `/workstation/assets/...`。
 - `BrowserRouter basename="/workstation"`，所有 SPA 链接（`/meetings`、`/enrollment`）实际落在 `/workstation/meetings` 等路径下；E2E (`apps/ai-worker-web/e2e/*.spec.ts`) 必须用带前缀的 `page.goto("/workstation/...")`。
 - FastAPI 用 `SpaStaticFiles` 子类挂载：SPA 路由（无扩展名、不在 `assets/` 下）的 404 回退到 `index.html`，但缺失的 `*.js / *.css / *.ico` 等真实 404 保留——避免浏览器把 HTML 当 JS module 解析后报隐晦错误。
-- **登录跳转**优先级：`window.__WORKSTATION_CONFIG__.authLoginUrl`（运行时，由 `AI_WORKER_AUTH_LOGIN_URL` 注入）→ `VITE_AUTH_LOGIN_URL`（构建期）→ `/auth/login`（同主机兜底）。K8s 多 host 部署设置 `AI_WORKER_AUTH_LOGIN_URL` 即可，无需重 build SPA 镜像。
+- **登录跳转**优先级：`window.__WORKSTATION_CONFIG__.authLoginUrl`（运行时，由 `AI_WORKER_AUTH_LOGIN_URL` 注入）→ `VITE_AUTH_LOGIN_URL`（构建期）→ Python 专用前端自己的 `/workstation/login`。默认登录页会 POST Java `/api/auth/login`，拿到 admin JWT 后写入内存 token store。`AI_WORKER_AUTH_LOGIN_URL` 只用于外部完整网页登录流程，不要指向 JSON API `/api/auth/login`。
 
 ---
 
@@ -1042,9 +1042,10 @@ AI_WORKER_PYANNOTE_EXPECTED_CHECKSUM=sha256:...
 # Phase J — 工作站 SPA 运行时配置。值会被 ai-worker 在
 # GET /workstation/runtime-config.json 由 main.tsx 在 bootstrap 时 fetch 并
 # 写入 window.__WORKSTATION_CONFIG__，优先级高于前端构建期的 VITE_AUTH_LOGIN_URL。
-# 优先级高于前端构建期的 VITE_AUTH_LOGIN_URL。当 K8s Ingress 只把 /admin
-# 和 /workstation 路由到 ai-worker、Java 登录在另一台 host 时必须设置。
-AI_WORKER_AUTH_LOGIN_URL=https://meeting-api.internal/auth/login
+# 当 K8s Ingress 只把 /admin 和 /workstation 路由到 ai-worker、
+# 可选：仅当 Java 提供完整网页登录页时设置；内置 /workstation/login
+# 会通过 same-origin /api/auth/login 调 Java JSON 登录 API。
+AI_WORKER_AUTH_LOGIN_URL=https://meeting-api.internal/workstation-login
 
 # Admin 面板 JWT
 AI_WORKER_ADMIN_JWT_SECRET=<32+-byte-secret>

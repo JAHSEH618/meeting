@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -55,6 +56,32 @@ def test_workstation_serves_index_at_root(
     assert "<div id=root>" in body
     # base="/workstation/" must have rewritten the script src in the build.
     assert "/workstation/assets/index.js" in body
+
+
+def test_app_root_redirects_to_workstation_when_ui_is_mounted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dist = _build_spa_dist(tmp_path)
+    monkeypatch.setattr(settings, "admin_ui_dist_path", str(dist))
+
+    client = _fresh_app()
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/workstation/"
+
+
+def test_app_root_returns_entrypoint_hint_when_ui_is_not_mounted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "admin_ui_dist_path", None)
+
+    client = _fresh_app()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json()["workstationUrl"] == "/workstation/"
+    assert response.json()["workstationMounted"] is False
 
 
 def test_workstation_serves_real_asset_under_subpath(
@@ -167,3 +194,70 @@ def test_workstation_runtime_config_reflects_auth_login_url(
     body = client.get("/workstation/runtime-config.json").json()
 
     assert body["authLoginUrl"] == "https://meeting-api.internal/auth/login"
+
+
+def test_python_hosted_workstation_proxies_login_to_java(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_worker.interfaces.api import main as main_module
+
+    seen: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            seen["base_url"] = base_url
+            seen["timeout"] = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def post(
+            self,
+            path: str,
+            *,
+            json: object,
+            headers: dict[str, str],
+        ) -> httpx.Response:
+            seen["path"] = path
+            seen["json"] = json
+            seen["headers"] = headers
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {"accessToken": "jwt.header.signature"},
+                    "error": None,
+                    "requestId": "r",
+                    "traceId": "t",
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "Set-Cookie": "refresh=abc; HttpOnly; Path=/",
+                },
+            )
+
+    monkeypatch.setattr(settings, "java_api_base_url", "http://10.9.50.179:8080")
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = TestClient(main_module.create_app())
+    response = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "admin123"},
+        headers={"X-Request-Id": "r", "X-Trace-Id": "t"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["accessToken"] == "jwt.header.signature"
+    assert response.headers["set-cookie"] == "refresh=abc; HttpOnly; Path=/"
+    assert seen["base_url"] == "http://10.9.50.179:8080"
+    assert seen["path"] == "/api/auth/login"
+    assert seen["json"] == {"username": "admin", "password": "admin123"}
+    assert seen["headers"] == {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Request-Id": "r",
+        "X-Trace-Id": "t",
+    }

@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 from os.path import isdir
 from typing import AsyncIterator
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from ai_worker.application.workflows.state import workflow_state_store
@@ -293,6 +294,82 @@ def _mount_admin_router(app: FastAPI) -> None:
     app.include_router(build_admin_router())
 
 
+def _mount_auth_login_proxy(app: FastAPI) -> None:
+    """Same-origin login proxy for the Python-hosted workstation SPA.
+
+    The built SPA posts to ``/api/auth/login``. In Vite dev this is handled by
+    the Vite proxy; when FastAPI serves ``dist/`` itself, this route forwards
+    just that unauthenticated login call to meeting-api. Authenticated business
+    calls still go through the explicit ``/admin/*`` BFF routes.
+    """
+
+    @app.post("/api/auth/login", include_in_schema=False)
+    async def proxy_java_auth_login(
+        request: Request,
+        x_request_id: str | None = Header(None, alias="X-Request-Id"),
+        x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
+    ) -> Response:
+        request_id = x_request_id or ""
+        trace_id = x_trace_id or ""
+        if not settings.java_api_base_url:
+            return _error_response(
+                status_code=503,
+                code="UPSTREAM_NOT_CONFIGURED",
+                message="AI_WORKER_JAVA_API_BASE_URL is not configured",
+                retryable=False,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        try:
+            payload = await request.json()
+        except Exception:
+            return _error_response(
+                status_code=400,
+                code="BAD_REQUEST",
+                message="login request body must be JSON",
+                retryable=False,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if request_id:
+            headers["X-Request-Id"] = request_id
+        if trace_id:
+            headers["X-Trace-Id"] = trace_id
+        try:
+            async with httpx.AsyncClient(
+                base_url=settings.java_api_base_url.rstrip("/"),
+                timeout=10.0,
+            ) as client:
+                upstream = await client.post("/api/auth/login", json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            return _error_response(
+                status_code=502,
+                code="UPSTREAM_UNAVAILABLE",
+                message=f"meeting-api auth login unavailable: {exc}",
+                retryable=True,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+
+        response_headers = {}
+        content_type = upstream.headers.get("content-type")
+        if content_type:
+            response_headers["content-type"] = content_type
+        response = Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
+        for value in upstream.headers.get_list("set-cookie"):
+            response.raw_headers.append((b"set-cookie", value.encode("latin-1")))
+        return response
+
+
 def _mount_admin_ui(app: FastAPI) -> None:
     """Phase 9 P6 / E1.2 — mount the workstation SPA at ``/workstation/`` when
     a build artefact dir is configured. Kept separate from ``/admin/*`` so the
@@ -304,7 +381,7 @@ def _mount_admin_ui(app: FastAPI) -> None:
     a clear network error instead of silently parsing ``index.html`` as a
     JS module / stylesheet (Phase J UX hardening).
 
-    Also exposes ``GET /workstation/runtime-config.js`` so the SPA can read
+    Also exposes ``GET /workstation/runtime-config.json`` so the SPA can read
     ``window.__WORKSTATION_CONFIG__`` and avoid rebuilding the image when an
     environment-specific URL (e.g. Java login) changes. The explicit route
     must be registered BEFORE the mount or the static handler shadows it.
@@ -368,6 +445,19 @@ def _mount_admin_ui(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        if settings.admin_ui_dist_path and isdir(settings.admin_ui_dist_path):
+            return RedirectResponse(url="/workstation/", status_code=307)
+        return JSONResponse(
+            content={
+                "status": "UP",
+                "workstationUrl": "/workstation/",
+                "workstationMounted": False,
+                "healthUrl": "/internal/health",
+            }
+        )
 
     @app.get("/internal/health")
     def health() -> dict:
@@ -745,6 +835,7 @@ def create_app() -> FastAPI:
         )
 
     _mount_admin_router(app)
+    _mount_auth_login_proxy(app)
     _mount_admin_ui(app)
     return app
 

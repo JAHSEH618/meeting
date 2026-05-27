@@ -11,8 +11,15 @@ Covers todo-final.md:
 from __future__ import annotations
 
 import pytest
+import httpx
 
-from ai_worker.admin.jwt_middleware import JwtValidationError, decode_admin_token
+from ai_worker.admin import jwt_middleware
+from ai_worker.admin.jwt_middleware import (
+    JwtValidationError,
+    admin_claims_dependency,
+    decode_admin_token,
+)
+from ai_worker.common.config import settings
 from ._jwt_helpers import make_admin_token
 
 
@@ -70,3 +77,59 @@ def test_non_hs256_alg_is_rejected():
 
     with pytest.raises(JwtValidationError, match="unsupported alg"):
         decode_admin_token(token)
+
+
+def test_legacy_mvp_session_token_is_verified_by_java_me(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            seen["base_url"] = base_url
+            seen["timeout"] = timeout
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, path: str, *, headers: dict[str, str]) -> httpx.Response:
+            seen["path"] = path
+            seen["headers"] = headers
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "userId": "user_admin",
+                        "tenantId": "tenant_default",
+                        "roles": ["admin"],
+                    },
+                    "error": None,
+                    "requestId": "r",
+                    "traceId": "t",
+                },
+            )
+
+    monkeypatch.setattr(settings, "java_api_base_url", "http://10.9.50.179:8080")
+    monkeypatch.setattr(jwt_middleware.httpx, "Client", FakeClient)
+
+    claims = admin_claims_dependency(
+        "Bearer mvp0_legacy",
+        x_request_id="r",
+        x_trace_id="t",
+    )
+
+    assert claims.subject == "user_admin"
+    assert claims.tenant_id == "tenant_default"
+    assert claims.raw_token == "mvp0_legacy"
+    assert claims.roles == ("admin",)
+    assert seen["base_url"] == "http://10.9.50.179:8080"
+    assert seen["path"] == "/api/auth/me"
+    assert seen["headers"] == {
+        "Authorization": "Bearer mvp0_legacy",
+        "X-Request-Id": "r",
+        "X-Trace-Id": "t",
+    }

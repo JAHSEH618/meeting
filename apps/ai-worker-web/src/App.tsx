@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "@/shared/auth/useAuth";
 import { SkipLink } from "@/shared/components/SkipLink";
 import { EnrollmentPage } from "@/pages/EnrollmentPage";
+import { LoginPage } from "@/pages/LoginPage";
 import { MeetingsPage } from "@/pages/MeetingsPage";
 
 const MeetingWorkstationPage = lazy(() =>
@@ -49,6 +50,7 @@ export default function App() {
         <Suspense fallback={<div aria-busy="true" role="status">加载中…</div>}>
           <Routes>
             <Route path="/" element={<MeetingsPage />} />
+            <Route path="/login" element={<LoginPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/new" element={<MeetingWorkstationRoute />} />
             <Route path="/meetings/:meetingId" element={<MeetingWorkstationRoute />} />

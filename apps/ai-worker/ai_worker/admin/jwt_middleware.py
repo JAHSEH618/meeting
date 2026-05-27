@@ -1,6 +1,6 @@
 """Minimal HS256 JWT validator for the workstation admin UI.
 
-Tokens are minted by meeting-api at /auth/login and forwarded by the SPA
+Tokens are minted by meeting-api at /api/auth/login and forwarded by the SPA
 in the ``Authorization: Bearer ...`` header. We verify:
   - structure (header.payload.signature, base64url)
   - alg = HS256
@@ -14,6 +14,11 @@ We deliberately do NOT depend on PyJWT — the workstation runs in the same
 process as the AI worker which is already on a tight dep budget. A JWKS /
 RS256 migration is tracked separately and would slot in behind the same
 ``AdminClaims`` interface.
+
+During the remote-Java transition we also accept legacy ``mvp0_*`` dev
+session tokens by asking meeting-api ``/api/auth/me`` to verify them. The
+BFF still forwards the original token to Java, so existing CentOS services
+keep working until they are redeployed with HS256 admin JWT support.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from fastapi import Header, HTTPException, status
 from starlette.responses import JSONResponse
 
@@ -130,6 +136,68 @@ def decode_admin_token(token: str, *, now: int | None = None) -> AdminClaims:
     )
 
 
+def _decode_legacy_java_session(
+    token: str,
+    *,
+    request_id: str,
+    trace_id: str,
+) -> AdminClaims:
+    if not token.startswith("mvp0_"):
+        raise JwtValidationError("not a legacy meeting-api session token")
+    if not settings.java_api_base_url:
+        raise JwtValidationError("java_api_base_url is not configured")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    if request_id:
+        headers["X-Request-Id"] = request_id
+    if trace_id:
+        headers["X-Trace-Id"] = trace_id
+    try:
+        with httpx.Client(
+            base_url=settings.java_api_base_url.rstrip("/"),
+            timeout=5.0,
+        ) as client:
+            response = client.get("/api/auth/me", headers=headers)
+    except httpx.RequestError as exc:
+        raise JwtValidationError(f"legacy token verification unavailable: {exc}") from exc
+    if response.status_code == 401:
+        raise JwtValidationError("legacy token rejected by meeting-api")
+    try:
+        envelope = response.json()
+    except Exception as exc:
+        raise JwtValidationError(f"legacy token verification returned non-JSON: {exc}") from exc
+    if not response.is_success or envelope.get("success") is False or envelope.get("error"):
+        message = (envelope.get("error") or {}).get("message") or f"HTTP {response.status_code}"
+        raise JwtValidationError(f"legacy token rejected by meeting-api: {message}")
+
+    user = envelope.get("data") or {}
+    subject = user.get("userId") or user.get("subject")
+    tenant_id = user.get("tenantId") or user.get("tenant_id")
+    roles_value = user.get("roles") or []
+    if isinstance(roles_value, str):
+        roles_tuple = (roles_value,)
+    elif isinstance(roles_value, list):
+        roles_tuple = tuple(str(role) for role in roles_value)
+    else:
+        roles_tuple = ()
+
+    required = settings.admin_jwt_required_role
+    if required and required.lower() not in {role.lower() for role in roles_tuple}:
+        raise JwtValidationError(f"missing required role: {required}")
+    if not isinstance(subject, str) or not subject:
+        raise JwtValidationError("legacy token userId missing")
+    if not isinstance(tenant_id, str) or not tenant_id:
+        raise JwtValidationError("legacy token tenantId missing")
+
+    return AdminClaims(
+        subject=subject,
+        tenant_id=tenant_id,
+        roles=roles_tuple,
+        raw_token=token,
+        expires_at=int(time.time()) + settings.admin_session_ttl_seconds,
+    )
+
+
 def admin_claims_dependency(
     authorization: str | None = Header(None, alias="Authorization"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
@@ -151,16 +219,23 @@ def admin_claims_dependency(
     try:
         return decode_admin_token(token)
     except JwtValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": "UNAUTHENTICATED",
-                "message": str(exc),
-                "retryable": False,
-                "requestId": x_request_id or "",
-                "traceId": x_trace_id or "",
-            },
-        )
+        try:
+            return _decode_legacy_java_session(
+                token,
+                request_id=x_request_id or "",
+                trace_id=x_trace_id or "",
+            )
+        except JwtValidationError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "UNAUTHENTICATED",
+                    "message": str(exc),
+                    "retryable": False,
+                    "requestId": x_request_id or "",
+                    "traceId": x_trace_id or "",
+                },
+            )
 
 
 def admin_unauthenticated_response(message: str, request_id: str, trace_id: str) -> JSONResponse:

@@ -61,6 +61,10 @@ meeting:
   # 否则 ProdProfileValidator 会拒绝启动。
   auth:
     mode: ${MEETING_AUTH_MODE:in-memory}
+  admin-jwt:
+    secret: ${AI_WORKER_ADMIN_JWT_SECRET:dev-admin-secret-32-bytes-fixedXX}
+    audience: ${AI_WORKER_ADMIN_JWT_AUDIENCE:ai-worker-admin}
+    issuer: ${AI_WORKER_ADMIN_JWT_ISSUER:meeting-api}
   security:
     callback:
       hmac-secret: ${AI_WORKER_CALLBACK_HMAC_SECRET:change-me-callback-fallback-secret}

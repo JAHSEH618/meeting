@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
+const meetingApiTarget = process.env.VITE_MEETING_API_TARGET ?? "http://10.9.50.179:8080";
+
 export default defineConfig({
   // The workstation SPA is served under /workstation/ both in dev and
   // in prod (FastAPI mounts the StaticFiles at /workstation/). Anything
@@ -20,7 +22,7 @@ export default defineConfig({
     port: 5174,
     proxy: {
       "/admin": "http://localhost:8090",
-      "/api": "http://localhost:8080",
+      "/api": meetingApiTarget,
     },
   },
   build: {

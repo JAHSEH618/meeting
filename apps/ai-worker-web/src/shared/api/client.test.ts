@@ -6,6 +6,7 @@ describe("apiCall", () => {
   const fetchMock = vi.fn();
   beforeEach(() => {
     authStore.clear();
+    window.__WORKSTATION_CONFIG__ = undefined;
     fetchMock.mockReset();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
@@ -65,6 +66,7 @@ describe("apiCall", () => {
 
   it("clears auth on 401", async () => {
     authStore.set("token");
+    window.__WORKSTATION_CONFIG__ = { authLoginUrl: "https://login.example.test/workstation-login" };
     fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }));
     // jsdom locks down window.location.assign; stub by replacing the whole property descriptor.
     const assignSpy = vi.fn();
