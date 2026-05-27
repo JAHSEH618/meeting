@@ -1,7 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import App from "@/App";
+import { createQueryClient } from "@/shared/queries/queryClient";
 import "@/styles.css";
 
 const rootEl = document.getElementById("root");
@@ -37,13 +40,18 @@ async function loadRuntimeConfig(): Promise<void> {
 
 await loadRuntimeConfig();
 
+const queryClient = createQueryClient();
+
 createRoot(rootEl).render(
   <StrictMode>
-    <BrowserRouter
-      basename="/workstation"
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      <App />
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter
+        basename="/workstation"
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <App />
+      </BrowserRouter>
+      {import.meta.env.DEV ? <ReactQueryDevtools buttonPosition="bottom-right" /> : null}
+    </QueryClientProvider>
   </StrictMode>,
 );
