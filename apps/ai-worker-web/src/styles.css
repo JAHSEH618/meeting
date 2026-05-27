@@ -1,28 +1,4 @@
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  color: #1f2933;
-  background: #f7f8fb;
-  font-size: 14px;
-  /* Design tokens. Keep focus-ring contrast >= 3:1 with surface colours
-     for WCAG 2.4.7. The hover/active tints are derived from --accent so
-     all interactive elements share a coherent palette. */
-  --accent: #3b5bdb;
-  --accent-hover: #2f48b3;
-  --accent-active: #25387f;
-  --accent-soft: #e7ecff;
-  --focus-ring: #3b5bdb;
-  --focus-ring-offset: #ffffff;
-  --danger: #c92a2a;
-  --border: #cdd2dd;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
+@import "./shared/styles/tokens.css";
 
 .layout {
   display: flex;
@@ -31,115 +7,282 @@ body {
 }
 
 .layout__header {
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
-  background: #ffffff;
-  border-bottom: 1px solid #e1e4ec;
+  padding: 0 var(--space-6);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.layout__brand {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-1);
+}
+
+.layout__nav {
+  display: flex;
+  gap: var(--space-3);
 }
 
 .layout__nav a {
-  color: var(--accent);
-  margin-right: 16px;
-  text-decoration: none;
+  font-size: 13px;
   font-weight: 500;
-  padding: 4px 6px;
-  border-radius: 4px;
+  color: var(--ink-3);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.layout__nav a:hover {
-  text-decoration: underline;
-}
-
+.layout__nav a:hover { color: var(--ink-1); background: var(--line-3); }
 .layout__nav a.active {
-  text-decoration: underline;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-weight: 600;
 }
 
-/* Keyboard-only focus ring — ``:focus-visible`` skips the outline for
-   mouse clicks (where the visual feedback is already obvious) but keeps
-   it for tab navigation. Per Web Interface Guidelines all interactive
-   elements need this. */
 .layout__nav a:focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .layout__main {
   flex: 1;
-  padding: 24px;
-  max-width: 1200px;
+  padding: var(--space-6);
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
+  min-width: 0;
+}
+
+.workstation {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-5);
+  min-height: 70vh;
+}
+
+@media (max-width: 960px) {
+  .workstation { grid-template-columns: 1fr; }
+}
+
+.workstation__rail {
+  background: var(--surface-raised);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-l);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.workstation__canvas {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wizard__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.wizard__group h4 {
+  margin: 0 0 var(--space-1);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.wizard__step {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  border-left: 3px solid transparent;
+  margin-left: -3px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.wizard__step[data-state="completed"] {
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+
+.wizard__step[data-state="current"] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+.wizard__step[data-state="unreachable"] {
+  color: var(--ink-4);
+}
+
+.wizard__backend-summary {
+  border-top: 1px solid var(--line-1);
+  padding-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-3);
 }
 
 .card {
-  background: #ffffff;
-  border: 1px solid #e1e4ec;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-l);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink-1);
+  text-wrap: balance;
+}
+
+.page-subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-m);
+  color: var(--ink-1);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.button:hover:not(:disabled) { border-color: var(--ink-4); }
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--surface-sunken);
+}
+
+.button--primary,
+.button:not(.button--secondary):not(.button--ghost):not(.button--danger) {
+  /* primary-ish baseline; if no modifier, use accent fill so existing
+     uses of `.button` map to primary action without extra change */
+}
+
+.button.primary,
+.button--primary {
   background: var(--accent);
   color: #fff;
-  border: 0;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  border-color: var(--accent);
 }
 
-.button:hover:not(:disabled) {
+.button.primary:hover:not(:disabled),
+.button--primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
-.button:active:not(:disabled) {
+.button.primary:active:not(:disabled),
+.button--primary:active:not(:disabled) {
   background: var(--accent-active);
 }
 
-.button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.button:disabled {
-  background: #aab2c8;
-  cursor: not-allowed;
-}
-
 .button--secondary {
-  background: #fff;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  background: var(--surface-raised);
+  color: var(--accent-ink);
+  border-color: var(--accent);
 }
 
 .button--secondary:hover:not(:disabled) {
   background: var(--accent-soft);
 }
 
-.button--secondary:active:not(:disabled) {
-  background: #d6dfff;
+.button--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-2);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: var(--line-3);
+  color: var(--ink-1);
+  border-color: transparent;
+}
+
+.field { display: flex; flex-direction: column; gap: var(--space-1); }
+.field__label,
+.field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
 }
 
 .input,
 .textarea,
 .select {
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  background: #fff;
+  padding: 6px 10px;
+  min-height: 36px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-m);
+  color: var(--ink-1);
+  font-size: 13px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .input:hover:not(:disabled):not(:focus),
 .textarea:hover:not(:disabled):not(:focus),
 .select:hover:not(:disabled):not(:focus) {
-  border-color: #9aa3b8;
+  border-color: var(--ink-4);
 }
 
 .input:focus-visible,
@@ -147,9 +290,7 @@ body {
 .select:focus-visible {
   outline: none;
   border-color: var(--accent);
-  /* Double-ring effect: inner accent + outer translucent ring for AA
-     contrast against both light backgrounds and the input border. */
-  box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.25);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18);
 }
 
 .input[aria-invalid="true"] {
@@ -157,80 +298,123 @@ body {
 }
 
 .input[aria-invalid="true"]:focus-visible {
-  box-shadow: 0 0 0 3px rgba(201, 42, 42, 0.25);
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
+  box-shadow: 0 0 0 3px rgba(190, 18, 60, 0.18);
 }
 
 .row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .error {
-  color: #c92a2a;
-  margin-top: 8px;
+  color: var(--danger-ink);
+  font-size: 13px;
+  margin-top: var(--space-2);
 }
 
-.stepper {
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.pill--info { background: var(--accent-soft); color: var(--accent-ink); }
+.pill--success { background: var(--success-soft); color: var(--success-ink); }
+.pill--warn { background: var(--warn-soft); color: var(--warn-ink); }
+.pill--danger { background: var(--danger-soft); color: var(--danger-ink); }
+.pill--neutral { background: var(--surface-sunken); color: var(--ink-2); }
+
+.banner {
   display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  /* <ol> default list-style + padding would render bullet points / indents
-     that don't suit the horizontal step pattern. Strip them so the
-     ordered-list semantics stay (for SR users) without visual regression. */
-  list-style: none;
-  padding: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line-1);
+  border-left: 3px solid var(--ink-3);
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
 }
 
-/* WCAG-friendly visually-hidden helper. Lets us tag stepper items with
-   "已完成" / "进行中" / "待处理" status text that screen readers announce
-   without leaking into the visual layout. */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
+.banner--info { border-left-color: var(--accent); background: var(--accent-soft); }
+.banner--success { border-left-color: var(--success); background: var(--success-soft); }
+.banner--warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.banner--danger { border-left-color: var(--danger); background: var(--danger-soft); }
 
-.stepper__item {
-  flex: 1;
+.banner__title { font-weight: 600; color: var(--ink-1); }
+.banner__body { font-size: 13px; color: var(--ink-2); }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8);
   text-align: center;
-  padding: 8px;
-  border-bottom: 3px solid #cdd2dd;
-  color: #6b7280;
+  border: 1px dashed var(--line-1);
+  border-radius: var(--radius-l);
+  background: var(--surface-raised);
+  color: var(--ink-3);
 }
 
-.stepper__item--active {
-  border-color: #3b5bdb;
-  color: #3b5bdb;
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--line-2);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.data-table th {
+  background: var(--surface-sunken);
+  font-size: 11px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
 }
 
-.stepper__item--done {
-  border-color: #2f9e44;
-  color: #2f9e44;
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tr:last-child td { border-bottom: 0; }
+.data-table tbody tr:hover { background: var(--line-3); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  background: #e7ecff;
-  color: #3b5bdb;
   padding: 4px 8px;
   margin: 2px;
   border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-size: 12px;
 }
 
@@ -238,20 +422,56 @@ body {
   background: transparent;
   border: 0;
   color: inherit;
-  cursor: pointer;
   margin-left: 4px;
-  /* Icon-only buttons need a hit area + visible focus state. */
   padding: 0 4px;
-  border-radius: 4px;
+  cursor: pointer;
+  border-radius: var(--radius-s);
   font-size: 14px;
   line-height: 1;
 }
 
-.chip__remove:hover {
-  background: rgba(59, 91, 219, 0.18);
+.chip__remove:hover { background: rgba(29, 78, 216, 0.18); }
+.chip__remove:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
-.chip__remove:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+.stepper {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  list-style: none;
+  padding: 0;
+}
+
+.stepper__item {
+  flex: 1;
+  text-align: center;
+  padding: var(--space-2);
+  border-bottom: 3px solid var(--line-1);
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.stepper__item--active {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.stepper__item--done {
+  border-color: var(--success);
+  color: var(--success-ink);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
 }
