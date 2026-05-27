@@ -728,13 +728,11 @@ cd apps/ai-worker
 uv sync --extra dev --extra real-models       # 全部走 arm64 wheel / 源码安装
 
 # 2. 权重落盘 —— 默认 ${HOME}/meeting-models
-#    BGE / pyannote → HuggingFace；Qwen3-ASR → funasr hub 懒下载
+#    weights 会拉齐 BGE / Qwen3-ASR / Qwen3-ForcedAligner /
+#    pyannote pipeline + submodels / CAM++ 声纹模型。
 export AI_WORKER_MODELS_ROOT=${HOME}/meeting-models
-huggingface-cli download BAAI/bge-m3 --local-dir ${AI_WORKER_MODELS_ROOT}/bge-m3/v1
-huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir ${AI_WORKER_MODELS_ROOT}/bge-reranker-v2-m3/v1
 # pyannote 需要在 HF 页面接受 license 并导出 HF_TOKEN
-HF_TOKEN=hf_xxx huggingface-cli download pyannote/speaker-diarization-3.1 \
-  --local-dir ${AI_WORKER_MODELS_ROOT}/pyannote/v3.1
+HF_TOKEN=hf_xxx ./deploy/ai-worker-apple-silicon.sh weights
 
 # 3. Apple Silicon device 拆分 —— 别让 ASR / diarization 走 MPS
 export AI_WORKER_USE_FAKE_RUNTIME=false

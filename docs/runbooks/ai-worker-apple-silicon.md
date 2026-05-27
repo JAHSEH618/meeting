@@ -142,22 +142,10 @@ mkdir -p "$AI_WORKER_MODELS_ROOT"
 > [pyannote/speaker-diarization-3.1 条款页](https://huggingface.co/pyannote/speaker-diarization-3.1)
 
 ```bash
-# 1. 使用您的 HuggingFace Token 下载 BGE 和 Pyannote 权重
+# 使用您的 HuggingFace Token 下载全部真实权重：
+# BGE / Qwen3-ASR / Qwen3-ForcedAligner / pyannote 子模型 / CAM++ 声纹模型
 export HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ./deploy/ai-worker-apple-silicon.sh weights
-
-# 2. 预热/预下载 Qwen3-ASR (Paraformer-zh) 模型权重，防止首次推理超时
-cd apps/ai-worker
-uv run --extra real-asr python - <<'PY'
-from funasr import AutoModel
-import os
-root = os.environ.get("AI_WORKER_MODELS_ROOT", os.path.expanduser("~/meeting-models"))
-AutoModel(
-    model="paraformer-zh",
-    cache_dir=f"{root}/qwen3-asr-1.7b/v2026.05.1",
-)
-PY
-cd ../..
 ```
 
 ---

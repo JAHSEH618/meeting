@@ -27,9 +27,9 @@
 #   ./deploy/ai-worker-apple-silicon.sh stage   # stage mock weights only
 #                                               # (offline smoke)
 #   ./deploy/ai-worker-apple-silicon.sh weights # download REAL weights
-#                                               # (BGE + pyannote via HF,
-#                                               #  Qwen3-ASR via funasr
-#                                               #  hub auto-download)
+#                                               # (BGE + Qwen3 + pyannote
+#                                               #  via HF/ModelScope,
+#                                               #  plus CAM++ speaker model)
 #   ./deploy/ai-worker-apple-silicon.sh env     # create/reuse local env file
 #   ./deploy/ai-worker-apple-silicon.sh run     # uv sync + start API
 #   ./deploy/ai-worker-apple-silicon.sh verify  # /internal/hardware +
@@ -78,92 +78,333 @@ stage_mock_weights() {
 }
 
 download_real_weights() {
-    log "Syncing python environment with all real-model dependencies..."
     cd "${AI_WORKER_DIR}"
-    uv sync --extra dev --extra real-models
+    if [ "${AI_WORKER_SKIP_UV_SYNC:-0}" = "1" ]; then
+        warn "AI_WORKER_SKIP_UV_SYNC=1 set; reusing the current uv environment."
+    else
+        log "Syncing python environment with all real-model dependencies..."
+        uv sync --extra dev --extra real-models
+    fi
 
     log "Starting real weights download into: ${MODELS_DIR}"
     export MODELS_DIR
     mkdir -p "${MODELS_DIR}/bge-m3/v1" \
              "${MODELS_DIR}/bge-reranker-v2-m3/v1" \
              "${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1" \
-             "${MODELS_DIR}/pyannote/v3.1"
+             "${MODELS_DIR}/qwen3-forced-aligner-0.6b/v2026.05.1" \
+             "${MODELS_DIR}/pyannote/v3.1" \
+             "${MODELS_DIR}/pyannote/segmentation-3.0" \
+             "${MODELS_DIR}/pyannote/wespeaker-voxceleb-resnet34-LM" \
+             "${MODELS_DIR}/cam-plus/v1"
 
-    # We use a single, highly-stable Python downloader that checks files,
-    # skips existing/complete files, downloads BGE, Pyannote submodels, and Qwen3-ASR (Paraformer) from ModelScope.
+    # We use a single manifest-driven downloader that retries transient
+    # failures, skips already-complete snapshots, resumes existing files
+    # through each hub client, and verifies that every registered model has
+    # the minimum local files the runtime/offline packaging needs.
     uv run --extra real-models python - <<'PY'
+from __future__ import annotations
+
+import dataclasses
+import inspect
+import json
 import os
 import pathlib
+import random
 import sys
+import time
+from collections.abc import Callable, Iterable
+from typing import Any
 
-root = pathlib.Path(os.environ["MODELS_DIR"])
-hf_token = os.environ.get("HF_TOKEN")
+root = pathlib.Path(os.environ["MODELS_DIR"]).expanduser().resolve()
+hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+max_retries = int(os.environ.get("AI_WORKER_WEIGHTS_MAX_RETRIES", "5"))
+workers = int(os.environ.get("AI_WORKER_WEIGHTS_WORKERS", "4"))
+force_download = os.environ.get("AI_WORKER_WEIGHTS_FORCE", "0") == "1"
+marker_name = ".meeting-download-complete.json"
 
-print("==========================================================")
-print("▸ [1/3] Checking BGE-m3 and BGE-Reranker (HuggingFace Hub)...")
-print("==========================================================")
-try:
+
+@dataclasses.dataclass(frozen=True)
+class Source:
+    provider: str
+    repo_id: str
+    token_required: bool = False
+    revision: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    local_dir: pathlib.Path
+    sources: tuple[Source, ...]
+    required: tuple[tuple[str, ...], ...]
+    postprocess: Callable[[], None] | None = None
+
+
+def _call_supported(fn: Callable[..., Any], /, **kwargs: Any) -> Any:
+    params = inspect.signature(fn).parameters
+    return fn(**{k: v for k, v in kwargs.items() if k in params and v is not None})
+
+
+def _matches(directory: pathlib.Path, patterns: Iterable[str]) -> list[pathlib.Path]:
+    found: list[pathlib.Path] = []
+    for pattern in patterns:
+        found.extend(path for path in directory.glob(pattern) if path.is_file())
+    return found
+
+
+def _missing_groups(spec: ModelSpec) -> list[str]:
+    missing: list[str] = []
+    for group in spec.required:
+        if not _matches(spec.local_dir, group):
+            missing.append(" or ".join(group))
+    return missing
+
+
+def _marker_path(spec: ModelSpec) -> pathlib.Path:
+    return spec.local_dir / marker_name
+
+
+def _is_complete(spec: ModelSpec) -> bool:
+    return spec.local_dir.is_dir() and not _missing_groups(spec)
+
+
+def _write_marker(spec: ModelSpec, source: Source) -> None:
+    payload = {
+        "name": spec.name,
+        "provider": source.provider,
+        "repoId": source.repo_id,
+        "revision": source.revision or "main",
+        "completedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "required": [list(group) for group in spec.required],
+    }
+    _marker_path(spec).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def _download_huggingface(source: Source, target: pathlib.Path) -> None:
+    if source.token_required and not hf_token:
+        raise RuntimeError(
+            "HF_TOKEN is required. Accept the pyannote model terms first, then run "
+            "HF_TOKEN=hf_... ./deploy/ai-worker-apple-silicon.sh weights"
+        )
     from huggingface_hub import snapshot_download
-    
-    print("▸ Downloading BAAI/bge-m3...")
-    snapshot_download("BAAI/bge-m3", local_dir=str(root / "bge-m3/v1"),
-                      local_dir_use_symlinks=False, max_workers=4)
-    print("✓ BAAI/bge-m3 is ready (skipped existing/complete files)")
 
-    print("▸ Downloading BAAI/bge-reranker-v2-m3...")
-    snapshot_download("BAAI/bge-reranker-v2-m3", local_dir=str(root / "bge-reranker-v2-m3/v1"),
-                      local_dir_use_symlinks=False, max_workers=4)
-    print("✓ BAAI/bge-reranker-v2-m3 is ready (skipped existing/complete files)")
-except Exception as e:
-    print(f"✗ Failed to download BGE models from HuggingFace: {e}", file=sys.stderr)
-    sys.exit(1)
+    _call_supported(
+        snapshot_download,
+        repo_id=source.repo_id,
+        revision=source.revision,
+        local_dir=str(target),
+        local_dir_use_symlinks=False,
+        max_workers=workers,
+        token=hf_token,
+        force_download=force_download,
+        resume_download=True,
+    )
 
-print("\n==========================================================")
-print("▸ [2/3] Checking Qwen3-ASR / Paraformer-zh (ModelScope Hub)...")
-print("==========================================================")
-try:
-    from modelscope import snapshot_download as ms_snapshot_download
-    print("▸ Downloading iic/speech_paraformer-zh_asr_nat-dfstructured-large-16k-asr-vocab8404-pytorch...")
-    ms_snapshot_download("iic/speech_paraformer-zh_asr_nat-dfstructured-large-16k-asr-vocab8404-pytorch",
-                         local_dir=str(root / "qwen3-asr-1.7b/v2026.05.1"))
-    print("✓ Qwen3-ASR paraformer model is ready (skipped existing/complete files)")
-except Exception as e:
-    print(f"✗ Failed to download Qwen3-ASR from ModelScope: {e}", file=sys.stderr)
-    sys.exit(1)
 
-print("\n==========================================================")
-print("▸ [3/3] Checking Pyannote Speaker Diarization (HuggingFace Hub)...")
-print("==========================================================")
-if not hf_token:
-    print("⚠ HF_TOKEN environment variable not set.")
-    print("⚠ Skipping Pyannote model download.")
-    print("⚠ Accept terms at https://huggingface.co/pyannote/speaker-diarization-3.1")
-    print("⚠ then re-run with: HF_TOKEN=hf_... ./deploy/ai-worker-apple-silicon.sh weights")
-else:
+def _download_modelscope(source: Source, target: pathlib.Path) -> None:
+    from modelscope import snapshot_download
+
+    kwargs: dict[str, Any] = {"local_dir": str(target)}
+    if source.revision is not None:
+        kwargs["revision"] = source.revision
     try:
-        print("▸ Downloading pyannote/speaker-diarization-3.1...")
-        snapshot_download("pyannote/speaker-diarization-3.1",
-                          local_dir=str(root / "pyannote/v3.1"),
-                          local_dir_use_symlinks=False, max_workers=4,
-                          token=hf_token)
-        print("✓ pyannote/speaker-diarization-3.1 config is ready")
+        snapshot_download(source.repo_id, **kwargs)
+    except TypeError:
+        _call_supported(
+            snapshot_download,
+            model_id=source.repo_id,
+            revision=source.revision,
+            local_dir=str(target),
+        )
 
-        # Pre-cache pyannote submodels to make sure offline mode works flawlessly
-        print("▸ Pre-caching submodel pyannote/segmentation-3.0 to HF Cache...")
-        snapshot_download("pyannote/segmentation-3.0", token=hf_token)
-        print("✓ pyannote/segmentation-3.0 submodel is ready")
 
-        print("▸ Pre-caching submodel speechbrain/spkrec-ecapa-voxceleb to HF Cache...")
-        snapshot_download("speechbrain/spkrec-ecapa-voxceleb")
-        print("✓ speechbrain/spkrec-ecapa-voxceleb submodel is ready")
-        print("✓ All Pyannote models are fully ready!")
-    except Exception as e:
-        print(f"✗ Failed to download Pyannote models: {e}", file=sys.stderr)
-        print("✗ Make sure you have accepted the terms on HuggingFace and HF_TOKEN is valid.", file=sys.stderr)
-        sys.exit(1)
+def _download_once(source: Source, target: pathlib.Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    if source.provider == "hf":
+        _download_huggingface(source, target)
+        return
+    if source.provider == "modelscope":
+        _download_modelscope(source, target)
+        return
+    raise RuntimeError(f"unsupported provider: {source.provider}")
 
-print("\n==========================================================")
-print("🎉 All real weights have been verified and downloaded successfully!")
+
+def _download_with_retry(spec: ModelSpec) -> None:
+    if _is_complete(spec) and not force_download:
+        if not _marker_path(spec).is_file():
+            _write_marker(spec, Source("existing", "local-files"))
+        print(f"✓ {spec.name}: complete snapshot already exists, skipping")
+        return
+
+    last_error: BaseException | None = None
+    for attempt in range(1, max_retries + 1):
+        for source in spec.sources:
+            try:
+                print(
+                    f"▸ {spec.name}: downloading from {source.provider}:{source.repo_id} "
+                    f"(attempt {attempt}/{max_retries})"
+                )
+                _download_once(source, spec.local_dir)
+                if spec.postprocess is not None:
+                    spec.postprocess()
+                missing = _missing_groups(spec)
+                if missing:
+                    raise RuntimeError(
+                        f"download finished but required files are missing: {missing}"
+                    )
+                _write_marker(spec, source)
+                print(f"✓ {spec.name}: ready at {spec.local_dir}")
+                return
+            except BaseException as exc:
+                last_error = exc
+                print(f"⚠ {spec.name}: {source.provider}:{source.repo_id} failed: {exc}", file=sys.stderr)
+        if attempt < max_retries:
+            delay = min(60.0, 2.0 ** (attempt - 1)) + random.uniform(0.0, 1.5)
+            print(f"▸ {spec.name}: retrying in {delay:.1f}s", file=sys.stderr)
+            time.sleep(delay)
+    raise RuntimeError(f"{spec.name} failed after {max_retries} attempts: {last_error}")
+
+
+def _patch_pyannote_config() -> None:
+    config = root / "pyannote/v3.1/config.yaml"
+    if not config.is_file():
+        return
+    backup = config.with_name("config.upstream.yaml")
+    text = config.read_text()
+    if force_download or not backup.exists():
+        backup.write_text(text)
+        source_text = text
+    else:
+        source_text = backup.read_text()
+
+    replacements = {
+        "pyannote/segmentation-3.0": str(root / "pyannote/segmentation-3.0"),
+        "pyannote/wespeaker-voxceleb-resnet34-LM": str(
+            root / "pyannote/wespeaker-voxceleb-resnet34-LM"
+        ),
+    }
+    patched = source_text
+    for remote_id, local_path in replacements.items():
+        patched = patched.replace(remote_id, local_path)
+    if patched != text:
+        config.write_text(patched)
+        print("✓ pyannote-diarization: patched config.yaml to local submodel paths")
+
+
+specs = (
+    ModelSpec(
+        name="bge-m3",
+        local_dir=root / "bge-m3/v1",
+        sources=(
+            Source("modelscope", "BAAI/bge-m3"),
+            Source("hf", "BAAI/bge-m3"),
+        ),
+        required=(
+            ("config.json",),
+            ("tokenizer_config.json",),
+            ("tokenizer.json", "sentencepiece.bpe.model", "vocab.txt"),
+            ("colbert_linear.pt",),
+            ("sparse_linear.pt",),
+            ("model.safetensors", "model-*.safetensors", "pytorch_model.bin"),
+        ),
+    ),
+    ModelSpec(
+        name="bge-reranker-v2-m3",
+        local_dir=root / "bge-reranker-v2-m3/v1",
+        sources=(
+            Source("modelscope", "AI-ModelScope/bge-reranker-v2-m3"),
+            Source("hf", "BAAI/bge-reranker-v2-m3"),
+        ),
+        required=(
+            ("config.json",),
+            ("tokenizer_config.json",),
+            ("tokenizer.json", "sentencepiece.bpe.model", "vocab.txt"),
+            ("model.safetensors", "model-*.safetensors", "pytorch_model.bin"),
+        ),
+    ),
+    ModelSpec(
+        name="qwen3-asr-1.7b",
+        local_dir=root / "qwen3-asr-1.7b/v2026.05.1",
+        sources=(
+            Source("modelscope", "Qwen/Qwen3-ASR-1.7B"),
+            Source("hf", "Qwen/Qwen3-ASR-1.7B"),
+        ),
+        required=(
+            ("config.json",),
+            ("preprocessor_config.json",),
+            ("tokenizer_config.json",),
+            ("vocab.json",),
+            ("merges.txt",),
+            ("model.safetensors", "model-*.safetensors"),
+        ),
+    ),
+    ModelSpec(
+        name="qwen3-forced-aligner-0.6b",
+        local_dir=root / "qwen3-forced-aligner-0.6b/v2026.05.1",
+        sources=(
+            Source("modelscope", "Qwen/Qwen3-ForcedAligner-0.6B"),
+            Source("hf", "Qwen/Qwen3-ForcedAligner-0.6B"),
+        ),
+        required=(
+            ("config.json",),
+            ("preprocessor_config.json",),
+            ("tokenizer_config.json",),
+            ("vocab.json",),
+            ("merges.txt",),
+            ("model.safetensors", "model-*.safetensors"),
+        ),
+    ),
+    ModelSpec(
+        name="pyannote-diarization",
+        local_dir=root / "pyannote/v3.1",
+        sources=(Source("hf", "pyannote/speaker-diarization-3.1", token_required=True),),
+        required=(("config.yaml",),),
+        postprocess=_patch_pyannote_config,
+    ),
+    ModelSpec(
+        name="pyannote-segmentation-3.0",
+        local_dir=root / "pyannote/segmentation-3.0",
+        sources=(Source("hf", "pyannote/segmentation-3.0", token_required=True),),
+        required=(("config.yaml",), ("pytorch_model.bin", "model.safetensors", "*.ckpt")),
+    ),
+    ModelSpec(
+        name="pyannote-wespeaker-voxceleb-resnet34-LM",
+        local_dir=root / "pyannote/wespeaker-voxceleb-resnet34-LM",
+        sources=(Source("hf", "pyannote/wespeaker-voxceleb-resnet34-LM", token_required=True),),
+        required=(("config.yaml",), ("pytorch_model.bin", "model.safetensors", "*.bin")),
+    ),
+    ModelSpec(
+        name="3d-speaker-cam-plus",
+        local_dir=root / "cam-plus/v1",
+        sources=(
+            Source("modelscope", "iic/speech_campplus_sv_zh-cn_16k-common"),
+            Source("modelscope", "damo/speech_campplus_sv_zh-cn_16k-common"),
+        ),
+        required=(("configuration.json", "config.yaml", "config.json"), ("*.pt", "*.pth", "*.bin", "*.onnx")),
+    ),
+)
+
+print("==========================================================")
+print(f"▸ Download root: {root}")
+print("▸ Registered model snapshots:")
+for spec in specs:
+    print(f"  - {spec.name}: {spec.local_dir.relative_to(root)}")
+print("==========================================================")
+
+if not hf_token:
+    print("⚠ HF_TOKEN is not set. Already-complete pyannote snapshots will be skipped,")
+    print("⚠ but missing gated pyannote files cannot be downloaded without a token.")
+
+try:
+    for spec in specs:
+        _download_with_retry(spec)
+    _patch_pyannote_config()
+except BaseException as exc:
+    print(f"✗ Weight download failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+print("==========================================================")
+print("✓ All registered real weights are present and verified.")
 print("==========================================================")
 PY
 }
@@ -255,8 +496,10 @@ Usage: $0 {stage|weights|env|run|verify}
 
   stage     Stage deterministic mock weights into \${MODELS_DIR}
             (default: \${HOME}/meeting-models). Use for offline smoke.
-  weights   Download REAL weights from HuggingFace into \${MODELS_DIR}.
-            HF_TOKEN required for pyannote/speaker-diarization-3.1.
+  weights   Download REAL weights from HuggingFace / ModelScope into
+            \${MODELS_DIR}. Includes BGE, Qwen3-ASR, Qwen3-ForcedAligner,
+            pyannote submodels, and CAM++ speaker embedding weights.
+            HF_TOKEN is required for gated pyannote models.
   env       Create/reuse deploy/.ai-worker-apple-silicon.env with local
             RabbitMQ / meeting-api URLs and HMAC secrets.
   run       uv sync --extra real-models, then start ai-worker-api on
@@ -268,6 +511,10 @@ Env knobs:
   AI_WORKER_MODELS_ROOT  Override the weights root (default: ~/meeting-models)
   HF_TOKEN               HuggingFace token (needed for pyannote)
   AI_WORKER_OFFLINE=1    Force HF_HUB_OFFLINE + TRANSFORMERS_OFFLINE at run time
+  AI_WORKER_WEIGHTS_MAX_RETRIES  Download retry count (default: 5)
+  AI_WORKER_WEIGHTS_WORKERS      HuggingFace parallel workers (default: 4)
+  AI_WORKER_WEIGHTS_FORCE=1      Refresh snapshots even if complete markers exist
+  AI_WORKER_SKIP_UV_SYNC=1       Reuse current uv env before weights download
 EOF
             exit 64
             ;;
