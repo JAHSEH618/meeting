@@ -18,22 +18,19 @@ import type {
   ExportJobDTO,
   GlossaryTermDTO,
   MeetingAggregateDTO,
+  ProcessingTaskPhase,
 } from "@/shared/api/types";
-import { Stepper } from "@/features/wizard/Stepper";
 import { useWizard } from "@/features/wizard/useWizard";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { SafeMarkdown } from "@/shared/markdown/SafeMarkdown";
 import { VirtualList } from "@/shared/list/VirtualList";
+import { WorkstationShell } from "./workstation/WorkstationShell";
 
 const VIRTUALIZE_THRESHOLD = 50;
 const GLOSSARY_MAX_LENGTH = 64;
 const GLOSSARY_MAX_TERMS = 200;
 
 export function MeetingWorkstationPage() {
-  // Deep links land on /workstation/meetings/:meetingId — without reading
-  // the route param the wizard started from META and ignored the meeting
-  // the user was actually trying to view. useWizard already supports an
-  // initial meetingId (starts at AUDIO), we just had to plumb it through.
   const params = useParams<{ meetingId?: string }>();
   const routeMeetingId =
     params.meetingId && params.meetingId !== "new" ? params.meetingId : undefined;
@@ -57,11 +54,6 @@ export function MeetingWorkstationPage() {
       participants: [],
     });
     patch({ meetingId: meeting.meetingId });
-    // Bounce to the canonical URL so a refresh / copy-link keeps the meeting
-    // context. The MeetingWorkstationRoute wrapper keys on the route param,
-    // so this remounts the page; the new instance reads meetingId from the
-    // URL via useWizard initial and starts at AUDIO automatically — no need
-    // for goNext() on the (about-to-unmount) old instance.
     navigate(`/meetings/${meeting.meetingId}`, { replace: true });
   });
 
@@ -98,8 +90,7 @@ export function MeetingWorkstationPage() {
     goNext();
   });
 
-  // STEP 3b — documents (debounced + abortable search to avoid lost-update
-  // races where a slow response for "A" lands after the user has typed "ABC").
+  // STEP 3b — documents (debounced + abortable search)
   const searchDocumentsFetcher = useCallback(
     (q: string, signal: AbortSignal) => searchDocuments(q, { signal }),
     [],
@@ -118,7 +109,6 @@ export function MeetingWorkstationPage() {
     if (!state.meetingId) return;
     await startMeetingProcessing(state.meetingId);
     patch({ startedProcessing: true });
-    // Stay on the page so the user (and tests) can observe the transition before moving on.
   });
 
   // STEP 5 — speakers
@@ -129,16 +119,9 @@ export function MeetingWorkstationPage() {
     setAggregate(agg);
   });
 
-  // When opened via deep link (/workstation/meetings/{id}) the user expects
-  // to see existing speakers / minutes immediately, not the empty SPEAKERS
-  // shell. Auto-load the aggregate once on mount; subsequent loads use the
-  // explicit "刷新" buttons so we don't pummel the Java side.
   useEffect(() => {
     if (!routeMeetingId) return;
     void handleLoadAggregate();
-    // handleLoadAggregate is recreated on each render but the auto-load
-    // is intentionally fire-once on mount; lint disable + deps comment
-    // makes the intent explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeMeetingId]);
 
@@ -153,7 +136,6 @@ export function MeetingWorkstationPage() {
     if (!state.meetingId) return;
     await finalizeMeeting(state.meetingId);
     patch({ finalized: true });
-    // Don't auto-advance; let the user observe the transition before going to export.
   });
 
   // STEP 6c — export
@@ -163,7 +145,6 @@ export function MeetingWorkstationPage() {
     const job = await createExport(state.meetingId, "DOCX");
     setExportJob(job);
     patch({ exportId: job.exportId });
-    // Naive polling — production code virtualizes with TanStack Query.
     for (let i = 0; i < 30; i++) {
       const polled = await pollExport(state.meetingId, job.exportId);
       setExportJob(polled);
@@ -192,228 +173,359 @@ export function MeetingWorkstationPage() {
     };
   }
 
+  const workerPhase: ProcessingTaskPhase | null = aggregate?.latestTask?.data?.phase ?? null;
+
   return (
-    <div>
-      <h1>会议工作站向导</h1>
-      <Stepper step={step} order={order} />
+    <div className="stack">
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">会议工作站</h1>
+          <p className="page-subtitle">
+            {state.meetingId ? (
+              <span translate="no">{state.meetingId}</span>
+            ) : (
+              "新建会议"
+            )}
+          </p>
+        </div>
+      </header>
+
       {error && (
-        <div className="error" role="alert" data-testid="wizard-error">
-          {error}
+        <div className="banner banner--danger" role="alert" data-testid="wizard-error">
+          <strong className="banner__title">{error}</strong>
         </div>
       )}
 
-      {step === "META" && (
-        <section className="card" aria-labelledby="step-meta-h">
-          <h2 id="step-meta-h">建会议</h2>
-          <div className="stack">
-            <label>标题<input className="input" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="meeting title" /></label>
-            <label>安全级别
-              <select className="select" value={securityLevel} onChange={(e) => setSecurityLevel(e.target.value as typeof securityLevel)} aria-label="security level">
+      <WorkstationShell
+        order={order}
+        current={step}
+        meetingId={state.meetingId}
+        workerPhase={workerPhase}
+      >
+        {step === "META" && (
+          <section className="card stack" aria-labelledby="step-meta-h">
+            <h2 id="step-meta-h">1 · 建会议</h2>
+            <div className="field">
+              <label className="field__label" htmlFor="meeting-title">标题</label>
+              <input
+                id="meeting-title"
+                name="title"
+                className="input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                aria-label="meeting title"
+                autoComplete="off"
+              />
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="meeting-security">安全级别</label>
+              <select
+                id="meeting-security"
+                name="securityLevel"
+                className="select"
+                value={securityLevel}
+                onChange={(e) => setSecurityLevel(e.target.value as typeof securityLevel)}
+                aria-label="security level"
+              >
                 <option value="PUBLIC">PUBLIC</option>
                 <option value="INTERNAL">INTERNAL</option>
                 <option value="CONFIDENTIAL">CONFIDENTIAL</option>
                 <option value="SECRET">SECRET</option>
               </select>
-            </label>
-          </div>
-          <button className="button" disabled={busy} onClick={() => void handleCreateMeeting()}>下一步：上传录音</button>
-        </section>
-      )}
+            </div>
+            <button
+              className="button button--primary"
+              disabled={busy}
+              onClick={() => void handleCreateMeeting()}
+            >
+              下一步：上传录音
+            </button>
+          </section>
+        )}
 
-      {step === "AUDIO" && (
-        <section className="card">
-          <h2>上传录音</h2>
-          <p>多分片上传请直连 Java：<code>POST /api/meetings/{state.meetingId}/files/audio/uploads</code></p>
-          <button className="button" disabled={busy} onClick={() => goNext()}>跳到术语</button>
-        </section>
-      )}
+        {step === "AUDIO" && (
+          <section className="card stack">
+            <h2>2 · 上传录音</h2>
+            <p className="page-subtitle">
+              多分片上传请直连 Java：<code translate="no">POST /api/meetings/{state.meetingId}/files/audio/uploads</code>
+            </p>
+            <button className="button" disabled={busy} onClick={() => goNext()}>跳到术语</button>
+          </section>
+        )}
 
-      {step === "GLOSSARY" && (
-        <section className="card">
-          <h2>术语</h2>
-          <div className="row">
+        {step === "GLOSSARY" && (
+          <section className="card stack">
+            <h2>3a · 术语</h2>
+            <div className="row">
+              <input
+                className="input"
+                value={glossaryDraft}
+                maxLength={GLOSSARY_MAX_LENGTH}
+                onChange={(e) => {
+                  setGlossaryDraft(e.target.value);
+                  if (glossaryError) setGlossaryError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTerm();
+                  }
+                }}
+                aria-label="term draft"
+                aria-invalid={glossaryError ? true : undefined}
+                aria-describedby={glossaryError ? "glossary-error" : undefined}
+                placeholder={`按 Enter 添加，单 term ≤ ${GLOSSARY_MAX_LENGTH} 字符，最多 ${GLOSSARY_MAX_TERMS}`}
+              />
+              <button
+                className="button button--secondary"
+                onClick={addTerm}
+                disabled={!glossaryDraft.trim()}
+              >
+                + 添加
+              </button>
+            </div>
+            {glossaryError && (
+              <p id="glossary-error" className="error" role="alert" data-testid="glossary-error">
+                {glossaryError}
+              </p>
+            )}
+            <div>
+              {terms.map((t) => (
+                <span key={t.term} className="chip">
+                  {t.term}
+                  <button
+                    className="chip__remove"
+                    type="button"
+                    onClick={() => removeTerm(t.term)}
+                    aria-label={`删除术语 ${t.term}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <button
+              className="button button--primary"
+              disabled={busy}
+              onClick={() => void saveGlossary()}
+            >
+              保存并下一步
+            </button>
+          </section>
+        )}
+
+        {step === "DOCUMENTS" && (
+          <section className="card stack">
+            <h2>3b · 关联参考文档</h2>
             <input
               className="input"
-              value={glossaryDraft}
-              maxLength={GLOSSARY_MAX_LENGTH}
-              onChange={(e) => {
-                setGlossaryDraft(e.target.value);
-                if (glossaryError) setGlossaryError(null);
-              }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTerm(); } }}
-              aria-label="term draft"
-              aria-invalid={glossaryError ? true : undefined}
-              aria-describedby={glossaryError ? "glossary-error" : undefined}
-              placeholder={`按 Enter 添加，单 term ≤ ${GLOSSARY_MAX_LENGTH} 字符，最多 ${GLOSSARY_MAX_TERMS}`}
+              placeholder="搜索文档…"
+              onChange={(e) => docSearch.search(e.target.value)}
+              aria-label="document search"
             />
-            <button className="button button--secondary" onClick={addTerm} disabled={!glossaryDraft.trim()}>+ 添加</button>
-          </div>
-          {glossaryError && (
-            <p id="glossary-error" className="error" role="alert" data-testid="glossary-error">
-              {glossaryError}
-            </p>
-          )}
-          <div>
-            {terms.map((t) => (
-              <span key={t.term} className="chip">
-                {t.term}
-                <button
-                  className="chip__remove"
-                  type="button"
-                  onClick={() => removeTerm(t.term)}
-                  aria-label={`删除术语 ${t.term}`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <button className="button" disabled={busy} onClick={() => void saveGlossary()}>保存并下一步</button>
-        </section>
-      )}
-
-      {step === "DOCUMENTS" && (
-        <section className="card">
-          <h2>关联参考文档</h2>
-          <input
-            className="input"
-            placeholder="搜索文档…"
-            onChange={(e) => docSearch.search(e.target.value)}
-            aria-label="document search"
-          />
-          {docSearch.loading && <p>搜索中…</p>}
-          {docResults.length > VIRTUALIZE_THRESHOLD ? (
-            <VirtualList
-              items={docResults}
-              rowHeight={40}
-              height={320}
-              keyOf={(d) => d.documentId}
-              testId="doc-results-virtual"
-              renderRow={(d) => (
-                <div>
-                  {d.title} <small>({d.securityLevel})</small>
-                  <button className="button button--secondary" disabled={attachedDocs.includes(d.documentId) || busy} onClick={() => void handleAttachDoc(d.documentId)}>关联</button>
-                </div>
-              )}
-            />
-          ) : (
-            <ul>
-              {docResults.map((d) => (
-                <li key={d.documentId}>
-                  {d.title} <small>({d.securityLevel})</small>
-                  <button className="button button--secondary" disabled={attachedDocs.includes(d.documentId) || busy} onClick={() => void handleAttachDoc(d.documentId)}>关联</button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p>已关联: {attachedDocs.length}</p>
-          <button className="button" disabled={busy} onClick={() => goNext()}>下一步：开始处理</button>
-        </section>
-      )}
-
-      {step === "PROCESS" && (
-        <section className="card">
-          <h2>开始处理</h2>
-          <button className="button" disabled={busy || state.startedProcessing} onClick={() => void handleStartProcessing()} data-testid="start-processing">
-            {state.startedProcessing ? "已开始" : "开始处理（hold=true）"}
-          </button>
-          {state.startedProcessing && (
-            <button className="button button--secondary" disabled={busy} onClick={() => goNext()}>下一步：认人</button>
-          )}
-        </section>
-      )}
-
-      {step === "SPEAKERS" && (
-        <section className="card">
-          <h2>确认说话人</h2>
-          <button className="button button--secondary" disabled={busy} onClick={() => void handleLoadAggregate()}>刷新候选人</button>
-          {aggregate?.speakers?.data?.length ? (
-            (aggregate.speakers.data.length > VIRTUALIZE_THRESHOLD ? (
+            {docSearch.loading && <p className="page-subtitle">搜索中…</p>}
+            {docResults.length > VIRTUALIZE_THRESHOLD ? (
               <VirtualList
-                items={aggregate.speakers.data}
-                rowHeight={56}
-                height={420}
-                keyOf={(sp) => sp.label}
-                testId="speakers-virtual"
-                renderRow={(sp) => (
+                items={docResults}
+                rowHeight={40}
+                height={320}
+                keyOf={(d) => d.documentId}
+                testId="doc-results-virtual"
+                renderRow={(d) => (
                   <div>
-                    {sp.label} — {sp.displayName} ({sp.verificationStatus})
-                    {sp.candidates.map((c) => (
-                      <button
-                        key={c.personId}
-                        className="button button--secondary"
-                        disabled={busy}
-                        onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
-                      >
-                        认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
-                      </button>
-                    ))}
+                    {d.title} <small>({d.securityLevel})</small>
+                    <button
+                      className="button button--secondary"
+                      disabled={attachedDocs.includes(d.documentId) || busy}
+                      onClick={() => void handleAttachDoc(d.documentId)}
+                    >
+                      关联
+                    </button>
                   </div>
                 )}
               />
             ) : (
               <ul>
-                {aggregate.speakers.data.map((sp) => (
-                  <li key={sp.label}>
-                    {sp.label} — {sp.displayName} ({sp.verificationStatus})
-                    {sp.candidates.map((c) => (
-                      <button
-                        key={c.personId}
-                        className="button button--secondary"
-                        disabled={busy}
-                        onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
-                      >
-                        认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
-                      </button>
-                    ))}
+                {docResults.map((d) => (
+                  <li key={d.documentId}>
+                    {d.title} <small>({d.securityLevel})</small>
+                    <button
+                      className="button button--secondary"
+                      disabled={attachedDocs.includes(d.documentId) || busy}
+                      onClick={() => void handleAttachDoc(d.documentId)}
+                    >
+                      关联
+                    </button>
                   </li>
                 ))}
               </ul>
-            ))
-          ) : (
-            <p>暂无候选人，请等待 worker 输出后再刷新。</p>
-          )}
-          <button className="button" disabled={busy} onClick={() => goNext()}>跳到生成纪要</button>
-        </section>
-      )}
+            )}
+            <p className="page-subtitle">已关联: {attachedDocs.length}</p>
+            <button className="button button--primary" disabled={busy} onClick={() => goNext()}>
+              下一步：开始处理
+            </button>
+          </section>
+        )}
 
-      {step === "FINALIZE" && (
-        <section className="card">
-          <h2>确认 → 生成纪要</h2>
-          <button className="button" disabled={busy || state.finalized} onClick={() => void handleFinalize()} data-testid="finalize">
-            {state.finalized ? "已 finalize" : "确认 → resume Java phase"}
-          </button>
-          {state.finalized && (
-            <>
-              <button className="button button--secondary" disabled={busy} onClick={() => void handleLoadAggregate()}>刷新纪要</button>
-              {aggregate?.minutes?.data?.markdown ? (
-                <article className="card" aria-labelledby="minutes-h">
-                  <h3 id="minutes-h">{aggregate.minutes.data.title || "会议纪要"}</h3>
-                  <SafeMarkdown source={aggregate.minutes.data.markdown} testId="minutes-md" />
-                </article>
-              ) : (
-                <p>纪要尚未生成，请稍后刷新。</p>
-              )}
-              <button className="button button--secondary" disabled={busy} onClick={() => goNext()}>下一步：下载</button>
-            </>
-          )}
-        </section>
-      )}
-
-      {step === "EXPORT" && (
-        <section className="card">
-          <h2>下载 docx</h2>
-          <button className="button" disabled={busy || !!state.downloadUrl} onClick={() => void handleCreateExport()} data-testid="create-export">
-            {state.downloadUrl ? "已就绪" : "创建导出"}
-          </button>
-          {exportJob && <p>状态: <span data-testid="export-status">{exportJob.status}</span></p>}
-          {state.downloadUrl && (
-            <p>
-              <a className="button" href={state.downloadUrl} download data-testid="download-link">下载</a>
+        {step === "PROCESS" && (
+          <section className="card stack">
+            <h2>4 · 启动 worker 处理</h2>
+            <p className="page-subtitle">
+              worker 先跑完声学流水线；纪要和抽取要等第 6 步确认说话人之后才会启动。
             </p>
-          )}
-        </section>
-      )}
+            <button
+              className="button button--primary"
+              disabled={busy || state.startedProcessing}
+              onClick={() => void handleStartProcessing()}
+              data-testid="start-processing"
+            >
+              {state.startedProcessing ? "已开始" : "开始处理（hold=true）"}
+            </button>
+            {state.startedProcessing && (
+              <button
+                className="button button--secondary"
+                disabled={busy}
+                onClick={() => goNext()}
+              >
+                下一步：认人
+              </button>
+            )}
+          </section>
+        )}
+
+        {step === "SPEAKERS" && (
+          <section className="card stack">
+            <h2>5 · 确认说话人</h2>
+            <button
+              className="button button--secondary"
+              disabled={busy}
+              onClick={() => void handleLoadAggregate()}
+            >
+              刷新候选人
+            </button>
+            {aggregate?.speakers?.data?.length ? (
+              aggregate.speakers.data.length > VIRTUALIZE_THRESHOLD ? (
+                <VirtualList
+                  items={aggregate.speakers.data}
+                  rowHeight={56}
+                  height={420}
+                  keyOf={(sp) => sp.label}
+                  testId="speakers-virtual"
+                  renderRow={(sp) => (
+                    <div>
+                      {sp.label} — {sp.displayName} ({sp.verificationStatus})
+                      {sp.candidates.map((c) => (
+                        <button
+                          key={c.personId}
+                          className="button button--secondary"
+                          disabled={busy}
+                          onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
+                        >
+                          认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                />
+              ) : (
+                <ul>
+                  {aggregate.speakers.data.map((sp) => (
+                    <li key={sp.label}>
+                      {sp.label} — {sp.displayName} ({sp.verificationStatus})
+                      {sp.candidates.map((c) => (
+                        <button
+                          key={c.personId}
+                          className="button button--secondary"
+                          disabled={busy}
+                          onClick={() => void handleConfirmSpeaker(sp.label, c.personId)}
+                        >
+                          认定为 {c.displayName} ({(c.confidence * 100).toFixed(0)}%)
+                        </button>
+                      ))}
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : (
+              <p className="page-subtitle">暂无候选人，请等待 worker 输出后再刷新。</p>
+            )}
+            <button className="button" disabled={busy} onClick={() => goNext()}>
+              跳到生成纪要
+            </button>
+          </section>
+        )}
+
+        {step === "FINALIZE" && (
+          <section className="card stack">
+            <h2>6a · 确认 → 生成纪要</h2>
+            <button
+              className="button button--primary"
+              disabled={busy || state.finalized}
+              onClick={() => void handleFinalize()}
+              data-testid="finalize"
+            >
+              {state.finalized ? "已 finalize" : "确认 → resume Java phase"}
+            </button>
+            {state.finalized && (
+              <>
+                <button
+                  className="button button--secondary"
+                  disabled={busy}
+                  onClick={() => void handleLoadAggregate()}
+                >
+                  刷新纪要
+                </button>
+                {aggregate?.minutes?.data?.markdown ? (
+                  <article className="card" aria-labelledby="minutes-h">
+                    <h3 id="minutes-h">{aggregate.minutes.data.title || "会议纪要"}</h3>
+                    <SafeMarkdown source={aggregate.minutes.data.markdown} testId="minutes-md" />
+                  </article>
+                ) : (
+                  <p className="page-subtitle">纪要尚未生成，请稍后刷新。</p>
+                )}
+                <button
+                  className="button button--secondary"
+                  disabled={busy}
+                  onClick={() => goNext()}
+                >
+                  下一步：下载
+                </button>
+              </>
+            )}
+          </section>
+        )}
+
+        {step === "EXPORT" && (
+          <section className="card stack">
+            <h2>6c · 下载 docx</h2>
+            <button
+              className="button button--primary"
+              disabled={busy || !!state.downloadUrl}
+              onClick={() => void handleCreateExport()}
+              data-testid="create-export"
+            >
+              {state.downloadUrl ? "已就绪" : "创建导出"}
+            </button>
+            {exportJob && (
+              <p className="page-subtitle">
+                状态: <span data-testid="export-status">{exportJob.status}</span>
+              </p>
+            )}
+            {state.downloadUrl && (
+              <p>
+                <a
+                  className="button"
+                  href={state.downloadUrl}
+                  download
+                  data-testid="download-link"
+                >
+                  下载
+                </a>
+              </p>
+            )}
+          </section>
+        )}
+      </WorkstationShell>
     </div>
   );
 }
