@@ -5,10 +5,17 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
+from ai_worker.admin.enrollment import build_enrollment_router
+from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.session_store import EnrollmentSessionStore
+from ._jwt_helpers import make_admin_token
 
 
 @pytest.fixture
@@ -86,3 +93,151 @@ async def test_cleanup_loop_runs_and_stops(tmp_path: Path):
     await store.start_cleanup_loop(interval_seconds=1)
     await asyncio.sleep(0.05)
     await store.stop_cleanup_loop()
+
+
+class _StubJavaClient(JavaPublicClient):
+    def __init__(self) -> None:
+        self.received: list[dict[str, Any]] = []
+        self._base_url = "http://meeting-api.test"
+        self._timeout = 5.0
+
+    async def request(  # type: ignore[override]
+        self,
+        method: str,
+        path: str,
+        *,
+        claims,
+        request_id=None,
+        trace_id=None,
+        idempotency_key=None,
+        json=None,
+        params=None,
+        content=None,
+        extra_headers=None,
+    ) -> httpx.Response:
+        self.received.append({
+            "method": method,
+            "path": path,
+            "body": json,
+            "idempotency": idempotency_key,
+            "tenant": claims.tenant_id,
+        })
+        if method == "POST" and path == "/api/speaker-profiles":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {"speakerProfileId": "sp_01"},
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
+        if method == "POST" and path == "/api/files":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "uploadId": "up_01",
+                    "parts": [{
+                        "partNumber": 1,
+                        "presignedUrl": "https://upload.test/part-1",
+                        "expiresAt": "2026-05-27T10:00:00Z",
+                    }],
+                },
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
+        if method == "POST" and path == "/api/files/up_01/complete":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "fileId": "file_01",
+                    "sha256": "0" * 64,
+                    "sizeBytes": 12,
+                    "contentType": "audio/wav",
+                },
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
+        if method == "POST" and path == "/api/speaker-profiles/sp_01/enrollments":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {"enrollmentId": "en_01"},
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
+        return httpx.Response(404, json={
+            "success": False,
+            "data": None,
+            "error": {"code": "NOT_FOUND", "message": path, "retryable": False},
+            "requestId": "",
+            "traceId": "",
+        })
+
+    async def close(self) -> None:  # pragma: no cover
+        return None
+
+
+class _FakeUploadAsyncClient:
+    def __init__(self, *args, **kwargs) -> None:
+        self.requests: list[tuple[str, bytes, dict[str, str]]] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        return None
+
+    async def put(self, url: str, *, content: bytes, headers: dict[str, str]) -> httpx.Response:
+        self.requests.append((url, content, headers))
+        return httpx.Response(200, headers={"etag": '"etag-1"'})
+
+
+@pytest.mark.asyncio
+async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import ai_worker.admin.enrollment as enrollment_module
+
+    monkeypatch.setattr(enrollment_module.httpx, "AsyncClient", _FakeUploadAsyncClient)
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "person_01")
+    audio = tmp_path / "sample.wav"
+    audio.write_bytes(b"audio-bytes")
+    session.touch_audio(audio)
+    session.touch_preview(0.9, [0.1, 0.2])
+    await store.replace(session)
+
+    java = _StubJavaClient()
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=java, session_store=store))
+    headers = {
+        "Authorization": f"Bearer {make_admin_token()}",
+        "X-Request-Id": "req_1",
+        "X-Trace-Id": "trace_1",
+        "Idempotency-Key": "idem_1",
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.post(f"/admin/enrollment/sessions/{session.session_id}/commit", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "COMMITTED"
+    assert response.json()["data"]["profileId"] == "sp_01"
+    assert response.json()["data"]["fileId"] == "file_01"
+    paths = [call["path"] for call in java.received]
+    assert paths == [
+        "/api/speaker-profiles",
+        "/api/files",
+        "/api/files/up_01/complete",
+        "/api/speaker-profiles/sp_01/enrollments",
+    ]
+    profile_body = java.received[0]["body"]
+    assert profile_body["personId"] == "person_01"
+    assert profile_body["displayName"] == "person_01"
+    assert profile_body["consentSource"] == "workstation"
+    assert profile_body["consentVersion"] == "v1"
+    complete_body = java.received[2]["body"]
+    assert complete_body["parts"] == [{"partNumber": 1, "partSha256": complete_body["fileSha256"], "etag": "etag-1"}]
+    enroll_body = java.received[3]["body"]
+    assert enroll_body == {"sourceAudioFileId": "file_01"}
+    assert await store.get(session.session_id) is None
+    assert not audio.exists()

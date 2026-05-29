@@ -11,6 +11,8 @@ heavy 3D-Speaker / bge-m3 weights stay out of the path.
 
 from __future__ import annotations
 
+import hashlib
+import httpx
 import logging
 import math
 from pathlib import Path
@@ -135,49 +137,146 @@ def build_enrollment_router(
             return error(status_code=409, code="ENROLLMENT_NOT_PREVIEWED",
                          message=f"session must be PREVIEWED before commit (state={session.state})",
                          retryable=False, request_id=x_request_id, trace_id=x_trace_id)
-        # Three-step orchestration: profile → audio upload → enrollment record.
+        if session.audio_path is None or not session.audio_path.exists():
+            return error(status_code=409, code="ENROLLMENT_AUDIO_MISSING",
+                         message="audio file missing before commit", retryable=False,
+                         request_id=x_request_id, trace_id=x_trace_id)
+
+        # Three-step orchestration: profile → generic file upload → enrollment record.
         # Each Java call is independently idempotent via its own Idempotency-Key.
         profile = await java_client.request(
-            "POST", "/api/speakers/profiles",
+            "POST", "/api/speaker-profiles",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:profile",
-            json={"personId": session.person_id},
+            json={
+                "personId": session.person_id,
+                "displayName": session.person_id,
+                "consentSource": "workstation",
+                "consentVersion": "v1",
+            },
         )
         if profile.status_code >= 400:
             return passthrough(profile.status_code, profile.content, x_request_id, x_trace_id)
-
-        upload = await java_client.request(
-            "POST", "/api/speakers/profiles/audio:upload",
-            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
-            idempotency_key=f"{idempotency_key or session_id}:audio",
-            json={"sessionId": session_id, "personId": session.person_id},
+        profile_body = profile.json()
+        profile_id = (
+            (profile_body.get("data") or {}).get("profileId")
+            or (profile_body.get("data") or {}).get("speakerProfileId")
         )
-        if upload.status_code >= 400:
-            return passthrough(upload.status_code, upload.content, x_request_id, x_trace_id)
+        if not profile_id:
+            return error(
+                status_code=502,
+                code="UPSTREAM_INVALID_RESPONSE",
+                message="speaker profile response missing profileId",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        audio_bytes = session.audio_path.read_bytes()
+        file_sha = hashlib.sha256(audio_bytes).hexdigest()
+        init = await java_client.request(
+            "POST", "/api/files",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            idempotency_key=f"{idempotency_key or session_id}:init",
+            json={
+                "fileName": f"enroll-{session_id}.wav",
+                "contentType": "audio/wav",
+                "fileSizeBytes": len(audio_bytes),
+                "fileSha256": file_sha,
+            },
+        )
+        if init.status_code >= 400:
+            return passthrough(init.status_code, init.content, x_request_id, x_trace_id)
+        init_body = init.json()
+        upload_id = (init_body.get("data") or {}).get("uploadId")
+        parts = (init_body.get("data") or {}).get("parts") or []
+        if not upload_id or not parts:
+            return error(
+                status_code=502,
+                code="UPSTREAM_INVALID_RESPONSE",
+                message="file upload response missing uploadId or parts",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        upload_url = parts[0].get("presignedUrl") or parts[0].get("uploadUrl")
+        if not upload_url:
+            return error(
+                status_code=502,
+                code="UPSTREAM_INVALID_RESPONSE",
+                message="file upload response missing signed URL",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            put_response = await client.put(
+                upload_url,
+                content=audio_bytes,
+                headers={"Content-Type": "audio/wav"},
+            )
+        if put_response.status_code >= 400:
+            return error(
+                status_code=502,
+                code="DEPENDENCY_UNAVAILABLE",
+                message="failed to upload enrollment audio to signed URL",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        etag = (put_response.headers.get("etag") or "").strip('"')
+        complete = await java_client.request(
+            "POST", f"/api/files/{upload_id}/complete",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            idempotency_key=f"{idempotency_key or session_id}:complete",
+            json={
+                "fileSha256": file_sha,
+                "parts": [{"partNumber": 1, "partSha256": file_sha, "etag": etag}],
+            },
+        )
+        if complete.status_code >= 400:
+            return passthrough(complete.status_code, complete.content, x_request_id, x_trace_id)
+        complete_body = complete.json()
+        file_id = (complete_body.get("data") or {}).get("fileId")
+        if not file_id:
+            return error(
+                status_code=502,
+                code="UPSTREAM_INVALID_RESPONSE",
+                message="file complete response missing fileId",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
 
         enrollment = await java_client.request(
-            "POST", "/api/speakers/enrollments",
+            "POST", f"/api/speaker-profiles/{profile_id}/enrollments",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:enroll",
-            json={
-                "personId": session.person_id,
-                "sessionId": session_id,
-                "qualityScore": session.quality_score,
-            },
+            json={"sourceAudioFileId": file_id},
         )
         if enrollment.status_code >= 400:
             return passthrough(enrollment.status_code, enrollment.content, x_request_id, x_trace_id)
 
         artifacts = {
             "profileResponse": profile.text,
-            "uploadResponse": upload.text,
+            "completeResponse": complete.text,
             "enrollmentResponse": enrollment.text,
         }
         session.touch_committed(artifacts)
         await session_store.replace(session)
         # Drop audio file; we've handed off to Java's durable store.
         await session_store.drop(session_id)
-        return ok({"sessionId": session_id, "state": "COMMITTED"}, x_request_id, x_trace_id)
+        return ok(
+            {
+                "sessionId": session_id,
+                "state": "COMMITTED",
+                "profileId": profile_id,
+                "fileId": file_id,
+            },
+            x_request_id,
+            x_trace_id,
+        )
 
     return router
 
