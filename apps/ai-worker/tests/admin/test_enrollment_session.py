@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from pathlib import Path
 from typing import Any
@@ -135,11 +136,19 @@ class _StubJavaClient(JavaPublicClient):
                 "success": True,
                 "data": {
                     "uploadId": "up_01",
-                    "parts": [{
-                        "partNumber": 1,
-                        "presignedUrl": "https://upload.test/part-1",
-                        "expiresAt": "2026-05-27T10:00:00Z",
-                    }],
+                    "parts": [],
+                },
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
+        if method == "POST" and path == "/api/files/up_01/parts":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "partNumber": 1,
+                    "presignedUrl": "https://upload.test/part-1",
+                    "expiresAt": "2026-05-27T10:00:00Z",
                 },
                 "error": None,
                 "requestId": "",
@@ -227,17 +236,25 @@ async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Pa
     assert paths == [
         "/api/speaker-profiles",
         "/api/files",
+        "/api/files/up_01/parts",
         "/api/files/up_01/complete",
         "/api/speaker-profiles/sp_01/enrollments",
     ]
     profile_body = java.received[0]["body"]
-    assert profile_body["personId"] == "person_01"
-    assert profile_body["displayName"] == "person_01"
-    assert profile_body["consentSource"] == "workstation"
-    assert profile_body["consentVersion"] == "v1"
-    complete_body = java.received[2]["body"]
-    assert complete_body["parts"] == [{"partNumber": 1, "partSha256": complete_body["fileSha256"], "etag": "etag-1"}]
-    enroll_body = java.received[3]["body"]
-    assert enroll_body == {"sourceAudioFileId": "file_01"}
+    assert profile_body == {
+        "personId": "person_01",
+        "displayName": "person_01",
+        "consentReference": "workstation:v1",
+    }
+    part_body = java.received[2]["body"]
+    complete_body = java.received[3]["body"]
+    expected_sha = hashlib.sha256(b"audio-bytes").hexdigest()
+    assert part_body == {"partNumber": 1, "sizeBytes": len(b"audio-bytes"), "partSha256": expected_sha}
+    assert complete_body["parts"] == [{"partNumber": 1, "partSha256": expected_sha, "etag": "etag-1"}]
+    enroll_body = java.received[4]["body"]
+    assert enroll_body == {
+        "audioFileId": "file_01",
+        "consentReference": "workstation:v1",
+    }
     assert await store.get(session.session_id) is None
     assert not audio.exists()

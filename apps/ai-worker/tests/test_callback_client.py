@@ -192,6 +192,37 @@ class TestUpdateStep:
 
         assert "errorCode" not in captured_body
 
+    @pytest.mark.asyncio
+    async def test_idempotency_key_distinguishes_step_status_events(self, client: JavaCallbackClient) -> None:
+        idempotency_keys: list[str] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            idempotency_keys.append(idempotency_key)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=0,
+            )
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="SUCCEEDED",
+                progress=100,
+            )
+
+        assert idempotency_keys == [
+            "task_42:AUDIO_PREPROCESS:RUNNING:1:v1",
+            "task_42:AUDIO_PREPROCESS:SUCCEEDED:1:v1",
+        ]
+
 
 class TestCompleteWorkerPhase:
     @pytest.mark.asyncio

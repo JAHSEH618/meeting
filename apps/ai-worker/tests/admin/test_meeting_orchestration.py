@@ -1,4 +1,4 @@
-"""C5.3 — meeting workstation orchestration: hold flag + finalize → resume."""
+"""C5.3 — meeting workstation passthrough routes for one-shot pipeline."""
 
 from __future__ import annotations
 
@@ -72,18 +72,31 @@ class _StubJavaClient(JavaPublicClient):
                 "error": None,
                 "requestId": "", "traceId": "",
             })
-        if path.startswith("/api/processing-tasks/") and path.endswith(":resume-java-phase"):
+        if path == "/api/meetings/m_01/files/audio/uploads" and method == "POST":
             return httpx.Response(200, json={
                 "success": True,
-                "data": {"taskId": "task_01", "meetingId": "m_01", "phase": "JAVA_LLM_RUNNING",
-                          "status": "RUNNING", "attemptNo": 1, "steps": []},
+                "data": {"uploadId": "up_01", "parts": []},
                 "error": None,
                 "requestId": "", "traceId": "",
             })
-        if path.startswith("/api/meetings/") and path.endswith("/processing-tasks") and method == "POST":
+        if path == "/api/meetings/m_01/files/audio/uploads/up_01/parts" and method == "POST":
             return httpx.Response(200, json={
                 "success": True,
-                "data": {"taskId": "task_new", "phase": "WORKER_DAG_RUNNING"},
+                "data": {"uploadId": "up_01", "partNumber": 1, "uploadUrl": "https://upload.test/1"},
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
+        if path == "/api/meetings/m_01/files/audio/uploads/up_01/complete" and method == "POST":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {"uploadId": "up_01", "uploadStatus": "COMPLETED", "fileId": "file_01"},
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
+        if path == "/api/meetings/m_01/files/audio/uploads/up_01/abort" and method == "POST":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": None,
                 "error": None,
                 "requestId": "", "traceId": "",
             })
@@ -115,39 +128,78 @@ def auth_headers() -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_start_processing_injects_hold_flag(app: FastAPI, auth_headers: dict[str, str]):
+async def test_audio_upload_complete_passthrough_does_not_start_or_finalize(app: FastAPI, auth_headers: dict[str, str]):
     async with _client(app) as client:
         response = await client.post(
-            "/admin/meetings/m_01:start-processing",
-            json={"options": {"enableAsr": True}},
+            "/admin/meetings/m_01/files/audio/uploads/up_01/complete",
+            json={
+                "fileSha256": "a" * 64,
+                "parts": [{"partNumber": 1, "partSha256": "a" * 64, "etag": "e"}],
+            },
             headers=auth_headers,
         )
     assert response.status_code == 200
     stub: _StubJavaClient = app.state.java_stub
-    create_call = next(c for c in stub.received if c["path"].endswith("/processing-tasks") and c["method"] == "POST")
-    assert create_call["body"]["holdAtWorkerPhase"] is True
-    assert create_call["body"]["taskType"] == "MEETING_FULL_PIPELINE"
-    assert create_call["tenant"] == "tenant_01"
-
-
-@pytest.mark.asyncio
-async def test_finalize_resolves_latest_task_then_calls_resume(app: FastAPI, auth_headers: dict[str, str]):
-    async with _client(app) as client:
-        response = await client.post("/admin/meetings/m_01:finalize", headers=auth_headers)
-    assert response.status_code == 200
-    stub: _StubJavaClient = app.state.java_stub
-    paths = [c["path"] for c in stub.received]
-    assert "/api/meetings/m_01/processing-tasks/latest" in paths
-    assert "/api/processing-tasks/task_01:resume-java-phase" in paths
+    assert stub.received == [{
+        "method": "POST",
+        "path": "/api/meetings/m_01/files/audio/uploads/up_01/complete",
+        "body": {
+            "fileSha256": "a" * 64,
+            "parts": [{"partNumber": 1, "partSha256": "a" * 64, "etag": "e"}],
+        },
+        "params": None,
+        "idempotency": "idem_t1",
+        "tenant": "tenant_01",
+    }]
 
 
 @pytest.mark.asyncio
 async def test_missing_jwt_returns_401(app: FastAPI):
     async with _client(app) as client:
-        response = await client.post("/admin/meetings/m_01:finalize")
+        response = await client.post("/admin/meetings/m_01/files/audio/uploads/up_01/complete")
     assert response.status_code == 401
     body = response.json()
     assert body["detail"]["code"] == "UNAUTHENTICATED"
+
+
+@pytest.mark.asyncio
+async def test_manual_start_and_finalize_routes_are_removed(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        start = await client.post(
+            "/admin/meetings/m_01:start-processing",
+            json={"options": {"enableAsr": True}},
+            headers=auth_headers,
+        )
+        finalize = await client.post("/admin/meetings/m_01:finalize", headers=auth_headers)
+
+    assert start.status_code in {404, 405}
+    assert finalize.status_code in {404, 405}
+    stub: _StubJavaClient = app.state.java_stub
+    assert not any(call["path"].endswith("/processing-tasks") for call in stub.received)
+    assert not any(call["path"].endswith(":resume-java-phase") for call in stub.received)
+
+
+@pytest.mark.asyncio
+async def test_audio_upload_init_and_part_passthrough(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        init = await client.post(
+            "/admin/meetings/m_01/files/audio/uploads",
+            json={"fileName": "meeting.wav", "contentType": "audio/wav", "fileSizeBytes": 1, "fileSha256": "a" * 64},
+            headers=auth_headers,
+        )
+        part = await client.post(
+            "/admin/meetings/m_01/files/audio/uploads/up_01/parts",
+            json={"partNumber": 1, "sizeBytes": 1, "partSha256": "a" * 64},
+            headers=auth_headers,
+        )
+    assert init.status_code == 200
+    assert part.status_code == 200
+    stub: _StubJavaClient = app.state.java_stub
+    paths = [c["path"] for c in stub.received]
+    assert paths == [
+        "/api/meetings/m_01/files/audio/uploads",
+        "/api/meetings/m_01/files/audio/uploads/up_01/parts",
+    ]
 
 
 @pytest.mark.asyncio
@@ -162,6 +214,34 @@ async def test_attach_document_passthrough(app: FastAPI, auth_headers: dict[str,
     stub: _StubJavaClient = app.state.java_stub
     attach = next(c for c in stub.received if c["path"] == "/api/meetings/m_01/documents")
     assert attach["body"] == {"documentId": "doc_01", "role": "REFERENCE"}
+
+
+@pytest.mark.asyncio
+async def test_create_document_passthrough(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        response = await client.post(
+            "/admin/documents",
+            json={
+                "title": "ref.pdf",
+                "fileId": "file_01",
+                "documentType": "PDF",
+                "securityLevel": "INTERNAL",
+                "contentHash": "a" * 64,
+            },
+            headers=auth_headers,
+        )
+    assert response.status_code == 200
+    stub: _StubJavaClient = app.state.java_stub
+    create = next(c for c in stub.received if c["path"] == "/api/documents")
+    assert create["method"] == "POST"
+    assert create["body"] == {
+        "title": "ref.pdf",
+        "fileId": "file_01",
+        "documentType": "PDF",
+        "securityLevel": "INTERNAL",
+        "contentHash": "a" * 64,
+    }
+    assert create["idempotency"] == "idem_t1"
 
 
 @pytest.mark.asyncio

@@ -144,6 +144,7 @@ def build_enrollment_router(
 
         # Three-step orchestration: profile → generic file upload → enrollment record.
         # Each Java call is independently idempotent via its own Idempotency-Key.
+        consent_reference = "workstation:v1"
         profile = await java_client.request(
             "POST", "/api/speaker-profiles",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -151,8 +152,7 @@ def build_enrollment_router(
             json={
                 "personId": session.person_id,
                 "displayName": session.person_id,
-                "consentSource": "workstation",
-                "consentVersion": "v1",
+                "consentReference": consent_reference,
             },
         )
         if profile.status_code >= 400:
@@ -189,22 +189,36 @@ def build_enrollment_router(
             return passthrough(init.status_code, init.content, x_request_id, x_trace_id)
         init_body = init.json()
         upload_id = (init_body.get("data") or {}).get("uploadId")
-        parts = (init_body.get("data") or {}).get("parts") or []
-        if not upload_id or not parts:
+        if not upload_id:
             return error(
                 status_code=502,
                 code="UPSTREAM_INVALID_RESPONSE",
-                message="file upload response missing uploadId or parts",
+                message="file upload response missing uploadId",
                 retryable=True,
                 request_id=x_request_id,
                 trace_id=x_trace_id,
             )
-        upload_url = parts[0].get("presignedUrl") or parts[0].get("uploadUrl")
+
+        part = await java_client.request(
+            "POST", f"/api/files/{upload_id}/parts",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            idempotency_key=f"{idempotency_key or session_id}:part:1",
+            json={
+                "partNumber": 1,
+                "sizeBytes": len(audio_bytes),
+                "partSha256": file_sha,
+            },
+        )
+        if part.status_code >= 400:
+            return passthrough(part.status_code, part.content, x_request_id, x_trace_id)
+        part_body = part.json()
+        part_data = part_body.get("data") or {}
+        upload_url = part_data.get("presignedUrl") or part_data.get("uploadUrl")
         if not upload_url:
             return error(
                 status_code=502,
                 code="UPSTREAM_INVALID_RESPONSE",
-                message="file upload response missing signed URL",
+                message="file upload part response missing signed URL",
                 retryable=True,
                 request_id=x_request_id,
                 trace_id=x_trace_id,
@@ -253,7 +267,10 @@ def build_enrollment_router(
             "POST", f"/api/speaker-profiles/{profile_id}/enrollments",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:enroll",
-            json={"sourceAudioFileId": file_id},
+            json={
+                "audioFileId": file_id,
+                "consentReference": consent_reference,
+            },
         )
         if enrollment.status_code >= 400:
             return passthrough(enrollment.status_code, enrollment.content, x_request_id, x_trace_id)

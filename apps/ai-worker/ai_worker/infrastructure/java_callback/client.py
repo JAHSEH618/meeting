@@ -136,7 +136,7 @@ class JavaCallbackClient:
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
-        idempotency_key = f"{task_id}:{step_name}:{attempt_no}:v1"
+        idempotency_key = f"{task_id}:{step_name}:{status}:{attempt_no}:v1"
         body = {
             "tenantId": tenant_id,
             "taskId": task_id,
