@@ -579,6 +579,13 @@ spec:
                 name: ai-worker
                 port:
                   number: 8090
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: meeting-api
+                port:
+                  number: 8080
 ```
 
 ### 5.10 工作站 SPA 路径约定 (Phase J)
@@ -587,6 +594,7 @@ spec:
 - `BrowserRouter basename="/workstation"`，所有 SPA 链接（`/meetings`、`/enrollment`）实际落在 `/workstation/meetings` 等路径下；E2E (`apps/ai-worker-web/e2e/*.spec.ts`) 必须用带前缀的 `page.goto("/workstation/...")`。
 - FastAPI 用 `SpaStaticFiles` 子类挂载：SPA 路由（无扩展名、不在 `assets/` 下）的 404 回退到 `index.html`，但缺失的 `*.js / *.css / *.ico` 等真实 404 保留——避免浏览器把 HTML 当 JS module 解析后报隐晦错误。
 - **登录跳转**优先级：`window.__WORKSTATION_CONFIG__.authLoginUrl`（运行时，由 `AI_WORKER_AUTH_LOGIN_URL` 注入）→ `VITE_AUTH_LOGIN_URL`（构建期）→ Python 专用前端自己的 `/workstation/login`。默认登录页会 POST Java `/api/auth/login`，拿到 admin JWT 后写入内存 token store。`AI_WORKER_AUTH_LOGIN_URL` 只用于外部完整网页登录流程，不要指向 JSON API `/api/auth/login`。
+- K8s workstation host 必须同时暴露 `/api/*` 到 `meeting-api`，因为详情页直接读取 `GET /api/processing-tasks/{taskId}` 并用 fetch-stream 订阅 `GET /api/processing-tasks/{taskId}/events`。本地 `http://localhost:8090/workstation/` 没有 ingress 时，ai-worker 仅对这两个 task-read 端点提供同源窄代理；其他业务写入仍走 `/admin/*` BFF。
 
 ---
 
