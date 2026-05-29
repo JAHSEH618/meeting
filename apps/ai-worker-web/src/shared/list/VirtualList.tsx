@@ -12,7 +12,7 @@ export interface VirtualListProps<T> {
 
 /**
  * Dependency-free fixed-row-height windowing. Renders only the rows currently
- * inside the scroll viewport (plus an overscan buffer) so the wizard can scale
+ * inside the scroll viewport (plus an overscan buffer) so dense pages can scale
  * to long transcript / candidate / document lists without dragging in a list
  * library (keeps the first-screen JS budget intact).
  */

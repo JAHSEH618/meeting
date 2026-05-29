@@ -9,15 +9,18 @@ import {
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
 import { ApiError } from "@/shared/api/client";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
+import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 
 const QUALITY_THRESHOLD = 0.5;
 
 export function EnrollmentPage() {
   const [personId, setPersonId] = useState<string | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<PersonDTO | null>(null);
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [personModalOpen, setPersonModalOpen] = useState(false);
 
   const searchPersonsFetcher = useCallback(
     (q: string, signal: AbortSignal) => searchPersons(q, { signal }),
@@ -97,14 +100,17 @@ export function EnrollmentPage() {
         {persons.length > 0 ? (
           <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             {persons.map((p) => (
-              <li key={p.id}>
+              <li key={p.personId}>
                 <label className="toolbar">
                   <input
                     type="radio"
                     name="person"
-                    value={p.id}
-                    checked={personId === p.id}
-                    onChange={() => setPersonId(p.id)}
+                    value={p.personId}
+                    checked={personId === p.personId}
+                    onChange={() => {
+                      setPersonId(p.personId);
+                      setSelectedPerson(p);
+                    }}
                   />
                   <span>{p.displayName}</span>
                   {p.email ? <span className="page-subtitle">{p.email}</span> : null}
@@ -113,6 +119,23 @@ export function EnrollmentPage() {
             ))}
           </ul>
         ) : null}
+        <div className="toolbar">
+          <button className="button button--secondary" type="button" onClick={() => setPersonModalOpen(true)}>
+            + 新建人员
+          </button>
+          {selectedPerson ? (
+            <span className="page-subtitle">已选择：{selectedPerson.displayName}</span>
+          ) : null}
+        </div>
+        <PersonCreateModal
+          open={personModalOpen}
+          onClose={() => setPersonModalOpen(false)}
+          onCreated={(person) => {
+            setPersonId(person.personId);
+            setSelectedPerson(person);
+            setPersonModalOpen(false);
+          }}
+        />
       </section>
 
       <section className="card stack" aria-labelledby="enroll-step-2">

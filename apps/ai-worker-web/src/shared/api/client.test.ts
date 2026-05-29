@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { ApiError, apiCall } from "@/shared/api/client";
+import { ApiError, apiCall, subscribeEventStream } from "@/shared/api/client";
 import { authStore } from "@/shared/auth/store";
 
 describe("apiCall", () => {
@@ -83,4 +83,50 @@ describe("apiCall", () => {
       Object.defineProperty(window, "location", { configurable: true, value: origLocation });
     }
   });
+
+  it("subscribes to SSE with Authorization and parses data frames", async () => {
+    authStore.set("my-token");
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: TASK_SNAPSHOT\n'));
+        controller.enqueue(new TextEncoder().encode('data: {"taskId":"task1","status":"RUNNING"}\n\n'));
+        controller.close();
+      },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+    const events: unknown[] = [];
+
+    const subscription = subscribeEventStream("/api/processing-tasks/task1/events", {
+      lastEventId: "task1:1",
+      onEvent: (event) => events.push(event),
+      onFallback: vi.fn(),
+    });
+    await waitFor(() => expect(events).toHaveLength(1));
+    subscription.close();
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Accept).toBe("text/event-stream");
+    expect(headers.Authorization).toBe("Bearer my-token");
+    expect(headers["Last-Event-Id"]).toBe("task1:1");
+    expect(events[0]).toMatchObject({ taskId: "task1", status: "RUNNING" });
+  });
 });
+
+async function waitFor(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 1000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
+}

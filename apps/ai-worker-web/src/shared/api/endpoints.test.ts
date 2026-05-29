@@ -1,0 +1,129 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  abortAudioUpload,
+  abortFileUpload,
+  completeAudioUpload,
+  completeFileUpload,
+  createAudioUploadPart,
+  createDocument,
+  createFileUploadPart,
+  createPerson,
+  getProcessingTask,
+  initAudioUpload,
+  initFileUpload,
+  processingTaskEventsUrl,
+  searchPersons,
+} from "./endpoints";
+import { authStore } from "@/shared/auth/store";
+
+describe("admin endpoint helpers", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    authStore.clear();
+    fetchMock.mockReset();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  it("creates persons and normalizes legacy id fields", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: "p1", displayName: "李四", email: null }));
+
+    const person = await createPerson({ displayName: "李四" });
+
+    expect(person.personId).toBe("p1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/admin/persons",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("searches persons with query params", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ personId: "p1", displayName: "李四", email: null }]));
+
+    const persons = await searchPersons("李四");
+
+    expect(persons[0]?.personId).toBe("p1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/persons?q=%E6%9D%8E%E5%9B%9B");
+  });
+
+  it("exposes generic file upload lifecycle helpers", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ uploadId: "u1", parts: [] }))
+      .mockResolvedValueOnce(jsonResponse({ partNumber: 1, uploadUrl: "https://upload/1", expiresAt: "", headers: {} }))
+      .mockResolvedValueOnce(jsonResponse({ fileId: "f1", sha256: "a", sizeBytes: 1, contentType: "application/pdf" }))
+      .mockResolvedValueOnce(jsonResponse(null));
+
+    await initFileUpload({ fileName: "ref.pdf", contentType: "application/pdf", fileSizeBytes: 1, fileSha256: "a" });
+    await createFileUploadPart("u1", { partNumber: 1, sizeBytes: 1, partSha256: "b" });
+    await completeFileUpload("u1", { fileSha256: "a", parts: [{ partNumber: 1, partSha256: "b", etag: "e" }] });
+    await abortFileUpload("u1");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/admin/files/uploads",
+      "/admin/files/uploads/u1/parts",
+      "/admin/files/uploads/u1/complete",
+      "/admin/files/uploads/u1/abort",
+    ]);
+  });
+
+  it("exposes meeting audio upload lifecycle helpers", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ uploadId: "u1", parts: [] }))
+      .mockResolvedValueOnce(jsonResponse({ partNumber: 1, uploadUrl: "https://upload/1", expiresAt: "", headers: {} }))
+      .mockResolvedValueOnce(jsonResponse({ uploadId: "u1", uploadStatus: "COMPLETED", fileId: "f1" }))
+      .mockResolvedValueOnce(jsonResponse(null));
+
+    await initAudioUpload("m1", { fileName: "a.mp3", contentType: "audio/mpeg", fileSizeBytes: 1, fileSha256: "a" });
+    await createAudioUploadPart("m1", "u1", { partNumber: 1, sizeBytes: 1, partSha256: "b" });
+    await completeAudioUpload("m1", "u1", { fileSha256: "a", parts: [{ partNumber: 1, partSha256: "b", etag: "e" }] });
+    await abortAudioUpload("m1", "u1");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/admin/meetings/m1/files/audio/uploads",
+      "/admin/meetings/m1/files/audio/uploads/u1/parts",
+      "/admin/meetings/m1/files/audio/uploads/u1/complete",
+      "/admin/meetings/m1/files/audio/uploads/u1/abort",
+    ]);
+  });
+
+  it("creates documents from uploaded generic files", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ documentId: "d1", title: "ref.pdf" }));
+
+    const document = await createDocument({
+      title: "ref.pdf",
+      fileId: "f1",
+      documentType: "PDF",
+      securityLevel: "INTERNAL",
+      contentHash: "a",
+    });
+
+    expect(document.documentId).toBe("d1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/documents");
+  });
+
+  it("exposes task detail and SSE helpers", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      taskId: "task 1",
+      meetingId: "m1",
+      status: "RUNNING",
+      phase: "WORKER_DAG_RUNNING",
+      attemptNo: 1,
+      currentStep: "ASR",
+      lastErrorCode: null,
+      retryable: true,
+      steps: [],
+    }));
+
+    await getProcessingTask("task 1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/processing-tasks/task%201");
+    expect(processingTaskEventsUrl("task 1")).toBe("/api/processing-tasks/task%201/events");
+  });
+});
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(
+    JSON.stringify({ success: status < 400, data, error: null, requestId: "r", traceId: "t" }),
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
