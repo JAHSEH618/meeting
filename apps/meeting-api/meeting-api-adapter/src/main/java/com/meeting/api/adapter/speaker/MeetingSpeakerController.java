@@ -46,6 +46,7 @@ public class MeetingSpeakerController {
             speakerLabel,
             body.personId(),
             body.speakerProfileId(),
+            body.expectedTranscriptVersion(),
             userId
         );
         return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));

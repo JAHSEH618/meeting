@@ -35,6 +35,12 @@ public class TenantBootstrapConfig {
     @Configuration
     @Profile("!prod")
     public static class DevSeed implements ApplicationRunner {
+        private static final String DEV_TENANT_ID = "tenant_default";
+        private static final String DEV_USER_ID = "user_admin";
+        private static final String DEV_PERSON_ID = "person_admin";
+        private static final String DEV_DISPLAY_NAME = "Admin";
+
+        private final JdbcTemplate jdbc;
         private final TenantBootstrap bootstrap;
         private final List<String> tenantIds;
 
@@ -42,6 +48,7 @@ public class TenantBootstrapConfig {
             JdbcTemplate jdbc,
             @Value("${meeting.tenants.active:tenant_default}") String tenantIdsCsv
         ) {
+            this.jdbc = jdbc;
             this.bootstrap = new TenantBootstrap(new JdbcTenantRegistry(jdbc));
             this.tenantIds = ActiveTenantList.parse(tenantIdsCsv);
         }
@@ -49,6 +56,52 @@ public class TenantBootstrapConfig {
         @Override
         public void run(ApplicationArguments args) {
             bootstrap.run(tenantIds, TenantBootstrap.Mode.SEED_MISSING);
+            seedInMemoryAuthActor();
+        }
+
+        private void seedInMemoryAuthActor() {
+            jdbc.update(
+                "INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                DEV_TENANT_ID,
+                "Default Tenant"
+            );
+            jdbc.update(
+                """
+                INSERT INTO persons (
+                  id, tenant_id, display_name, normalized_name, status
+                ) VALUES (?, ?, ?, ?, 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                DEV_PERSON_ID,
+                DEV_TENANT_ID,
+                DEV_DISPLAY_NAME,
+                "admin"
+            );
+            jdbc.update(
+                """
+                INSERT INTO users (
+                  id, tenant_id, email, username, display_name, status
+                ) VALUES (?, ?, ?, ?, ?, 'ACTIVE')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                DEV_USER_ID,
+                DEV_TENANT_ID,
+                "dev-admin@tenant-default.local",
+                "admin",
+                DEV_DISPLAY_NAME
+            );
+            jdbc.update(
+                """
+                INSERT INTO user_person_links (
+                  id, tenant_id, user_id, person_id, link_type, status, is_primary
+                ) VALUES (?, ?, ?, ?, 'PRIMARY', 'ACTIVE', true)
+                ON CONFLICT (tenant_id, user_id, person_id) DO NOTHING
+                """,
+                "upl_admin",
+                DEV_TENANT_ID,
+                DEV_USER_ID,
+                DEV_PERSON_ID
+            );
         }
     }
 

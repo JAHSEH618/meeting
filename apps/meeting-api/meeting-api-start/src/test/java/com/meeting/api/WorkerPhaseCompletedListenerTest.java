@@ -1,8 +1,11 @@
 package com.meeting.api;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
+import com.meeting.api.app.speaker.SpeakerAutoConfirmService;
+import com.meeting.api.app.task.JavaLlmPhaseOrchestrator;
 import com.meeting.api.app.task.TaskStepProgressService;
 import com.meeting.api.app.task.WorkerPhaseCompletedListener;
+import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
@@ -97,6 +100,40 @@ class WorkerPhaseCompletedListenerTest {
         ));
     }
 
+    @Test
+    void meetingFullPipelineInvokesAutoConfirmBeforeJavaLlm() {
+        InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
+        TaskStepProgressService progress = service(tasks);
+        List<String> calls = new java.util.ArrayList<>();
+        SpeakerAutoConfirmService autoConfirm = new RecordingAutoConfirm(calls, false);
+        JavaLlmPhaseOrchestrator orchestrator = new RecordingOrchestrator(calls);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm);
+
+        listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
+
+        assertThat(calls).containsExactly(
+            "auto:tenant_01:task_01",
+            "llm:tenant_01:task_01"
+        );
+    }
+
+    @Test
+    void autoConfirmFailureDoesNotBlockJavaLlm() {
+        InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
+        TaskStepProgressService progress = service(tasks);
+        List<String> calls = new java.util.ArrayList<>();
+        SpeakerAutoConfirmService autoConfirm = new RecordingAutoConfirm(calls, true);
+        JavaLlmPhaseOrchestrator orchestrator = new RecordingOrchestrator(calls);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm);
+
+        listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
+
+        assertThat(calls).containsExactly(
+            "auto:tenant_01:task_01",
+            "llm:tenant_01:task_01"
+        );
+    }
+
     private static TaskStepProgressService service(InMemoryTaskRepository tasks) {
         return new TaskStepProgressService(
             tasks,
@@ -182,6 +219,40 @@ class WorkerPhaseCompletedListenerTest {
         @Override
         public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
             return List.of();
+        }
+    }
+
+    private static final class RecordingAutoConfirm extends SpeakerAutoConfirmService {
+        private final List<String> calls;
+        private final boolean fail;
+
+        private RecordingAutoConfirm(List<String> calls, boolean fail) {
+            super(null, null, null, null);
+            this.calls = calls;
+            this.fail = fail;
+        }
+
+        @Override
+        public void autoConfirmAboveThreshold(String tenantId, String taskId) {
+            calls.add("auto:" + tenantId + ":" + taskId);
+            if (fail) {
+                throw new RuntimeException("auto-confirm failed");
+            }
+        }
+    }
+
+    private static final class RecordingOrchestrator extends JavaLlmPhaseOrchestrator {
+        private final List<String> calls;
+
+        private RecordingOrchestrator(List<String> calls) {
+            super(null, null, null, null);
+            this.calls = calls;
+        }
+
+        @Override
+        public ProcessingTaskDTO run(String tenantId, String taskId) {
+            calls.add("llm:" + tenantId + ":" + taskId);
+            return null;
         }
     }
 }

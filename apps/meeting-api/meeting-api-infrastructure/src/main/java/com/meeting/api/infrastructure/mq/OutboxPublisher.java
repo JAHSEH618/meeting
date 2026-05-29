@@ -51,6 +51,7 @@ public class OutboxPublisher {
         "MeetingDocumentAttachedEvent",
         "MeetingDocumentDetachedEvent",
         "MeetingGlossaryUpdatedEvent",
+        "PersonCreatedEvent",
         "MinutesGeneratedEvent",
         "ExportJobCompletedEvent",
         "ExportDownloadRevokedEvent"
