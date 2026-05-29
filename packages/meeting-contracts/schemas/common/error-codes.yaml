@@ -490,3 +490,31 @@ errorCodes:
     userMessage: 声纹参考向量已过期，请重新录入
     i18nKey: errors.SPEAKER_REFERENCE_STALE
     opsTags: [speaker, reference, stale]
+
+  # ── Person ────────────────────────────────────────────────────
+  - code: PERSON_DISPLAY_NAME_REQUIRED
+    step: VALIDATION
+    retryable: false
+    userMessage: 请填写姓名
+    i18nKey: errors.PERSON_DISPLAY_NAME_REQUIRED
+    opsTags: [person, validation]
+  - code: PERSON_DUPLICATE
+    step: VALIDATION
+    retryable: false
+    userMessage: 已存在同名人员
+    i18nKey: errors.PERSON_DUPLICATE
+    opsTags: [person, conflict]
+
+  # ── Generic file upload ───────────────────────────────────────
+  - code: FILE_UPLOAD_NOT_FOUND
+    step: VALIDATION
+    retryable: false
+    userMessage: 上传会话不存在或已过期
+    i18nKey: errors.FILE_UPLOAD_NOT_FOUND
+    opsTags: [storage]
+  - code: FILE_MIME_NOT_ALLOWED
+    step: VALIDATION
+    retryable: false
+    userMessage: 不支持该文件类型
+    i18nKey: errors.FILE_MIME_NOT_ALLOWED
+    opsTags: [storage, validation]
