@@ -1320,7 +1320,7 @@ export interface components {
         CreateFileUploadRequest: {
             fileName: string;
             /** @enum {string} */
-            contentType: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "text/plain" | "text/markdown";
+            contentType: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "text/plain" | "text/markdown" | "audio/wav" | "audio/mpeg" | "audio/x-m4a" | "audio/flac";
             /** Format: int64 */
             fileSizeBytes: number;
             fileSha256: string;

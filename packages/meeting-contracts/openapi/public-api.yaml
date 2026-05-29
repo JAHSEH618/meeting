@@ -2344,6 +2344,10 @@ components:
             - application/vnd.openxmlformats-officedocument.presentationml.presentation
             - text/plain
             - text/markdown
+            - audio/wav
+            - audio/mpeg
+            - audio/x-m4a
+            - audio/flac
         fileSizeBytes: {type: integer, format: int64, minimum: 1, maximum: 524288000}
         fileSha256:
           type: string

@@ -69,7 +69,15 @@ public class CreateFileUploadRequest {
     
     TEXT_PLAIN("text/plain"),
     
-    TEXT_MARKDOWN("text/markdown");
+    TEXT_MARKDOWN("text/markdown"),
+    
+    AUDIO_WAV("audio/wav"),
+    
+    AUDIO_MPEG("audio/mpeg"),
+    
+    AUDIO_X_M4A("audio/x-m4a"),
+    
+    AUDIO_FLAC("audio/flac");
 
     private String value;
 
