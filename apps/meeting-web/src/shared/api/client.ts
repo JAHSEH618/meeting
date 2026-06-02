@@ -528,8 +528,7 @@ export async function getSpeakerProfile(profileId: string) {
 export async function createSpeakerProfile(input: {
   personId: string;
   displayName: string;
-  consentSource?: string;
-  consentVersion?: string;
+  consentReference?: string;
 }) {
   return request<SpeakerProfile>(
     "POST",
@@ -537,8 +536,7 @@ export async function createSpeakerProfile(input: {
     {
       personId: input.personId,
       displayName: input.displayName,
-      consentSource: input.consentSource ?? "USER_ENROLLMENT",
-      consentVersion: input.consentVersion ?? "v1",
+      consentReference: input.consentReference ?? "USER_ENROLLMENT:v1",
     },
     generateId("create-speaker-profile"),
   );
