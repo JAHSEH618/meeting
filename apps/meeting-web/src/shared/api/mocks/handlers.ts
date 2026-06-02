@@ -587,20 +587,28 @@ export const handlers = [
   }),
 
   http.get("/api/meetings/:meetingId/speakers", () => {
-    return HttpResponse.json<ApiResponse<unknown[]>>({
+    return HttpResponse.json<ApiResponse<unknown>>({
       success: true,
-      data: [
-        {
-          speakerLabel: "SPEAKER_00",
-          displayName: null,
-          personId: null,
-          speakerProfileId: null,
-          confirmationStatus: "CANDIDATE",
-          autoMatchScore: 0.78,
-          confirmedAt: null,
-          candidatePersonIds: ["alice"],
-        },
-      ],
+      data: {
+        meetingId: "mtg_01",
+        speakers: [
+          {
+            speakerLabel: "SPEAKER_00",
+            displayName: null,
+            personId: null,
+            speakerProfileId: null,
+            confirmationStatus: "CANDIDATE",
+            candidates: [
+              {
+                personId: "alice",
+                speakerProfileId: "spk_alice",
+                displayName: "Alice 张",
+                confidence: 0.78,
+              },
+            ],
+          },
+        ],
+      },
       error: null,
       requestId: "r",
       traceId: "t",

@@ -139,10 +139,10 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
         )
         return ok({
-            "meeting": _safe_json(meeting),
-            "latestTask": _safe_json(task) if task.status_code == 200 else None,
-            "speakers": _safe_json(speakers) if speakers.status_code == 200 else None,
-            "minutes": _safe_json(minutes) if minutes.status_code == 200 else None,
+            "meeting": _safe_data(meeting),
+            "latestTask": _safe_data(task) if task.status_code == 200 else None,
+            "speakers": _safe_data(speakers) if speakers.status_code == 200 else None,
+            "minutes": _safe_data(minutes) if minutes.status_code == 200 else None,
         }, x_request_id, x_trace_id)
 
     # ── documents on a meeting (passthrough) ────────────────────────────
@@ -341,3 +341,10 @@ def _safe_json(response: Any) -> dict[str, Any] | None:
         return json.loads(response.content)
     except Exception:
         return None
+
+
+def _safe_data(response: Any) -> Any | None:
+    body = _safe_json(response)
+    if isinstance(body, dict):
+        return body.get("data")
+    return None

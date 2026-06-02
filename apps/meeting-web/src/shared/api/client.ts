@@ -484,9 +484,19 @@ export interface MeetingSpeaker {
   personId: string | null;
   speakerProfileId: string | null;
   confirmationStatus: string;
-  autoMatchScore?: number | null;
-  confirmedAt?: string | null;
-  candidatePersonIds: string[];
+  candidates: MeetingSpeakerCandidate[];
+}
+
+export interface MeetingSpeakerCandidate {
+  personId: string;
+  speakerProfileId: string;
+  displayName: string;
+  confidence: number;
+}
+
+export interface MeetingSpeakerList {
+  meetingId: string;
+  speakers: MeetingSpeaker[];
 }
 
 export async function listSpeakerProfiles() {
@@ -545,21 +555,21 @@ export async function createSpeakerEnrollment(profileId: string, sourceAudioFile
 // ── Meeting speakers (per-meeting label confirmation) ──────────────
 
 export async function listMeetingSpeakers(meetingId: string) {
-  return request<{ items: MeetingSpeaker[] }>("GET", `/meetings/${meetingId}/speakers`);
+  return request<MeetingSpeakerList>("GET", `/meetings/${meetingId}/speakers`);
 }
 
 export async function confirmMeetingSpeaker(
   meetingId: string,
   speakerLabel: string,
-  body: { personId: string; speakerProfileId?: string | null; expectedTranscriptVersion?: number | null },
+  body: { personId: string; speakerProfileId: string; expectedTranscriptVersion: number },
 ) {
   return request<void>(
     "POST",
     `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/confirm`,
     {
       personId: body.personId,
-      speakerProfileId: body.speakerProfileId ?? null,
-      expectedTranscriptVersion: body.expectedTranscriptVersion ?? null,
+      speakerProfileId: body.speakerProfileId,
+      expectedTranscriptVersion: body.expectedTranscriptVersion,
     },
     generateId("confirm-meeting-speaker"),
   );

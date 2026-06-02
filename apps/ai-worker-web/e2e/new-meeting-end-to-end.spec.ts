@@ -51,13 +51,16 @@ test("new meeting one-shot happy path", async ({ page }) => {
   );
   await page.route("**/admin/meetings/m-new", (route) =>
     json(route, {
-      meeting: { success: true, data: { meetingId: "m-new", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", createdAt: "" } },
-      latestTask: { success: true, data: { taskId: "task-1", meetingId: "m-new", status: "SUCCEEDED", phase: "TERMINAL", attemptNo: 1, currentStep: "EXTRACTION", lastErrorCode: null, retryable: false, steps: [
+      meeting: { meetingId: "m-new", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", createdAt: "" },
+      latestTask: { taskId: "task-1", meetingId: "m-new", status: "SUCCEEDED", phase: "TERMINAL", attemptNo: 1, currentStep: "EXTRACTION", lastErrorCode: null, retryable: false, steps: [
         { stepName: "ASR", status: "SUCCEEDED", progress: 100 },
         { stepName: "SUMMARY", status: "SUCCEEDED", progress: 100 },
-      ] } },
-      speakers: { success: true, data: [{ label: "SPEAKER_01", displayName: "李四", verificationStatus: "CONFIRMED", candidates: [] }] },
-      minutes: { success: true, data: { title: "纪要", markdown: "# 会议纪要\n\n本测试纪要内容。", minutesVersion: 1 } },
+      ] },
+      speakers: {
+        meetingId: "m-new",
+        speakers: [{ speakerLabel: "SPEAKER_01", displayName: "李四", personId: "p1", speakerProfileId: null, confirmationStatus: "CONFIRMED", candidates: [] }],
+      },
+      minutes: { title: "纪要", markdown: "# 会议纪要\n\n本测试纪要内容。", minutesVersion: 1 },
     }),
   );
   await page.route("**/api/processing-tasks/task-1/events", (route) =>

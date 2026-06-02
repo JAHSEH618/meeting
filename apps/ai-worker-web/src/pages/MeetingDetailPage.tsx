@@ -55,11 +55,11 @@ export function MeetingDetailPage() {
   const [rejectError, setRejectError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const task = aggregate?.latestTask?.data ?? null;
-  const meeting = aggregate?.meeting?.data ?? null;
+  const task = aggregate?.latestTask ?? null;
+  const meeting = aggregate?.meeting ?? null;
   const participants = meeting?.participants ?? [];
   const isTerminal = task ? TERMINAL_STATUSES.includes(task.status) : false;
-  const terminalContentVisible = isTerminal || !!aggregate?.minutes?.data || !!aggregate?.speakers?.data;
+  const terminalContentVisible = isTerminal || !!aggregate?.minutes || !!aggregate?.speakers?.speakers.length;
   const personFetcher = useCallback((q: string, signal: AbortSignal) => searchPersons(q, { signal }), []);
   const personSearch = useDebouncedSearch<PersonDTO>(personFetcher);
   const personResults = personSearch.results ?? [];
@@ -75,8 +75,8 @@ export function MeetingDetailPage() {
         const data = await getMeetingAggregate(meetingId);
         if (cancelled) return;
         setAggregate(data);
-        seedSteps(data.latestTask?.data?.steps);
-        const taskId = data.latestTask?.data?.taskId;
+        seedSteps(data.latestTask?.steps);
+        const taskId = data.latestTask?.taskId;
         if (taskId && !eventStream) {
           eventStream = openTaskEvents(taskId, () => {
             if (!pollTimer) {
@@ -142,7 +142,7 @@ export function MeetingDetailPage() {
     if (!meetingId) return;
     const data = await getMeetingAggregate(meetingId);
     setAggregate(data);
-    seedSteps(data.latestTask?.data?.steps);
+    seedSteps(data.latestTask?.steps);
   };
 
   const handleExport = async () => {
@@ -329,9 +329,9 @@ export function MeetingDetailPage() {
         <>
           <section className="card stack" aria-labelledby="meeting-speakers">
             <h2 id="meeting-speakers">说话人</h2>
-            {aggregate?.speakers?.data?.length ? (
+            {aggregate?.speakers?.speakers.length ? (
               <div className="stack">
-                {aggregate.speakers.data.map((speaker, index) => {
+                {aggregate.speakers.speakers.map((speaker, index) => {
                   const label = getSpeakerLabel(speaker);
                   const confirmationBadge = getSpeakerConfirmationBadge(speaker);
                   return (
@@ -378,10 +378,10 @@ export function MeetingDetailPage() {
             )}
           </section>
 
-          {aggregate?.minutes?.data?.markdown ? (
+          {aggregate?.minutes?.markdown ? (
             <section className="card stack" aria-labelledby="meeting-minutes">
               <h2 id="meeting-minutes">纪要</h2>
-              <SafeMarkdown source={aggregate.minutes.data.markdown} />
+              <SafeMarkdown source={aggregate.minutes.markdown} />
             </section>
           ) : null}
         </>

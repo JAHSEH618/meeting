@@ -64,11 +64,51 @@ class _StubJavaClient(JavaPublicClient):
                 "error": None,
                 "requestId": "", "traceId": "",
             })
+        if path == "/api/meetings/m_01" and method == "GET":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "meetingId": "m_01",
+                    "title": "测试会议",
+                    "securityLevel": "INTERNAL",
+                    "status": "READY",
+                    "language": "zh",
+                    "createdAt": "2026-05-27T10:00:00Z",
+                },
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
         if path.startswith("/api/meetings/") and path.endswith("/processing-tasks/latest"):
             return httpx.Response(200, json={
                 "success": True,
                 "data": {"taskId": "task_01", "meetingId": "m_01", "phase": "WORKER_DAG_DONE",
                           "status": "RUNNING", "attemptNo": 1, "steps": []},
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
+        if path == "/api/meetings/m_01/speakers" and method == "GET":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "meetingId": "m_01",
+                    "speakers": [
+                        {
+                            "speakerLabel": "SPEAKER_01",
+                            "displayName": "李四",
+                            "personId": "p_01",
+                            "speakerProfileId": "sp_01",
+                            "confirmationStatus": "MANUALLY_CONFIRMED",
+                            "candidates": [],
+                        },
+                    ],
+                },
+                "error": None,
+                "requestId": "", "traceId": "",
+            })
+        if path == "/api/meetings/m_01/minutes" and method == "GET":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {"meetingId": "m_01", "markdown": "## 纪要"},
                 "error": None,
                 "requestId": "", "traceId": "",
             })
@@ -261,6 +301,44 @@ async def test_list_meetings_proxies_java_public_api(app: FastAPI, auth_headers:
     stub: _StubJavaClient = app.state.java_stub
     list_call = next(c for c in stub.received if c["method"] == "GET" and c["path"] == "/api/meetings")
     assert list_call["tenant"] == "tenant_01"
+
+
+@pytest.mark.asyncio
+async def test_get_meeting_aggregate_unwraps_java_data_for_workstation(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        response = await client.get("/admin/meetings/m_01", headers={
+            "Authorization": auth_headers["Authorization"],
+            "X-Request-Id": auth_headers["X-Request-Id"],
+            "X-Trace-Id": auth_headers["X-Trace-Id"],
+        })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["meeting"]["meetingId"] == "m_01"
+    assert "success" not in body["data"]["meeting"]
+    assert body["data"]["latestTask"]["taskId"] == "task_01"
+    assert body["data"]["speakers"] == {
+        "meetingId": "m_01",
+        "speakers": [
+            {
+                "speakerLabel": "SPEAKER_01",
+                "displayName": "李四",
+                "personId": "p_01",
+                "speakerProfileId": "sp_01",
+                "confirmationStatus": "MANUALLY_CONFIRMED",
+                "candidates": [],
+            },
+        ],
+    }
+    assert body["data"]["minutes"]["meetingId"] == "m_01"
+    stub: _StubJavaClient = app.state.java_stub
+    assert [c["path"] for c in stub.received] == [
+        "/api/meetings/m_01",
+        "/api/meetings/m_01/processing-tasks/latest",
+        "/api/meetings/m_01/speakers",
+        "/api/meetings/m_01/minutes",
+    ]
 
 
 @pytest.mark.asyncio

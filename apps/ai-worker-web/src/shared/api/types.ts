@@ -129,13 +129,15 @@ export interface MeetingSpeakerDTO {
   displayName: string | null;
   personId: string | null;
   speakerProfileId: string | null;
-  confirmationStatus: "UNCONFIRMED" | "AUTO_CONFIRMED" | "MANUALLY_CONFIRMED" | "REJECTED" | string;
-  autoMatchScore: number | null;
-  confirmedAt: string | null;
-  candidatePersonIds: string[];
+  confirmationStatus: "UNCONFIRMED" | "CANDIDATE" | "AUTO_CONFIRMED" | "MANUALLY_CONFIRMED" | "CONFIRMED" | "REJECTED" | string;
   label?: string;
   verificationStatus?: "CANDIDATE" | "CONFIRMED" | "REJECTED" | "MANUAL" | string;
-  candidates?: SpeakerCandidateDTO[];
+  candidates: SpeakerCandidateDTO[];
+}
+
+export interface MeetingSpeakerListDTO {
+  meetingId: string;
+  speakers: MeetingSpeakerDTO[];
 }
 
 export interface TranscriptSegmentDTO {
@@ -168,10 +170,10 @@ export interface ProcessingTaskDTO {
 }
 
 export interface MeetingAggregateDTO {
-  meeting: { success: boolean; data: MeetingSummaryDTO } | null;
-  latestTask: { success: boolean; data: ProcessingTaskDTO } | null;
-  speakers: { success: boolean; data: MeetingSpeakerDTO[] } | null;
-  minutes: { success: boolean; data: { title: string; markdown: string; minutesVersion: number } } | null;
+  meeting: MeetingSummaryDTO | null;
+  latestTask: ProcessingTaskDTO | null;
+  speakers: MeetingSpeakerListDTO | null;
+  minutes: { title?: string; markdown: string; minutesVersion?: number; meetingId?: string } | null;
 }
 
 export interface ExportJobDTO {
