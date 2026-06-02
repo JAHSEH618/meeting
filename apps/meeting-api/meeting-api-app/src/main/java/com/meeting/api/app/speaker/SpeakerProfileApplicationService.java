@@ -212,28 +212,25 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
                 now,
                 now
             );
-            enrollmentRepository.save(rec);
 
-            // Automatically trigger the speaker enrollment task if dependencies are available
+            // If workflow dependencies are wired, Java must be able to create the
+            // enrollment task before exposing a durable PENDING enrollment.
             if (processingTaskService != null && meetingFileRepository != null) {
-                try {
-                    MeetingFile file = meetingFileRepository.findById(command.tenantId(), command.sourceAudioFileId())
-                        .orElseThrow(() -> new IllegalArgumentException("audio file not found: " + command.sourceAudioFileId()));
-                    processingTaskService.createForSpeakerEnrollment(
-                        command.tenantId(),
-                        command.speakerProfileId(),
-                        enrollmentId,
-                        file.fileId(),
-                        file.uri(),
-                        "zh",
-                        command.createdBy(),
-                        command.traceId()
-                    );
-                } catch (Exception e) {
-                    log.error("Failed to automatically start speaker enrollment task", e);
-                }
+                MeetingFile file = meetingFileRepository.findById(command.tenantId(), command.sourceAudioFileId())
+                    .orElseThrow(() -> new IllegalArgumentException("audio file not found: " + command.sourceAudioFileId()));
+                processingTaskService.createForSpeakerEnrollment(
+                    command.tenantId(),
+                    command.speakerProfileId(),
+                    enrollmentId,
+                    file.fileId(),
+                    file.uri(),
+                    "zh",
+                    command.createdBy(),
+                    command.traceId()
+                );
             }
 
+            enrollmentRepository.save(rec);
             return toDto(rec);
         });
     }

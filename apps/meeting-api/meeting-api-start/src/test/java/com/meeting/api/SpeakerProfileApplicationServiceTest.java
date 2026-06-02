@@ -2,11 +2,18 @@ package com.meeting.api;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.speaker.SpeakerProfileApplicationService;
+import com.meeting.api.app.task.ProcessingTaskApplicationService;
+import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import com.meeting.api.client.speaker.CreateSpeakerEnrollmentCommand;
 import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
+import com.meeting.api.client.task.ProcessingTaskDTO;
+import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
+import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
+import com.meeting.api.domain.storage.MeetingFile;
+import com.meeting.api.domain.storage.MeetingFileRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -96,6 +103,29 @@ class SpeakerProfileApplicationServiceTest {
     }
 
     @Test
+    void addEnrollmentDoesNotLeavePendingEnrollmentWhenTaskCreationFails() {
+        InMemoryProfileRepo profiles = new InMemoryProfileRepo();
+        InMemoryEnrollmentRepo enrollments = new InMemoryEnrollmentRepo();
+        var service = service(
+            profiles,
+            enrollments,
+            new FailingProcessingTaskService(),
+            new SingleMeetingFileRepository()
+        );
+        var created = service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_01", "Alice", "INVITE", "v1", "user_01", "req_01", "trace_01", "idem_01"
+        ));
+
+        assertThatThrownBy(() -> service.addEnrollment(new CreateSpeakerEnrollmentCommand(
+            "tenant_01", created.speakerProfileId(), "file_01", "user_01", "req", "trace", "idem"
+        )))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("simulated task creation failure");
+
+        assertThat(service.listEnrollments("tenant_01", created.speakerProfileId())).isEmpty();
+    }
+
+    @Test
     void listOnlyReturnsActiveProfiles() {
         InMemoryProfileRepo profiles = new InMemoryProfileRepo();
         var service = service(profiles, new InMemoryEnrollmentRepo());
@@ -152,6 +182,25 @@ class SpeakerProfileApplicationServiceTest {
     private static SpeakerProfileApplicationService service(InMemoryProfileRepo profiles, InMemoryEnrollmentRepo enrollments) {
         return new SpeakerProfileApplicationService(
             profiles, enrollments, TenantScopedTransaction.immediate(),
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
+        );
+    }
+
+    private static SpeakerProfileApplicationService service(
+        InMemoryProfileRepo profiles,
+        InMemoryEnrollmentRepo enrollments,
+        ProcessingTaskApplicationService processingTasks,
+        MeetingFileRepository meetingFiles
+    ) {
+        return new SpeakerProfileApplicationService(
+            profiles,
+            enrollments,
+            new NoOpEmbeddingRepo(),
+            new NoOpMeetingSpeakerRepo(),
+            new NoOpKnowledgeChunkRepo(),
+            TenantScopedTransaction.immediate(),
+            processingTasks,
+            meetingFiles,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -231,5 +280,78 @@ class SpeakerProfileApplicationServiceTest {
         public void updateStatus(String tenantId, String enrollmentId, String enrollmentStatus,
                                   Double qualityScore, String modelVersion, String errorCode, OffsetDateTime now) {
         }
+    }
+
+    private static final class FailingProcessingTaskService extends ProcessingTaskApplicationService {
+        FailingProcessingTaskService() {
+            super(null, null, null, TenantScopedTransaction.immediate());
+        }
+
+        @Override
+        public ProcessingTaskDTO createForSpeakerEnrollment(
+            String tenantId,
+            String speakerProfileId,
+            String speakerEnrollmentId,
+            String audioFileId,
+            String audioUri,
+            String language,
+            String requestedBy,
+            String traceId
+        ) {
+            throw new IllegalStateException("simulated task creation failure");
+        }
+    }
+
+    private static final class SingleMeetingFileRepository implements MeetingFileRepository {
+        @Override
+        public MeetingFile save(MeetingFile file) {
+            return file;
+        }
+
+        @Override
+        public Optional<MeetingFile> findById(String tenantId, String fileId) {
+            if (!"tenant_01".equals(tenantId) || !"file_01".equals(fileId)) {
+                return Optional.empty();
+            }
+            return Optional.of(new MeetingFile(
+                "file_01",
+                "tenant_01",
+                null,
+                "AUDIO",
+                "SPEAKER_ENROLLMENT",
+                "voice.wav",
+                "audio/wav",
+                "meeting-audio",
+                "tenant_01/file_01.wav",
+                "oss://meeting-audio/tenant_01/file_01.wav",
+                4096L,
+                "sha256",
+                1500L,
+                "COMPLETED",
+                "user_01",
+                NOW,
+                NOW
+            ));
+        }
+    }
+
+    private static final class NoOpEmbeddingRepo implements SpeakerEmbeddingRepository {
+        @Override public void save(SpeakerEmbeddingRecord record) { }
+        @Override public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) { return List.of(); }
+        @Override public int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
+        @Override public int deleteForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
+    }
+
+    private static final class NoOpMeetingSpeakerRepo implements MeetingSpeakerRepository {
+        @Override public Optional<MeetingSpeakerRecord> find(String tenantId, String meetingId, String speakerLabel) { return Optional.empty(); }
+        @Override public List<MeetingSpeakerRecord> findByMeeting(String tenantId, String meetingId) { return List.of(); }
+        @Override public List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId) { return List.of(); }
+        @Override public void saveCandidates(String tenantId, String meetingId, String speakerLabel, List<String> candidatePersonIds, Double autoMatchScore, String matchSource, OffsetDateTime now) { }
+        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now) { }
+        @Override public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy, OffsetDateTime now) { }
+    }
+
+    private static final class NoOpKnowledgeChunkRepo implements KnowledgeChunkRepository {
+        @Override public int markStaleForMeeting(String tenantId, String meetingId) { return 0; }
     }
 }
