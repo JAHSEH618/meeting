@@ -178,6 +178,7 @@ async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback
     assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
     assert engine.ran_steps == _valid_message()["pipelineSteps"]
     assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
+    assert callback_client.update_step.await_args_list[0].kwargs["meeting_id"] == "mtg_01"
     callback_client.submit_transcript.assert_awaited_once()
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]
@@ -227,6 +228,7 @@ async def test_speaker_candidate_callback_failure_records_writeback_failed(callb
     assert snapshot.errorCode == "WRITEBACK_FAILED"
     callback_client.fail_task.assert_awaited_once()
     assert callback_client.fail_task.await_args.kwargs["failed_step"] == "SPEAKER_MATCHING"
+    assert callback_client.fail_task.await_args.kwargs["meeting_id"] == "mtg_01"
     callback_client.complete_worker_phase.assert_not_awaited()
 
 
@@ -308,6 +310,7 @@ async def test_step_callback_failure_records_writeback_failed(callback_client) -
     assert snapshot.errorCode == "WRITEBACK_FAILED"
     callback_client.fail_task.assert_awaited_once()
     assert callback_client.fail_task.await_args.kwargs["error_code"] == "WRITEBACK_FAILED"
+    assert callback_client.fail_task.await_args.kwargs["meeting_id"] == "mtg_01"
 
 
 def test_default_workflow_engine_uses_registry_runtimes() -> None:

@@ -134,6 +134,7 @@ class JavaCallbackClient:
         progress: int = 0,
         error_code: str | None = None,
         trace_id: str = "",
+        meeting_id: str | None = None,
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
         idempotency_key = f"{task_id}:{step_name}:{status}:{attempt_no}:v1"
@@ -145,6 +146,8 @@ class JavaCallbackClient:
             "status": status,
             "progress": progress,
         }
+        if meeting_id:
+            body["meetingId"] = meeting_id
         if error_code:
             body["errorCode"] = error_code
         return await self._request("PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key)
@@ -324,6 +327,7 @@ class JavaCallbackClient:
         retryable: bool = True,
         speaker_enrollment_id: str | None = None,
         trace_id: str = "",
+        meeting_id: str | None = None,
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/fail"
         idempotency_key = f"{task_id}:fail:{attempt_no}:v1"
@@ -339,6 +343,8 @@ class JavaCallbackClient:
             },
             "failedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if meeting_id:
+            body["meetingId"] = meeting_id
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)

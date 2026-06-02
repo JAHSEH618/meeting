@@ -328,6 +328,7 @@ class MvpWorkerRuntime:
             status=status,
             progress=progress,
             trace_id=task.trace_id,
+            meeting_id=task.meeting_id,
         )
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, status, progress)
@@ -342,6 +343,7 @@ class MvpWorkerRuntime:
             status="RUNNING",
             progress=progress,
             trace_id=task.trace_id,
+            meeting_id=task.meeting_id,
         )
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
@@ -360,6 +362,7 @@ class MvpWorkerRuntime:
             "error_message": message,
             "retryable": True,
             "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
         }
         if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
             kwargs["speaker_enrollment_id"] = speaker_enrollment_id
@@ -385,6 +388,7 @@ class MvpWorkerRuntime:
             "error_message": message,
             "retryable": True,
             "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
         }
         if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
             kwargs["speaker_enrollment_id"] = speaker_enrollment_id

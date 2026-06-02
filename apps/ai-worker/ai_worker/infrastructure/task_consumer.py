@@ -112,6 +112,8 @@ async def consume_and_validate(
         "retryable": False,
         "trace_id": trace_id,
     }
+    if raw_message.get("meetingId"):
+        kwargs["meeting_id"] = raw_message["meetingId"]
     if raw_message.get("taskType") == "SPEAKER_ENROLLMENT" and raw_message.get("speakerEnrollmentId"):
         kwargs["speaker_enrollment_id"] = raw_message["speakerEnrollmentId"]
     await callback_client.fail_task(**kwargs)

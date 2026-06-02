@@ -21,6 +21,7 @@ class TestConsumeAndValidate:
         raw_message = {
             "taskId": "task_01",
             "tenantId": "tenant_01",
+            "meetingId": "meeting_01",
             "attemptNo": 2,
             "traceId": "trace_01",
         }
@@ -40,6 +41,7 @@ class TestConsumeAndValidate:
             error_code="INVALID_TASK_MESSAGE",
             error_message="schema error; missing field",
             retryable=False,
+            meeting_id="meeting_01",
             trace_id="trace_01",
         )
 

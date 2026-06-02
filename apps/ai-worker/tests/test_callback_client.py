@@ -106,6 +106,27 @@ class TestBuildHeaders:
 
 class TestUpdateStep:
     @pytest.mark.asyncio
+    async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                meeting_id="meeting_42",
+                step_name="ASR",
+                attempt_no=1,
+                status="RUNNING",
+                progress=50,
+            )
+
+        assert captured_body["meetingId"] == "meeting_42"
+
+    @pytest.mark.asyncio
     async def test_request_body_contains_correct_fields(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
@@ -329,6 +350,27 @@ class TestCompleteWorkerPhase:
 
 
 class TestFailTask:
+    @pytest.mark.asyncio
+    async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.fail_task(
+                task_id="task_fail",
+                tenant_id="tenant_01",
+                meeting_id="meeting_01",
+                attempt_no=2,
+                failed_step="ASR",
+                error_code="GPU_OOM",
+                error_message="Out of memory",
+            )
+
+        assert captured_body["meetingId"] == "meeting_01"
+
     @pytest.mark.asyncio
     async def test_tenant_id_in_request_body(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
