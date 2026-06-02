@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
-import { createExport, getMeetingAggregate, pollExport, processingTaskEventsUrl } from "@/shared/api/endpoints";
+import { confirmSpeaker, createExport, getMeetingAggregate, pollExport, processingTaskEventsUrl } from "@/shared/api/endpoints";
 import type {
   ExportJobDTO,
   MeetingAggregateDTO,
   MeetingSpeakerDTO,
+  SpeakerCandidateDTO,
   ProcessingTaskStepDTO,
   ProcessingTaskStatus,
   TaskEventDTO,
@@ -34,6 +35,7 @@ export function MeetingDetailPage() {
   const [steps, setSteps] = useState<Record<string, ProcessingTaskStepDTO>>({});
   const [exportJob, setExportJob] = useState<ExportJobDTO | null>(null);
   const [busyExport, setBusyExport] = useState(false);
+  const [confirmingSpeaker, setConfirmingSpeaker] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const task = aggregate?.latestTask?.data ?? null;
@@ -145,6 +147,26 @@ export function MeetingDetailPage() {
     }
   };
 
+  const handleConfirmCandidate = async (speaker: MeetingSpeakerDTO, candidate: SpeakerCandidateDTO) => {
+    if (!meetingId || typeof meeting?.transcriptVersion !== "number") return;
+    const label = getSpeakerLabel(speaker);
+    const key = `${label}:${candidate.personId}`;
+    setConfirmingSpeaker(key);
+    setError(null);
+    try {
+      await confirmSpeaker(meetingId, label, {
+        personId: candidate.personId,
+        speakerProfileId: candidate.speakerProfileId,
+        expectedTranscriptVersion: meeting.transcriptVersion,
+      });
+      await refreshAggregate();
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setConfirmingSpeaker(null);
+    }
+  };
+
   return (
     <div className="stack">
       <header className="page-header">
@@ -204,6 +226,21 @@ export function MeetingDetailPage() {
                       <strong>{label}</strong>
                       <span>{speaker.displayName || "未认定"}</span>
                       {isAutoConfirmedSpeaker(speaker) ? <span className="pill pill--success">自动认定</span> : null}
+                      {canConfirmSpeaker(speaker) ? (
+                        <div className="toolbar" aria-label={`${label} 候选人`}>
+                          {speaker.candidates?.map((candidate) => (
+                            <button
+                              key={`${candidate.personId}:${candidate.speakerProfileId}`}
+                              className="button button--secondary"
+                              type="button"
+                              disabled={confirmingSpeaker === `${label}:${candidate.personId}`}
+                              onClick={() => void handleConfirmCandidate(speaker, candidate)}
+                            >
+                              认定 {candidate.displayName} {candidate.confidence.toFixed(2)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -265,6 +302,10 @@ function isAutoConfirmedSpeaker(speaker: MeetingSpeakerDTO): boolean {
   return speaker.confirmationStatus === "AUTO_CONFIRMED" ||
     speaker.confirmationStatus === "CONFIRMED" ||
     (!speaker.confirmationStatus && speaker.verificationStatus === "CONFIRMED");
+}
+
+function canConfirmSpeaker(speaker: MeetingSpeakerDTO): boolean {
+  return !isAutoConfirmedSpeaker(speaker) && !!speaker.candidates?.length;
 }
 
 function formatError(e: unknown): string {

@@ -4,6 +4,7 @@ import {
   abortFileUpload,
   completeAudioUpload,
   completeFileUpload,
+  confirmSpeaker,
   createAudioUploadPart,
   createDocument,
   createFileUploadPart,
@@ -99,6 +100,28 @@ describe("admin endpoint helpers", () => {
 
     expect(document.documentId).toBe("d1");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/documents");
+  });
+
+  it("confirms speaker candidates with Java transcript concurrency fields", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      speakerLabel: "SPEAKER_01",
+      confirmationStatus: "MANUALLY_CONFIRMED",
+      candidates: [],
+    }));
+
+    await confirmSpeaker("m1", "SPEAKER_01", {
+      personId: "p1",
+      speakerProfileId: "spk1",
+      expectedTranscriptVersion: 3,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/meetings/m1/speakers/SPEAKER_01:confirm");
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      personId: "p1",
+      speakerProfileId: "spk1",
+      expectedTranscriptVersion: 3,
+    });
   });
 
   it("exposes task detail and SSE helpers", async () => {

@@ -92,10 +92,14 @@ export const updateMeetingGlossary = (meetingId: string, terms: GlossaryTermDTO[
     { method: "PATCH", body: { terms } },
   );
 
-export const confirmSpeaker = (meetingId: string, label: string, personId: string) =>
+export const confirmSpeaker = (
+  meetingId: string,
+  label: string,
+  body: { personId: string; speakerProfileId: string; expectedTranscriptVersion: number },
+) =>
   apiCall<MeetingSpeakerDTO>(
     `${API}/meetings/${encodeURIComponent(meetingId)}/speakers/${encodeURIComponent(label)}:confirm`,
-    { method: "POST", body: { personId } },
+    { method: "POST", body },
   );
 
 export const createExport = (meetingId: string, format: "DOCX" | "PDF" | "MARKDOWN" = "DOCX") =>

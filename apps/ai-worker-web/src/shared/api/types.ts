@@ -60,6 +60,8 @@ export interface MeetingSummaryDTO {
   status: string;
   securityLevel: SecurityLevel;
   language: string;
+  transcriptVersion?: number;
+  minutesVersion?: number;
   createdAt: string;
 }
 
@@ -104,6 +106,7 @@ export interface MeetingGlossaryDTO {
 
 export interface SpeakerCandidateDTO {
   personId: string;
+  speakerProfileId: string;
   displayName: string;
   confidence: number;
 }
