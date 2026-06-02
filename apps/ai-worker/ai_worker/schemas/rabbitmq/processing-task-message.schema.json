@@ -109,7 +109,32 @@
       "additionalProperties": true
     },
     "traceId": {"type": "string", "minLength": 1},
-    "createdAt": {"type": ["string", "null"], "format": "date-time"}
+    "createdAt": {"type": ["string", "null"], "format": "date-time"},
+    "glossaryTerms": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "maxItems": 200,
+      "default": [],
+      "description": "Optional meeting-scoped glossary terms; worker ignores if hot-word bias unimplemented."
+    },
+    "referenceDocumentIds": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "maxItems": 32,
+      "default": [],
+      "description": "Optional list of attached REFERENCE document ids; worker may use for RAG context, Java side uses for prompt enrichment."
+    },
+    "controlFlags": {
+      "type": ["object", "null"],
+      "properties": {
+        "holdAtWorkerPhase": {
+          "type": "boolean",
+          "default": false,
+          "description": "Java-side routing flag. Worker MUST NOT branch on this — when true, Java's WorkerPhaseCompletedListener stops at WORKER_DAG_DONE awaiting an explicit resume-java-phase call."
+        }
+      },
+      "additionalProperties": false
+    }
   },
   "allOf": [
     {
