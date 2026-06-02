@@ -62,6 +62,7 @@ export interface SpeakerProfileDTO {
 export interface MeetingSummaryDTO {
   meetingId: string;
   title: string;
+  scheduledStartAt?: string | null;
   status: string;
   securityLevel: SecurityLevel;
   language: string;

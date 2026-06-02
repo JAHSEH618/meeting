@@ -13,6 +13,7 @@ public final class Meeting {
     private final String id;
     private final String tenantId;
     private final String title;
+    private final OffsetDateTime scheduledStartAt;
     private final SecurityLevel securityLevel;
     private final MeetingStatus status;
     private final String language;
@@ -26,6 +27,7 @@ public final class Meeting {
         this.id = requireText(builder.id, "id");
         this.tenantId = requireText(builder.tenantId, "tenantId");
         this.title = requireText(builder.title, "title");
+        this.scheduledStartAt = builder.scheduledStartAt;
         this.securityLevel = Objects.requireNonNull(builder.securityLevel, "securityLevel");
         this.status = Objects.requireNonNull(builder.status, "status");
         this.language = requireText(builder.language, "language");
@@ -45,6 +47,15 @@ public final class Meeting {
         List<CreateMeetingCommand.ParticipantCommand> participantCommands,
         String createdBy
     ) {
+        return create(id, tenantId, title, null, securityLevel, language, participantCommands, createdBy);
+    }
+
+    public static Meeting create(
+        String id, String tenantId, String title,
+        OffsetDateTime scheduledStartAt, SecurityLevel securityLevel, String language,
+        List<CreateMeetingCommand.ParticipantCommand> participantCommands,
+        String createdBy
+    ) {
         List<Participant> participants = new ArrayList<>();
         if (participantCommands != null) {
             for (var cmd : participantCommands) {
@@ -55,6 +66,7 @@ public final class Meeting {
             .id(id)
             .tenantId(tenantId)
             .title(title)
+            .scheduledStartAt(scheduledStartAt)
             .securityLevel(securityLevel == null ? SecurityLevel.INTERNAL : securityLevel)
             .status(MeetingStatus.CREATED)
             .language(language == null || language.isBlank() ? "zh" : language)
@@ -90,11 +102,17 @@ public final class Meeting {
         return copyWithStatus(MeetingStatus.DELETED);
     }
 
-    public Meeting update(String nextTitle, List<Participant> nextParticipants) {
+    public Meeting update(
+        String nextTitle,
+        OffsetDateTime nextScheduledStartAt,
+        boolean scheduledStartAtProvided,
+        List<Participant> nextParticipants
+    ) {
         return new Builder()
             .id(id)
             .tenantId(tenantId)
             .title(nextTitle == null ? title : nextTitle)
+            .scheduledStartAt(scheduledStartAtProvided ? nextScheduledStartAt : scheduledStartAt)
             .securityLevel(securityLevel)
             .status(status)
             .language(language)
@@ -106,11 +124,20 @@ public final class Meeting {
             .build();
     }
 
+    public Meeting update(String nextTitle, OffsetDateTime nextScheduledStartAt, List<Participant> nextParticipants) {
+        return update(nextTitle, nextScheduledStartAt, nextScheduledStartAt != null, nextParticipants);
+    }
+
+    public Meeting update(String nextTitle, List<Participant> nextParticipants) {
+        return update(nextTitle, null, nextParticipants);
+    }
+
     private Meeting copyWithStatus(MeetingStatus nextStatus) {
         return new Builder()
             .id(id)
             .tenantId(tenantId)
             .title(title)
+            .scheduledStartAt(scheduledStartAt)
             .securityLevel(securityLevel)
             .status(nextStatus)
             .language(language)
@@ -127,6 +154,7 @@ public final class Meeting {
     public String id() { return id; }
     public String tenantId() { return tenantId; }
     public String title() { return title; }
+    public OffsetDateTime scheduledStartAt() { return scheduledStartAt; }
     public SecurityLevel securityLevel() { return securityLevel; }
     public MeetingStatus status() { return status; }
     public String language() { return language; }
@@ -142,6 +170,7 @@ public final class Meeting {
         private String id;
         private String tenantId;
         private String title;
+        private OffsetDateTime scheduledStartAt;
         private SecurityLevel securityLevel;
         private MeetingStatus status;
         private String language;
@@ -154,6 +183,7 @@ public final class Meeting {
         public Builder id(String v) { this.id = v; return this; }
         public Builder tenantId(String v) { this.tenantId = v; return this; }
         public Builder title(String v) { this.title = v; return this; }
+        public Builder scheduledStartAt(OffsetDateTime v) { this.scheduledStartAt = v; return this; }
         public Builder securityLevel(SecurityLevel v) { this.securityLevel = v; return this; }
         public Builder status(MeetingStatus v) { this.status = v; return this; }
         public Builder language(String v) { this.language = v; return this; }

@@ -28,12 +28,13 @@ public class JdbcMeetingRepository implements MeetingRepository {
         jdbcTemplate.update(
             """
             INSERT INTO meetings (
-              id, tenant_id, title, security_level, status, language,
+              id, tenant_id, title, scheduled_start_at, security_level, status, language,
               transcript_version, minutes_version, created_by, created_at
             )
-            VALUES (?, ?, ?, ?::security_level, ?::meeting_status, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?::security_level, ?::meeting_status, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               title = EXCLUDED.title,
+              scheduled_start_at = EXCLUDED.scheduled_start_at,
               security_level = EXCLUDED.security_level,
               status = EXCLUDED.status,
               language = EXCLUDED.language,
@@ -43,6 +44,7 @@ public class JdbcMeetingRepository implements MeetingRepository {
             meeting.id(),
             meeting.tenantId(),
             meeting.title(),
+            toTimestamp(meeting.scheduledStartAt()),
             meeting.securityLevel().name(),
             meeting.status().name(),
             meeting.language(),
@@ -59,7 +61,7 @@ public class JdbcMeetingRepository implements MeetingRepository {
     public Optional<Meeting> findById(String tenantId, String meetingId) {
         List<Meeting> meetings = jdbcTemplate.query(
             """
-            SELECT id, tenant_id, title, security_level, status, language,
+            SELECT id, tenant_id, title, scheduled_start_at, security_level, status, language,
                    transcript_version, minutes_version, created_by, created_at
               FROM meetings
              WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
@@ -75,7 +77,7 @@ public class JdbcMeetingRepository implements MeetingRepository {
     public List<Meeting> findByTenantId(String tenantId) {
         return jdbcTemplate.query(
             """
-            SELECT id, tenant_id, title, security_level, status, language,
+            SELECT id, tenant_id, title, scheduled_start_at, security_level, status, language,
                    transcript_version, minutes_version, created_by, created_at
               FROM meetings
              WHERE tenant_id = ? AND deleted_at IS NULL
@@ -142,6 +144,7 @@ public class JdbcMeetingRepository implements MeetingRepository {
             .id(rs.getString("id"))
             .tenantId(rs.getString("tenant_id"))
             .title(rs.getString("title"))
+            .scheduledStartAt(toOffsetDateTime(rs.getTimestamp("scheduled_start_at")))
             .securityLevel(SecurityLevel.valueOf(rs.getString("security_level")))
             .status(MeetingStatus.valueOf(rs.getString("status")))
             .language(rs.getString("language"))
@@ -173,5 +176,9 @@ public class JdbcMeetingRepository implements MeetingRepository {
 
     private static OffsetDateTime toOffsetDateTime(Timestamp timestamp) {
         return timestamp == null ? null : OffsetDateTime.ofInstant(timestamp.toInstant(), ZoneOffset.UTC);
+    }
+
+    private static Timestamp toTimestamp(OffsetDateTime dateTime) {
+        return dateTime == null ? null : Timestamp.from(dateTime.toInstant());
     }
 }

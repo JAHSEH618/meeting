@@ -270,6 +270,7 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
             "/admin/meetings",
             json={
                 "title": "季度评审",
+                "scheduledStartAt": "2026-06-03T09:30:00Z",
                 "securityLevel": "INTERNAL",
                 "language": "zh",
                 "participants": [
@@ -285,6 +286,7 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
     create = next(c for c in stub.received if c["method"] == "POST" and c["path"] == "/api/meetings")
     assert create["body"] == {
         "title": "季度评审",
+        "scheduledStartAt": "2026-06-03T09:30:00Z",
         "securityLevel": "INTERNAL",
         "language": "zh",
         "participants": [
@@ -302,6 +304,7 @@ async def test_update_meeting_forwards_participants_to_java(app: FastAPI, auth_h
         response = await client.patch(
             "/admin/meetings/m_01",
             json={
+                "scheduledStartAt": "2026-06-04T10:00:00Z",
                 "participants": [
                     {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
                     {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},
@@ -315,6 +318,7 @@ async def test_update_meeting_forwards_participants_to_java(app: FastAPI, auth_h
     stub: _StubJavaClient = app.state.java_stub
     update = next(c for c in stub.received if c["method"] == "PATCH" and c["path"] == "/api/meetings/m_01")
     assert update["body"] == {
+        "scheduledStartAt": "2026-06-04T10:00:00Z",
         "participants": [
             {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
             {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},

@@ -67,6 +67,7 @@ export const revokeSpeakerProfile = (profileId: string, reason = "operator_reque
 /** Meetings + workstation pages. */
 export const createMeeting = (body: {
   title: string;
+  scheduledStartAt?: string | null;
   securityLevel: string;
   language: string;
   participants: Array<{ personId: string; displayName: string; role: string }>;
@@ -74,7 +75,7 @@ export const createMeeting = (body: {
 
 export const updateMeeting = (
   meetingId: string,
-  body: { title?: string; participants?: MeetingParticipantDTO[]; expectedVersion?: number },
+  body: { title?: string; scheduledStartAt?: string | null; participants?: MeetingParticipantDTO[]; expectedVersion?: number },
 ) =>
   apiCall<MeetingSummaryDTO>(
     `${API}/meetings/${encodeURIComponent(meetingId)}`,

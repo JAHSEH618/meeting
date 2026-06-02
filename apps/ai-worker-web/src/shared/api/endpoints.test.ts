@@ -144,6 +144,7 @@ describe("admin endpoint helpers", () => {
     }));
 
     await updateMeeting("m1", {
+      scheduledStartAt: "2026-06-04T10:00:00Z",
       participants: [
         { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
         { personId: "p2", displayName: "王五", role: "PARTICIPANT" },
@@ -155,6 +156,7 @@ describe("admin endpoint helpers", () => {
     const [, init] = fetchMock.mock.calls[0]!;
     expect((init as RequestInit).method).toBe("PATCH");
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      scheduledStartAt: "2026-06-04T10:00:00Z",
       participants: [
         { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
         { personId: "p2", displayName: "王五", role: "PARTICIPANT" },

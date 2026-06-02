@@ -99,6 +99,7 @@ class JdbcMeetingRepositoryIT {
             .language("zh")
             .transcriptVersion(0)
             .minutesVersion(0)
+            .scheduledStartAt(OffsetDateTime.parse("2026-06-03T09:30:00Z"))
             .createdAt(OffsetDateTime.parse("2026-06-02T10:00:00Z"))
             .createdBy(USER)
             .participants(List.of(
@@ -109,6 +110,7 @@ class JdbcMeetingRepositoryIT {
 
         Meeting reloaded = repository.findById(TENANT, "m_repo_it").orElseThrow();
 
+        assertThat(reloaded.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-06-03T09:30:00Z"));
         assertThat(reloaded.participants())
             .extracting(
                 Meeting.Participant::personId,

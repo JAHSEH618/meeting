@@ -97,6 +97,7 @@ public class MeetingApplicationService implements MeetingFacade {
                 "m_" + UUID.randomUUID().toString().replace("-", ""),
                 command.tenantId(),
                 command.title(),
+                command.scheduledStartAt(),
                 command.securityLevel(),
                 command.language(),
                 command.participants(),
@@ -142,6 +143,8 @@ public class MeetingApplicationService implements MeetingFacade {
 
             Meeting updated = meeting.update(
                 normalizeTitle(command.title()),
+                command.scheduledStartAt(),
+                command.scheduledStartAtProvided(),
                 command.participants() == null ? null : toParticipants(command.participants())
             );
             return toDto(meetingRepository.save(updated));
@@ -237,6 +240,7 @@ public class MeetingApplicationService implements MeetingFacade {
             meeting.id(),
             meeting.tenantId(),
             meeting.title(),
+            meeting.scheduledStartAt(),
             meeting.securityLevel(),
             meeting.status(),
             meeting.language(),

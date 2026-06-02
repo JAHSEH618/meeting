@@ -1,5 +1,6 @@
 package com.meeting.api.client.meeting;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -14,11 +15,36 @@ public record UpdateMeetingCommand(
     String tenantId,
     String meetingId,
     String title,
+    OffsetDateTime scheduledStartAt,
+    boolean scheduledStartAtProvided,
     List<CreateMeetingCommand.ParticipantCommand> participants,
     Integer expectedVersion,
     String actorUserId,
     String requestId
 ) {
+    public UpdateMeetingCommand(
+        String tenantId,
+        String meetingId,
+        String title,
+        OffsetDateTime scheduledStartAt,
+        List<CreateMeetingCommand.ParticipantCommand> participants,
+        Integer expectedVersion,
+        String actorUserId,
+        String requestId
+    ) {
+        this(
+            tenantId,
+            meetingId,
+            title,
+            scheduledStartAt,
+            scheduledStartAt != null,
+            participants,
+            expectedVersion,
+            actorUserId,
+            requestId
+        );
+    }
+
     public UpdateMeetingCommand {
         if (tenantId == null || tenantId.isBlank()) {
             throw new IllegalArgumentException("tenantId must not be blank");
