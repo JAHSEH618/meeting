@@ -7,10 +7,12 @@ import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
+import com.meeting.api.client.meeting.UpdateMeetingCommand;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -77,6 +79,28 @@ public class MeetingController {
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PatchMapping("/{meetingId}")
+    public ApiResponse<MeetingDTO> update(
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId,
+        @RequestHeader("Idempotency-Key") String idempotencyKey,
+        @PathVariable String meetingId,
+        @RequestBody UpdateMeetingRequest body
+    ) {
+        String tenantId = TenantContextHolder.currentTenantId();
+        String userId = TenantContextHolder.currentUserId();
+        MeetingDTO meeting = meetingFacade.update(new UpdateMeetingCommand(
+            tenantId,
+            meetingId,
+            body.title(),
+            body.participants(),
+            body.expectedVersion(),
+            userId,
+            requestId
+        ));
+        return ApiResponse.ok(meeting, requestId, traceId);
+    }
+
     @DeleteMapping("/{meetingId}")
     public ApiResponse<DeleteMeetingResult> delete(
         @RequestHeader("X-Request-Id") String requestId,
@@ -114,5 +138,20 @@ public class MeetingController {
         Boolean legalHoldAcknowledged,
         Integer expectedVersion
     ) {
+    }
+
+    public record UpdateMeetingRequest(
+        String title,
+        java.time.OffsetDateTime scheduledStartAt,
+        List<CreateMeetingCommand.ParticipantCommand> participants,
+        Integer expectedVersion
+    ) {
+        public UpdateMeetingRequest(
+            String title,
+            List<CreateMeetingCommand.ParticipantCommand> participants,
+            Integer expectedVersion
+        ) {
+            this(title, null, participants, expectedVersion);
+        }
     }
 }

@@ -297,6 +297,35 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
 
 
 @pytest.mark.asyncio
+async def test_update_meeting_forwards_participants_to_java(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        response = await client.patch(
+            "/admin/meetings/m_01",
+            json={
+                "participants": [
+                    {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
+                    {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},
+                ],
+                "expectedVersion": 3,
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    stub: _StubJavaClient = app.state.java_stub
+    update = next(c for c in stub.received if c["method"] == "PATCH" and c["path"] == "/api/meetings/m_01")
+    assert update["body"] == {
+        "participants": [
+            {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
+            {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},
+        ],
+        "expectedVersion": 3,
+    }
+    assert update["idempotency"] == "idem_t1"
+    assert update["tenant"] == "tenant_01"
+
+
+@pytest.mark.asyncio
 async def test_reject_speaker_passthrough_to_java(app: FastAPI, auth_headers: dict[str, str]):
     async with _client(app) as client:
         response = await client.post(

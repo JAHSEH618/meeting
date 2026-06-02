@@ -10,6 +10,7 @@ import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
+import com.meeting.api.client.meeting.UpdateMeetingCommand;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.audit.AuditEventLogger.AuditEntry;
 import com.meeting.api.domain.compliance.LegalHoldCheckPort;
@@ -19,10 +20,13 @@ import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,6 +118,34 @@ public class MeetingApplicationService implements MeetingFacade {
     public List<MeetingDTO> list(String tenantId) {
         return tenantScopedTransaction.execute(tenantId, null, null,
             () -> meetingRepository.findByTenantId(tenantId).stream().map(this::toDto).toList());
+    }
+
+    @Override
+    public MeetingDTO update(UpdateMeetingCommand command) {
+        return tenantScopedTransaction.execute(command.tenantId(), command.actorUserId(), command.requestId(), () -> {
+            Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
+                .orElseThrow(() -> new ApplicationException(
+                    ErrorCode.MEETING_NOT_FOUND, 404,
+                    "meeting not found: " + command.meetingId(), false
+                ));
+
+            if (command.expectedVersion() != null
+                && command.expectedVersion() != meeting.transcriptVersion()) {
+                throw new ApplicationException(
+                    ErrorCode.VERSION_CONFLICT, 409,
+                    "meeting was modified: expected version="
+                        + command.expectedVersion()
+                        + " actual=" + meeting.transcriptVersion(),
+                    false
+                );
+            }
+
+            Meeting updated = meeting.update(
+                normalizeTitle(command.title()),
+                command.participants() == null ? null : toParticipants(command.participants())
+            );
+            return toDto(meetingRepository.save(updated));
+        });
     }
 
     @Override
@@ -210,8 +242,60 @@ public class MeetingApplicationService implements MeetingFacade {
             meeting.language(),
             meeting.transcriptVersion(),
             meeting.minutesVersion(),
-            meeting.createdAt()
+            meeting.createdAt(),
+            meeting.participants().stream()
+                .map(participant -> new MeetingDTO.ParticipantDTO(
+                    participant.personId(),
+                    participant.displayName(),
+                    participant.role()
+                ))
+                .toList()
         );
+    }
+
+    private static String normalizeTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        String trimmed = title.trim();
+        if (trimmed.isEmpty()) {
+            throw new ApplicationException(
+                ErrorCode.VALIDATION_FAILED, 422,
+                "meeting title must not be blank", false
+            );
+        }
+        return trimmed;
+    }
+
+    private static List<Meeting.Participant> toParticipants(
+        List<CreateMeetingCommand.ParticipantCommand> commands
+    ) {
+        List<Meeting.Participant> participants = new ArrayList<>();
+        Set<String> personIds = new LinkedHashSet<>();
+        for (CreateMeetingCommand.ParticipantCommand command : commands) {
+            if (command == null) {
+                throw validation("participant must not be null");
+            }
+            String personId = requireText(command.personId(), "participant personId");
+            String displayName = requireText(command.displayName(), "participant displayName");
+            String role = requireText(command.role(), "participant role");
+            if (!personIds.add(personId)) {
+                throw validation("duplicate participant personId: " + personId);
+            }
+            participants.add(new Meeting.Participant(personId, displayName, role));
+        }
+        return participants;
+    }
+
+    private static String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw validation(fieldName + " must not be blank");
+        }
+        return value.trim();
+    }
+
+    private static ApplicationException validation(String message) {
+        return new ApplicationException(ErrorCode.VALIDATION_FAILED, 422, message, false);
     }
 
     private void publishMeetingCreated(Meeting meeting) {

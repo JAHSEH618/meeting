@@ -13,6 +13,7 @@ import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.client.meeting.MeetingFacade;
+import com.meeting.api.client.meeting.UpdateMeetingCommand;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -104,6 +105,36 @@ class MeetingControllerTest {
     }
 
     @Test
+    void updateForwardsParticipantsWithTenantContextAndVersion() {
+        StubMeetingFacade facade = new StubMeetingFacade();
+        MeetingController controller = new MeetingController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        ApiResponse<MeetingDTO> response = controller.update(
+            "req_01",
+            "trace_01",
+            "idem_01",
+            "m_01",
+            new MeetingController.UpdateMeetingRequest(
+                null,
+                List.of(new CreateMeetingCommand.ParticipantCommand("p_01", "李四", "PARTICIPANT")),
+                3
+            )
+        );
+
+        assertThat(response.success()).isTrue();
+        UpdateMeetingCommand captured = facade.lastUpdateCommand;
+        assertThat(captured.tenantId()).isEqualTo("tenant_01");
+        assertThat(captured.meetingId()).isEqualTo("m_01");
+        assertThat(captured.actorUserId()).isEqualTo("user_01");
+        assertThat(captured.requestId()).isEqualTo("req_01");
+        assertThat(captured.expectedVersion()).isEqualTo(3);
+        assertThat(captured.participants())
+            .extracting(CreateMeetingCommand.ParticipantCommand::personId)
+            .containsExactly("p_01");
+    }
+
+    @Test
     void deletePropagatesApplicationException() {
         StubMeetingFacade facade = new StubMeetingFacade();
         facade.deleteException = new ApplicationException(
@@ -134,6 +165,7 @@ class MeetingControllerTest {
         );
         private String lastListTenantId;
         private String lastGetTenantId;
+        private UpdateMeetingCommand lastUpdateCommand;
         private DeleteMeetingCommand lastDeleteCommand;
         private Optional<MeetingDTO> getResult = Optional.of(meeting);
         private ApplicationException deleteException;
@@ -153,6 +185,12 @@ class MeetingControllerTest {
         public List<MeetingDTO> list(String tenantId) {
             lastListTenantId = tenantId;
             return List.of(meeting);
+        }
+
+        @Override
+        public MeetingDTO update(UpdateMeetingCommand command) {
+            lastUpdateCommand = command;
+            return meeting;
         }
 
         @Override

@@ -118,7 +118,8 @@ public class JdbcMeetingRepository implements MeetingRepository {
 
     private void replaceParticipants(Meeting meeting) {
         jdbcTemplate.update("DELETE FROM meeting_participants WHERE tenant_id = ? AND meeting_id = ?", meeting.tenantId(), meeting.id());
-        for (Meeting.Participant participant : meeting.participants()) {
+        for (int i = 0; i < meeting.participants().size(); i++) {
+            Meeting.Participant participant = meeting.participants().get(i);
             jdbcTemplate.update(
                 """
                 INSERT INTO meeting_participants (
@@ -126,7 +127,7 @@ public class JdbcMeetingRepository implements MeetingRepository {
                 )
                 VALUES (?, ?, ?, NULLIF(?, ''), ?, ?)
                 """,
-                "mp_" + UUID.randomUUID().toString().replace("-", ""),
+                "mp_%04d_%s".formatted(i, UUID.randomUUID().toString().replace("-", "")),
                 meeting.tenantId(),
                 meeting.id(),
                 participant.personId(),
@@ -148,8 +149,26 @@ public class JdbcMeetingRepository implements MeetingRepository {
             .minutesVersion(rs.getInt("minutes_version"))
             .createdBy(rs.getString("created_by"))
             .createdAt(toOffsetDateTime(rs.getTimestamp("created_at")))
-            .participants(List.of())
+            .participants(loadParticipants(rs.getString("tenant_id"), rs.getString("id")))
             .build();
+    }
+
+    private List<Meeting.Participant> loadParticipants(String tenantId, String meetingId) {
+        return jdbcTemplate.query(
+            """
+            SELECT person_id, display_name_snapshot, participant_role
+              FROM meeting_participants
+             WHERE tenant_id = ? AND meeting_id = ?
+             ORDER BY id ASC
+            """,
+            (rs, rowNum) -> new Meeting.Participant(
+                rs.getString("person_id"),
+                rs.getString("display_name_snapshot"),
+                rs.getString("participant_role")
+            ),
+            tenantId,
+            meetingId
+        );
     }
 
     private static OffsetDateTime toOffsetDateTime(Timestamp timestamp) {

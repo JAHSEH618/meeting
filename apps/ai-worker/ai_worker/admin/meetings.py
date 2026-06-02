@@ -93,6 +93,23 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         )
         return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
 
+    @router.patch("/meetings/{meeting_id}", status_code=200)
+    async def update_meeting(
+        meeting_id: str,
+        request: Request,
+        claims: AdminClaims = Depends(admin_claims_dependency),
+        x_request_id: str | None = Header(None, alias="X-Request-Id"),
+        x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        body = await request.json()
+        response = await java_client.request(
+            "PATCH", f"/api/meetings/{meeting_id}",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            idempotency_key=idempotency_key, json=body,
+        )
+        return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
+
     @router.get("/meetings/{meeting_id}", status_code=200)
     async def get_meeting(
         meeting_id: str,

@@ -2320,6 +2320,15 @@ components:
         language: {type: string}
         transcriptVersion: {type: integer, minimum: 0}
         minutesVersion: {type: integer, minimum: 0}
+        participants:
+          type: array
+          items:
+            type: object
+            required: [personId, displayName, role]
+            properties:
+              personId: {type: string}
+              displayName: {type: string}
+              role: {type: string}
         createdAt: {type: string, format: date-time}
 
     PageInfo:

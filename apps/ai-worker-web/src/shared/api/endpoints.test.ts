@@ -17,6 +17,7 @@ import {
   rejectSpeaker,
   revokeSpeakerProfile,
   searchPersons,
+  updateMeeting,
 } from "./endpoints";
 import { authStore } from "@/shared/auth/store";
 
@@ -124,6 +125,41 @@ describe("admin endpoint helpers", () => {
       personId: "p1",
       speakerProfileId: "spk1",
       expectedTranscriptVersion: 3,
+    });
+  });
+
+  it("updates meeting participants with Java concurrency fields", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      meetingId: "m1",
+      title: "季度评审",
+      status: "RUNNING",
+      securityLevel: "INTERNAL",
+      language: "zh",
+      transcriptVersion: 3,
+      participants: [
+        { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
+        { personId: "p2", displayName: "王五", role: "PARTICIPANT" },
+      ],
+      createdAt: "",
+    }));
+
+    await updateMeeting("m1", {
+      participants: [
+        { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
+        { personId: "p2", displayName: "王五", role: "PARTICIPANT" },
+      ],
+      expectedVersion: 3,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/meetings/m1");
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as RequestInit).method).toBe("PATCH");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      participants: [
+        { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
+        { personId: "p2", displayName: "王五", role: "PARTICIPANT" },
+      ],
+      expectedVersion: 3,
     });
   });
 

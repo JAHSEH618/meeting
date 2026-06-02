@@ -67,7 +67,14 @@ export interface MeetingSummaryDTO {
   language: string;
   transcriptVersion?: number;
   minutesVersion?: number;
+  participants?: MeetingParticipantDTO[];
   createdAt: string;
+}
+
+export interface MeetingParticipantDTO {
+  personId: string;
+  displayName: string;
+  role: string;
 }
 
 export interface DocumentSummaryDTO {

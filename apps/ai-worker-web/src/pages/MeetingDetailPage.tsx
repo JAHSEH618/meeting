@@ -1,17 +1,29 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
-import { confirmSpeaker, createExport, getMeetingAggregate, pollExport, processingTaskEventsUrl, rejectSpeaker } from "@/shared/api/endpoints";
+import {
+  confirmSpeaker,
+  createExport,
+  getMeetingAggregate,
+  pollExport,
+  processingTaskEventsUrl,
+  rejectSpeaker,
+  searchPersons,
+  updateMeeting,
+} from "@/shared/api/endpoints";
 import type {
   ExportJobDTO,
   MeetingAggregateDTO,
+  MeetingParticipantDTO,
   MeetingSpeakerDTO,
+  PersonDTO,
   SpeakerCandidateDTO,
   ProcessingTaskStepDTO,
   ProcessingTaskStatus,
   TaskEventDTO,
 } from "@/shared/api/types";
+import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { SafeMarkdown } from "@/shared/markdown/SafeMarkdown";
 
 const STEPS = [
@@ -28,6 +40,7 @@ const STEPS = [
 ] as const;
 
 const TERMINAL_STATUSES: ProcessingTaskStatus[] = ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"];
+const DEFAULT_PARTICIPANT_ROLE = "PARTICIPANT";
 
 export function MeetingDetailPage() {
   const { meetingId = "" } = useParams<{ meetingId: string }>();
@@ -38,13 +51,18 @@ export function MeetingDetailPage() {
   const [confirmingSpeaker, setConfirmingSpeaker] = useState<string | null>(null);
   const [pendingRejectSpeaker, setPendingRejectSpeaker] = useState<MeetingSpeakerDTO | null>(null);
   const [rejectingSpeaker, setRejectingSpeaker] = useState<string | null>(null);
+  const [addingParticipant, setAddingParticipant] = useState<string | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const task = aggregate?.latestTask?.data ?? null;
   const meeting = aggregate?.meeting?.data ?? null;
+  const participants = meeting?.participants ?? [];
   const isTerminal = task ? TERMINAL_STATUSES.includes(task.status) : false;
   const terminalContentVisible = isTerminal || !!aggregate?.minutes?.data || !!aggregate?.speakers?.data;
+  const personFetcher = useCallback((q: string, signal: AbortSignal) => searchPersons(q, { signal }), []);
+  const personSearch = useDebouncedSearch<PersonDTO>(personFetcher);
+  const personResults = personSearch.results ?? [];
 
   useEffect(() => {
     if (!meetingId) return;
@@ -170,6 +188,29 @@ export function MeetingDetailPage() {
     }
   };
 
+  const handleAddParticipant = async (person: PersonDTO) => {
+    if (!meetingId || !meeting || typeof meeting.transcriptVersion !== "number") return;
+    if (!person.personId || participants.some((participant) => participant.personId === person.personId)) return;
+    const nextParticipants: MeetingParticipantDTO[] = [
+      ...participants,
+      { personId: person.personId, displayName: person.displayName, role: DEFAULT_PARTICIPANT_ROLE },
+    ];
+    setAddingParticipant(person.personId);
+    setError(null);
+    try {
+      await updateMeeting(meetingId, {
+        participants: nextParticipants,
+        expectedVersion: meeting.transcriptVersion,
+      });
+      personSearch.reset();
+      await refreshAggregate();
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setAddingParticipant(null);
+    }
+  };
+
   const handleConfirmReject = async () => {
     if (!meetingId || !pendingRejectSpeaker) return;
     const label = getSpeakerLabel(pendingRejectSpeaker);
@@ -211,6 +252,57 @@ export function MeetingDetailPage() {
         </div>
       ) : null}
       {error ? <div className="banner banner--danger" role="alert">{error}</div> : null}
+
+      <section className="card stack" aria-labelledby="meeting-participants">
+        <h2 id="meeting-participants">参会人</h2>
+        {participants.length ? (
+          <div className="toolbar" aria-live="polite">
+            {participants.map((participant) => (
+              <span key={participant.personId} className="chip">
+                {participant.displayName}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="page-subtitle">暂无参会人。</p>
+        )}
+        <div className="field">
+          <label className="field__label" htmlFor="meeting-person-search">搜索人员</label>
+          <input
+            id="meeting-person-search"
+            type="search"
+            name="personSearch"
+            className="input"
+            placeholder="按姓名 / 邮箱搜索…"
+            onChange={(event) => personSearch.search(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        {personSearch.loading ? <p className="page-subtitle" aria-live="polite">搜索中…</p> : null}
+        {personSearch.error ? <p className="error" role="alert">{formatError(personSearch.error)}</p> : null}
+        {personResults.length ? (
+          <div className="stack">
+            {personResults.map((person) => {
+              const alreadyAdded = participants.some((participant) => participant.personId === person.personId);
+              return (
+                <div key={person.personId} className="toolbar">
+                  <span>{person.displayName}</span>
+                  {person.email ? <span className="page-subtitle">{person.email}</span> : null}
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    aria-label={`${alreadyAdded ? "已添加" : "添加"} ${person.displayName}`}
+                    disabled={alreadyAdded || addingParticipant === person.personId}
+                    onClick={() => void handleAddParticipant(person)}
+                  >
+                    {alreadyAdded ? "已添加" : addingParticipant === person.personId ? "添加中…" : "添加"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
 
       <section className="card stack" aria-labelledby="meeting-progress">
         <h2 id="meeting-progress">流水线进度</h2>

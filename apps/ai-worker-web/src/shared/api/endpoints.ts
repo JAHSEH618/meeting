@@ -11,6 +11,7 @@ import type {
   GlossaryTermDTO,
   MeetingAggregateDTO,
   MeetingDocumentItemDTO,
+  MeetingParticipantDTO,
   MeetingSummaryDTO,
   MeetingSpeakerDTO,
   PersonDTO,
@@ -70,6 +71,15 @@ export const createMeeting = (body: {
   language: string;
   participants: Array<{ personId: string; displayName: string; role: string }>;
 }) => apiCall<MeetingSummaryDTO>(`${API}/meetings`, { method: "POST", body });
+
+export const updateMeeting = (
+  meetingId: string,
+  body: { title?: string; participants?: MeetingParticipantDTO[]; expectedVersion?: number },
+) =>
+  apiCall<MeetingSummaryDTO>(
+    `${API}/meetings/${encodeURIComponent(meetingId)}`,
+    { method: "PATCH", body },
+  );
 
 export async function listAdminMeetings() {
   const data = await apiCall<MeetingSummaryDTO[] | { items?: MeetingSummaryDTO[] }>(`${API}/meetings`);

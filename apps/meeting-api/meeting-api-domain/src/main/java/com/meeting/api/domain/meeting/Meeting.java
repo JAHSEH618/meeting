@@ -90,6 +90,22 @@ public final class Meeting {
         return copyWithStatus(MeetingStatus.DELETED);
     }
 
+    public Meeting update(String nextTitle, List<Participant> nextParticipants) {
+        return new Builder()
+            .id(id)
+            .tenantId(tenantId)
+            .title(nextTitle == null ? title : nextTitle)
+            .securityLevel(securityLevel)
+            .status(status)
+            .language(language)
+            .transcriptVersion(transcriptVersion)
+            .minutesVersion(minutesVersion)
+            .createdAt(createdAt)
+            .createdBy(createdBy)
+            .participants(nextParticipants == null ? participants : nextParticipants)
+            .build();
+    }
+
     private Meeting copyWithStatus(MeetingStatus nextStatus) {
         return new Builder()
             .id(id)

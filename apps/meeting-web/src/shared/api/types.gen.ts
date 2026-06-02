@@ -1309,6 +1309,11 @@ export interface components {
             language: string;
             transcriptVersion: number;
             minutesVersion: number;
+            participants?: {
+                personId: string;
+                displayName: string;
+                role: string;
+            }[];
             /** Format: date-time */
             createdAt: string;
         };
