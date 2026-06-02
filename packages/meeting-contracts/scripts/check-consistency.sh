@@ -241,6 +241,22 @@ if python3 -c "import jsonschema" 2>/dev/null && [ -d "$FIXTURES_DIR" ]; then
 import json, jsonschema, sys, os
 from pathlib import Path
 
+expected_pipeline_steps_by_task_type = {
+    'MEETING_FULL_PIPELINE': [
+        'AUDIO_PREPROCESS',
+        'ASR',
+        'ALIGNMENT',
+        'DIARIZATION',
+        'SPEAKER_EMBEDDING',
+        'SPEAKER_MATCHING',
+        'TRANSCRIPT_MERGE',
+        'RAG_INDEXING',
+    ],
+    'TEXT_EMBEDDING': ['RAG_INDEXING'],
+    'RAG_REINDEX': ['RAG_INDEXING'],
+    'SPEAKER_ENROLLMENT': ['SPEAKER_EMBEDDING', 'SPEAKER_MATCHING'],
+}
+
 schema_map = {
     'processing-task-message.schema.json': [
         'valid/processing-task-meeting-full-pipeline.json',
@@ -295,6 +311,12 @@ for schema_file, fixture_paths in schema_map.items():
                 errors += 1
             else:
                 print(f'  OK   {fp}: valid')
+                if schema_file == 'processing-task-message.schema.json':
+                    task_type = instance.get('taskType')
+                    expected_steps = expected_pipeline_steps_by_task_type.get(task_type)
+                    if expected_steps is not None and instance.get('pipelineSteps') != expected_steps:
+                        print(f'  FAIL {fp}: pipelineSteps must exactly match taskType={task_type}: {expected_steps}')
+                        errors += 1
 
 if errors:
     print(f'  {errors} fixture validation error(s) found')

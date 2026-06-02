@@ -147,6 +147,21 @@ class AudioUploadApplicationServiceTest {
         assertThat(ctx.files.files).hasSize(1);
         assertThat(ctx.tasks.task).isNotNull();
         assertThat(ctx.tasks.task.steps())
+            .extracting("stepName")
+            .containsExactly(
+                ProcessingStep.AUDIO_UPLOAD,
+                ProcessingStep.AUDIO_PREPROCESS,
+                ProcessingStep.ASR,
+                ProcessingStep.ALIGNMENT,
+                ProcessingStep.DIARIZATION,
+                ProcessingStep.SPEAKER_EMBEDDING,
+                ProcessingStep.SPEAKER_MATCHING,
+                ProcessingStep.TRANSCRIPT_MERGE,
+                ProcessingStep.RAG_INDEXING,
+                ProcessingStep.SUMMARY,
+                ProcessingStep.EXTRACTION
+            );
+        assertThat(ctx.tasks.task.steps())
             .filteredOn(step -> step.stepName() == ProcessingStep.SUMMARY || step.stepName() == ProcessingStep.EXTRACTION)
             .hasSize(2)
             .allSatisfy(step -> {
@@ -157,7 +172,16 @@ class AudioUploadApplicationServiceTest {
         ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) ctx.publisher.events.get(0);
         assertThat(event.pipelineSteps())
             .extracting(Enum::name)
-            .containsExactly("AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE");
+            .containsExactly(
+                "AUDIO_PREPROCESS",
+                "ASR",
+                "ALIGNMENT",
+                "DIARIZATION",
+                "SPEAKER_EMBEDDING",
+                "SPEAKER_MATCHING",
+                "TRANSCRIPT_MERGE",
+                "RAG_INDEXING"
+            );
         assertThat(event.payload().get("audioFileId")).isEqualTo(completed.fileId());
         assertThat(event.payload().get("audioUri")).asString().startsWith("oss://meeting-local/");
         assertThat(event.payload().get("language")).isEqualTo("zh");
@@ -165,6 +189,11 @@ class AudioUploadApplicationServiceTest {
         assertThat(event.payload().get("maxSpeakers")).isEqualTo(4);
         @SuppressWarnings("unchecked")
         Map<String, Object> options = (Map<String, Object>) event.payload().get("options");
+        assertThat(options.get("enableAsr")).isEqualTo(true);
+        assertThat(options.get("enableDiarization")).isEqualTo(true);
+        assertThat(options.get("enableAlignment")).isEqualTo(true);
+        assertThat(options.get("enableSpeakerRecognition")).isEqualTo(true);
+        assertThat(options.get("enableRagIndexing")).isEqualTo(true);
         assertThat(options.get("inputAudioSha256")).isEqualTo(completed.fileSha256());
     }
 

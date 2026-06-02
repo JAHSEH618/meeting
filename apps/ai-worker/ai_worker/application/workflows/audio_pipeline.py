@@ -69,7 +69,12 @@ class LocalAudioPipelineEngine:
         elif step_name == "TRANSCRIPT_MERGE":
             await self._run_transcript_merge(context)
         else:
-            context.skipped_steps.append({"stepName": step_name, "reason": "OUT_OF_PHASE2_SCOPE"})
+            raise WorkerPipelineError(
+                step_name,
+                "WORKER_STEP_NOT_IMPLEMENTED",
+                f"worker step is required but not implemented by LocalAudioPipelineEngine: {step_name}",
+                retryable=False,
+            )
 
     async def complete_pipeline(self, context: "_PipelineContext") -> PipelineArtifact:
         manifest_ref = await self._write_manifest(context)

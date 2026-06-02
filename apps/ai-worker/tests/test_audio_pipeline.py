@@ -37,6 +37,30 @@ def _task(audio_uri: str) -> TaskMessage:
     )
 
 
+def _task_with_steps(audio_uri: str, steps: tuple[str, ...]) -> TaskMessage:
+    task = _task(audio_uri)
+    return TaskMessage(
+        task_id=task.task_id,
+        task_type=task.task_type,
+        tenant_id=task.tenant_id,
+        meeting_id=task.meeting_id,
+        security_level=task.security_level,
+        attempt_no=task.attempt_no,
+        pipeline_steps=steps,
+        expected_input_version=task.expected_input_version,
+        trace_id=task.trace_id,
+        audio_file_id=task.audio_file_id,
+        audio_uri=task.audio_uri,
+        language=task.language,
+        channel_map=task.channel_map,
+        known_participants=task.known_participants,
+        min_speakers=task.min_speakers,
+        max_speakers=task.max_speakers,
+        options=task.options,
+        created_at=task.created_at,
+    )
+
+
 def _write_wav(path: Path, sample_rate: int = 16000, seconds: float = 0.2) -> None:
     frames = int(sample_rate * seconds)
     with wave.open(str(path), "wb") as wav_file:
@@ -154,3 +178,16 @@ async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
             "timestampPrecision": "SEGMENT",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_audio_pipeline_fails_required_steps_that_are_not_implemented() -> None:
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
+    context = engine.start_pipeline(_task_with_steps("oss://meeting-audio-auska/raw.wav", ("ALIGNMENT",)))
+
+    with pytest.raises(WorkerPipelineError) as exc_info:
+        await engine.run_step(context, "ALIGNMENT")
+
+    assert exc_info.value.step_name == "ALIGNMENT"
+    assert exc_info.value.error_code == "WORKER_STEP_NOT_IMPLEMENTED"
+    assert not exc_info.value.retryable

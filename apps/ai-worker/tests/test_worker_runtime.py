@@ -23,8 +23,12 @@ def _valid_message() -> dict:
         "pipelineSteps": [
             "AUDIO_PREPROCESS",
             "ASR",
+            "ALIGNMENT",
             "DIARIZATION",
+            "SPEAKER_EMBEDDING",
+            "SPEAKER_MATCHING",
             "TRANSCRIPT_MERGE",
+            "RAG_INDEXING",
         ],
         "expectedInputVersion": {"chunkStrategyVersion": "v1"},
         "language": "zh",
@@ -32,7 +36,13 @@ def _valid_message() -> dict:
         "knownParticipants": [],
         "minSpeakers": 1,
         "maxSpeakers": 4,
-        "options": {"enableAsr": True},
+        "options": {
+            "enableAsr": True,
+            "enableAlignment": True,
+            "enableDiarization": True,
+            "enableSpeakerRecognition": True,
+            "enableRagIndexing": True,
+        },
         "traceId": "trace_runtime_01",
     }
 
@@ -100,9 +110,9 @@ async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback
     snapshot = state_store.get("task_runtime_01")
     assert snapshot is not None
     assert snapshot.status == "SUCCEEDED"
-    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * 4
+    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
     assert engine.ran_steps == _valid_message()["pipelineSteps"]
-    assert callback_client.update_step.await_count == 12
+    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
     callback_client.submit_transcript.assert_awaited_once()
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]

@@ -144,7 +144,6 @@ def build_enrollment_router(
 
         # Three-step orchestration: profile → generic file upload → enrollment record.
         # Each Java call is independently idempotent via its own Idempotency-Key.
-        consent_reference = "workstation:v1"
         profile = await java_client.request(
             "POST", "/api/speaker-profiles",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -152,7 +151,8 @@ def build_enrollment_router(
             json={
                 "personId": session.person_id,
                 "displayName": session.person_id,
-                "consentReference": consent_reference,
+                "consentSource": "USER_ENROLLMENT",
+                "consentVersion": "v1",
             },
         )
         if profile.status_code >= 400:
@@ -267,10 +267,7 @@ def build_enrollment_router(
             "POST", f"/api/speaker-profiles/{profile_id}/enrollments",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:enroll",
-            json={
-                "audioFileId": file_id,
-                "consentReference": consent_reference,
-            },
+            json={"sourceAudioFileId": file_id},
         )
         if enrollment.status_code >= 400:
             return passthrough(enrollment.status_code, enrollment.content, x_request_id, x_trace_id)

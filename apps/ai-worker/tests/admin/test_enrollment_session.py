@@ -244,7 +244,8 @@ async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Pa
     assert profile_body == {
         "personId": "person_01",
         "displayName": "person_01",
-        "consentReference": "workstation:v1",
+        "consentSource": "USER_ENROLLMENT",
+        "consentVersion": "v1",
     }
     part_body = java.received[2]["body"]
     complete_body = java.received[3]["body"]
@@ -252,9 +253,6 @@ async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Pa
     assert part_body == {"partNumber": 1, "sizeBytes": len(b"audio-bytes"), "partSha256": expected_sha}
     assert complete_body["parts"] == [{"partNumber": 1, "partSha256": expected_sha, "etag": "etag-1"}]
     enroll_body = java.received[4]["body"]
-    assert enroll_body == {
-        "audioFileId": "file_01",
-        "consentReference": "workstation:v1",
-    }
+    assert enroll_body == {"sourceAudioFileId": "file_01"}
     assert await store.get(session.session_id) is None
     assert not audio.exists()

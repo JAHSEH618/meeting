@@ -9,7 +9,7 @@
   "language": "zh",
   "securityLevel": "PUBLIC",
   "attemptNo": 1,
-  "pipelineSteps": ["SPEAKER_EMBEDDING"],
+  "pipelineSteps": ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING"],
   "expectedInputVersion": {
     "chunkStrategyVersion": "v1"
   },

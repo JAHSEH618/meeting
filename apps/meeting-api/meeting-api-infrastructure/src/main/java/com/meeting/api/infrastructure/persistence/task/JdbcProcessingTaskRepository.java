@@ -67,8 +67,9 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             toTimestamp(task.createdAt()),
             task.holdAtWorkerPhase()
         );
-        for (ProcessingTaskStep step : task.steps()) {
-            saveStep(task, step);
+        List<ProcessingTaskStep> steps = task.steps();
+        for (int i = 0; i < steps.size(); i++) {
+            saveStep(task, steps.get(i), i);
         }
         return task;
     }
@@ -130,15 +131,16 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
         );
     }
 
-    private void saveStep(ProcessingTask task, ProcessingTaskStep step) {
+    private void saveStep(ProcessingTask task, ProcessingTaskStep step, int stepOrder) {
         jdbcTemplate.update(
             """
             INSERT INTO processing_task_steps (
-              id, tenant_id, task_id, step_name, status, progress, attempt_count,
+              id, tenant_id, task_id, step_name, step_order, status, progress, attempt_count,
               lease_owner, heartbeat_at, error_code, started_at, finished_at
             )
-            VALUES (?, ?, ?, ?::processing_step, ?::step_status, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?::processing_step, ?, ?::step_status, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (task_id, step_name, attempt_count) DO UPDATE SET
+              step_order = EXCLUDED.step_order,
               status = EXCLUDED.status,
               progress = EXCLUDED.progress,
               lease_owner = EXCLUDED.lease_owner,
@@ -151,6 +153,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
             task.tenantId(),
             task.taskId(),
             step.stepName().name(),
+            stepOrder,
             step.status().name(),
             step.progress(),
             step.attemptNo() == null ? 0 : step.attemptNo(),
@@ -169,7 +172,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
                    heartbeat_at, error_code, started_at, finished_at
               FROM processing_task_steps
              WHERE tenant_id = ? AND task_id = ?
-             ORDER BY created_at ASC, step_name ASC
+             ORDER BY step_order ASC, created_at ASC, step_name ASC
             """,
             this::mapStep,
             tenantId,

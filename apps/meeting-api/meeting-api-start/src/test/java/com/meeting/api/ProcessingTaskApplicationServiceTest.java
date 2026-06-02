@@ -71,6 +71,21 @@ class ProcessingTaskApplicationServiceTest {
                 assertThat(step.status()).isEqualTo(StepStatus.PENDING);
                 assertThat(step.source()).isEqualTo(ProcessingStepUpdateSource.JAVA_TASK_SERVICE);
             });
+        assertThat(dto.steps())
+            .extracting("stepName")
+            .containsExactly(
+                ProcessingStep.AUDIO_UPLOAD,
+                ProcessingStep.AUDIO_PREPROCESS,
+                ProcessingStep.ASR,
+                ProcessingStep.ALIGNMENT,
+                ProcessingStep.DIARIZATION,
+                ProcessingStep.SPEAKER_EMBEDDING,
+                ProcessingStep.SPEAKER_MATCHING,
+                ProcessingStep.TRANSCRIPT_MERGE,
+                ProcessingStep.RAG_INDEXING,
+                ProcessingStep.SUMMARY,
+                ProcessingStep.EXTRACTION
+            );
 
         ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) publisher.events.get(0);
         assertThat(event.pipelineSteps()).doesNotContain(
@@ -82,7 +97,16 @@ class ProcessingTaskApplicationServiceTest {
         @SuppressWarnings("unchecked")
         List<String> pipelineSteps = (List<String>) event.payload().get("pipelineSteps");
         assertThat(pipelineSteps)
-            .containsExactly("AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE", "RAG_INDEXING");
+            .containsExactly(
+                "AUDIO_PREPROCESS",
+                "ASR",
+                "ALIGNMENT",
+                "DIARIZATION",
+                "SPEAKER_EMBEDDING",
+                "SPEAKER_MATCHING",
+                "TRANSCRIPT_MERGE",
+                "RAG_INDEXING"
+            );
     }
 
     @Test

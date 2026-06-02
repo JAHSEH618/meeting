@@ -8,7 +8,7 @@ import com.meeting.api.client.enums.StepStatus;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,7 +51,7 @@ public final class ProcessingTask {
         this.status = Objects.requireNonNull(status, "status");
         this.phase = Objects.requireNonNull(phase, "phase");
         this.attemptNo = attemptNo;
-        this.steps = new EnumMap<>(ProcessingStep.class);
+        this.steps = new LinkedHashMap<>();
         for (ProcessingTaskStep step : steps) {
             this.steps.put(step.stepName(), step);
         }
