@@ -324,24 +324,28 @@ def build_voiceprint_router(*, java_client: JavaPublicClient) -> APIRouter:
         if person_id:
             params["personId"] = person_id
         response = await java_client.request(
-            "GET", "/api/speakers/profiles",
+            "GET", "/api/speaker-profiles",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             params=params,
         )
         return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
 
-    @router.post("/{enrollment_id}:revoke", status_code=200)
+    @router.post("/{profile_id}:revoke", status_code=200)
     async def revoke(
-        enrollment_id: str,
+        profile_id: str,
+        request: Request,
         claims: AdminClaims = Depends(admin_claims_dependency),
         x_request_id: str | None = Header(None, alias="X-Request-Id"),
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
+        raw_body = await request.body()
+        body = await request.json() if raw_body else None
         response = await java_client.request(
-            "POST", f"/api/speakers/enrollments/{enrollment_id}:revoke",
+            "POST", f"/api/speaker-profiles/{profile_id}/revoke",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=idempotency_key,
+            json=body if isinstance(body, dict) else None,
         )
         return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
 
