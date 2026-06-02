@@ -15,6 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SpeakerProfileControllerTest {
     @AfterEach
@@ -74,6 +75,54 @@ class SpeakerProfileControllerTest {
         assertThat(facade.lastEnrollment.speakerProfileId()).isEqualTo("spk_01");
         assertThat(facade.lastEnrollment.sourceAudioFileId()).isEqualTo("file_01");
         assertThat(facade.lastEnrollment.idempotencyKey()).isEqualTo("idem_02");
+    }
+
+    @Test
+    void addEnrollmentRejectsMissingAudioFileId() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.addEnrollment(
+            "spk_01",
+            new SpeakerProfileController.CreateEnrollmentRequest(
+                null,
+                "legacy_file_01",
+                "USER_ENROLLMENT:v1",
+                "zh"
+            ),
+            "req_01",
+            "trace_01",
+            "idem_02",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("audioFileId is required");
+
+        assertThat(facade.lastEnrollment).isNull();
+    }
+
+    @Test
+    void addEnrollmentRejectsMissingConsentReference() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.addEnrollment(
+            "spk_01",
+            new SpeakerProfileController.CreateEnrollmentRequest(
+                "file_01",
+                null,
+                null,
+                "zh"
+            ),
+            "req_01",
+            "trace_01",
+            "idem_02",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("consentReference is required");
+
+        assertThat(facade.lastEnrollment).isNull();
     }
 
     @Test

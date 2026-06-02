@@ -102,10 +102,14 @@ public class SpeakerProfileController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("request body is required");
+        }
+        body.validate();
         SpeakerEnrollmentDTO result = facade.addEnrollment(new CreateSpeakerEnrollmentCommand(
             TenantContextHolder.currentTenantId(),
             profileId,
-            body.resolvedAudioFileId(),
+            body.audioFileId(),
             userId,
             requestId,
             traceId,
@@ -154,8 +158,13 @@ public class SpeakerProfileController {
     }
 
     public record CreateEnrollmentRequest(String audioFileId, String sourceAudioFileId, String consentReference, String language) {
-        String resolvedAudioFileId() {
-            return audioFileId == null || audioFileId.isBlank() ? sourceAudioFileId : audioFileId;
+        void validate() {
+            if (audioFileId == null || audioFileId.isBlank()) {
+                throw new IllegalArgumentException("audioFileId is required");
+            }
+            if (consentReference == null || consentReference.isBlank()) {
+                throw new IllegalArgumentException("consentReference is required");
+            }
         }
     }
 }
