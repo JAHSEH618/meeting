@@ -107,6 +107,12 @@ export const confirmSpeaker = (
     { method: "POST", body },
   );
 
+export const rejectSpeaker = (meetingId: string, label: string) =>
+  apiCall<void>(
+    `${API}/meetings/${encodeURIComponent(meetingId)}/speakers/${encodeURIComponent(label)}:reject`,
+    { method: "POST" },
+  );
+
 export const createExport = (meetingId: string, format: "DOCX" | "PDF" | "MARKDOWN" = "DOCX") =>
   apiCall<ExportJobDTO>(
     `${API}/meetings/${encodeURIComponent(meetingId)}/exports`,

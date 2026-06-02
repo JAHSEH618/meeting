@@ -268,6 +268,22 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         )
         return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
 
+    @router.post("/meetings/{meeting_id}/speakers/{label}:reject", status_code=200)
+    async def reject_speaker(
+        meeting_id: str,
+        label: str,
+        claims: AdminClaims = Depends(admin_claims_dependency),
+        x_request_id: str | None = Header(None, alias="X-Request-Id"),
+        x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        response = await java_client.request(
+            "POST", f"/api/meetings/{meeting_id}/speakers/{label}/reject",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            idempotency_key=idempotency_key,
+        )
+        return passthrough(response.status_code, response.content, x_request_id, x_trace_id)
+
     # ── exports (passthrough) ───────────────────────────────────────────
     @router.post("/meetings/{meeting_id}/exports", status_code=200)
     async def create_export(

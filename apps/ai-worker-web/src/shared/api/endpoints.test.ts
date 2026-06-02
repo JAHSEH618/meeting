@@ -14,6 +14,7 @@ import {
   initFileUpload,
   listSpeakerProfiles,
   processingTaskEventsUrl,
+  rejectSpeaker,
   revokeSpeakerProfile,
   searchPersons,
 } from "./endpoints";
@@ -124,6 +125,16 @@ describe("admin endpoint helpers", () => {
       speakerProfileId: "spk1",
       expectedTranscriptVersion: 3,
     });
+  });
+
+  it("rejects incorrect speaker candidates through Java", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(null));
+
+    await rejectSpeaker("m1", "SPEAKER_01");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/meetings/m1/speakers/SPEAKER_01:reject");
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as RequestInit).method).toBe("POST");
   });
 
   it("exposes task detail and SSE helpers", async () => {

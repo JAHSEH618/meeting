@@ -294,3 +294,20 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
     }
     assert create["idempotency"] == "idem_t1"
     assert create["tenant"] == "tenant_01"
+
+
+@pytest.mark.asyncio
+async def test_reject_speaker_passthrough_to_java(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        response = await client.post(
+            "/admin/meetings/m_01/speakers/SPEAKER_01:reject",
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    stub: _StubJavaClient = app.state.java_stub
+    reject = next(c for c in stub.received if c["method"] == "POST" and c["path"].endswith("/reject"))
+    assert reject["path"] == "/api/meetings/m_01/speakers/SPEAKER_01/reject"
+    assert reject["body"] is None
+    assert reject["idempotency"] == "idem_t1"
+    assert reject["tenant"] == "tenant_01"

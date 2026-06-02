@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/api/client";
@@ -53,6 +53,7 @@ vi.mock("@/shared/api/endpoints", () => ({
     candidatePersonIds: ["p1", "p2"],
     candidates: [],
   })),
+  rejectSpeaker: vi.fn(async () => undefined),
   createExport: vi.fn(async () => ({ exportId: "exp1", status: "RUNNING", format: "DOCX" })),
   pollExport: vi.fn(async () => ({ exportId: "exp1", status: "SUCCEEDED", format: "DOCX", downloadUrl: "https://download/docx" })),
   processingTaskEventsUrl: vi.fn((taskId: string) => `/api/processing-tasks/${encodeURIComponent(taskId)}/events`),
@@ -200,6 +201,122 @@ describe("MeetingDetailPage", () => {
       expectedTranscriptVersion: 3,
     }));
     await waitFor(() => expect(endpoints.getMeetingAggregate).toHaveBeenCalledTimes(2));
+  });
+
+  it("requires confirmation before rejecting a speaker candidate set", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce({
+      meeting: { success: true, data: { meetingId: "m1", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", transcriptVersion: 3, createdAt: "" } },
+      latestTask: { success: true, data: { taskId: "task1", meetingId: "m1", status: "RUNNING", phase: "WORKER_DAG_RUNNING", attemptNo: 1, currentStep: "ASR", lastErrorCode: null, retryable: true, steps: [] } },
+      speakers: {
+        success: true,
+        data: [{
+          speakerLabel: "SPEAKER_02",
+          displayName: null,
+          personId: null,
+          speakerProfileId: null,
+          confirmationStatus: "CANDIDATE",
+          autoMatchScore: 0.62,
+          confirmedAt: null,
+          candidatePersonIds: ["p2"],
+          candidates: [{ personId: "p2", speakerProfileId: "sp2", displayName: "王五", confidence: 0.62 }],
+        }],
+      },
+      minutes: null,
+    });
+    render(
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "驳回 SPEAKER_02" }));
+
+    expect(screen.getByRole("dialog", { name: "驳回说话人候选" })).toBeInTheDocument();
+    expect(screen.getByText(/将保留原始 SPEAKER 标签/)).toBeInTheDocument();
+    expect(endpoints.rejectSpeaker).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认驳回" }));
+
+    await waitFor(() => expect(endpoints.rejectSpeaker).toHaveBeenCalledWith("m1", "SPEAKER_02"));
+    await waitFor(() => expect(endpoints.getMeetingAggregate).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows speaker rejection failures inside the confirmation dialog", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce({
+      meeting: { success: true, data: { meetingId: "m1", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", transcriptVersion: 3, createdAt: "" } },
+      latestTask: { success: true, data: { taskId: "task1", meetingId: "m1", status: "RUNNING", phase: "WORKER_DAG_RUNNING", attemptNo: 1, currentStep: "ASR", lastErrorCode: null, retryable: true, steps: [] } },
+      speakers: {
+        success: true,
+        data: [{
+          speakerLabel: "SPEAKER_02",
+          displayName: null,
+          personId: null,
+          speakerProfileId: null,
+          confirmationStatus: "CANDIDATE",
+          autoMatchScore: 0.62,
+          confirmedAt: null,
+          candidatePersonIds: ["p2"],
+          candidates: [{ personId: "p2", speakerProfileId: "sp2", displayName: "王五", confidence: 0.62 }],
+        }],
+      },
+      minutes: null,
+    });
+    vi.mocked(endpoints.rejectSpeaker).mockRejectedValueOnce(new ApiError(
+      409,
+      { code: "SPEAKER_REJECT_CONFLICT", message: "speaker state changed", retryable: false },
+      "r",
+      "t",
+    ));
+    render(
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "驳回 SPEAKER_02" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认驳回" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "驳回说话人候选" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "SPEAKER_REJECT_CONFLICT: speaker state changed",
+    );
+  });
+
+  it("shows rejected speaker rows as final and hides stale candidate actions", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce({
+      meeting: { success: true, data: { meetingId: "m1", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", transcriptVersion: 3, createdAt: "" } },
+      latestTask: { success: true, data: { taskId: "task1", meetingId: "m1", status: "SUCCEEDED", phase: "TERMINAL", attemptNo: 1, currentStep: null, lastErrorCode: null, retryable: false, steps: [] } },
+      speakers: {
+        success: true,
+        data: [{
+          speakerLabel: "SPEAKER_03",
+          displayName: null,
+          personId: null,
+          speakerProfileId: null,
+          confirmationStatus: "REJECTED",
+          autoMatchScore: 0.58,
+          confirmedAt: null,
+          candidatePersonIds: ["p3"],
+          candidates: [{ personId: "p3", speakerProfileId: "sp3", displayName: "赵六", confidence: 0.58 }],
+        }],
+      },
+      minutes: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("SPEAKER_03");
+
+    expect(screen.getByText("SPEAKER_03").parentElement).toHaveTextContent("已驳回");
+    expect(screen.queryByRole("button", { name: "认定 赵六 0.58" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "驳回 SPEAKER_03" })).not.toBeInTheDocument();
   });
 
   it("surfaces Java transcript-version conflicts during speaker confirmation", async () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
-import { confirmSpeaker, createExport, getMeetingAggregate, pollExport, processingTaskEventsUrl } from "@/shared/api/endpoints";
+import { confirmSpeaker, createExport, getMeetingAggregate, pollExport, processingTaskEventsUrl, rejectSpeaker } from "@/shared/api/endpoints";
 import type {
   ExportJobDTO,
   MeetingAggregateDTO,
@@ -36,6 +36,9 @@ export function MeetingDetailPage() {
   const [exportJob, setExportJob] = useState<ExportJobDTO | null>(null);
   const [busyExport, setBusyExport] = useState(false);
   const [confirmingSpeaker, setConfirmingSpeaker] = useState<string | null>(null);
+  const [pendingRejectSpeaker, setPendingRejectSpeaker] = useState<MeetingSpeakerDTO | null>(null);
+  const [rejectingSpeaker, setRejectingSpeaker] = useState<string | null>(null);
+  const [rejectError, setRejectError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const task = aggregate?.latestTask?.data ?? null;
@@ -167,6 +170,23 @@ export function MeetingDetailPage() {
     }
   };
 
+  const handleConfirmReject = async () => {
+    if (!meetingId || !pendingRejectSpeaker) return;
+    const label = getSpeakerLabel(pendingRejectSpeaker);
+    setRejectingSpeaker(label);
+    setRejectError(null);
+    setError(null);
+    try {
+      await rejectSpeaker(meetingId, label);
+      setPendingRejectSpeaker(null);
+      await refreshAggregate();
+    } catch (e) {
+      setRejectError(formatError(e));
+    } finally {
+      setRejectingSpeaker(null);
+    }
+  };
+
   return (
     <div className="stack">
       <header className="page-header">
@@ -242,6 +262,19 @@ export function MeetingDetailPage() {
                               认定 {candidate.displayName} {candidate.confidence.toFixed(2)}
                             </button>
                           ))}
+                          {canRejectSpeaker(speaker) ? (
+                            <button
+                              className="button button--ghost"
+                              type="button"
+                              disabled={rejectingSpeaker === label}
+                              onClick={() => {
+                                setRejectError(null);
+                                setPendingRejectSpeaker(speaker);
+                              }}
+                            >
+                              驳回 {label}
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -274,6 +307,56 @@ export function MeetingDetailPage() {
           ) : null}
         </div>
       </section>
+
+      {pendingRejectSpeaker ? (
+        <div className="modal" role="presentation">
+          <section
+            className="modal__panel stack"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="speaker-reject-title"
+          >
+            <header className="page-header">
+              <div>
+                <h2 id="speaker-reject-title" className="page-title">驳回说话人候选</h2>
+                <p className="page-subtitle">
+                  将保留原始 SPEAKER 标签，不会把这些候选人写入转写和纪要。
+                </p>
+              </div>
+            </header>
+            <div className="banner banner--warn">
+              <strong className="banner__title">{getSpeakerLabel(pendingRejectSpeaker)}</strong>
+              <span className="banner__body">
+                {pendingRejectSpeaker.candidates?.map((candidate) => candidate.displayName).join(" / ") || "无候选人"}
+              </span>
+            </div>
+            {rejectError ? (
+              <div className="banner banner--danger" role="alert">{rejectError}</div>
+            ) : null}
+            <footer className="toolbar">
+              <button
+                className="button button--ghost"
+                type="button"
+                disabled={!!rejectingSpeaker}
+                onClick={() => {
+                  setRejectError(null);
+                  setPendingRejectSpeaker(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                disabled={!!rejectingSpeaker}
+                onClick={() => void handleConfirmReject()}
+              >
+                确认驳回
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -312,15 +395,22 @@ function getSpeakerConfirmationBadge(speaker: MeetingSpeakerDTO): { label: strin
     (!speaker.confirmationStatus && speaker.verificationStatus === "CONFIRMED")) {
     return { label: "已认定", tone: "pill--success" };
   }
+  if (speaker.confirmationStatus === "REJECTED" || speaker.verificationStatus === "REJECTED") {
+    return { label: "已驳回", tone: "pill--danger" };
+  }
   return null;
 }
 
-function isConfirmedSpeaker(speaker: MeetingSpeakerDTO): boolean {
+function hasFinalSpeakerDecision(speaker: MeetingSpeakerDTO): boolean {
   return !!getSpeakerConfirmationBadge(speaker);
 }
 
 function canConfirmSpeaker(speaker: MeetingSpeakerDTO): boolean {
-  return !isConfirmedSpeaker(speaker) && !!speaker.candidates?.length;
+  return !hasFinalSpeakerDecision(speaker) && !!speaker.candidates?.length;
+}
+
+function canRejectSpeaker(speaker: MeetingSpeakerDTO): boolean {
+  return !hasFinalSpeakerDecision(speaker) && !!speaker.candidates?.length;
 }
 
 function formatError(e: unknown): string {
