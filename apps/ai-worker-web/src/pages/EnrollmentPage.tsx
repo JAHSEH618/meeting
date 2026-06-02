@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   commitEnrollment,
   createEnrollmentSession,
@@ -12,9 +13,15 @@ import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 
 const QUALITY_THRESHOLD = 0.5;
+const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
 
 export function EnrollmentPage() {
-  const [personId, setPersonId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const initialPersonId = searchParams.get("personId");
+  const [personId, setPersonId] = useState<string | null>(initialPersonId);
   const [selectedPerson, setSelectedPerson] = useState<PersonDTO | null>(null);
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -74,6 +81,7 @@ export function EnrollmentPage() {
   const qualityScore = session?.qualityScore;
   const qualityHigh = typeof qualityScore === "number" && qualityScore >= QUALITY_THRESHOLD;
   const canCommit = session?.state === "PREVIEWED" && qualityHigh && !busy;
+  const selectedPersonLabel = selectedPerson?.displayName ?? personId;
 
   return (
     <div className="stack">
@@ -124,8 +132,10 @@ export function EnrollmentPage() {
           <button className="button button--secondary" type="button" onClick={() => setPersonModalOpen(true)}>
             + 新建人员
           </button>
-          {selectedPerson ? (
-            <span className="page-subtitle">已选择：{selectedPerson.displayName}</span>
+          {selectedPersonLabel ? (
+            <span className="page-subtitle">
+              已选择：<span translate={selectedPerson ? undefined : "no"}>{selectedPersonLabel}</span>
+            </span>
           ) : null}
         </div>
         <PersonCreateModal
@@ -163,12 +173,12 @@ export function EnrollmentPage() {
             className="upload-dropzone__input"
             name="enrollmentAudio"
           />
-          <span className="upload-dropzone__icon">📁</span>
+          <span className="upload-dropzone__icon" aria-hidden="true">📁</span>
           <span className="upload-dropzone__label">
             {file ? file.name : "点击选择音频文件 (MP3, WAV, M4A)"}
           </span>
           {file ? (
-            <span className="page-subtitle">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            <span className="page-subtitle">{FILE_SIZE_FORMATTER.format(file.size / 1024 / 1024)} MB</span>
           ) : null}
         </label>
         <button

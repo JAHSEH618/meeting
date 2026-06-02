@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EnrollmentPage } from "./EnrollmentPage";
 import type { PersonDTO } from "@/shared/api/types";
@@ -27,15 +28,25 @@ vi.mock("@/shared/api/endpoints", () => ({
 describe("EnrollmentPage", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("uses personId from the URL when launched from the people workbench", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+
+    renderEnrollmentPage("/enrollment?personId=p-link");
+    expect(screen.getByText("p-link").closest(".page-subtitle")).toHaveTextContent("已选择：p-link");
+    fireEvent.click(screen.getByRole("button", { name: /创建录入会话/ }));
+
+    await waitFor(() => expect(endpoints.createEnrollmentSession).toHaveBeenCalledWith("p-link"));
+  });
+
   it("creates a person from the modal and selects it for session creation", async () => {
     const endpoints = await import("@/shared/api/endpoints");
 
-    render(<EnrollmentPage />);
+    renderEnrollmentPage();
     fireEvent.click(screen.getByRole("button", { name: /新建人员/ }));
     fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "李四" } });
     fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
 
-    await waitFor(() => expect(screen.getByText(/已选择：李四/)).toBeInTheDocument());
+    await expectSelectedPerson("李四");
     fireEvent.click(screen.getByRole("button", { name: /创建录入会话/ }));
 
     await waitFor(() => expect(endpoints.createEnrollmentSession).toHaveBeenCalledWith("p-new"));
@@ -50,7 +61,7 @@ describe("EnrollmentPage", () => {
       qualityScore: 0.49,
     });
 
-    render(<EnrollmentPage />);
+    renderEnrollmentPage();
     await createSelectedSession();
     chooseEnrollmentAudio();
     fireEvent.click(screen.getByRole("button", { name: /上传并预览/ }));
@@ -76,7 +87,7 @@ describe("EnrollmentPage", () => {
       qualityScore: 0.72,
     });
 
-    render(<EnrollmentPage />);
+    renderEnrollmentPage();
     await createSelectedSession();
     chooseEnrollmentAudio();
     fireEvent.click(screen.getByRole("button", { name: /上传并预览/ }));
@@ -89,13 +100,29 @@ describe("EnrollmentPage", () => {
   });
 });
 
+function renderEnrollmentPage(path = "/enrollment") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/enrollment" element={<EnrollmentPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 async function createSelectedSession() {
   fireEvent.click(screen.getByRole("button", { name: /新建人员/ }));
   fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "李四" } });
   fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
-  await waitFor(() => expect(screen.getByText(/已选择：李四/)).toBeInTheDocument());
+  await expectSelectedPerson("李四");
   fireEvent.click(screen.getByRole("button", { name: /创建录入会话/ }));
   await screen.findByTestId("session-id");
+}
+
+async function expectSelectedPerson(label: string) {
+  await waitFor(() => {
+    expect(screen.getByText(label).closest(".page-subtitle")).toHaveTextContent(`已选择：${label}`);
+  });
 }
 
 function chooseEnrollmentAudio() {

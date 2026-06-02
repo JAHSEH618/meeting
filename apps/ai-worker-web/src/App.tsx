@@ -14,6 +14,10 @@ const MeetingDetailPage = lazy(() =>
   import("@/pages/MeetingDetailPage").then((m) => ({ default: m.MeetingDetailPage })),
 );
 
+const PeoplePage = lazy(() =>
+  import("@/pages/PeoplePage").then((m) => ({ default: m.PeoplePage })),
+);
+
 const SpeakerProfilesPage = lazy(() =>
   import("@/pages/SpeakerProfilesPage").then((m) => ({ default: m.SpeakerProfilesPage })),
 );
@@ -34,6 +38,7 @@ export default function App() {
         <strong className="layout__brand">运营工作站</strong>
         <nav className="layout__nav" aria-label="主导航">
           <NavLink to="/meetings" className={({ isActive }) => (isActive ? "active" : "")}>会议</NavLink>
+          <NavLink to="/people" className={({ isActive }) => (isActive ? "active" : "")}>人员</NavLink>
           <NavLink to="/enrollment" className={({ isActive }) => (isActive ? "active" : "")}>声纹录入</NavLink>
           <NavLink to="/speaker-profiles" className={({ isActive }) => (isActive ? "active" : "")}>声纹档案</NavLink>
         </nav>
@@ -47,6 +52,7 @@ export default function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/new" element={<NewMeetingPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
+            <Route path="/people" element={<PeoplePage />} />
             <Route path="/enrollment" element={<EnrollmentPage />} />
             <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />
           </Routes>

@@ -10,6 +10,22 @@ vi.mock("@/shared/auth/useAuth", () => ({
 }));
 
 vi.mock("@/shared/api/endpoints", () => ({
+  searchPersons: vi.fn(async () => [
+    {
+      personId: "p1",
+      displayName: "李四",
+      email: "li@example.com",
+      externalId: null,
+      createdAt: "2026-06-02T00:00:00Z",
+    },
+  ]),
+  createPerson: vi.fn(async () => ({
+    personId: "p-new",
+    displayName: "王五",
+    email: null,
+    externalId: null,
+    createdAt: "2026-06-02T00:00:00Z",
+  })),
   listSpeakerProfiles: vi.fn(async () => [
     {
       speakerProfileId: "sp1",
@@ -37,5 +53,19 @@ describe("App routes", () => {
     expect(screen.getByRole("link", { name: "声纹档案" })).toHaveAttribute("href", "/speaker-profiles");
     expect(await screen.findByRole("heading", { name: "声纹档案" })).toBeInTheDocument();
     expect(await screen.findByText("李四")).toBeInTheDocument();
+  });
+
+  it("exposes the dedicated people workbench", async () => {
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={["/people?q=%E6%9D%8E"]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "人员" })).toHaveAttribute("href", "/people");
+    expect(await screen.findByRole("heading", { name: "人员" })).toBeInTheDocument();
+    expect(await screen.findByText("li@example.com")).toBeInTheDocument();
   });
 });
