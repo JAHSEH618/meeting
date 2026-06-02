@@ -293,6 +293,7 @@ class JavaCallbackClient:
         status: str,
         completed_steps: list[str],
         skipped_steps: list[dict[str, str]] | None = None,
+        speaker_enrollment_id: str | None = None,
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/complete"
@@ -308,6 +309,8 @@ class JavaCallbackClient:
             "skippedSteps": skipped_steps or [],
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if speaker_enrollment_id:
+            body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
     async def fail_task(

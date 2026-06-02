@@ -126,6 +126,7 @@ public class ProcessingTaskCallbackController {
             ProcessingTaskStatus.valueOf(requiredString(payload, "status")),
             parseSteps(payload.get("completedSteps")),
             parseSkippedSteps(payload.get("skippedSteps")),
+            optionalString(payload, "speakerEnrollmentId"),
             optionalString(payload, "artifactManifestId"),
             optionalDateTime(payload, "finishedAt", OffsetDateTime.now())
         )), metadata.requestId(), metadata.traceId());

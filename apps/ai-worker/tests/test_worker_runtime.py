@@ -256,6 +256,7 @@ async def test_speaker_enrollment_submits_dedicated_embedding_not_candidates(cal
     assert "candidates" not in kwargs
     assert engine.embedding.values == [0.0, 0.0]
     complete_kwargs = callback_client.complete_worker_phase.await_args.kwargs
+    assert complete_kwargs["speaker_enrollment_id"] == "se_01"
     assert complete_kwargs["completed_steps"] == ["SPEAKER_EMBEDDING"]
     assert complete_kwargs["skipped_steps"] == [
         {"stepName": "SPEAKER_MATCHING", "reason": "NOT_REQUIRED_FOR_ENROLLMENT"}

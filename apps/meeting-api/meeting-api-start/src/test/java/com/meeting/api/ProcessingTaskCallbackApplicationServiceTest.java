@@ -128,6 +128,55 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void speakerEnrollmentCompleteRequiresSucceededEnrollment() {
+        InMemoryTaskRepository tasks = speakerEnrollmentTask();
+        InMemorySpeakerEnrollments enrollments = new InMemorySpeakerEnrollments();
+        enrollments.records.add(new SpeakerEnrollmentRepository.SpeakerEnrollmentRecord(
+            "enroll_01",
+            "tenant_01",
+            "profile_01",
+            "audio_01",
+            "PENDING",
+            null,
+            null,
+            null,
+            null,
+            "user_01",
+            NOW,
+            NOW
+        ));
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(
+            tasks,
+            callbacks,
+            publisher,
+            new InMemoryTranscriptRepository(),
+            enrollments
+        );
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            null,
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.SPEAKER_EMBEDDING),
+            List.of(new CompleteWorkerPhaseCommand.SkippedStep(ProcessingStep.SPEAKER_MATCHING, "NOT_REQUIRED_FOR_ENROLLMENT")),
+            "enroll_01",
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("speaker enrollment is not SUCCEEDED");
+
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(publisher.events).isEmpty();
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
     void failMovesTaskToTerminalFailed() {
         InMemoryTaskRepository tasks = runningTask();
         ProcessingTaskCallbackApplicationService service = service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher());

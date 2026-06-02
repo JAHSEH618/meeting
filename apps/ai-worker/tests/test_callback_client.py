@@ -305,6 +305,28 @@ class TestCompleteWorkerPhase:
         assert captured_body["status"] == "SUCCEEDED"
         assert "finishedAt" in captured_body
 
+    @pytest.mark.asyncio
+    async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.complete_worker_phase(
+                task_id="task_enroll",
+                tenant_id="tenant_01",
+                meeting_id="",
+                attempt_no=1,
+                status="SUCCEEDED",
+                completed_steps=["SPEAKER_EMBEDDING"],
+                skipped_steps=[{"stepName": "SPEAKER_MATCHING", "reason": "NOT_REQUIRED_FOR_ENROLLMENT"}],
+                speaker_enrollment_id="se_01",
+            )
+
+        assert captured_body["speakerEnrollmentId"] == "se_01"
+
 
 class TestFailTask:
     @pytest.mark.asyncio

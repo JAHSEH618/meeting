@@ -216,6 +216,7 @@ class CompleteWorkerPhaseRequest(BaseModel):
     status: Status
     completedSteps: List[ProcessingStep]
     skippedSteps: Optional[List[SkippedStep]] = None
+    speakerEnrollmentId: Optional[str] = None
     artifactManifestId: Optional[str] = None
     finishedAt: datetime
 

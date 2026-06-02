@@ -106,6 +106,7 @@ class CallbackClient(Protocol):
         status: str,
         completed_steps: list[str],
         skipped_steps: list[dict[str, str]] | None = None,
+        speaker_enrollment_id: str | None = None,
         phase: str = "WORKER_DAG",
     ) -> CallbackResponse:
         """POST /internal/processing-tasks/{taskId}/complete"""

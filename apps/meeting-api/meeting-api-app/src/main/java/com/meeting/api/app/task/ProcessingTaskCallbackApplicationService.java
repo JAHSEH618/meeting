@@ -137,10 +137,11 @@ public class ProcessingTaskCallbackApplicationService {
             throw new IllegalArgumentException("complete phase must be WORKER_DAG");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireSpeakerEnrollmentSucceededForComplete(command, task);
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             var skipped = command.skippedSteps() == null ? java.util.List.<WorkerPhaseCompletedEvent.SkippedStep>of() : command.skippedSteps().stream()
                 .map(step -> new WorkerPhaseCompletedEvent.SkippedStep(step.stepName(), step.reason()))
                 .toList();
@@ -171,6 +172,25 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(saved);
         });
     }
+
+    private void requireSpeakerEnrollmentSucceededForComplete(CompleteWorkerPhaseCommand command, ProcessingTask task) {
+        if (!ProcessingTaskApplicationService.SPEAKER_ENROLLMENT.equals(task.taskType())
+            || command.status() != ProcessingTaskStatus.SUCCEEDED) {
+            return;
+        }
+        if (speakerEnrollmentRepository == null) {
+            throw new IllegalStateException("speaker enrollment repository is required");
+        }
+        if (command.speakerEnrollmentId() == null || command.speakerEnrollmentId().isBlank()) {
+            throw new IllegalArgumentException("speakerEnrollmentId is required for speaker enrollment completion");
+        }
+        var enrollment = speakerEnrollmentRepository.findById(command.tenantId(), command.speakerEnrollmentId())
+            .orElseThrow(() -> new IllegalArgumentException("speaker enrollment not found: " + command.speakerEnrollmentId()));
+        if (!"SUCCEEDED".equals(enrollment.enrollmentStatus())) {
+            throw new IllegalStateException("speaker enrollment is not SUCCEEDED: " + command.speakerEnrollmentId());
+        }
+    }
+
     public ProcessingTaskDTO fail(FailTaskCommand command) {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {

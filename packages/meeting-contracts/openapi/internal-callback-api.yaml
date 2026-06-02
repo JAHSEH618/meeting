@@ -544,6 +544,7 @@ components:
             properties:
               stepName: {$ref: '#/components/schemas/ProcessingStep'}
               reason: {type: string}
+        speakerEnrollmentId: {type: [string, 'null']}
         artifactManifestId: {type: [string, 'null']}
         finishedAt: {type: string, format: date-time}
     FailTaskRequest:

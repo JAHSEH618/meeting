@@ -166,16 +166,19 @@ class MvpWorkerRuntime:
                 await self._fail_for_writeback(task, "TRANSCRIPT_MERGE", "transcript callback failed")
                 return task
 
-        complete_response = await self.callback_client.complete_worker_phase(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            meeting_id=task.meeting_id or "",
-            attempt_no=task.attempt_no,
-            status=artifact.terminal_status,
-            completed_steps=_completed_steps_for_worker_phase(task, context),
-            skipped_steps=_skipped_steps_from_context(context),
-            trace_id=task.trace_id,
-        )
+        complete_kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "meeting_id": task.meeting_id or "",
+            "attempt_no": task.attempt_no,
+            "status": artifact.terminal_status,
+            "completed_steps": _completed_steps_for_worker_phase(task, context),
+            "skipped_steps": _skipped_steps_from_context(context),
+            "trace_id": task.trace_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            complete_kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        complete_response = await self.callback_client.complete_worker_phase(**complete_kwargs)
         if not complete_response.accepted:
             await self._fail_for_writeback(task, task.pipeline_steps[-1], "complete callback failed")
             return task
@@ -358,7 +361,7 @@ class MvpWorkerRuntime:
             "retryable": True,
             "trace_id": task.trace_id,
         }
-        if speaker_enrollment_id := _speaker_enrollment_id_for_failure(task):
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
             kwargs["speaker_enrollment_id"] = speaker_enrollment_id
         await self.callback_client.fail_task(**kwargs)
 
@@ -383,7 +386,7 @@ class MvpWorkerRuntime:
             "retryable": True,
             "trace_id": task.trace_id,
         }
-        if speaker_enrollment_id := _speaker_enrollment_id_for_failure(task):
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
             kwargs["speaker_enrollment_id"] = speaker_enrollment_id
         await self.callback_client.fail_task(**kwargs)
 
@@ -418,7 +421,7 @@ def _speaker_enrollment_embedding_from_context(context: Any) -> Any | None:
     return embeddings[0]
 
 
-def _speaker_enrollment_id_for_failure(task: TaskMessage) -> str | None:
+def _speaker_enrollment_id_for_task(task: TaskMessage) -> str | None:
     if task.task_type != "SPEAKER_ENROLLMENT":
         return None
     return task.speaker_enrollment_id
