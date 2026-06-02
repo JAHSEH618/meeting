@@ -38,6 +38,22 @@ describe("NewMeetingPage", () => {
     expect(screen.getByTestId("start-processing")).toBeDisabled();
   });
 
+  it("names non-auth form controls and disables browser autocomplete", () => {
+    render(<MemoryRouter><NewMeetingPage /></MemoryRouter>);
+
+    expect(screen.getByLabelText(/标题/)).toHaveAttribute("name", "title");
+    expect(screen.getByLabelText(/标题/)).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByLabelText(/安全级别/)).toHaveAttribute("name", "securityLevel");
+    expect(screen.getByLabelText(/语言/)).toHaveAttribute("name", "language");
+    expect(screen.getByRole("textbox", { name: "术语" })).toHaveAttribute("name", "glossaryTerm");
+    expect(screen.getByRole("textbox", { name: "术语" })).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByLabelText(/搜索已有文档/)).toHaveAttribute("name", "documentSearch");
+    expect(screen.getByLabelText(/搜索已有文档/)).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByPlaceholderText("输入文档标题…")).toBeInTheDocument();
+    expect(screen.getByLabelText(/参考文档上传/)).toHaveAttribute("name", "referenceDocument");
+    expect(document.querySelector('input[name="meetingAudio"]')).toBeInTheDocument();
+  });
+
   it("uploads docs immediately, starts meeting orchestration, and navigates to detail", async () => {
     const endpoints = await import("@/shared/api/endpoints");
     render(

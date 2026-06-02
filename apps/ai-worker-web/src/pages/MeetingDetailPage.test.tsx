@@ -81,4 +81,21 @@ describe("MeetingDetailPage", () => {
 
     await waitFor(() => expect(screen.getByTestId("download-link")).toHaveAttribute("href", "https://download/docx"));
   });
+
+  it("uses a typographic ellipsis for export loading state", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.pollExport).mockImplementationOnce(() => new Promise(() => undefined));
+
+    render(
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("export-docx");
+    fireEvent.click(screen.getByTestId("export-docx"));
+
+    expect(screen.getByRole("button", { name: "导出中…" })).toBeInTheDocument();
+    await waitFor(() => expect(endpoints.pollExport).toHaveBeenCalled());
+  });
 });

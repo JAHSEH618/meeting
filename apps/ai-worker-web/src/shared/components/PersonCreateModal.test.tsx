@@ -13,6 +13,17 @@ const match: PersonDTO = {
 };
 
 describe("PersonCreateModal", () => {
+  it("uses typed and named inputs with appropriate autocomplete", () => {
+    render(<PersonCreateModal open onClose={vi.fn()} onCreated={vi.fn()} createFn={vi.fn()} />);
+
+    expect(screen.getByLabelText(/姓名/)).toHaveAttribute("name", "displayName");
+    expect(screen.getByLabelText(/姓名/)).toHaveAttribute("autocomplete", "name");
+    expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("name", "email");
+    expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("type", "email");
+    expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("autocomplete", "email");
+    expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("spellcheck", "false");
+  });
+
   it("submits displayName and calls onCreated", async () => {
     const onCreated = vi.fn();
     const onClose = vi.fn();

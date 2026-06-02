@@ -229,7 +229,7 @@ export function MeetingDetailPage() {
         <h2 id="meeting-export">导出</h2>
         <div className="toolbar">
           <button className="button button--primary" type="button" data-testid="export-docx" disabled={busyExport} onClick={() => void handleExport()}>
-            {busyExport ? "导出中..." : "创建 docx"}
+            {busyExport ? "导出中…" : "创建 docx"}
           </button>
           {exportJob ? <span className="pill pill--info" data-testid="export-status">{exportJob.status}</span> : null}
           {exportJob?.status === "SUCCEEDED" && exportJob.downloadUrl ? (

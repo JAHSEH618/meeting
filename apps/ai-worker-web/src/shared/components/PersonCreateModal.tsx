@@ -63,6 +63,7 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
           <label className="field__label" htmlFor="person-create-name">姓名</label>
           <input
             id="person-create-name"
+            name="displayName"
             className="input"
             value={displayName}
             onChange={(event) => {
@@ -77,6 +78,8 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
           <label className="field__label" htmlFor="person-create-email">邮箱</label>
           <input
             id="person-create-email"
+            name="email"
+            type="email"
             className="input"
             value={email}
             onChange={(event) => {
@@ -84,6 +87,7 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
               setDuplicates([]);
             }}
             autoComplete="email"
+            spellCheck={false}
           />
         </div>
 

@@ -176,12 +176,20 @@ export function NewMeetingPage() {
         <div className="grid grid--two">
           <div className="field">
             <label className="field__label" htmlFor="meeting-title">标题</label>
-            <input id="meeting-title" className="input" value={title} onChange={(event) => setTitle(event.target.value)} />
+            <input
+              id="meeting-title"
+              name="title"
+              className="input"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              autoComplete="off"
+            />
           </div>
           <div className="field">
             <label className="field__label" htmlFor="meeting-security">安全级别</label>
             <select
               id="meeting-security"
+              name="securityLevel"
               className="select"
               value={securityLevel}
               onChange={(event) => setSecurityLevel(event.target.value as SecurityLevel)}
@@ -194,7 +202,13 @@ export function NewMeetingPage() {
           </div>
           <div className="field">
             <label className="field__label" htmlFor="meeting-language">语言</label>
-            <select id="meeting-language" className="select" value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <select
+              id="meeting-language"
+              name="language"
+              className="select"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
               <option value="zh">中文</option>
               <option value="en">English</option>
             </select>
@@ -208,6 +222,7 @@ export function NewMeetingPage() {
           <label className="visually-hidden" htmlFor="term-draft">术语</label>
           <input
             id="term-draft"
+            name="glossaryTerm"
             className="input input--inline"
             value={termDraft}
             maxLength={MAX_TERM_LENGTH}
@@ -218,7 +233,8 @@ export function NewMeetingPage() {
                 addTerm();
               }
             }}
-            placeholder="按 Enter 添加术语"
+            placeholder="按 Enter 添加术语…"
+            autoComplete="off"
           />
           <button className="button button--secondary" type="button" disabled={!termDraft.trim()} onClick={addTerm}>+ 添加</button>
         </div>
@@ -245,9 +261,11 @@ export function NewMeetingPage() {
           <label className="field__label" htmlFor="document-search">搜索已有文档</label>
           <input
             id="document-search"
+            name="documentSearch"
             className="input"
-            placeholder="输入文档标题"
+            placeholder="输入文档标题…"
             onChange={(event) => documentSearch.search(event.target.value)}
+            autoComplete="off"
           />
         </div>
         {documentSearch.results?.length ? (
@@ -266,6 +284,7 @@ export function NewMeetingPage() {
         <label htmlFor="reference-document-upload" className="upload-dropzone">
           <input
             id="reference-document-upload"
+            name="referenceDocument"
             aria-label="参考文档上传"
             className="upload-dropzone__input"
             type="file"
@@ -309,6 +328,7 @@ export function NewMeetingPage() {
         <label htmlFor="meeting-audio-file" className="upload-dropzone">
           <input
             id="meeting-audio-file"
+            name="meetingAudio"
             aria-label="音频文件"
             className="upload-dropzone__input"
             type="file"
@@ -324,7 +344,7 @@ export function NewMeetingPage() {
 
       <footer className="toolbar">
         <button className="button button--primary" type="button" data-testid="start-processing" disabled={!canStart} onClick={() => void startProcessing()}>
-          {busy ? "处理中..." : "开始处理"}
+          {busy ? "处理中…" : "开始处理"}
         </button>
         {busy && activeAudioUploader.current ? (
           <button className="button button--secondary" type="button" onClick={() => activeAudioUploader.current?.abort()}>
