@@ -278,6 +278,14 @@ public final class ProcessingTask {
         return step;
     }
 
+    private ProcessingTaskStep requireWorkerStep(ProcessingStep stepName) {
+        ProcessingTaskStep step = step(stepName);
+        if (step.source() != ProcessingStepUpdateSource.AI_WORKER_CALLBACK) {
+            throw new IllegalArgumentException("step is not owned by ai-worker callback: " + stepName);
+        }
+        return step;
+    }
+
     public void updateWorkerStep(
         ProcessingStep stepName,
         StepStatus newStatus,
@@ -350,11 +358,20 @@ public final class ProcessingTask {
         if (workerStatus != ProcessingTaskStatus.SUCCEEDED && workerStatus != ProcessingTaskStatus.PARTIAL_SUCCEEDED) {
             throw new IllegalArgumentException("workerStatus must be SUCCEEDED or PARTIAL_SUCCEEDED");
         }
-        for (ProcessingStep completedStep : completedSteps == null ? List.<ProcessingStep>of() : completedSteps) {
+        List<ProcessingStep> completed = completedSteps == null ? List.<ProcessingStep>of() : completedSteps;
+        List<WorkerPhaseCompletedEvent.SkippedStep> skipped =
+            skippedSteps == null ? List.<WorkerPhaseCompletedEvent.SkippedStep>of() : skippedSteps;
+        for (ProcessingStep completedStep : completed) {
+            requireWorkerStep(completedStep);
+        }
+        for (WorkerPhaseCompletedEvent.SkippedStep skippedStep : skipped) {
+            requireWorkerStep(skippedStep.stepName());
+        }
+        for (ProcessingStep completedStep : completed) {
             step(completedStep).markSucceeded(100, callbackAttemptNo, callbackLeaseOwner, null, now);
         }
-        for (WorkerPhaseCompletedEvent.SkippedStep skipped : skippedSteps == null ? List.<WorkerPhaseCompletedEvent.SkippedStep>of() : skippedSteps) {
-            step(skipped.stepName()).markSkipped(100, callbackAttemptNo, callbackLeaseOwner, null, skipped.reason(), now);
+        for (WorkerPhaseCompletedEvent.SkippedStep skippedStep : skipped) {
+            step(skippedStep.stepName()).markSkipped(100, callbackAttemptNo, callbackLeaseOwner, null, skippedStep.reason(), now);
         }
         phase = ProcessingTaskPhase.WORKER_DAG_DONE;
         status = ProcessingTaskStatus.RUNNING;

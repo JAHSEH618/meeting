@@ -64,6 +64,13 @@ class ProcessingTaskApplicationServiceTest {
                 assertThat(step.status()).isEqualTo(StepStatus.SUCCEEDED);
                 assertThat(step.source()).isEqualTo(ProcessingStepUpdateSource.JAVA_TASK_SERVICE);
             });
+        assertThat(dto.steps())
+            .filteredOn(step -> step.stepName() == ProcessingStep.SUMMARY || step.stepName() == ProcessingStep.EXTRACTION)
+            .hasSize(2)
+            .allSatisfy(step -> {
+                assertThat(step.status()).isEqualTo(StepStatus.PENDING);
+                assertThat(step.source()).isEqualTo(ProcessingStepUpdateSource.JAVA_TASK_SERVICE);
+            });
 
         ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) publisher.events.get(0);
         assertThat(event.pipelineSteps()).doesNotContain(

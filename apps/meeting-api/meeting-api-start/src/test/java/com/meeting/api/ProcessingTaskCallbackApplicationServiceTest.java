@@ -40,6 +40,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProcessingTaskCallbackApplicationServiceTest {
     private static final String SECRET = "callback-secret";
@@ -95,6 +96,34 @@ class ProcessingTaskCallbackApplicationServiceTest {
         assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
         assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_DONE);
         assertThat(publisher.events).singleElement().isInstanceOf(WorkerPhaseCompletedEvent.class);
+    }
+
+    @Test
+    void completeWorkerPhaseRejectsJavaOwnedStepsFromWorkerPayload() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, publisher);
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.SUMMARY),
+            List.of(new CompleteWorkerPhaseCommand.SkippedStep(ProcessingStep.EXTRACTION, "not worker owned")),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ai-worker callback");
+
+        assertThat(publisher.events).isEmpty();
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(tasks.task.step(ProcessingStep.SUMMARY).status()).isEqualTo(StepStatus.PENDING);
+        assertThat(callbacks.records).hasSize(1);
     }
 
     @Test
@@ -184,7 +213,14 @@ class ProcessingTaskCallbackApplicationServiceTest {
             "tenant_01",
             "meeting_01",
             "MEETING_FULL_PIPELINE",
-            List.of(ProcessingStep.AUDIO_UPLOAD, ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
+            List.of(
+                ProcessingStep.AUDIO_UPLOAD,
+                ProcessingStep.AUDIO_PREPROCESS,
+                ProcessingStep.ASR,
+                ProcessingStep.TRANSCRIPT_MERGE,
+                ProcessingStep.SUMMARY,
+                ProcessingStep.EXTRACTION
+            ),
             NOW
         );
         task.enqueue(NOW);

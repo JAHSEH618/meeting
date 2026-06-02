@@ -5,6 +5,7 @@ import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.domain.task.ProcessingTask;
+import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
@@ -49,6 +50,46 @@ class ProcessingTaskDomainTest {
         assertThat(task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
         assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_DONE);
         assertThat(task.step(ProcessingStep.ASR).status()).isEqualTo(StepStatus.SUCCEEDED);
+    }
+
+    @Test
+    void workerPhaseCompleteCannotMarkJavaOwnedCompletedSteps() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusMinutes(5), now);
+
+        assertThatThrownBy(() -> task.completeWorkerPhase(
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.SUMMARY),
+            List.of(),
+            1,
+            "worker_01:task_01:1",
+            now.plusMinutes(2)
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ai-worker callback");
+
+        assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(task.step(ProcessingStep.SUMMARY).status()).isEqualTo(StepStatus.PENDING);
+    }
+
+    @Test
+    void workerPhaseCompleteCannotSkipJavaOwnedSteps() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusMinutes(5), now);
+
+        assertThatThrownBy(() -> task.completeWorkerPhase(
+            ProcessingTaskStatus.PARTIAL_SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS),
+            List.of(new WorkerPhaseCompletedEvent.SkippedStep(ProcessingStep.EXTRACTION, "not worker owned")),
+            1,
+            "worker_01:task_01:1",
+            now.plusMinutes(2)
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ai-worker callback");
+
+        assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(task.step(ProcessingStep.EXTRACTION).status()).isEqualTo(StepStatus.PENDING);
     }
 
     @Test
@@ -156,7 +197,9 @@ class ProcessingTaskDomainTest {
                 ProcessingStep.AUDIO_UPLOAD,
                 ProcessingStep.AUDIO_PREPROCESS,
                 ProcessingStep.ASR,
-                ProcessingStep.TRANSCRIPT_MERGE
+                ProcessingStep.TRANSCRIPT_MERGE,
+                ProcessingStep.SUMMARY,
+                ProcessingStep.EXTRACTION
             ),
             now
         );

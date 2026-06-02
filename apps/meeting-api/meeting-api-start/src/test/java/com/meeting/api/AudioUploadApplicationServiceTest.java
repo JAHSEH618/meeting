@@ -7,6 +7,9 @@ import com.meeting.api.app.task.ProcessingTaskApplicationService;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.AudioUploadStatus;
 import com.meeting.api.client.enums.MeetingStatus;
+import com.meeting.api.client.enums.ProcessingStep;
+import com.meeting.api.client.enums.ProcessingStepUpdateSource;
+import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.storage.AbortAudioUploadCommand;
 import com.meeting.api.client.storage.CompleteAudioUploadCommand;
 import com.meeting.api.client.storage.CreateAudioUploadPartCommand;
@@ -143,6 +146,13 @@ class AudioUploadApplicationServiceTest {
         assertThat(completed.fileId()).startsWith("file_");
         assertThat(ctx.files.files).hasSize(1);
         assertThat(ctx.tasks.task).isNotNull();
+        assertThat(ctx.tasks.task.steps())
+            .filteredOn(step -> step.stepName() == ProcessingStep.SUMMARY || step.stepName() == ProcessingStep.EXTRACTION)
+            .hasSize(2)
+            .allSatisfy(step -> {
+                assertThat(step.status()).isEqualTo(StepStatus.PENDING);
+                assertThat(step.source()).isEqualTo(ProcessingStepUpdateSource.JAVA_TASK_SERVICE);
+            });
         assertThat(ctx.meetings.meeting.status()).isEqualTo(MeetingStatus.PROCESSING);
         ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) ctx.publisher.events.get(0);
         assertThat(event.pipelineSteps())

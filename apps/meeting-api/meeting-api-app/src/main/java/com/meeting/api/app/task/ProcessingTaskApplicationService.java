@@ -42,7 +42,9 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         ProcessingStep.ASR,
         ProcessingStep.DIARIZATION,
         ProcessingStep.TRANSCRIPT_MERGE,
-        ProcessingStep.RAG_INDEXING
+        ProcessingStep.RAG_INDEXING,
+        ProcessingStep.SUMMARY,
+        ProcessingStep.EXTRACTION
     );
 
     private static final List<ProcessingStep> MVP0_WORKER_STEPS = List.of(
@@ -58,7 +60,9 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         ProcessingStep.AUDIO_PREPROCESS,
         ProcessingStep.ASR,
         ProcessingStep.DIARIZATION,
-        ProcessingStep.TRANSCRIPT_MERGE
+        ProcessingStep.TRANSCRIPT_MERGE,
+        ProcessingStep.SUMMARY,
+        ProcessingStep.EXTRACTION
     );
 
     private static final List<ProcessingStep> PHASE2_WORKER_STEPS = List.of(
