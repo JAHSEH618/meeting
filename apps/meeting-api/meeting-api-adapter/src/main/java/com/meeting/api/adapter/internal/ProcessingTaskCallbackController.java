@@ -151,6 +151,7 @@ public class ProcessingTaskCallbackController {
             metadata.attemptNo(),
             ProcessingStep.valueOf(requiredString(payload, "failedStep")),
             ErrorInfo.of(code, String.valueOf(error.get("message")), Boolean.TRUE.equals(error.get("retryable"))),
+            optionalString(payload, "speakerEnrollmentId"),
             optionalString(payload, "artifactManifestId"),
             optionalDateTime(payload, "failedAt", OffsetDateTime.now())
         )), metadata.requestId(), metadata.traceId());

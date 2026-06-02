@@ -12,7 +12,21 @@ public record FailTaskCommand(
     int attemptNo,
     ProcessingStep failedStep,
     ErrorInfo error,
+    String speakerEnrollmentId,
     String artifactManifestId,
     OffsetDateTime failedAt
 ) {
+    public FailTaskCommand(
+        CallbackMetadata metadata,
+        String tenantId,
+        String meetingId,
+        String taskId,
+        int attemptNo,
+        ProcessingStep failedStep,
+        ErrorInfo error,
+        String artifactManifestId,
+        OffsetDateTime failedAt
+    ) {
+        this(metadata, tenantId, meetingId, taskId, attemptNo, failedStep, error, null, artifactManifestId, failedAt);
+    }
 }

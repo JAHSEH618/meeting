@@ -120,6 +120,7 @@ class CallbackClient(Protocol):
         error_code: str,
         error_message: str,
         retryable: bool = True,
+        speaker_enrollment_id: str | None = None,
     ) -> CallbackResponse:
         """POST /internal/processing-tasks/{taskId}/fail"""
         ...

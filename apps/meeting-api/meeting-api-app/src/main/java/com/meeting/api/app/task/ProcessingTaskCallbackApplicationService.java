@@ -10,6 +10,7 @@ import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
+import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -34,6 +35,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final CallbackSecurityVerifier securityVerifier;
     private final TranscriptRepository transcriptRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SpeakerEnrollmentRepository speakerEnrollmentRepository;
     private final Clock clock;
 
     @Autowired
@@ -44,9 +46,10 @@ public class ProcessingTaskCallbackApplicationService {
         TenantScopedTransaction tenantScopedTransaction,
         CallbackSecurityVerifier securityVerifier,
         TranscriptRepository transcriptRepository,
-        ApplicationEventPublisher applicationEventPublisher
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, Clock.systemUTC());
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, Clock.systemUTC());
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -58,6 +61,19 @@ public class ProcessingTaskCallbackApplicationService {
         ApplicationEventPublisher applicationEventPublisher,
         Clock clock
     ) {
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, clock);
+    }
+    public ProcessingTaskCallbackApplicationService(
+        ProcessingTaskRepository taskRepository,
+        CallbackEventRepository callbackEventRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        CallbackSecurityVerifier securityVerifier,
+        TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        Clock clock
+    ) {
         this.taskRepository = taskRepository;
         this.callbackEventRepository = callbackEventRepository;
         this.messagePublisher = messagePublisher;
@@ -65,6 +81,7 @@ public class ProcessingTaskCallbackApplicationService {
         this.securityVerifier = securityVerifier;
         this.transcriptRepository = transcriptRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.speakerEnrollmentRepository = speakerEnrollmentRepository;
         this.clock = clock;
     }
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
@@ -169,10 +186,35 @@ public class ProcessingTaskCallbackApplicationService {
                 command.error().code().name(),
                 command.failedAt()
             );
+            markSpeakerEnrollmentFailedIfNeeded(command, task);
             task.completeTerminal(ProcessingTaskStatus.FAILED, command.error().code().name(), command.failedAt());
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
+
+    private void markSpeakerEnrollmentFailedIfNeeded(FailTaskCommand command, ProcessingTask task) {
+        if (speakerEnrollmentRepository == null
+            || !ProcessingTaskApplicationService.SPEAKER_ENROLLMENT.equals(task.taskType())
+            || command.speakerEnrollmentId() == null
+            || command.speakerEnrollmentId().isBlank()) {
+            return;
+        }
+        var enrollment = speakerEnrollmentRepository.findById(command.tenantId(), command.speakerEnrollmentId())
+            .orElseThrow(() -> new IllegalArgumentException("speaker enrollment not found: " + command.speakerEnrollmentId()));
+        if ("SUCCEEDED".equals(enrollment.enrollmentStatus())) {
+            return;
+        }
+        speakerEnrollmentRepository.updateStatus(
+            command.tenantId(),
+            command.speakerEnrollmentId(),
+            "FAILED",
+            enrollment.qualityScore(),
+            enrollment.modelVersion(),
+            command.error().code().name(),
+            command.failedAt()
+        );
+    }
+
     public ProcessingTaskDTO writeTranscript(TranscriptCallbackCommand command) {
         securityVerifier.verify(command.metadata());
         if (command.meetingId() == null || command.meetingId().isBlank()) {

@@ -15,6 +15,7 @@ import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.domain.common.DomainEvent;
+import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -149,6 +150,52 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void speakerEnrollmentFailMarksEnrollmentFailed() {
+        InMemoryTaskRepository tasks = speakerEnrollmentTask();
+        InMemorySpeakerEnrollments enrollments = new InMemorySpeakerEnrollments();
+        enrollments.records.add(new SpeakerEnrollmentRepository.SpeakerEnrollmentRecord(
+            "enroll_01",
+            "tenant_01",
+            "profile_01",
+            "audio_01",
+            "PENDING",
+            null,
+            null,
+            null,
+            null,
+            "user_01",
+            NOW,
+            NOW
+        ));
+        ProcessingTaskCallbackApplicationService service = service(
+            tasks,
+            new InMemoryCallbackEvents(),
+            new CapturingPublisher(),
+            new InMemoryTranscriptRepository(),
+            enrollments
+        );
+
+        service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            null,
+            "task_01",
+            1,
+            ProcessingStep.SPEAKER_EMBEDDING,
+            ErrorInfo.of(ErrorCode.SPEAKER_EMBEDDING_FAILED, "embedding failed", true),
+            "enroll_01",
+            null,
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(enrollments.findById("tenant_01", "enroll_01")).hasValueSatisfying(enrollment -> {
+            assertThat(enrollment.enrollmentStatus()).isEqualTo("FAILED");
+            assertThat(enrollment.errorCode()).isEqualTo("SPEAKER_EMBEDDING_FAILED");
+            assertThat(enrollment.updatedAt()).isEqualTo(NOW.plusMinutes(1));
+        });
+    }
+
+    @Test
     void transcriptCallbackPersistsSegmentsAndBumpsVersion() {
         InMemoryTaskRepository tasks = runningTask();
         InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
@@ -195,6 +242,16 @@ class ProcessingTaskCallbackApplicationServiceTest {
         CapturingPublisher publisher,
         InMemoryTranscriptRepository transcripts
     ) {
+        return service(tasks, callbacks, publisher, transcripts, null);
+    }
+
+    private static ProcessingTaskCallbackApplicationService service(
+        InMemoryTaskRepository tasks,
+        InMemoryCallbackEvents callbacks,
+        CapturingPublisher publisher,
+        InMemoryTranscriptRepository transcripts,
+        SpeakerEnrollmentRepository enrollments
+    ) {
         return new ProcessingTaskCallbackApplicationService(
             tasks,
             callbacks,
@@ -203,6 +260,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
             transcripts,
             event -> {},
+            enrollments,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -221,6 +279,20 @@ class ProcessingTaskCallbackApplicationServiceTest {
                 ProcessingStep.SUMMARY,
                 ProcessingStep.EXTRACTION
             ),
+            NOW
+        );
+        task.enqueue(NOW);
+        task.claimLease("worker_01", "worker_01:task_01:1", NOW.plusMinutes(5), NOW);
+        return new InMemoryTaskRepository(task);
+    }
+
+    private static InMemoryTaskRepository speakerEnrollmentTask() {
+        ProcessingTask task = ProcessingTask.create(
+            "task_01",
+            "tenant_01",
+            null,
+            "SPEAKER_ENROLLMENT",
+            List.of(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING),
             NOW
         );
         task.enqueue(NOW);
@@ -344,6 +416,58 @@ class ProcessingTaskCallbackApplicationServiceTest {
         public CallbackEventRecord save(CallbackEventRecord record) {
             records.add(record);
             return record;
+        }
+    }
+
+    private static final class InMemorySpeakerEnrollments implements SpeakerEnrollmentRepository {
+        private final List<SpeakerEnrollmentRecord> records = new ArrayList<>();
+
+        @Override
+        public String save(SpeakerEnrollmentRecord record) {
+            records.add(record);
+            return record.id();
+        }
+
+        @Override
+        public Optional<SpeakerEnrollmentRecord> findById(String tenantId, String enrollmentId) {
+            return records.stream()
+                .filter(record -> record.tenantId().equals(tenantId))
+                .filter(record -> record.id().equals(enrollmentId))
+                .findFirst();
+        }
+
+        @Override
+        public List<SpeakerEnrollmentRecord> findByProfile(String tenantId, String profileId) {
+            return records.stream()
+                .filter(record -> record.tenantId().equals(tenantId))
+                .filter(record -> record.speakerProfileId().equals(profileId))
+                .toList();
+        }
+
+        @Override
+        public void updateStatus(String tenantId, String enrollmentId, String enrollmentStatus,
+                                 Double qualityScore, String modelVersion, String errorCode, OffsetDateTime now) {
+            for (int i = 0; i < records.size(); i++) {
+                SpeakerEnrollmentRecord current = records.get(i);
+                if (!current.tenantId().equals(tenantId) || !current.id().equals(enrollmentId)) {
+                    continue;
+                }
+                records.set(i, new SpeakerEnrollmentRecord(
+                    current.id(),
+                    current.tenantId(),
+                    current.speakerProfileId(),
+                    current.sourceAudioFileId(),
+                    enrollmentStatus,
+                    qualityScore,
+                    modelVersion,
+                    current.artifactUri(),
+                    errorCode,
+                    current.createdBy(),
+                    current.createdAt(),
+                    now
+                ));
+                return;
+            }
         }
     }
 

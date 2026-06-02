@@ -319,6 +319,7 @@ class JavaCallbackClient:
         error_code: str,
         error_message: str,
         retryable: bool = True,
+        speaker_enrollment_id: str | None = None,
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/fail"
@@ -335,4 +336,6 @@ class JavaCallbackClient:
             },
             "failedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if speaker_enrollment_id:
+            body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)

@@ -102,15 +102,18 @@ async def consume_and_validate(
     task_type = raw_message.get("taskType", "MEETING_FULL_PIPELINE")
     first_step = _first_step_for_task_type(task_type)
 
-    await callback_client.fail_task(
-        task_id=task_id,
-        tenant_id=raw_message.get("tenantId", "unknown"),
-        attempt_no=attempt_no,
-        failed_step=first_step,
-        error_code="INVALID_TASK_MESSAGE",
-        error_message="; ".join(errors),
-        retryable=False,
-        trace_id=trace_id,
-    )
+    kwargs = {
+        "task_id": task_id,
+        "tenant_id": raw_message.get("tenantId", "unknown"),
+        "attempt_no": attempt_no,
+        "failed_step": first_step,
+        "error_code": "INVALID_TASK_MESSAGE",
+        "error_message": "; ".join(errors),
+        "retryable": False,
+        "trace_id": trace_id,
+    }
+    if raw_message.get("taskType") == "SPEAKER_ENROLLMENT" and raw_message.get("speakerEnrollmentId"):
+        kwargs["speaker_enrollment_id"] = raw_message["speakerEnrollmentId"]
+    await callback_client.fail_task(**kwargs)
 
     return None

@@ -282,6 +282,7 @@ async def test_speaker_enrollment_callback_failure_records_writeback_failed(call
     callback_client.submit_speaker_candidates.assert_not_awaited()
     callback_client.fail_task.assert_awaited_once()
     assert callback_client.fail_task.await_args.kwargs["failed_step"] == "SPEAKER_EMBEDDING"
+    assert callback_client.fail_task.await_args.kwargs["speaker_enrollment_id"] == "se_01"
     callback_client.complete_worker_phase.assert_not_awaited()
     assert engine.embedding.values == [0.0, 0.0]
 

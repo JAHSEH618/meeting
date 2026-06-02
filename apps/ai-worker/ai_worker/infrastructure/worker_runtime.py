@@ -348,16 +348,19 @@ class MvpWorkerRuntime:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)
         self.state_store.update_step(task.task_id, failed_step, "FAILED", 100, "WRITEBACK_FAILED")
         self.state_store.fail(task.task_id, "WRITEBACK_FAILED", message)
-        await self.callback_client.fail_task(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            attempt_no=task.attempt_no,
-            failed_step=failed_step,
-            error_code="WRITEBACK_FAILED",
-            error_message=message,
-            retryable=True,
-            trace_id=task.trace_id,
-        )
+        kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": failed_step,
+            "error_code": "WRITEBACK_FAILED",
+            "error_message": message,
+            "retryable": True,
+            "trace_id": task.trace_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_failure(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        await self.callback_client.fail_task(**kwargs)
 
     async def _fail_for_pipeline_result(self, task: TaskMessage, result: StepResult) -> None:
         error_code = result.error_code or "PIPELINE_STEP_FAILED"
@@ -370,16 +373,19 @@ class MvpWorkerRuntime:
             message,
         )
         self.state_store.fail(task.task_id, error_code, message)
-        await self.callback_client.fail_task(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            attempt_no=task.attempt_no,
-            failed_step=result.step_name,
-            error_code=error_code,
-            error_message=message,
-            retryable=True,
-            trace_id=task.trace_id,
-        )
+        kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": result.step_name,
+            "error_code": error_code,
+            "error_message": message,
+            "retryable": True,
+            "trace_id": task.trace_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_failure(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        await self.callback_client.fail_task(**kwargs)
 
     @staticmethod
     def _writeback_failed(step_name: str, message: str) -> StepResult:
@@ -410,6 +416,12 @@ def _speaker_enrollment_embedding_from_context(context: Any) -> Any | None:
     if not isinstance(embeddings, list) or not embeddings:
         return None
     return embeddings[0]
+
+
+def _speaker_enrollment_id_for_failure(task: TaskMessage) -> str | None:
+    if task.task_type != "SPEAKER_ENROLLMENT":
+        return None
+    return task.speaker_enrollment_id
 
 
 def _add_skipped_step(context: Any, step_name: str, reason: str) -> None:
