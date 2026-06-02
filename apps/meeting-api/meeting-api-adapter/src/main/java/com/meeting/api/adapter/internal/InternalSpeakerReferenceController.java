@@ -116,6 +116,7 @@ public class InternalSpeakerReferenceController {
         for (var r : resolved) {
             items.add(new Item(
                 r.personId(),
+                r.speakerProfileId(),
                 toBoxedList(r.values()),
                 r.dim(),
                 r.hash(),
@@ -153,6 +154,7 @@ public class InternalSpeakerReferenceController {
 
     public record Item(
         String personId,
+        String speakerProfileId,
         List<Double> values,
         int dim,
         String hash,

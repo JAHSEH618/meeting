@@ -85,6 +85,7 @@ public class SpeakerReferenceEmbeddingService {
         List<ReferenceEmbedding> result = new ArrayList<>(byPerson.size());
         for (var entry : byPerson.entrySet()) {
             String personId = entry.getKey();
+            String speakerProfileId = entry.getValue().get(0).id();
             List<float[]> plaintextVectors = new ArrayList<>();
             List<String> sourceEnrollmentIds = new ArrayList<>();
             try {
@@ -106,7 +107,7 @@ public class SpeakerReferenceEmbeddingService {
                 }
                 float[] centroid = centroidL2Normalized(plaintextVectors);
                 String hash = sha256Of(sourceEnrollmentIds);
-                result.add(new ReferenceEmbedding(personId, centroid, centroid.length, hash, now));
+                result.add(new ReferenceEmbedding(personId, speakerProfileId, centroid, centroid.length, hash, now));
                 log.info(
                     "speaker_reference_resolved tenant={} personId={} enrollments={} dim={} hash={}",
                     tenantId, personId, sourceEnrollmentIds.size(), centroid.length, hash
@@ -186,6 +187,7 @@ public class SpeakerReferenceEmbeddingService {
     }
     public record ReferenceEmbedding(
         String personId,
+        String speakerProfileId,
         float[] values,
         int dim,
         String hash,

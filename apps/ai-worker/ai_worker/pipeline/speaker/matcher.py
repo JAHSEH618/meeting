@@ -31,6 +31,13 @@ class SpeakerMatchResult:
     candidates: list[SpeakerMatchCandidate]
 
 
+@dataclass(frozen=True)
+class ReferenceEmbedding:
+    person_id: str
+    speaker_profile_id: str
+    values: list[float]
+
+
 @runtime_checkable
 class SpeakerMatcher(Protocol):
     async def match(
@@ -94,13 +101,13 @@ class AuthorizedScopeMatcher:
                 participant_id=participant_id,
                 dimension=embedding.dimension,
             )
-            confidence = cosine_similarity(embedding.values, reference)
+            confidence = cosine_similarity(embedding.values, reference.values)
             if confidence < self._min_confidence:
                 continue
             scored.append(
                 SpeakerMatchCandidate(
-                    person_id=participant_id,
-                    speaker_profile_id=_synthetic_profile_id(participant_id),
+                    person_id=reference.person_id,
+                    speaker_profile_id=reference.speaker_profile_id,
                     confidence=confidence,
                     match_status="CANDIDATE",
                 )
@@ -119,7 +126,7 @@ class ReferenceEmbeddingSupplier(Protocol):
         tenant_id: str,
         participant_id: str,
         dimension: int,
-    ) -> list[float]:
+    ) -> ReferenceEmbedding:
         ...
 
 
@@ -131,7 +138,7 @@ class DeterministicReferenceSupplier:
         tenant_id: str,
         participant_id: str,
         dimension: int,
-    ) -> list[float]:
+    ) -> ReferenceEmbedding:
         import hashlib
 
         digest = hashlib.sha256(f"{tenant_id}|{participant_id}".encode("utf-8")).digest()
@@ -141,7 +148,12 @@ class DeterministicReferenceSupplier:
             mix = ((byte * 31) ^ (i * 7)) & 0xFF
             floats.append((mix - 128) / 128.0)
         norm = math.sqrt(sum(f * f for f in floats)) or 1.0
-        return [f / norm for f in floats]
+        values = [f / norm for f in floats]
+        return ReferenceEmbedding(
+            person_id=participant_id,
+            speaker_profile_id=participant_id,
+            values=values,
+        )
 
 
 def _authorized_scope(task: TaskMessage) -> list[str]:
@@ -157,9 +169,3 @@ def _authorized_scope(task: TaskMessage) -> list[str]:
         seen.add(task.speaker_profile_id)
         scope.append(task.speaker_profile_id)
     return scope
-
-
-def _synthetic_profile_id(participant_id: str) -> str:
-    if participant_id.startswith("spk_"):
-        return participant_id
-    return f"spk_{participant_id}"

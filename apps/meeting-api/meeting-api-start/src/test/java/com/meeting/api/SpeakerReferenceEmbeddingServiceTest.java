@@ -44,6 +44,7 @@ class SpeakerReferenceEmbeddingServiceTest {
         assertThat(result).hasSize(1);
         var ref = result.get(0);
         assertThat(ref.personId()).isEqualTo("p_alice");
+        assertThat(ref.speakerProfileId()).isEqualTo("sp_alice");
         assertThat(ref.dim()).isEqualTo(2);
         // L2-normalized → 0.6 / 0.8
         assertThat(ref.values()[0]).isCloseTo(0.6f, within(0.0001f));

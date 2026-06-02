@@ -47,7 +47,14 @@ async def test_signing_string_matches_java_verifier(client: JavaSpeakerReference
         captured["body"] = request.content
         captured["url"] = request.url.path
         return httpx.Response(200, json=_envelope([
-            {"personId": "p_alice", "values": [0.6, 0.8], "dim": 2, "hash": "h", "computedAt": "2026-01-01T00:00:00Z"}
+            {
+                "personId": "p_alice",
+                "speakerProfileId": "profile_alice_01",
+                "values": [0.6, 0.8],
+                "dim": 2,
+                "hash": "h",
+                "computedAt": "2026-01-01T00:00:00Z",
+            }
         ]))
 
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -56,7 +63,9 @@ async def test_signing_string_matches_java_verifier(client: JavaSpeakerReference
     finally:
         await client._client.aclose()
 
-    assert result["p_alice"] == [0.6, 0.8]
+    assert result["p_alice"].person_id == "p_alice"
+    assert result["p_alice"].speaker_profile_id == "profile_alice_01"
+    assert result["p_alice"].values == [0.6, 0.8]
     # Reconstruct expected signature with the same fields the client sent
     headers = captured["headers"]
     body_hash = hashlib.sha256(captured["body"]).hexdigest()
@@ -73,17 +82,27 @@ async def test_cache_hit_skips_second_network_call(client: JavaSpeakerReferenceC
     async def handler(request: httpx.Request) -> httpx.Response:
         call_count["n"] += 1
         return httpx.Response(200, json=_envelope([
-            {"personId": "p1", "values": [1.0, 0.0], "dim": 2, "hash": "h", "computedAt": "x"}
+            {
+                "personId": "p1",
+                "speakerProfileId": "profile_p1",
+                "values": [1.0, 0.0],
+                "dim": 2,
+                "hash": "h",
+                "computedAt": "x",
+            }
         ]))
 
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     try:
-        await client.batch("tenant_01", ["p1"])
-        await client.batch("tenant_01", ["p1"])
+        first = await client.batch("tenant_01", ["p1"])
+        first["p1"].values[0] = 0.0
+        second = await client.batch("tenant_01", ["p1"])
     finally:
         await client._client.aclose()
 
     assert call_count["n"] == 1
+    assert second["p1"].speaker_profile_id == "profile_p1"
+    assert second["p1"].values == [1.0, 0.0]
 
 
 @pytest.mark.asyncio
@@ -103,7 +122,14 @@ async def test_401_raises_speaker_reference_unavailable(client: JavaSpeakerRefer
 async def test_plaintext_values_never_logged(client: JavaSpeakerReferenceClient, caplog):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_envelope([
-            {"personId": "p1", "values": [0.123456789, 0.987654321], "dim": 2, "hash": "h", "computedAt": "x"}
+            {
+                "personId": "p1",
+                "speakerProfileId": "profile_p1",
+                "values": [0.123456789, 0.987654321],
+                "dim": 2,
+                "hash": "h",
+                "computedAt": "x",
+            }
         ]))
 
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -116,6 +142,21 @@ async def test_plaintext_values_never_logged(client: JavaSpeakerReferenceClient,
     log_blob = "\n".join(r.getMessage() for r in caplog.records)
     assert "0.123456789" not in log_blob
     assert "0.987654321" not in log_blob
+
+
+@pytest.mark.asyncio
+async def test_missing_speaker_profile_id_fails_contract(client: JavaSpeakerReferenceClient):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_envelope([
+            {"personId": "p1", "values": [1.0, 0.0], "dim": 2, "hash": "h", "computedAt": "x"}
+        ]))
+
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(SpeakerReferenceUnavailable, match="speakerProfileId"):
+            await client.batch("tenant_01", ["p1"])
+    finally:
+        await client._client.aclose()
 
 
 @pytest.mark.asyncio

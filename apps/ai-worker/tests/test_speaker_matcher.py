@@ -9,6 +9,7 @@ from ai_worker.domain.task import TaskMessage
 from ai_worker.pipeline.speaker.matcher import (
     AuthorizedScopeMatcher,
     DeterministicReferenceSupplier,
+    ReferenceEmbedding,
     SpeakerMatchResult,
     cosine_similarity,
 )
@@ -55,7 +56,7 @@ async def test_matches_only_against_authorized_known_participants() -> None:
     reference = await DeterministicReferenceSupplier().reference_embedding(
         tenant_id="tenant_01", participant_id="alice", dimension=192
     )
-    embedding = _embedding(reference)
+    embedding = _embedding(reference.values)
 
     result = await matcher.match(_task(["alice", "bob"]), embedding)
 
@@ -65,13 +66,45 @@ async def test_matches_only_against_authorized_known_participants() -> None:
     assert result.candidates[0].person_id == "alice"
 
 
+class StaticReferenceSupplier:
+    def __init__(self, refs: dict[str, ReferenceEmbedding]) -> None:
+        self.refs = refs
+
+    async def reference_embedding(
+        self,
+        tenant_id: str,
+        participant_id: str,
+        dimension: int,
+    ) -> ReferenceEmbedding:
+        return self.refs[participant_id]
+
+
+@pytest.mark.asyncio
+async def test_uses_java_authorized_speaker_profile_id_from_reference_supplier() -> None:
+    supplier = StaticReferenceSupplier({
+        "alice": ReferenceEmbedding(
+            person_id="alice",
+            speaker_profile_id="profile_real_01",
+            values=[1.0, 0.0],
+        )
+    })
+    matcher = AuthorizedScopeMatcher(reference_supplier=supplier, min_confidence=0.99)
+
+    result = await matcher.match(_task(["alice"]), _embedding([1.0, 0.0]))
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].person_id == "alice"
+    assert result.candidates[0].speaker_profile_id == "profile_real_01"
+    assert result.candidates[0].speaker_profile_id != "spk_alice"
+
+
 @pytest.mark.asyncio
 async def test_speaker_enrollment_task_uses_profile_id_as_scope() -> None:
     matcher = AuthorizedScopeMatcher(min_confidence=-1.0)
     reference = await DeterministicReferenceSupplier().reference_embedding(
         tenant_id="tenant_01", participant_id="spk_alice", dimension=192
     )
-    embedding = _embedding(reference)
+    embedding = _embedding(reference.values)
 
     result = await matcher.match(_task([], speaker_profile_id="spk_alice"), embedding)
 
@@ -108,7 +141,7 @@ async def test_top_k_caps_result_size() -> None:
 
     result: SpeakerMatchResult = await matcher.match(
         _task(["alice", "bob", "carol", "dave"]),
-        _embedding(reference),
+        _embedding(reference.values),
     )
     assert len(result.candidates) <= 2
 
