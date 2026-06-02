@@ -221,11 +221,14 @@ export function MeetingDetailPage() {
               <div className="stack">
                 {aggregate.speakers.data.map((speaker, index) => {
                   const label = getSpeakerLabel(speaker);
+                  const confirmationBadge = getSpeakerConfirmationBadge(speaker);
                   return (
                     <div key={getSpeakerKey(speaker, index)} className="toolbar">
                       <strong>{label}</strong>
                       <span>{speaker.displayName || "未认定"}</span>
-                      {isAutoConfirmedSpeaker(speaker) ? <span className="pill pill--success">自动认定</span> : null}
+                      {confirmationBadge ? (
+                        <span className={`pill ${confirmationBadge.tone}`}>{confirmationBadge.label}</span>
+                      ) : null}
                       {canConfirmSpeaker(speaker) ? (
                         <div className="toolbar" aria-label={`${label} 候选人`}>
                           {speaker.candidates?.map((candidate) => (
@@ -298,14 +301,26 @@ function getSpeakerKey(speaker: MeetingSpeakerDTO, index: number): string {
   return speaker.speakerProfileId || speaker.personId || getSpeakerLabel(speaker) || String(index);
 }
 
-function isAutoConfirmedSpeaker(speaker: MeetingSpeakerDTO): boolean {
-  return speaker.confirmationStatus === "AUTO_CONFIRMED" ||
-    speaker.confirmationStatus === "CONFIRMED" ||
-    (!speaker.confirmationStatus && speaker.verificationStatus === "CONFIRMED");
+function getSpeakerConfirmationBadge(speaker: MeetingSpeakerDTO): { label: string; tone: string } | null {
+  if (speaker.confirmationStatus === "AUTO_CONFIRMED") {
+    return { label: "自动认定", tone: "pill--success" };
+  }
+  if (speaker.confirmationStatus === "MANUALLY_CONFIRMED") {
+    return { label: "人工认定", tone: "pill--info" };
+  }
+  if (speaker.confirmationStatus === "CONFIRMED" ||
+    (!speaker.confirmationStatus && speaker.verificationStatus === "CONFIRMED")) {
+    return { label: "已认定", tone: "pill--success" };
+  }
+  return null;
+}
+
+function isConfirmedSpeaker(speaker: MeetingSpeakerDTO): boolean {
+  return !!getSpeakerConfirmationBadge(speaker);
 }
 
 function canConfirmSpeaker(speaker: MeetingSpeakerDTO): boolean {
-  return !isAutoConfirmedSpeaker(speaker) && !!speaker.candidates?.length;
+  return !isConfirmedSpeaker(speaker) && !!speaker.candidates?.length;
 }
 
 function formatError(e: unknown): string {

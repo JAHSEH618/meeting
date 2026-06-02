@@ -30,7 +30,7 @@ vi.mock("@/shared/api/endpoints", () => ({
         displayName: "李四",
         personId: "p1",
         speakerProfileId: "sp1",
-        confirmationStatus: "CONFIRMED",
+        confirmationStatus: "AUTO_CONFIRMED",
         autoMatchScore: 0.91,
         confirmedAt: "2026-05-27T00:00:00Z",
         candidatePersonIds: ["p1", "p2"],
@@ -83,6 +83,69 @@ describe("MeetingDetailPage", () => {
     expect(screen.getByText(/自动认定/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "会议纪要" })).toBeInTheDocument();
     expect(screen.getByTestId("step-ASR")).toHaveTextContent("SUCCEEDED");
+  });
+
+  it("does not label manual or legacy confirmed speakers as auto confirmed", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce({
+      meeting: { success: true, data: { meetingId: "m1", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", transcriptVersion: 3, createdAt: "" } },
+      latestTask: { success: true, data: { taskId: "task1", meetingId: "m1", status: "SUCCEEDED", phase: "TERMINAL", attemptNo: 1, currentStep: null, lastErrorCode: null, retryable: false, steps: [] } },
+      speakers: {
+        success: true,
+        data: [
+          {
+            speakerLabel: "SPEAKER_AUTO",
+            displayName: "李四",
+            personId: "p1",
+            speakerProfileId: "sp1",
+            confirmationStatus: "AUTO_CONFIRMED",
+            autoMatchScore: 0.91,
+            confirmedAt: "2026-05-27T00:00:00Z",
+            candidatePersonIds: ["p1"],
+            candidates: [],
+          },
+          {
+            speakerLabel: "SPEAKER_MANUAL",
+            displayName: "王五",
+            personId: "p2",
+            speakerProfileId: "sp2",
+            confirmationStatus: "MANUALLY_CONFIRMED",
+            autoMatchScore: 0.73,
+            confirmedAt: "2026-05-27T00:00:00Z",
+            candidatePersonIds: ["p2"],
+            candidates: [{ personId: "p2", speakerProfileId: "sp2", displayName: "王五", confidence: 0.73 }],
+          },
+          {
+            speakerLabel: "SPEAKER_LEGACY",
+            displayName: "赵六",
+            personId: "p3",
+            speakerProfileId: null,
+            confirmationStatus: "CONFIRMED",
+            autoMatchScore: null,
+            confirmedAt: "2026-05-27T00:00:00Z",
+            candidatePersonIds: ["p3"],
+            candidates: [{ personId: "p3", speakerProfileId: "sp3", displayName: "赵六", confidence: 0.68 }],
+          },
+        ],
+      },
+      minutes: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("SPEAKER_AUTO");
+
+    expect(screen.getByText("李四").parentElement).toHaveTextContent("自动认定");
+    expect(screen.getByText("王五").parentElement).toHaveTextContent("人工认定");
+    expect(screen.getByText("王五").parentElement).not.toHaveTextContent("自动认定");
+    expect(screen.getByText("赵六").parentElement).toHaveTextContent("已认定");
+    expect(screen.getByText("赵六").parentElement).not.toHaveTextContent("自动认定");
+    expect(screen.queryByRole("button", { name: "认定 王五 0.73" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "认定 赵六 0.68" })).not.toBeInTheDocument();
   });
 
   it("creates and polls export download links", async () => {
