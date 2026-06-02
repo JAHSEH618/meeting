@@ -96,6 +96,88 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
     }
 
     @Test
+    void writeCandidatesUsesProfileOwnerAsAuthoritativePersonId() {
+        InMemorySpeakers speakers = new InMemorySpeakers();
+        SpeakerCandidatesCallbackApplicationService service = service(speakers, new InMemoryProfiles(List.of(
+            SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            )
+        )));
+
+        service.writeCandidates(new SpeakerCandidatesCallbackCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/speaker-candidates", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            List.of(new SpeakerCandidatesCallbackCommand.SpeakerEntry(
+                "SPEAKER_00",
+                List.of(new SpeakerCandidatesCallbackCommand.Candidate("person_wrong", "profile_01", 0.91, "MATCH")),
+                null
+            ))
+        ));
+
+        assertThat(speakers.savedCandidates).containsExactly(new MeetingSpeakerRepository.SpeakerCandidate(
+            "person_01",
+            "profile_01",
+            0.91
+        ));
+        assertThat(speakers.savedCandidatePersonIds).containsExactly("person_01");
+    }
+
+    @Test
+    void writeCandidatesAllowsWorkerToOmitPersonId() {
+        InMemorySpeakers speakers = new InMemorySpeakers();
+        SpeakerCandidatesCallbackApplicationService service = service(speakers, new InMemoryProfiles(List.of(
+            SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            )
+        )));
+
+        service.writeCandidates(new SpeakerCandidatesCallbackCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/speaker-candidates", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            List.of(new SpeakerCandidatesCallbackCommand.SpeakerEntry(
+                "SPEAKER_00",
+                List.of(new SpeakerCandidatesCallbackCommand.Candidate(null, "profile_01", 0.91, "MATCH")),
+                null
+            ))
+        ));
+
+        assertThat(speakers.savedCandidates).containsExactly(new MeetingSpeakerRepository.SpeakerCandidate(
+            "person_01",
+            "profile_01",
+            0.91
+        ));
+        assertThat(speakers.savedCandidatePersonIds).containsExactly("person_01");
+    }
+
+    @Test
     void writeCandidatesRejectsSpeakerEnrollmentTask() {
         InMemorySpeakers speakers = new InMemorySpeakers();
         SpeakerCandidatesCallbackApplicationService service = service(

@@ -16,8 +16,10 @@ import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +107,7 @@ public class SpeakerCandidatesCallbackApplicationService {
                 return null;
             }
 
-            Set<String> authorizedProfileIds = collectAuthorizedProfileIds(command.tenantId(), command.speakers());
+            Map<String, String> authorizedProfileOwners = collectAuthorizedProfileOwners(command.tenantId(), command.speakers());
             OffsetDateTime now = OffsetDateTime.now(clock);
 
             for (var speaker : command.speakers()) {
@@ -114,16 +116,19 @@ public class SpeakerCandidatesCallbackApplicationService {
                 double topConfidence = 0.0;
                 for (var candidate : speaker.candidates()) {
                     if (candidate.speakerProfileId() == null) continue;
-                    if (!authorizedProfileIds.contains(candidate.speakerProfileId())) {
+                    String profilePersonId = authorizedProfileOwners.get(candidate.speakerProfileId());
+                    if (profilePersonId == null) {
                         log.warn("speaker_candidate_skipped_unauthorized tenant={} taskId={} profileId={}",
                             command.tenantId(), command.taskId(), candidate.speakerProfileId());
                         continue;
                     }
-                    if (candidate.personId() != null) {
-                        filteredCandidatePersonIds.add(candidate.personId());
+                    if (candidate.personId() != null && !candidate.personId().equals(profilePersonId)) {
+                        log.warn("speaker_candidate_person_rewritten tenant={} taskId={} profileId={}",
+                            command.tenantId(), command.taskId(), candidate.speakerProfileId());
                     }
+                    filteredCandidatePersonIds.add(profilePersonId);
                     filteredCandidates.add(new SpeakerCandidate(
-                        candidate.personId(),
+                        profilePersonId,
                         candidate.speakerProfileId(),
                         candidate.confidence()
                     ));
@@ -160,7 +165,7 @@ public class SpeakerCandidatesCallbackApplicationService {
         });
     }
 
-    private Set<String> collectAuthorizedProfileIds(String tenantId, List<SpeakerCandidatesCallbackCommand.SpeakerEntry> speakers) {
+    private Map<String, String> collectAuthorizedProfileOwners(String tenantId, List<SpeakerCandidatesCallbackCommand.SpeakerEntry> speakers) {
         Set<String> requested = new HashSet<>();
         for (var s : speakers) {
             for (var c : s.candidates()) {
@@ -169,12 +174,12 @@ public class SpeakerCandidatesCallbackApplicationService {
                 }
             }
         }
-        if (requested.isEmpty()) return Set.of();
+        if (requested.isEmpty()) return Map.of();
         List<SpeakerProfile> found = speakerProfileRepository.findByIds(tenantId, new ArrayList<>(requested));
-        Set<String> active = new HashSet<>();
+        Map<String, String> active = new HashMap<>();
         for (var p : found) {
             if (p.isActive()) {
-                active.add(p.id());
+                active.put(p.id(), p.personId());
             }
         }
         return active;
