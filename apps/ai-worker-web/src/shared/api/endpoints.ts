@@ -54,7 +54,11 @@ export const commitEnrollment = (sessionId: string) =>
   );
 
 export async function listSpeakerProfiles(personId?: string): Promise<SpeakerProfileDTO[]> {
-  const profiles = await apiCall<SpeakerProfileDTO[]>(`${API}/voiceprints`, { query: { personId } });
+  const payload = await apiCall<SpeakerProfileDTO[] | { items?: SpeakerProfileDTO[] }>(
+    `${API}/voiceprints`,
+    { query: { personId } },
+  );
+  const profiles = Array.isArray(payload) ? payload : payload.items ?? [];
   return profiles.map(normalizeSpeakerProfile);
 }
 

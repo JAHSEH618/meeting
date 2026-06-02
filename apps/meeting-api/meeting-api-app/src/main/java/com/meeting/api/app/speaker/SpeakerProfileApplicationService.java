@@ -6,6 +6,7 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.client.speaker.SpeakerProfileListDTO;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
 import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
@@ -128,11 +129,19 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
     }
 
     @Override
-    public List<SpeakerProfileDTO> list(String tenantId) {
-        return tenantScopedTransaction.execute(tenantId, null, null,
-            () -> profileRepository.listByTenant(tenantId, false).stream()
-                .map(SpeakerProfileApplicationService::toDto)
-                .toList());
+    public SpeakerProfileListDTO list(String tenantId, String personId) {
+        return tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            List<SpeakerProfile> profiles = hasText(personId)
+                ? profileRepository.findByPersonIds(tenantId, List.of(personId))
+                : profileRepository.listByTenant(tenantId, false);
+            List<SpeakerProfileListDTO.Item> items = profiles.stream()
+                .map(SpeakerProfileApplicationService::toListItem)
+                .toList();
+            return new SpeakerProfileListDTO(
+                items,
+                new SpeakerProfileListDTO.PageInfo(null, false, items.size())
+            );
+        });
     }
 
     @Override
@@ -245,12 +254,27 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         );
     }
 
+    private static SpeakerProfileListDTO.Item toListItem(SpeakerProfile p) {
+        return new SpeakerProfileListDTO.Item(
+            p.id(),
+            p.personId(),
+            p.displayNameSnapshot(),
+            p.consentStatus(),
+            null,
+            null
+        );
+    }
+
     private static SpeakerEnrollmentDTO toDto(SpeakerEnrollmentRepository.SpeakerEnrollmentRecord r) {
         return new SpeakerEnrollmentDTO(
             r.id(), r.speakerProfileId(), r.tenantId(), r.sourceAudioFileId(),
             r.enrollmentStatus(), r.qualityScore(), r.modelVersion(), r.errorCode(),
             r.createdAt(), r.updatedAt()
         );
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static final class NoOpEmbeddingRepo implements SpeakerEmbeddingRepository {

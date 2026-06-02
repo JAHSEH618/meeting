@@ -196,16 +196,19 @@ describe("admin endpoint helpers", () => {
 
   it("uses speaker-profile semantics for voiceprint administration", async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([
-        {
-          speakerProfileId: "sp1",
-          personId: "p1",
-          displayName: "李四",
-          consentStatus: "ACTIVE",
-          enrollmentCount: 2,
-          lastEnrolledAt: "2026-06-02T00:00:00Z",
-        },
-      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        items: [
+          {
+            speakerProfileId: "sp1",
+            personId: "p1",
+            displayName: "李四",
+            status: "ACTIVE",
+            enrollmentCount: 2,
+            lastEnrolledAt: "2026-06-02T00:00:00Z",
+          },
+        ],
+        page: { cursor: null, hasMore: false, limit: 1 },
+      }))
       .mockResolvedValueOnce(jsonResponse(null));
 
     const profiles = await listSpeakerProfiles("p1");

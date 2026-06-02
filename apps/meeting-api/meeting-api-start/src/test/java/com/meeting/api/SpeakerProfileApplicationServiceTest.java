@@ -107,8 +107,46 @@ class SpeakerProfileApplicationServiceTest {
         ));
         service.revoke("tenant_01", p2.speakerProfileId(), "u", "x");
 
-        var list = service.list("tenant_01");
-        assertThat(list).extracting("speakerProfileId").containsExactly(p1.speakerProfileId());
+        var page = service.list("tenant_01", null);
+        assertThat(page.items()).extracting("speakerProfileId").containsExactly(p1.speakerProfileId());
+    }
+
+    @Test
+    void listForPersonOnlyReturnsThatPersonsActiveProfiles() {
+        InMemoryProfileRepo profiles = new InMemoryProfileRepo();
+        var service = service(profiles, new InMemoryEnrollmentRepo());
+        var p1Active = service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_01", "A", "INVITE", "v1", "u", "r", "t", "i1"
+        ));
+        var p2Active = service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_02", "B", "INVITE", "v1", "u", "r", "t", "i2"
+        ));
+        var p1Revoked = service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_01", "A old", "INVITE", "v1", "u", "r", "t", "i3"
+        ));
+        service.revoke("tenant_01", p1Revoked.speakerProfileId(), "u", "x");
+
+        var page = service.list("tenant_01", "person_01");
+
+        assertThat(page.items()).extracting("speakerProfileId").containsExactly(p1Active.speakerProfileId());
+        assertThat(page.items()).extracting("speakerProfileId")
+            .doesNotContain(p2Active.speakerProfileId(), p1Revoked.speakerProfileId());
+        assertThat(page.page().hasMore()).isFalse();
+        assertThat(page.page().limit()).isEqualTo(1);
+    }
+
+    @Test
+    void listForMissingPersonReturnsEmptyPage() {
+        InMemoryProfileRepo profiles = new InMemoryProfileRepo();
+        var service = service(profiles, new InMemoryEnrollmentRepo());
+        service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_01", "A", "INVITE", "v1", "u", "r", "t", "i1"
+        ));
+
+        var page = service.list("tenant_01", "missing_person");
+
+        assertThat(page.items()).isEmpty();
+        assertThat(page.page().limit()).isZero();
     }
 
     private static SpeakerProfileApplicationService service(InMemoryProfileRepo profiles, InMemoryEnrollmentRepo enrollments) {
@@ -145,6 +183,15 @@ class SpeakerProfileApplicationServiceTest {
             return store.values().stream()
                 .filter(p -> tenantId.equals(p.tenantId()))
                 .filter(p -> profileIds.contains(p.id()))
+                .toList();
+        }
+
+        @Override
+        public List<SpeakerProfile> findByPersonIds(String tenantId, List<String> personIds) {
+            return store.values().stream()
+                .filter(p -> tenantId.equals(p.tenantId()))
+                .filter(p -> personIds.contains(p.personId()))
+                .filter(SpeakerProfile::isActive)
                 .toList();
         }
 

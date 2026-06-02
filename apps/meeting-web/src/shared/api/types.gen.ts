@@ -3127,7 +3127,10 @@ export interface operations {
     };
     listSpeakerProfiles: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Filter speaker profiles by Java-owned person id. */
+                personId?: string;
+            };
             header: {
                 "X-Request-Id": components["parameters"]["XRequestId"];
                 "X-Trace-Id": components["parameters"]["XTraceId"];

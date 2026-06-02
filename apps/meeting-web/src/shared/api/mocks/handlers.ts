@@ -563,23 +563,21 @@ export const handlers = [
   }),
 
   http.get("/api/speaker-profiles", () => {
-    return HttpResponse.json<ApiResponse<unknown[]>>({
+    return HttpResponse.json<ApiResponse<unknown>>({
       success: true,
-      data: [
-        {
-          speakerProfileId: "spk_alice",
-          tenantId: "tenant_01",
-          personId: "alice",
-          displayName: "Alice 张",
-          consentStatus: "ACTIVE",
-          consentSource: "MEETING_INVITE",
-          consentVersion: "v1",
-          revokedAt: null,
-          deletedAt: null,
-          createdAt: "2026-05-11T09:00:00Z",
-          updatedAt: "2026-05-11T09:00:00Z",
-        },
-      ],
+      data: {
+        items: [
+          {
+            speakerProfileId: "spk_alice",
+            personId: "alice",
+            displayName: "Alice 张",
+            status: "ACTIVE",
+            enrollmentCount: 1,
+            lastEnrolledAt: null,
+          },
+        ],
+        page: { cursor: null, hasMore: false, limit: 1 },
+      },
       error: null,
       requestId: "r",
       traceId: "t",

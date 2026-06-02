@@ -7,6 +7,7 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.client.speaker.SpeakerProfileListDTO;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -75,10 +76,45 @@ class SpeakerProfileControllerTest {
         assertThat(facade.lastEnrollment.idempotencyKey()).isEqualTo("idem_02");
     }
 
+    @Test
+    void listReturnsOpenApiEnvelopeWithItemsAndPage() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        facade.listResult = new SpeakerProfileListDTO(
+            List.of(new SpeakerProfileListDTO.Item(
+                "spk_01",
+                "person_01",
+                "李四",
+                "ACTIVE",
+                null,
+                null
+            )),
+            new SpeakerProfileListDTO.PageInfo(null, false, 1)
+        );
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        var response = controller.list("person_01", "req_01", "trace_01");
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().data().items()).singleElement().satisfies(profile -> {
+            assertThat(profile.speakerProfileId()).isEqualTo("spk_01");
+            assertThat(profile.status()).isEqualTo("ACTIVE");
+        });
+        assertThat(response.getBody().data().page().hasMore()).isFalse();
+        assertThat(response.getBody().data().page().limit()).isEqualTo(1);
+        assertThat(facade.lastListTenantId).isEqualTo("tenant_01");
+        assertThat(facade.lastListPersonId).isEqualTo("person_01");
+    }
+
     private static final class CapturingSpeakerProfileFacade implements SpeakerProfileFacade {
-        private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-06-02T10:00:00Z");
         private CreateSpeakerProfileCommand lastCreate;
         private CreateSpeakerEnrollmentCommand lastEnrollment;
+        private SpeakerProfileListDTO listResult = new SpeakerProfileListDTO(
+            List.of(),
+            new SpeakerProfileListDTO.PageInfo(null, false, 0)
+        );
+        private String lastListTenantId;
+        private String lastListPersonId;
 
         @Override
         public SpeakerProfileDTO create(CreateSpeakerProfileCommand command) {
@@ -104,8 +140,10 @@ class SpeakerProfileControllerTest {
         }
 
         @Override
-        public List<SpeakerProfileDTO> list(String tenantId) {
-            return List.of();
+        public SpeakerProfileListDTO list(String tenantId, String personId) {
+            lastListTenantId = tenantId;
+            lastListPersonId = personId;
+            return listResult;
         }
 
         @Override
@@ -138,4 +176,6 @@ class SpeakerProfileControllerTest {
             return List.of();
         }
     }
+
+    private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-06-02T10:00:00Z");
 }

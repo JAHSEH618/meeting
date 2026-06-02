@@ -7,6 +7,7 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.client.speaker.SpeakerProfileListDTO;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,12 +28,13 @@ public class SpeakerProfileController {
     }
 
     @GetMapping("/api/speaker-profiles")
-    public ResponseEntity<ApiResponse<List<SpeakerProfileDTO>>> list(
+    public ResponseEntity<ApiResponse<SpeakerProfileListDTO>> list(
+        @RequestParam(value = "personId", required = false) String personId,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId
     ) {
-        var items = facade.list(TenantContextHolder.currentTenantId());
-        return ResponseEntity.ok(ApiResponse.ok(items, requestId, traceId));
+        var page = facade.list(TenantContextHolder.currentTenantId(), personId);
+        return ResponseEntity.ok(ApiResponse.ok(page, requestId, traceId));
     }
 
     @GetMapping("/api/speaker-profiles/{profileId}")

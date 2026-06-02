@@ -35,6 +35,14 @@ function normalizeData<T>(data: unknown): T {
   return data as T;
 }
 
+function normalizeSpeakerProfile(profile: SpeakerProfile): SpeakerProfile {
+  return {
+    ...profile,
+    consentStatus: profile.consentStatus ?? profile.status ?? "UNKNOWN",
+    revokedAt: profile.revokedAt ?? null,
+  };
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -453,16 +461,19 @@ export async function rejectItem(meetingId: string, kind: ItemKind, itemId: stri
 
 export interface SpeakerProfile {
   speakerProfileId: string;
-  tenantId: string;
+  tenantId?: string;
   personId: string;
   displayName: string | null;
   consentStatus: string;
+  status?: string;
+  enrollmentCount?: number | null;
+  lastEnrolledAt?: string | null;
   consentSource?: string | null;
   consentVersion?: string | null;
   revokedAt?: string | null;
   deletedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SpeakerEnrollment {
@@ -500,7 +511,14 @@ export interface MeetingSpeakerList {
 }
 
 export async function listSpeakerProfiles() {
-  return request<{ items: SpeakerProfile[] }>("GET", `/speaker-profiles`);
+  const page = await request<{ items: SpeakerProfile[]; page?: { cursor?: string | null; hasMore?: boolean; limit?: number } }>(
+    "GET",
+    `/speaker-profiles`,
+  );
+  return {
+    ...page,
+    items: page.items.map(normalizeSpeakerProfile),
+  };
 }
 
 export async function getSpeakerProfile(profileId: string) {

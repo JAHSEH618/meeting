@@ -43,7 +43,7 @@ def test_list_voiceprints_uses_current_java_speaker_profile_endpoint() -> None:
     client.request = AsyncMock(
         return_value=_resp(
             200,
-            b'{"success":true,"data":[{"speakerProfileId":"sp1","personId":"p1","displayName":"\xe6\x9d\x8e\xe5\x9b\x9b","consentStatus":"ACTIVE"}]}',
+            b'{"success":true,"data":{"items":[{"speakerProfileId":"sp1","personId":"p1","displayName":"\xe6\x9d\x8e\xe5\x9b\x9b","status":"ACTIVE"}],"page":{"cursor":null,"hasMore":false,"limit":1}}}',
         )
     )
 

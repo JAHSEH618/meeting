@@ -989,6 +989,11 @@ paths:
       description: List speaker profiles in the current tenant.
       tags: [Speakers]
       parameters:
+        - name: personId
+          in: query
+          required: false
+          schema: {type: string}
+          description: Filter speaker profiles by Java-owned person id.
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
       responses:
