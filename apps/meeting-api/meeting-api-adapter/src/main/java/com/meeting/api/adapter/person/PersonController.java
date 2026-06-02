@@ -13,6 +13,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -40,6 +41,22 @@ public class PersonController {
             requestId,
             traceId
         );
+    }
+
+    @GetMapping("/{personId}")
+    public ResponseEntity<ApiResponse<PersonDTO>> get(
+        @PathVariable String personId,
+        @RequestHeader("X-Request-Id") String requestId,
+        @RequestHeader("X-Trace-Id") String traceId
+    ) {
+        return personFacade.get(TenantContextHolder.currentTenantId(), personId)
+            .map(dto -> ResponseEntity.ok(ApiResponse.ok(dto, requestId, traceId)))
+            .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.failed(
+                    ErrorInfo.of(ErrorCode.PERSON_NOT_FOUND, "person not found", false),
+                    requestId,
+                    traceId
+                )));
     }
 
     @PostMapping

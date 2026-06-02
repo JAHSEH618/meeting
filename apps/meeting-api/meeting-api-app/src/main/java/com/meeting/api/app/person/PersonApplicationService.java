@@ -19,6 +19,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -94,6 +95,15 @@ public class PersonApplicationService implements PersonFacade {
             auditPersonCreated(saved, command.requestedBy(), command.requestId());
             return toDto(saved);
         });
+    }
+
+    @Override
+    public Optional<PersonDTO> get(String tenantId, String personId) {
+        return tenantScopedTransaction.execute(tenantId, null, null, () ->
+            personRepository.findById(tenantId, personId)
+                .filter(Person::isActive)
+                .map(PersonApplicationService::toDto)
+        );
     }
 
     @Override

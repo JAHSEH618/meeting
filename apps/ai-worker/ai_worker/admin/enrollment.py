@@ -29,6 +29,7 @@ _log = logging.getLogger(__name__)
 
 
 QUALITY_THRESHOLD = 0.5
+DEFAULT_CONSENT_REFERENCE = "USER_ENROLLMENT:v1"
 PreviewFn = Callable[[Path, EnrollmentSession], Awaitable[dict[str, Any]]]
 
 
@@ -142,6 +143,15 @@ def build_enrollment_router(
             return error(status_code=409, code="ENROLLMENT_AUDIO_MISSING",
                          message="audio file missing before commit", retryable=False,
                          request_id=x_request_id, trace_id=x_trace_id)
+        if not session.person_id:
+            return error(
+                status_code=422,
+                code="ENROLLMENT_PERSON_REQUIRED",
+                message="select a person before committing enrollment",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
         quality_score = session.quality_score if session.quality_score is not None else 0.0
         if quality_score < QUALITY_THRESHOLD:
             return error(
@@ -159,15 +169,33 @@ def build_enrollment_router(
 
         # Three-step orchestration: profile → generic file upload → enrollment record.
         # Each Java call is independently idempotent via its own Idempotency-Key.
+        person = await java_client.request(
+            "GET", f"/api/persons/{session.person_id}",
+            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+        )
+        if person.status_code >= 400:
+            return passthrough(person.status_code, person.content, x_request_id, x_trace_id)
+        person_body = person.json()
+        person_data = person_body.get("data") or {}
+        display_name = person_data.get("displayName")
+        if not display_name:
+            return error(
+                status_code=502,
+                code="UPSTREAM_INVALID_RESPONSE",
+                message="person response missing displayName",
+                retryable=True,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
         profile = await java_client.request(
             "POST", "/api/speaker-profiles",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:profile",
             json={
                 "personId": session.person_id,
-                "displayName": session.person_id,
-                "consentSource": "USER_ENROLLMENT",
-                "consentVersion": "v1",
+                "displayName": display_name,
+                "consentReference": DEFAULT_CONSENT_REFERENCE,
             },
         )
         if profile.status_code >= 400:
@@ -282,7 +310,7 @@ def build_enrollment_router(
             "POST", f"/api/speaker-profiles/{profile_id}/enrollments",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:enroll",
-            json={"sourceAudioFileId": file_id},
+            json={"audioFileId": file_id, "consentReference": DEFAULT_CONSENT_REFERENCE},
         )
         if enrollment.status_code >= 400:
             return passthrough(enrollment.status_code, enrollment.content, x_request_id, x_trace_id)

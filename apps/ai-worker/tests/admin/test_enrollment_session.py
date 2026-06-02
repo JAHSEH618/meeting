@@ -123,6 +123,20 @@ class _StubJavaClient(JavaPublicClient):
             "idempotency": idempotency_key,
             "tenant": claims.tenant_id,
         })
+        if method == "GET" and path == "/api/persons/person_01":
+            return httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "personId": "person_01",
+                    "displayName": "李四",
+                    "email": "li@example.com",
+                    "externalId": None,
+                    "createdAt": "2026-06-02T10:00:00Z",
+                },
+                "error": None,
+                "requestId": "",
+                "traceId": "",
+            })
         if method == "POST" and path == "/api/speaker-profiles":
             return httpx.Response(200, json={
                 "success": True,
@@ -234,28 +248,93 @@ async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Pa
     assert response.json()["data"]["fileId"] == "file_01"
     paths = [call["path"] for call in java.received]
     assert paths == [
+        "/api/persons/person_01",
         "/api/speaker-profiles",
         "/api/files",
         "/api/files/up_01/parts",
         "/api/files/up_01/complete",
         "/api/speaker-profiles/sp_01/enrollments",
     ]
-    profile_body = java.received[0]["body"]
+    profile_body = java.received[1]["body"]
     assert profile_body == {
         "personId": "person_01",
-        "displayName": "person_01",
-        "consentSource": "USER_ENROLLMENT",
-        "consentVersion": "v1",
+        "displayName": "李四",
+        "consentReference": "USER_ENROLLMENT:v1",
     }
-    part_body = java.received[2]["body"]
-    complete_body = java.received[3]["body"]
+    part_body = java.received[3]["body"]
+    complete_body = java.received[4]["body"]
     expected_sha = hashlib.sha256(b"audio-bytes").hexdigest()
     assert part_body == {"partNumber": 1, "sizeBytes": len(b"audio-bytes"), "partSha256": expected_sha}
     assert complete_body["parts"] == [{"partNumber": 1, "partSha256": expected_sha, "etag": "etag-1"}]
-    enroll_body = java.received[4]["body"]
-    assert enroll_body == {"sourceAudioFileId": "file_01"}
+    enroll_body = java.received[5]["body"]
+    assert enroll_body == {"audioFileId": "file_01", "consentReference": "USER_ENROLLMENT:v1"}
     assert await store.get(session.session_id) is None
     assert not audio.exists()
+
+
+@pytest.mark.asyncio
+async def test_commit_stops_before_profile_write_when_java_person_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import ai_worker.admin.enrollment as enrollment_module
+
+    monkeypatch.setattr(enrollment_module.httpx, "AsyncClient", _FakeUploadAsyncClient)
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "missing")
+    audio = tmp_path / "sample.wav"
+    audio.write_bytes(b"audio-bytes")
+    session.touch_audio(audio)
+    session.touch_preview(0.9, [0.1, 0.2])
+    await store.replace(session)
+
+    java = _StubJavaClient()
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=java, session_store=store))
+    headers = {
+        "Authorization": f"Bearer {make_admin_token()}",
+        "X-Request-Id": "req_1",
+        "X-Trace-Id": "trace_1",
+        "Idempotency-Key": "idem_1",
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.post(f"/admin/enrollment/sessions/{session.session_id}/commit", headers=headers)
+
+    assert response.status_code == 404
+    assert [call["path"] for call in java.received] == ["/api/persons/missing"]
+    assert await store.get(session.session_id) is not None
+    assert audio.exists()
+
+
+@pytest.mark.asyncio
+async def test_commit_requires_selected_person_before_java_writes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import ai_worker.admin.enrollment as enrollment_module
+
+    monkeypatch.setattr(enrollment_module.httpx, "AsyncClient", _FakeUploadAsyncClient)
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", None)
+    audio = tmp_path / "sample.wav"
+    audio.write_bytes(b"audio-bytes")
+    session.touch_audio(audio)
+    session.touch_preview(0.9, [0.1, 0.2])
+    await store.replace(session)
+
+    java = _StubJavaClient()
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=java, session_store=store))
+    headers = {
+        "Authorization": f"Bearer {make_admin_token()}",
+        "X-Request-Id": "req_1",
+        "X-Trace-Id": "trace_1",
+        "Idempotency-Key": "idem_1",
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.post(f"/admin/enrollment/sessions/{session.session_id}/commit", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "ENROLLMENT_PERSON_REQUIRED"
+    assert java.received == []
+    assert await store.get(session.session_id) is not None
+    assert audio.exists()
 
 
 @pytest.mark.asyncio

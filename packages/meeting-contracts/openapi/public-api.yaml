@@ -959,6 +959,29 @@ paths:
         '422':
           $ref: '#/components/responses/Unprocessable'
 
+  /persons/{personId}:
+    get:
+      operationId: getPerson
+      description: Retrieve a person by ID in the current tenant.
+      tags: [Persons]
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Person found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ── Speaker Profiles ────────────────────────────────────────
   /speaker-profiles:
     get:
@@ -1882,6 +1905,11 @@ components:
       schema: {type: string}
     MeetingId:
       name: meetingId
+      in: path
+      required: true
+      schema: {type: string}
+    PersonId:
+      name: personId
       in: path
       required: true
       schema: {type: string}

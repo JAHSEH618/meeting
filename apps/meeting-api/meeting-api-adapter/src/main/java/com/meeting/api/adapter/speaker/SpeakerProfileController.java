@@ -57,8 +57,8 @@ public class SpeakerProfileController {
             TenantContextHolder.currentTenantId(),
             body.personId(),
             body.displayName(),
-            body.consentSource(),
-            body.consentVersion(),
+            body.resolvedConsentSource(),
+            body.resolvedConsentVersion(),
             userId,
             requestId,
             traceId,
@@ -102,7 +102,7 @@ public class SpeakerProfileController {
         SpeakerEnrollmentDTO result = facade.addEnrollment(new CreateSpeakerEnrollmentCommand(
             TenantContextHolder.currentTenantId(),
             profileId,
-            body.sourceAudioFileId(),
+            body.resolvedAudioFileId(),
             userId,
             requestId,
             traceId,
@@ -124,14 +124,35 @@ public class SpeakerProfileController {
     public record CreateProfileRequest(
         String personId,
         String displayName,
+        String consentReference,
         String consentSource,
         String consentVersion
     ) {
+        String resolvedConsentSource() {
+            if (consentReference == null || consentReference.isBlank()) {
+                return consentSource;
+            }
+            int separator = consentReference.indexOf(':');
+            return separator < 0 ? consentReference : consentReference.substring(0, separator);
+        }
+
+        String resolvedConsentVersion() {
+            if (consentReference == null || consentReference.isBlank()) {
+                return consentVersion;
+            }
+            int separator = consentReference.indexOf(':');
+            return separator < 0 || separator == consentReference.length() - 1
+                ? null
+                : consentReference.substring(separator + 1);
+        }
     }
 
     public record RevokeRequest(String reason) {
     }
 
-    public record CreateEnrollmentRequest(String sourceAudioFileId) {
+    public record CreateEnrollmentRequest(String audioFileId, String sourceAudioFileId, String consentReference, String language) {
+        String resolvedAudioFileId() {
+            return audioFileId == null || audioFileId.isBlank() ? sourceAudioFileId : audioFileId;
+        }
     }
 }

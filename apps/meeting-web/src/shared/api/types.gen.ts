@@ -484,6 +484,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/persons/{personId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retrieve a person by ID in the current tenant. */
+        get: operations["getPerson"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/speaker-profiles": {
         parameters: {
             query?: never;
@@ -2133,6 +2150,7 @@ export interface components {
     parameters: {
         UserId: string;
         MeetingId: string;
+        PersonId: string;
         UploadId: string;
         TaskId: string;
         XRequestId: string;
@@ -3077,6 +3095,34 @@ export interface operations {
                 };
             };
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getPerson: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Person found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listSpeakerProfiles: {

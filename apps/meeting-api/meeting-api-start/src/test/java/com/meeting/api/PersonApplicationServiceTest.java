@@ -139,6 +139,20 @@ class PersonApplicationServiceTest {
             .containsExactly("person_1");
     }
 
+    @Test
+    void getReturnsTenantOwnedPersonById() {
+        InMemoryPersons people = new InMemoryPersons();
+        people.save(new Person("person_1", "tenant_01", "Alice Wang", "alice@example.com", null, "ACTIVE", now()));
+        people.save(new Person("person_1", "tenant_other", "Other Alice", "other@example.com", null, "ACTIVE", now()));
+        PersonApplicationService service = new PersonApplicationService(people, TenantScopedTransaction.immediate(), CLOCK);
+
+        var dto = service.get("tenant_01", "person_1");
+
+        assertThat(dto).isPresent();
+        assertThat(dto.get().displayName()).isEqualTo("Alice Wang");
+        assertThat(service.get("tenant_01", "missing")).isEmpty();
+    }
+
     private static CreatePersonCommand command(String displayName, String email, boolean forceCreate) {
         return new CreatePersonCommand(
             "tenant_01",
