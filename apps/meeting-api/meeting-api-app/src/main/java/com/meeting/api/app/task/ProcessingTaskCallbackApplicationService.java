@@ -99,10 +99,11 @@ public class ProcessingTaskCallbackApplicationService {
             ));
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             task.updateWorkerStep(
                 command.stepName(),
                 command.status(),
@@ -120,6 +121,7 @@ public class ProcessingTaskCallbackApplicationService {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
             task.heartbeat(
                 command.stepName(),
                 command.progress(),
@@ -138,6 +140,7 @@ public class ProcessingTaskCallbackApplicationService {
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
             requireSpeakerEnrollmentSucceededForComplete(command, task);
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
                 return ProcessingTaskAssembler.toDto(task);
@@ -173,6 +176,21 @@ public class ProcessingTaskCallbackApplicationService {
         });
     }
 
+    private static void requireCallbackMeetingMatchesTask(String callbackMeetingId, ProcessingTask task) {
+        if (task.meetingId() == null || task.meetingId().isBlank()) {
+            if (callbackMeetingId != null && !callbackMeetingId.isBlank()) {
+                throw new IllegalStateException("callback meeting does not match task");
+            }
+            return;
+        }
+        if (callbackMeetingId == null || callbackMeetingId.isBlank()) {
+            throw new IllegalArgumentException("meetingId is required for task callback");
+        }
+        if (!callbackMeetingId.equals(task.meetingId())) {
+            throw new IllegalStateException("callback meeting does not match task");
+        }
+    }
+
     private void requireSpeakerEnrollmentSucceededForComplete(CompleteWorkerPhaseCommand command, ProcessingTask task) {
         if (!ProcessingTaskApplicationService.SPEAKER_ENROLLMENT.equals(task.taskType())
             || command.status() != ProcessingTaskStatus.SUCCEEDED) {
@@ -194,8 +212,9 @@ public class ProcessingTaskCallbackApplicationService {
     public ProcessingTaskDTO fail(FailTaskCommand command) {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name());
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name());
             task.updateWorkerStep(
                 command.failedStep(),
                 StepStatus.FAILED,

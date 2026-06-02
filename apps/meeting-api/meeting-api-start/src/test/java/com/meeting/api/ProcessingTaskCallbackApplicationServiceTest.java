@@ -75,6 +75,54 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void updateStepRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.updateStep(new StepCallbackCommand(
+            metadata("PATCH", "/internal/processing-tasks/task_01/steps/ASR", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            StepStatus.SUCCEEDED,
+            100,
+            null,
+            null
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.step(ProcessingStep.ASR).status()).isEqualTo(StepStatus.PENDING);
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
+    void updateStepHeartbeatRejectsMismatchedMeetingId() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.updateStep(new StepCallbackCommand(
+            metadata("PATCH", "/internal/processing-tasks/task_01/steps/AUDIO_PREPROCESS", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.AUDIO_PREPROCESS,
+            StepStatus.RUNNING,
+            25,
+            null,
+            null
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.step(ProcessingStep.AUDIO_PREPROCESS).progress()).isZero();
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
     void completeWorkerPhaseMovesPhaseButNotTaskTerminalAndPublishesEvent() {
         InMemoryTaskRepository tasks = runningTask();
         CapturingPublisher publisher = new CapturingPublisher();
@@ -97,6 +145,33 @@ class ProcessingTaskCallbackApplicationServiceTest {
         assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
         assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_DONE);
         assertThat(publisher.events).singleElement().isInstanceOf(WorkerPhaseCompletedEvent.class);
+    }
+
+    @Test
+    void completeWorkerPhaseRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, publisher);
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
+            List.of(),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(publisher.events).isEmpty();
+        assertThat(callbacks.records).isEmpty();
     }
 
     @Test
@@ -196,6 +271,30 @@ class ProcessingTaskCallbackApplicationServiceTest {
         assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.FAILED);
         assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
         assertThat(dto.lastErrorCode()).isEqualTo("ASR_RUNTIME_ERROR");
+    }
+
+    @Test
+    void failRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(callbacks.records).isEmpty();
     }
 
     @Test
