@@ -2,12 +2,14 @@ package com.meeting.api.app.speaker;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.transcript.TranscriptApplicationService;
+import com.meeting.api.client.speaker.MeetingSpeakerCandidateDTO;
 import com.meeting.api.client.speaker.MeetingSpeakerDTO;
 import com.meeting.api.domain.person.Person;
 import com.meeting.api.domain.person.PersonRepository;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository.MeetingSpeakerRecord;
+import com.meeting.api.domain.speaker.MeetingSpeakerRepository.SpeakerCandidate;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
 import com.meeting.api.domain.transcript.TranscriptRepository;
@@ -157,7 +159,35 @@ public class MeetingSpeakerApplicationService {
             confirmationStatus(r),
             r.autoMatchScore(),
             r.confirmedAt(),
-            r.candidatePersonIds()
+            toCandidateDtos(tenantId, r.candidates())
+        );
+    }
+
+    private List<MeetingSpeakerCandidateDTO> toCandidateDtos(String tenantId, List<SpeakerCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
+        return candidates.stream()
+            .map(candidate -> toCandidateDto(tenantId, candidate))
+            .filter(java.util.Objects::nonNull)
+            .toList();
+    }
+
+    private MeetingSpeakerCandidateDTO toCandidateDto(String tenantId, SpeakerCandidate candidate) {
+        if (candidate == null
+            || !hasText(candidate.personId())
+            || !hasText(candidate.speakerProfileId())) {
+            return null;
+        }
+        SpeakerProfile profile = speakerProfileRepository.findById(tenantId, candidate.speakerProfileId()).orElse(null);
+        if (profile == null || !profile.isActive() || !candidate.personId().equals(profile.personId())) {
+            return null;
+        }
+        return new MeetingSpeakerCandidateDTO(
+            candidate.personId(),
+            candidate.speakerProfileId(),
+            resolveDisplayName(tenantId, candidate.personId(), profile),
+            candidate.confidence()
         );
     }
 

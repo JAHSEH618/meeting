@@ -104,6 +104,89 @@ class SpeakerAutoConfirmServiceTest {
     }
 
     @Test
+    void listExposesFullCandidatesWithProfileDisplayName() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speakerWithCandidates(
+                "SPEAKER_00",
+                List.of(new MeetingSpeakerRepository.SpeakerCandidate("person_01", "profile_01", 0.91)),
+                0.91,
+                "CANDIDATE"
+            )
+        ));
+        MeetingSpeakerApplicationService confirmService = confirmService(
+            speakers,
+            new Profiles(List.of(SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            ))),
+            new InMemoryPersons(List.of(new Person(
+                "person_01",
+                "tenant_01",
+                "Alice Person",
+                "alice@example.com",
+                null,
+                "ACTIVE",
+                NOW
+            )))
+        );
+
+        assertThat(confirmService.list("tenant_01", "meeting_01"))
+            .singleElement()
+            .satisfies(dto -> assertThat(dto.candidates())
+                .singleElement()
+                .satisfies(candidate -> {
+                    assertThat(candidate.personId()).isEqualTo("person_01");
+                    assertThat(candidate.speakerProfileId()).isEqualTo("profile_01");
+                    assertThat(candidate.displayName()).isEqualTo("Alice Profile");
+                    assertThat(candidate.confidence()).isEqualTo(0.91);
+                }));
+    }
+
+    @Test
+    void listHidesStoredCandidateWhenProfileWasRevokedAfterCallback() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speakerWithCandidates(
+                "SPEAKER_00",
+                List.of(new MeetingSpeakerRepository.SpeakerCandidate("person_01", "profile_01", 0.91)),
+                0.91,
+                "CANDIDATE"
+            )
+        ));
+        MeetingSpeakerApplicationService confirmService = confirmService(
+            speakers,
+            new Profiles(List.of(SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "REVOKED",
+                "INVITE",
+                "v1",
+                "user_01",
+                NOW.minusHours(1),
+                null,
+                NOW.minusDays(1),
+                NOW.minusHours(1)
+            ))),
+            new InMemoryPersons(List.of())
+        );
+
+        assertThat(confirmService.list("tenant_01", "meeting_01"))
+            .singleElement()
+            .satisfies(dto -> assertThat(dto.candidates()).isEmpty());
+    }
+
+    @Test
     void humanConfirmRejectsStaleTranscriptVersionBeforeMutatingSpeakerOrTranscript() {
         InMemorySpeakers speakers = new InMemorySpeakers(List.of(
             speaker("SPEAKER_00", List.of("person_01"), 0.92, "CANDIDATE")
@@ -161,14 +244,56 @@ class SpeakerAutoConfirmServiceTest {
         TranscriptRepository transcriptRepository,
         PersonRepository personRepository
     ) {
+        return confirmService(speakers, new EmptySpeakerProfiles(), transcriptRepository, personRepository);
+    }
+
+    private static MeetingSpeakerApplicationService confirmService(
+        InMemorySpeakers speakers,
+        SpeakerProfileRepository speakerProfileRepository,
+        PersonRepository personRepository
+    ) {
+        return confirmService(speakers, speakerProfileRepository, new NoopTranscriptRepository(), personRepository);
+    }
+
+    private static MeetingSpeakerApplicationService confirmService(
+        InMemorySpeakers speakers,
+        SpeakerProfileRepository speakerProfileRepository,
+        TranscriptRepository transcriptRepository,
+        PersonRepository personRepository
+    ) {
         return new MeetingSpeakerApplicationService(
             speakers,
-            new EmptySpeakerProfiles(),
+            speakerProfileRepository,
             personRepository,
             transcriptRepository,
             new NoopKnowledgeChunkRepository(),
             TenantScopedTransaction.immediate(),
             CLOCK
+        );
+    }
+
+    private static MeetingSpeakerRepository.MeetingSpeakerRecord speakerWithCandidates(
+        String label,
+        List<MeetingSpeakerRepository.SpeakerCandidate> candidates,
+        Double score,
+        String status
+    ) {
+        return new MeetingSpeakerRepository.MeetingSpeakerRecord(
+            "ms_" + label,
+            "tenant_01",
+            "meeting_01",
+            label,
+            label,
+            candidates.stream().map(MeetingSpeakerRepository.SpeakerCandidate::personId).toList(),
+            candidates,
+            score,
+            "WORKER",
+            status,
+            null,
+            null,
+            null,
+            NOW,
+            NOW
         );
     }
 
@@ -274,6 +399,7 @@ class SpeakerAutoConfirmServiceTest {
                         record.speakerLabel(),
                         record.globalSpeakerLabel(),
                         record.candidatePersonIds(),
+                        record.candidates(),
                         record.autoMatchScore(),
                         record.matchSource(),
                         "CONFIRMED",
@@ -307,6 +433,44 @@ class SpeakerAutoConfirmServiceTest {
         @Override public Optional<SpeakerProfile> findById(String tenantId, String profileId) { return Optional.empty(); }
         @Override public List<SpeakerProfile> listByTenant(String tenantId, boolean includeRevoked) { return List.of(); }
         @Override public List<SpeakerProfile> findByIds(String tenantId, List<String> profileIds) { return List.of(); }
+        @Override public void updateConsentStatus(
+            String tenantId,
+            String profileId,
+            String consentStatus,
+            OffsetDateTime revokedAt,
+            OffsetDateTime deletedAt,
+            OffsetDateTime updatedAt
+        ) {
+        }
+    }
+
+    private static final class Profiles implements SpeakerProfileRepository {
+        private final List<SpeakerProfile> profiles;
+
+        private Profiles(List<SpeakerProfile> profiles) {
+            this.profiles = profiles;
+        }
+
+        @Override public SpeakerProfile save(SpeakerProfile profile) { return profile; }
+
+        @Override
+        public Optional<SpeakerProfile> findById(String tenantId, String profileId) {
+            return profiles.stream()
+                .filter(profile -> tenantId.equals(profile.tenantId()))
+                .filter(profile -> profileId.equals(profile.id()))
+                .findFirst();
+        }
+
+        @Override public List<SpeakerProfile> listByTenant(String tenantId, boolean includeRevoked) { return List.of(); }
+
+        @Override
+        public List<SpeakerProfile> findByIds(String tenantId, List<String> profileIds) {
+            return profiles.stream()
+                .filter(profile -> tenantId.equals(profile.tenantId()))
+                .filter(profile -> profileIds.contains(profile.id()))
+                .toList();
+        }
+
         @Override public void updateConsentStatus(
             String tenantId,
             String profileId,

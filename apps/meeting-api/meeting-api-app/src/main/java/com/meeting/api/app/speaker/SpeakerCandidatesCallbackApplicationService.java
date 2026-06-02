@@ -7,6 +7,7 @@ import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
 import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
+import com.meeting.api.domain.speaker.MeetingSpeakerRepository.SpeakerCandidate;
 import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
@@ -103,6 +104,7 @@ public class SpeakerCandidatesCallbackApplicationService {
 
             for (var speaker : command.speakers()) {
                 List<String> filteredCandidatePersonIds = new ArrayList<>();
+                List<SpeakerCandidate> filteredCandidates = new ArrayList<>();
                 double topConfidence = 0.0;
                 for (var candidate : speaker.candidates()) {
                     if (candidate.speakerProfileId() == null) continue;
@@ -114,6 +116,11 @@ public class SpeakerCandidatesCallbackApplicationService {
                     if (candidate.personId() != null) {
                         filteredCandidatePersonIds.add(candidate.personId());
                     }
+                    filteredCandidates.add(new SpeakerCandidate(
+                        candidate.personId(),
+                        candidate.speakerProfileId(),
+                        candidate.confidence()
+                    ));
                     if (candidate.confidence() > topConfidence) {
                         topConfidence = candidate.confidence();
                     }
@@ -155,6 +162,7 @@ public class SpeakerCandidatesCallbackApplicationService {
                         command.meetingId(),
                         speaker.speakerLabel(),
                         filteredCandidatePersonIds,
+                        filteredCandidates,
                         topConfidence == 0.0 ? null : topConfidence,
                         "AI_MATCH",
                         now

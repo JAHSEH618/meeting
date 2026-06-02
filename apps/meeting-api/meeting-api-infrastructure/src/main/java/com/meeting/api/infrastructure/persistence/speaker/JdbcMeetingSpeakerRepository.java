@@ -1,8 +1,10 @@
 package com.meeting.api.infrastructure.persistence.speaker;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
+import com.meeting.api.domain.speaker.MeetingSpeakerRepository.SpeakerCandidate;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -14,6 +16,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
+    private static final TypeReference<List<SpeakerCandidate>> SPEAKER_CANDIDATE_LIST_TYPE = new TypeReference<>() {};
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -28,6 +32,7 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
             """
             SELECT id, tenant_id, meeting_id, speaker_label, global_speaker_label,
                    candidate_person_ids::text AS candidate_person_ids,
+                   candidates::text AS candidates,
                    auto_match_score, match_source, verification_status,
                    confirmed_person_id, confirmed_by, confirmed_at, created_at, updated_at
               FROM meeting_speakers
@@ -46,6 +51,7 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
             """
             SELECT id, tenant_id, meeting_id, speaker_label, global_speaker_label,
                    candidate_person_ids::text AS candidate_person_ids,
+                   candidates::text AS candidates,
                    auto_match_score, match_source, verification_status,
                    confirmed_person_id, confirmed_by, confirmed_at, created_at, updated_at
               FROM meeting_speakers
@@ -73,14 +79,25 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
     public void saveCandidates(String tenantId, String meetingId, String speakerLabel,
                                 List<String> candidatePersonIds, Double autoMatchScore, String matchSource,
                                 OffsetDateTime now) {
-        String json = toJson(candidatePersonIds);
+        saveCandidates(tenantId, meetingId, speakerLabel, candidatePersonIds, List.of(), autoMatchScore, matchSource, now);
+    }
+
+    @Override
+    public void saveCandidates(String tenantId, String meetingId, String speakerLabel,
+                                List<String> candidatePersonIds, List<SpeakerCandidate> candidates,
+                                Double autoMatchScore, String matchSource, OffsetDateTime now) {
+        List<String> normalizedCandidatePersonIds = normalizeCandidatePersonIds(candidatePersonIds, candidates);
+        String candidatePersonIdsJson = toJson(normalizedCandidatePersonIds);
+        String candidatesJson = toJson(candidates);
         int updated = jdbcTemplate.update(
             """
             UPDATE meeting_speakers
-               SET candidate_person_ids = ?::jsonb, auto_match_score = ?, match_source = ?, updated_at = ?
+               SET candidate_person_ids = ?::jsonb, candidates = ?::jsonb,
+                   auto_match_score = ?, match_source = ?, updated_at = ?
              WHERE tenant_id = ? AND meeting_id = ? AND speaker_label = ?
             """,
-            json,
+            candidatePersonIdsJson,
+            candidatesJson,
             autoMatchScore,
             matchSource,
             Timestamp.from(now.toInstant()),
@@ -92,15 +109,16 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
             jdbcTemplate.update(
                 """
                 INSERT INTO meeting_speakers (
-                  id, tenant_id, meeting_id, speaker_label, candidate_person_ids,
+                  id, tenant_id, meeting_id, speaker_label, candidate_person_ids, candidates,
                   auto_match_score, match_source, verification_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, 'CANDIDATE', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, 'CANDIDATE', ?, ?)
                 """,
                 "msp_" + UUID.randomUUID().toString().replace("-", ""),
                 tenantId,
                 meetingId,
                 speakerLabel,
-                json,
+                candidatePersonIdsJson,
+                candidatesJson,
                 autoMatchScore,
                 matchSource,
                 Timestamp.from(now.toInstant()),
@@ -155,6 +173,7 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
             rs.getString("speaker_label"),
             rs.getString("global_speaker_label"),
             fromJson(rs.getString("candidate_person_ids")),
+            candidatesFromJson(rs.getString("candidates")),
             autoMatchScore,
             rs.getString("match_source"),
             rs.getString("verification_status"),
@@ -166,9 +185,9 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
         );
     }
 
-    private String toJson(List<String> list) {
+    private String toJson(Object value) {
         try {
-            return objectMapper.writeValueAsString(list == null ? List.of() : list);
+            return objectMapper.writeValueAsString(value == null ? List.of() : value);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
@@ -186,5 +205,28 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    private List<SpeakerCandidate> candidatesFromJson(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            List<SpeakerCandidate> candidates = objectMapper.readValue(json, SPEAKER_CANDIDATE_LIST_TYPE);
+            return candidates == null ? List.of() : candidates;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private static List<String> normalizeCandidatePersonIds(List<String> candidatePersonIds, List<SpeakerCandidate> candidates) {
+        if (candidatePersonIds != null) {
+            return candidatePersonIds;
+        }
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
+        return candidates.stream()
+            .map(SpeakerCandidate::personId)
+            .filter(personId -> personId != null && !personId.isBlank())
+            .toList();
     }
 }
