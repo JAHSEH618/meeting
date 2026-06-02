@@ -102,4 +102,26 @@ describe("NewMeetingPage", () => {
       expect(screen.getAllByText(/FILE_MIME_NOT_ALLOWED: unsupported file type/).length).toBeGreaterThan(0);
     });
   });
+
+  it("cancels optional reference upload without surfacing an aborted-upload business error", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    let resolveUpload: () => void = () => {};
+    globalThis.fetch = vi.fn(async () => new Promise<Response>((resolve) => {
+      resolveUpload = () => resolve(new Response("", { status: 200, headers: { etag: '"etag-1"' } }));
+    })) as unknown as typeof fetch;
+    render(<MemoryRouter><NewMeetingPage /></MemoryRouter>);
+
+    fireEvent.change(screen.getByLabelText(/参考文档上传/), {
+      target: { files: [new File([new Uint8Array(4)], "optional.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument());
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    resolveUpload();
+
+    await waitFor(() => expect(endpoints.abortFileUpload).toHaveBeenCalledWith("doc-up"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/UPLOAD_ABORTED|upload aborted/i)).not.toBeInTheDocument();
+  });
 });

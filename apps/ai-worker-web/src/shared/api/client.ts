@@ -204,7 +204,7 @@ export function subscribeEventStream<T = unknown>(
             if (data) handlers.onEvent(JSON.parse(data) as T);
           }
         }
-      } catch (error) {
+      } catch {
         if (controller.signal.aborted) return;
         failures += 1;
       }

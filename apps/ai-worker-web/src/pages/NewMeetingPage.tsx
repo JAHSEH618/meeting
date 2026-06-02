@@ -113,6 +113,7 @@ export function NewMeetingPage() {
         { documentId: document.documentId, title: document.title, source: "uploaded" },
       ]);
     } catch (e) {
+      if (isUploadAborted(e)) return;
       setUploadingDocuments((current) =>
         current.map((item) =>
           item.id === id ? { ...item, status: "failed", error: formatError(e) } : item,
@@ -135,7 +136,6 @@ export function NewMeetingPage() {
       });
       if (terms.length > 0) await updateMeetingGlossary(meeting.meetingId, terms);
       for (const document of selectedDocuments) {
-        // eslint-disable-next-line no-await-in-loop
         await attachMeetingDocument(meeting.meetingId, { documentId: document.documentId, role: "REFERENCE" });
       }
       const audioUploader = new MultipartUploader({
@@ -371,4 +371,8 @@ function formatError(e: unknown): string {
   if (e instanceof MultipartUploadError) return `${e.code}: ${e.message}`;
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+function isUploadAborted(e: unknown): boolean {
+  return e instanceof MultipartUploadError && e.code === "UPLOAD_ABORTED";
 }

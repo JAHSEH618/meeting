@@ -72,7 +72,6 @@ export function MeetingDetailPage() {
       eventStream?.close();
       if (pollTimer) clearInterval(pollTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
 
   const securityBlocked = task?.lastErrorCode === "SECURITY_LEVEL_BLOCKED" ||
@@ -131,14 +130,12 @@ export function MeetingDetailPage() {
       const created = await createExport(meetingId, "DOCX");
       setExportJob(created);
       for (let attempt = 0; attempt < 30; attempt += 1) {
-        // eslint-disable-next-line no-await-in-loop
         const polled = await pollExport(meetingId, created.exportId);
         setExportJob(polled);
         if (polled.status === "SUCCEEDED" && polled.downloadUrl) return;
         if (["FAILED", "CANCELLED", "REVOKED"].includes(polled.status)) {
           throw new Error(`导出失败: ${polled.status}`);
         }
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     } catch (e) {
