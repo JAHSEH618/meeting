@@ -256,3 +256,34 @@ async def test_commit_uses_speaker_profiles_and_generic_file_upload(tmp_path: Pa
     assert enroll_body == {"sourceAudioFileId": "file_01"}
     assert await store.get(session.session_id) is None
     assert not audio.exists()
+
+
+@pytest.mark.asyncio
+async def test_commit_rejects_low_quality_preview_before_java_writes(tmp_path: Path):
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "person_01")
+    audio = tmp_path / "weak.wav"
+    audio.write_bytes(b"weak-audio")
+    session.touch_audio(audio)
+    session.touch_preview(0.49, [0.1, 0.2])
+    await store.replace(session)
+
+    java = _StubJavaClient()
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=java, session_store=store))
+    headers = {
+        "Authorization": f"Bearer {make_admin_token()}",
+        "X-Request-Id": "req_1",
+        "X-Trace-Id": "trace_1",
+        "Idempotency-Key": "idem_1",
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.post(f"/admin/enrollment/sessions/{session.session_id}/commit", headers=headers)
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error"]["code"] == "AUDIO_QUALITY_LOW"
+    assert java.received == []
+    assert await store.get(session.session_id) is not None
+    assert audio.exists()

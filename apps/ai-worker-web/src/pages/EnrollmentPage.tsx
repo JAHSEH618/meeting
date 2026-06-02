@@ -73,6 +73,7 @@ export function EnrollmentPage() {
 
   const qualityScore = session?.qualityScore;
   const qualityHigh = typeof qualityScore === "number" && qualityScore >= QUALITY_THRESHOLD;
+  const canCommit = session?.state === "PREVIEWED" && qualityHigh && !busy;
 
   return (
     <div className="stack">
@@ -199,7 +200,7 @@ export function EnrollmentPage() {
         <button
           className="button button--primary"
           onClick={() => void handleCommit()}
-          disabled={!session || session.state !== "PREVIEWED" || busy}
+          disabled={!canCommit}
         >
           确认录入
         </button>

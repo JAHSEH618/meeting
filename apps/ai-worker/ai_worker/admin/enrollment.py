@@ -28,6 +28,7 @@ from ai_worker.admin.session_store import EnrollmentSession, EnrollmentSessionSt
 _log = logging.getLogger(__name__)
 
 
+QUALITY_THRESHOLD = 0.5
 PreviewFn = Callable[[Path, EnrollmentSession], Awaitable[dict[str, Any]]]
 
 
@@ -141,6 +142,20 @@ def build_enrollment_router(
             return error(status_code=409, code="ENROLLMENT_AUDIO_MISSING",
                          message="audio file missing before commit", retryable=False,
                          request_id=x_request_id, trace_id=x_trace_id)
+        quality_score = session.quality_score if session.quality_score is not None else 0.0
+        if quality_score < QUALITY_THRESHOLD:
+            return error(
+                status_code=409,
+                code="AUDIO_QUALITY_LOW",
+                message=(
+                    f"enrollment preview quality {quality_score:.2f} "
+                    f"is below required threshold {QUALITY_THRESHOLD:.2f}"
+                ),
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+                details={"qualityScore": quality_score, "threshold": QUALITY_THRESHOLD},
+            )
 
         # Three-step orchestration: profile → generic file upload → enrollment record.
         # Each Java call is independently idempotent via its own Idempotency-Key.
