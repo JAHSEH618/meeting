@@ -308,6 +308,7 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
             String meetingId,
             String speakerLabel,
             String confirmedPersonId,
+            String confirmedSpeakerProfileId,
             String confirmedBy,
             OffsetDateTime now
         ) {

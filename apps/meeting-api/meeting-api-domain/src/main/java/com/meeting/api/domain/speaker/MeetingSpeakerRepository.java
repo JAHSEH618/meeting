@@ -31,7 +31,7 @@ public interface MeetingSpeakerRepository {
 
     /** Persist the user's confirmation decision. */
     void confirm(String tenantId, String meetingId, String speakerLabel,
-                  String confirmedPersonId, String confirmedBy, OffsetDateTime now);
+                  String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now);
 
     void reject(String tenantId, String meetingId, String speakerLabel,
                  String rejectedBy, OffsetDateTime now);
@@ -48,6 +48,7 @@ public interface MeetingSpeakerRepository {
         String matchSource,
         String verificationStatus,
         String confirmedPersonId,
+        String confirmedSpeakerProfileId,
         String confirmedBy,
         OffsetDateTime confirmedAt,
         OffsetDateTime createdAt,
@@ -64,6 +65,7 @@ public interface MeetingSpeakerRepository {
             String matchSource,
             String verificationStatus,
             String confirmedPersonId,
+            String confirmedSpeakerProfileId,
             String confirmedBy,
             OffsetDateTime confirmedAt,
             OffsetDateTime createdAt,
@@ -81,6 +83,7 @@ public interface MeetingSpeakerRepository {
                 matchSource,
                 verificationStatus,
                 confirmedPersonId,
+                confirmedSpeakerProfileId,
                 confirmedBy,
                 confirmedAt,
                 createdAt,

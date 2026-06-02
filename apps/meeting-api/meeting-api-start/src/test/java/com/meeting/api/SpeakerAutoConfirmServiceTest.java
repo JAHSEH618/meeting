@@ -104,6 +104,50 @@ class SpeakerAutoConfirmServiceTest {
     }
 
     @Test
+    void autoConfirmRetainsSingleCandidateSpeakerProfileIdWhenAvailable() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speakerWithCandidates(
+                "SPEAKER_00",
+                List.of(new MeetingSpeakerRepository.SpeakerCandidate("person_01", "profile_01", 0.92)),
+                0.92,
+                "CANDIDATE"
+            )
+        ));
+        CapturingTranscriptRepository transcriptRepository = new CapturingTranscriptRepository();
+        MeetingSpeakerApplicationService confirmService = confirmService(
+            speakers,
+            new Profiles(List.of(SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            ))),
+            transcriptRepository,
+            new InMemoryPersons(List.of())
+        );
+        SpeakerAutoConfirmService service = service(speakers, confirmService, new CapturingAudit());
+
+        service.autoConfirmAboveThreshold("tenant_01", "task_01");
+
+        assertThat(transcriptRepository.lastDisplayName).isEqualTo("Alice Profile");
+        assertThat(confirmService.list("tenant_01", "meeting_01"))
+            .singleElement()
+            .satisfies(dto -> {
+                assertThat(dto.personId()).isEqualTo("person_01");
+                assertThat(dto.speakerProfileId()).isEqualTo("profile_01");
+                assertThat(dto.confirmationStatus()).isEqualTo("AUTO_CONFIRMED");
+            });
+    }
+
+    @Test
     void listExposesFullCandidatesWithProfileDisplayName() {
         InMemorySpeakers speakers = new InMemorySpeakers(List.of(
             speakerWithCandidates(
@@ -150,6 +194,54 @@ class SpeakerAutoConfirmServiceTest {
                     assertThat(candidate.displayName()).isEqualTo("Alice Profile");
                     assertThat(candidate.confidence()).isEqualTo(0.91);
                 }));
+    }
+
+    @Test
+    void humanConfirmRetainsChosenSpeakerProfileIdInSpeakerList() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speakerWithCandidates(
+                "SPEAKER_00",
+                List.of(new MeetingSpeakerRepository.SpeakerCandidate("person_01", "profile_01", 0.91)),
+                0.91,
+                "CANDIDATE"
+            )
+        ));
+        MeetingSpeakerApplicationService confirmService = confirmService(
+            speakers,
+            new Profiles(List.of(SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            ))),
+            new InMemoryPersons(List.of())
+        );
+
+        confirmService.confirm(
+            "tenant_01",
+            "meeting_01",
+            "SPEAKER_00",
+            "person_01",
+            "profile_01",
+            1,
+            "user_01"
+        );
+
+        assertThat(confirmService.list("tenant_01", "meeting_01"))
+            .singleElement()
+            .satisfies(dto -> {
+                assertThat(dto.personId()).isEqualTo("person_01");
+                assertThat(dto.speakerProfileId()).isEqualTo("profile_01");
+                assertThat(dto.confirmationStatus()).isEqualTo("MANUALLY_CONFIRMED");
+            });
     }
 
     @Test
@@ -292,6 +384,7 @@ class SpeakerAutoConfirmServiceTest {
             null,
             null,
             null,
+            null,
             NOW,
             NOW
         );
@@ -313,6 +406,7 @@ class SpeakerAutoConfirmServiceTest {
             score,
             "WORKER",
             status,
+            null,
             null,
             null,
             null,
@@ -382,7 +476,7 @@ class SpeakerAutoConfirmServiceTest {
 
         @Override
         public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId,
-                            String confirmedBy, OffsetDateTime now) {
+                            String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now) {
             if ("person_fail".equals(confirmedPersonId)) {
                 throw new RuntimeException("simulated confirm failure");
             }
@@ -404,6 +498,7 @@ class SpeakerAutoConfirmServiceTest {
                         record.matchSource(),
                         "CONFIRMED",
                         confirmedPersonId,
+                        confirmedSpeakerProfileId,
                         confirmedBy,
                         now,
                         record.createdAt(),

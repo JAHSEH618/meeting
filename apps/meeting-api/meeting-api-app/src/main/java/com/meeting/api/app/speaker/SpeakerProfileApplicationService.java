@@ -289,7 +289,7 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         @Override public List<MeetingSpeakerRecord> findByMeeting(String tenantId, String meetingId) { return List.of(); }
         @Override public List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId) { return List.of(); }
         @Override public void saveCandidates(String tenantId, String meetingId, String speakerLabel, List<String> candidatePersonIds, Double autoMatchScore, String matchSource, OffsetDateTime now) { }
-        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedBy, OffsetDateTime now) { }
+        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now) { }
         @Override public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy, OffsetDateTime now) { }
     }
 

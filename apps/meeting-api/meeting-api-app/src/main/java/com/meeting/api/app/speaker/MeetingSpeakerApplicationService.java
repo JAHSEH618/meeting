@@ -132,7 +132,7 @@ public class MeetingSpeakerApplicationService {
                 }
             }
             OffsetDateTime now = OffsetDateTime.now(clock);
-            meetingSpeakerRepository.confirm(tenantId, meetingId, speakerLabel, personId, confirmedBy, now);
+            meetingSpeakerRepository.confirm(tenantId, meetingId, speakerLabel, personId, speakerProfileId, confirmedBy, now);
             String displayName = resolveDisplayName(tenantId, personId, profile);
             int updated = transcriptRepository.updateSpeakerForLabel(tenantId, meetingId, speakerLabel, personId, displayName, now);
             knowledgeChunkRepository.markStaleForMeeting(tenantId, meetingId);
@@ -155,7 +155,7 @@ public class MeetingSpeakerApplicationService {
             r.speakerLabel(),
             hasText(r.confirmedPersonId()) ? resolveDisplayName(tenantId, r.confirmedPersonId(), null) : r.globalSpeakerLabel(),
             r.confirmedPersonId(),
-            null,
+            r.confirmedSpeakerProfileId(),
             confirmationStatus(r),
             r.autoMatchScore(),
             r.confirmedAt(),

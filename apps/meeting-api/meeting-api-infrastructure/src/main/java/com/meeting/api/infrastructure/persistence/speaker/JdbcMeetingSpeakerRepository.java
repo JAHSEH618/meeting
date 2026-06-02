@@ -34,7 +34,8 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
                    candidate_person_ids::text AS candidate_person_ids,
                    candidates::text AS candidates,
                    auto_match_score, match_source, verification_status,
-                   confirmed_person_id, confirmed_by, confirmed_at, created_at, updated_at
+                   confirmed_person_id, confirmed_speaker_profile_id,
+                   confirmed_by, confirmed_at, created_at, updated_at
               FROM meeting_speakers
              WHERE tenant_id = ? AND meeting_id = ? AND speaker_label = ?
             """,
@@ -53,7 +54,8 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
                    candidate_person_ids::text AS candidate_person_ids,
                    candidates::text AS candidates,
                    auto_match_score, match_source, verification_status,
-                   confirmed_person_id, confirmed_by, confirmed_at, created_at, updated_at
+                   confirmed_person_id, confirmed_speaker_profile_id,
+                   confirmed_by, confirmed_at, created_at, updated_at
               FROM meeting_speakers
              WHERE tenant_id = ? AND meeting_id = ?
              ORDER BY speaker_label
@@ -129,15 +131,16 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
 
     @Override
     public void confirm(String tenantId, String meetingId, String speakerLabel,
-                         String confirmedPersonId, String confirmedBy, OffsetDateTime now) {
+                         String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now) {
         jdbcTemplate.update(
             """
             UPDATE meeting_speakers
-               SET verification_status = 'CONFIRMED', confirmed_person_id = ?, confirmed_by = ?,
+               SET verification_status = 'CONFIRMED', confirmed_person_id = ?, confirmed_speaker_profile_id = ?, confirmed_by = ?,
                    confirmed_at = ?, updated_at = ?
              WHERE tenant_id = ? AND meeting_id = ? AND speaker_label = ?
             """,
             confirmedPersonId,
+            confirmedSpeakerProfileId,
             confirmedBy,
             Timestamp.from(now.toInstant()),
             Timestamp.from(now.toInstant()),
@@ -178,6 +181,7 @@ public class JdbcMeetingSpeakerRepository implements MeetingSpeakerRepository {
             rs.getString("match_source"),
             rs.getString("verification_status"),
             rs.getString("confirmed_person_id"),
+            rs.getString("confirmed_speaker_profile_id"),
             rs.getString("confirmed_by"),
             rs.getObject("confirmed_at", OffsetDateTime.class),
             rs.getObject("created_at", OffsetDateTime.class),

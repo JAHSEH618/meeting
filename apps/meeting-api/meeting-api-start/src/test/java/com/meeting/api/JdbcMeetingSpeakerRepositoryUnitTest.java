@@ -37,6 +37,27 @@ class JdbcMeetingSpeakerRepositoryUnitTest {
             .contains("\"confidence\":0.91");
     }
 
+    @Test
+    void confirmWritesConfirmedSpeakerProfileId() {
+        CapturingJdbcTemplate jdbc = new CapturingJdbcTemplate();
+        MeetingSpeakerRepository repo = new JdbcMeetingSpeakerRepository(jdbc, new ObjectMapper());
+
+        repo.confirm(
+            "tenant_01",
+            "meeting_01",
+            "SPEAKER_00",
+            "person_01",
+            "profile_01",
+            "user_01",
+            NOW
+        );
+
+        assertThat(jdbc.sql).contains("confirmed_speaker_profile_id");
+        assertThat(jdbc.args[0]).isEqualTo("person_01");
+        assertThat(jdbc.args[1]).isEqualTo("profile_01");
+        assertThat(jdbc.args[2]).isEqualTo("user_01");
+    }
+
     private static final class CapturingJdbcTemplate extends JdbcTemplate {
         private String sql;
         private Object[] args;

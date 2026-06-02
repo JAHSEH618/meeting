@@ -62,12 +62,13 @@ public class SpeakerAutoConfirmService {
                 return;
             }
             String personId = speaker.candidatePersonIds().get(0);
+            String speakerProfileId = singleCandidateProfileId(speaker, personId);
             meetingSpeakerApplicationService.confirm(
                 tenantId,
                 meetingId,
                 speaker.speakerLabel(),
                 personId,
-                null,
+                speakerProfileId,
                 AUTO_CONFIRM_ACTOR
             );
             logAudit(tenantId, taskId, meetingId, speaker, personId);
@@ -119,5 +120,16 @@ public class SpeakerAutoConfirmService {
 
     private static boolean isAutoConfirmableStatus(String status) {
         return "CANDIDATE".equals(status) || "UNCONFIRMED".equals(status);
+    }
+
+    private static String singleCandidateProfileId(MeetingSpeakerRecord speaker, String personId) {
+        if (speaker.candidates() == null || speaker.candidates().size() != 1) {
+            return null;
+        }
+        MeetingSpeakerRepository.SpeakerCandidate candidate = speaker.candidates().get(0);
+        if (candidate == null || candidate.speakerProfileId() == null || candidate.speakerProfileId().isBlank()) {
+            return null;
+        }
+        return personId.equals(candidate.personId()) ? candidate.speakerProfileId() : null;
     }
 }
