@@ -15,11 +15,16 @@ from ai_worker.application.workflows.text_embedding import (
 from ai_worker.domain.task import StepResult, TaskMessage
 from ai_worker.infrastructure.artifact_store import build_artifact_store
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
+from ai_worker.infrastructure.speaker.reference_client import build_default_client as build_speaker_reference_client
 from ai_worker.infrastructure.task_consumer import consume_and_validate
 from ai_worker.model_runtime.registry import (
     get_asr_runtime,
     get_bge_m3,
     get_diarization_runtime,
+)
+from ai_worker.pipeline.speaker.submit import (
+    SpeakerCandidateSubmission,
+    submit_and_clear_speaker_candidates,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +87,7 @@ class MvpWorkerRuntime:
             artifact_store=build_artifact_store(),
             asr_runtime=get_asr_runtime(),
             diarization_runtime=get_diarization_runtime(),
+            speaker_reference_supplier=build_speaker_reference_client(),
         )
         self.embedding_workflow = embedding_workflow or TextEmbeddingWorkflow(
             state_store, get_bge_m3()
@@ -113,6 +119,21 @@ class MvpWorkerRuntime:
                 return task
 
         artifact = await self.workflow_engine.complete_pipeline(context)
+
+        speaker_submissions = _speaker_submissions_from_context(context)
+        if speaker_submissions:
+            submit_speakers_response = await submit_and_clear_speaker_candidates(
+                self.callback_client,
+                task_id=task.task_id,
+                tenant_id=task.tenant_id,
+                attempt_no=task.attempt_no,
+                submissions=speaker_submissions,
+                meeting_id=task.meeting_id,
+                trace_id=task.trace_id,
+            )
+            if not submit_speakers_response.accepted:
+                await self._fail_for_writeback(task, "SPEAKER_MATCHING", "speaker-candidates callback failed")
+                return task
 
         if task.meeting_id and "TRANSCRIPT_MERGE" in task.pipeline_steps:
             transcript_response = await self.callback_client.submit_transcript(
@@ -339,3 +360,13 @@ class MvpWorkerRuntime:
             error_code="WRITEBACK_FAILED",
             error_message=message,
         )
+
+
+def _speaker_submissions_from_context(context: Any) -> list[SpeakerCandidateSubmission]:
+    if isinstance(context, dict):
+        submissions = context.get("speaker_submissions", [])
+    else:
+        submissions = getattr(context, "speaker_submissions", [])
+    if not isinstance(submissions, list):
+        return []
+    return [s for s in submissions if isinstance(s, SpeakerCandidateSubmission)]

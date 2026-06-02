@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,6 +8,9 @@ import pytest
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
+from ai_worker.pipeline.speaker.matcher import SpeakerMatchCandidate, SpeakerMatchResult
+from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
+from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
 
@@ -52,6 +56,7 @@ def callback_client():
     client = AsyncMock()
     client.update_step.return_value = CallbackResponse(http_status=200, accepted=True)
     client.submit_transcript.return_value = CallbackResponse(http_status=200, accepted=True)
+    client.submit_speaker_candidates.return_value = CallbackResponse(http_status=200, accepted=True)
     client.complete_worker_phase.return_value = CallbackResponse(http_status=200, accepted=True)
     client.fail_task.return_value = CallbackResponse(http_status=200, accepted=True)
     return client
@@ -98,6 +103,27 @@ class StubWorkflowEngine:
         )
 
 
+class StubSpeakerWorkflowEngine(StubWorkflowEngine):
+    def start_pipeline(self, task):
+        context = super().start_pipeline(task)
+        embedding = SpeakerEmbedding(
+            speaker_label="SPEAKER_00",
+            values=[1.0, 0.0],
+            dimension=2,
+            model_version="test-speaker",
+            checksum="c" * 64,
+            quality_score=0.9,
+        )
+        match = SpeakerMatchResult(
+            speaker_label="SPEAKER_00",
+            candidates=[
+                SpeakerMatchCandidate("alice", "profile_alice_01", 0.99, "CANDIDATE"),
+            ],
+        )
+        context["speaker_submissions"] = [SpeakerCandidateSubmission(embedding, match)]
+        return context
+
+
 @pytest.mark.asyncio
 async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
@@ -117,6 +143,52 @@ async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]
     assert completed_steps == _valid_message()["pipelineSteps"]
+
+
+@pytest.mark.asyncio
+async def test_consume_message_submits_speaker_candidates(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubSpeakerWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    captured: dict = {}
+
+    async def capture_speaker_candidates(**kwargs):
+        captured["kwargs"] = copy.deepcopy(kwargs)
+        return CallbackResponse(http_status=200, accepted=True)
+
+    callback_client.submit_speaker_candidates.side_effect = capture_speaker_candidates
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.submit_speaker_candidates.assert_awaited_once()
+    kwargs = captured["kwargs"]
+    assert kwargs["meeting_id"] == "mtg_01"
+    assert kwargs["speaker_candidates"][0]["speakerLabel"] == "SPEAKER_00"
+    assert kwargs["speaker_candidates"][0]["candidates"][0]["speakerProfileId"] == "profile_alice_01"
+    assert kwargs["speaker_candidates"][0]["embedding"]["values"] == [1.0, 0.0]
+    assert engine.ran_steps == _valid_message()["pipelineSteps"]
+
+
+@pytest.mark.asyncio
+async def test_speaker_candidate_callback_failure_records_writeback_failed(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubSpeakerWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    callback_client.submit_speaker_candidates.return_value = CallbackResponse(
+        http_status=503,
+        accepted=False,
+        error_code="WRITEBACK_FAILED",
+    )
+
+    await runtime.consume_message(_valid_message())
+
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None
+    assert snapshot.status == "FAILED"
+    assert snapshot.errorCode == "WRITEBACK_FAILED"
+    callback_client.fail_task.assert_awaited_once()
+    assert callback_client.fail_task.await_args.kwargs["failed_step"] == "SPEAKER_MATCHING"
+    callback_client.complete_worker_phase.assert_not_awaited()
 
 
 @pytest.mark.asyncio

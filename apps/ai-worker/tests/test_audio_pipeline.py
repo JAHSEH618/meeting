@@ -13,6 +13,8 @@ from ai_worker.infrastructure.artifact_store import LocalArtifactStore
 from ai_worker.pipeline.asr.runtime import AsrSegment
 from ai_worker.pipeline.audio.preprocess import AudioMetadata, PreprocessResult
 from ai_worker.pipeline.diarization.runtime import SpeakerTurn
+from ai_worker.pipeline.speaker.matcher import ReferenceEmbedding
+from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
 
 
 def _task(audio_uri: str) -> TaskMessage:
@@ -176,6 +178,89 @@ async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
             "diarizationConfidence": 0.77,
             "speakerConfidence": 0.0,
             "timestampPrecision": "SEGMENT",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path) -> None:
+    audio_root = tmp_path / "objects"
+    audio_path = audio_root / "meeting-audio-auska" / "raw.wav"
+    audio_path.parent.mkdir(parents=True)
+    _write_wav(audio_path)
+
+    class Preprocessor:
+        async def preprocess(self, audio_path: Path, audio_uri: str, channel_map):
+            return PreprocessResult(
+                metadata=AudioMetadata(
+                    duration_ms=900,
+                    sample_rate_hz=16000,
+                    channels=1,
+                    codec="pcm_s16le",
+                    bitrate=256000,
+                    format_name="wav",
+                ),
+                channel_map={"channelCount": 1, "layout": "mono"},
+                quality_warnings=[],
+                normalized_audio_uri=audio_uri,
+                quality_report={"durationMs": 900},
+            )
+
+    class DiarizationRuntime:
+        model_version = "test-diar"
+
+        async def diarize(self, audio_path: Path, metadata: AudioMetadata):
+            return [SpeakerTurn(speaker_label="SPEAKER_00", start_ms=0, end_ms=900, confidence=0.77)]
+
+    class SpeakerRuntime:
+        model_version = "test-speaker"
+        dimension = 2
+
+        async def embed(self, audio_path: Path, metadata: AudioMetadata, speaker_turn: SpeakerTurn):
+            return SpeakerEmbedding(
+                speaker_label=speaker_turn.speaker_label,
+                values=[1.0, 0.0],
+                dimension=2,
+                model_version=self.model_version,
+                checksum="b" * 64,
+                quality_score=0.91,
+            )
+
+    class ReferenceSupplier:
+        async def reference_embedding(self, tenant_id: str, participant_id: str, dimension: int):
+            return ReferenceEmbedding(
+                person_id=participant_id,
+                speaker_profile_id="profile_alice_01",
+                values=[1.0, 0.0],
+            )
+
+    engine = LocalAudioPipelineEngine(
+        InMemoryWorkflowStateStore(),
+        artifact_store=LocalArtifactStore(audio_root),
+        preprocessor=Preprocessor(),
+        diarization_runtime=DiarizationRuntime(),
+        speaker_embedding_runtime=SpeakerRuntime(),
+        speaker_reference_supplier=ReferenceSupplier(),
+    )
+    task = _task_with_steps(
+        "oss://meeting-audio-auska/raw.wav",
+        ("AUDIO_PREPROCESS", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING"),
+    )
+    task.known_participants.append("alice")
+
+    artifact = await engine.run_pipeline(task)
+
+    assert artifact.speaker_candidates == [
+        {
+            "speakerLabel": "SPEAKER_00",
+            "candidates": [
+                {
+                    "personId": "alice",
+                    "speakerProfileId": "profile_alice_01",
+                    "confidence": pytest.approx(1.0),
+                    "matchStatus": "CANDIDATE",
+                }
+            ],
         }
     ]
 
