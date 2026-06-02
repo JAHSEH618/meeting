@@ -561,11 +561,11 @@ export async function listSpeakerEnrollments(profileId: string) {
   return request<{ items: SpeakerEnrollment[] }>("GET", `/speaker-profiles/${profileId}/enrollments`);
 }
 
-export async function createSpeakerEnrollment(profileId: string, sourceAudioFileId: string) {
+export async function createSpeakerEnrollment(profileId: string, audioFileId: string) {
   return request<SpeakerEnrollment>(
     "POST",
     `/speaker-profiles/${profileId}/enrollments`,
-    { sourceAudioFileId },
+    { audioFileId, consentReference: "USER_ENROLLMENT:v1" },
     generateId("create-speaker-enrollment"),
   );
 }
