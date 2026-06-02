@@ -274,6 +274,33 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void failReplayWithSameBodyHashIsNoOp() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+        FailTaskCommand command = new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
+            null,
+            NOW.plusMinutes(1)
+        );
+
+        var first = service.fail(command);
+        var second = service.fail(command);
+
+        assertThat(first.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(second.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(second.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        assertThat(second.lastErrorCode()).isEqualTo("ASR_RUNTIME_ERROR");
+        assertThat(callbacks.records).hasSize(1);
+    }
+
+    @Test
     void failRejectsMismatchedMeetingIdBeforePersistingCallback() {
         InMemoryTaskRepository tasks = runningTask();
         InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
@@ -358,6 +385,43 @@ class ProcessingTaskCallbackApplicationServiceTest {
             assertThat(segment.currentText()).isEqualTo("hello world");
             assertThat(segment.segmentIndex()).isEqualTo(0);
         });
+    }
+
+    @Test
+    void transcriptCallbackRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
+
+        assertThatThrownBy(() -> service.writeTranscript(transcriptCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}"),
+            "meeting_other",
+            1
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(callbacks.records).isEmpty();
+        assertThat(transcripts.replaceCount).isZero();
+    }
+
+    @Test
+    void transcriptCallbackRejectsVersionConflictBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        transcripts.version = 2;
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
+
+        assertThatThrownBy(() -> service.writeTranscript(transcriptCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}"),
+            "meeting_01",
+            1
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("transcript version conflict");
+
+        assertThat(callbacks.records).isEmpty();
+        assertThat(transcripts.replaceCount).isZero();
     }
 
     @Test
@@ -488,13 +552,17 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     private static TranscriptCallbackCommand transcriptCommand(CallbackMetadata metadata) {
+        return transcriptCommand(metadata, "meeting_01", 1);
+    }
+
+    private static TranscriptCallbackCommand transcriptCommand(CallbackMetadata metadata, String meetingId, int transcriptVersion) {
         return new TranscriptCallbackCommand(
             metadata,
             "tenant_01",
-            "meeting_01",
+            meetingId,
             "task_01",
             1,
-            1,
+            transcriptVersion,
             List.of(new TranscriptCallbackCommand.Segment(
                 "seg_01",
                 0,

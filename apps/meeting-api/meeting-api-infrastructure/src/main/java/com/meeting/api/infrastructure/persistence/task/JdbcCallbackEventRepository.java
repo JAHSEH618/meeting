@@ -47,11 +47,7 @@ public class JdbcCallbackEventRepository implements CallbackEventRepository {
               http_status, error_code, trace_id, processed_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET
-              response_body_hash = EXCLUDED.response_body_hash,
-              http_status = EXCLUDED.http_status,
-              error_code = EXCLUDED.error_code,
-              processed_at = EXCLUDED.processed_at
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
             """,
             "cb_" + UUID.randomUUID().toString().replace("-", ""),
             record.tenantId(),
@@ -68,6 +64,51 @@ public class JdbcCallbackEventRepository implements CallbackEventRepository {
             Timestamp.from(record.receivedAt().toInstant())
         );
         return record;
+    }
+
+    @Override
+    public RecordResult recordOnce(CallbackEventRecord record) {
+        int inserted = jdbcTemplate.update(
+            """
+            INSERT INTO callback_events (
+              id, tenant_id, task_id, worker_id, attempt_no, lease_owner,
+              idempotency_key, request_body_hash, response_body_hash,
+              http_status, error_code, trace_id, processed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            """,
+            "cb_" + UUID.randomUUID().toString().replace("-", ""),
+            record.tenantId(),
+            record.taskId(),
+            record.workerId(),
+            record.attemptNo(),
+            record.leaseOwner(),
+            record.idempotencyKey(),
+            record.bodySha256(),
+            record.responseSha256(),
+            record.httpStatus(),
+            record.errorCode(),
+            record.traceId(),
+            Timestamp.from(record.receivedAt().toInstant())
+        );
+        if (inserted == 1) {
+            return new RecordResult(RecordStatus.RECORDED, record);
+        }
+        CallbackEventRecord existing = findByIdempotencyKey(record.tenantId(), record.idempotencyKey())
+            .orElseThrow(() -> new IllegalStateException("callback idempotency record disappeared"));
+        if (isSameCallback(existing, record)) {
+            return new RecordResult(RecordStatus.REPLAYED, existing);
+        }
+        return new RecordResult(RecordStatus.BODY_HASH_CONFLICT, existing);
+    }
+
+    private static boolean isSameCallback(CallbackEventRecord previous, CallbackEventRecord current) {
+        return previous.bodySha256().equals(current.bodySha256())
+            && previous.taskId().equals(current.taskId())
+            && previous.workerId().equals(current.workerId())
+            && previous.attemptNo() == current.attemptNo()
+            && java.util.Objects.equals(previous.leaseOwner(), current.leaseOwner());
     }
 
     private CallbackEventRecord mapRecord(ResultSet rs, int rowNum) throws SQLException {

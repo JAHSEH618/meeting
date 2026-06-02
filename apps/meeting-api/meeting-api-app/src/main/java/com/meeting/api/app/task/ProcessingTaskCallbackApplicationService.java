@@ -21,6 +21,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -214,7 +215,9 @@ public class ProcessingTaskCallbackApplicationService {
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
-            persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name());
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name())) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             task.updateWorkerStep(
                 command.failedStep(),
                 StepStatus.FAILED,
@@ -260,12 +263,31 @@ public class ProcessingTaskCallbackApplicationService {
             throw new IllegalArgumentException("meetingId is required for transcript callback");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
-            if (!command.meetingId().equals(task.meetingId())) {
-                throw new IllegalStateException("callback meeting does not match task");
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            CallbackEventRepository.CallbackEventRecord callbackEvent = callbackEventRecord(
+                command.tenantId(),
+                command.taskId(),
+                command.metadata(),
+                200,
+                null
+            );
+            var existingCallback = callbackEventRepository.findByIdempotencyKey(
+                command.tenantId(),
+                command.metadata().idempotencyKey()
+            );
+            if (existingCallback.isPresent()) {
+                if (!isSameCallbackEvent(existingCallback.get(), callbackEvent)) {
+                    throw new IllegalStateException("callback idempotency body hash conflict");
+                }
+                return ProcessingTaskAssembler.toDto(task);
+            }
+            int nextVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId()) + 1;
+            if (command.transcriptVersion() != nextVersion) {
+                throw new IllegalStateException("transcript version conflict");
+            }
+            if (!persistCallbackEvent(callbackEvent)) {
+                return ProcessingTaskAssembler.toDto(task);
             }
             task.updateWorkerStep(
                 ProcessingStep.TRANSCRIPT_MERGE,
@@ -277,10 +299,6 @@ public class ProcessingTaskCallbackApplicationService {
                 null,
                 OffsetDateTime.now(clock)
             );
-            int nextVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId()) + 1;
-            if (command.transcriptVersion() != nextVersion) {
-                throw new IllegalStateException("transcript version conflict");
-            }
             transcriptRepository.replaceTranscript(
                 command.tenantId(),
                 command.meetingId(),
@@ -299,14 +317,25 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     private boolean persistCallbackEvent(String tenantId, String taskId, com.meeting.api.client.internal.callback.CallbackMetadata metadata, int httpStatus, String errorCode) {
-        var existing = callbackEventRepository.findByIdempotencyKey(tenantId, metadata.idempotencyKey());
-        if (existing.isPresent()) {
-            if (!existing.get().bodySha256().equals(metadata.bodySha256())) {
-                throw new IllegalStateException("callback idempotency body hash conflict");
-            }
-            return false;
+        return persistCallbackEvent(callbackEventRecord(tenantId, taskId, metadata, httpStatus, errorCode));
+    }
+
+    private boolean persistCallbackEvent(CallbackEventRepository.CallbackEventRecord callbackEvent) {
+        var result = callbackEventRepository.recordOnce(callbackEvent);
+        if (result.status() == CallbackEventRepository.RecordStatus.BODY_HASH_CONFLICT) {
+            throw new IllegalStateException("callback idempotency body hash conflict");
         }
-        callbackEventRepository.save(new CallbackEventRepository.CallbackEventRecord(
+        return result.status() == CallbackEventRepository.RecordStatus.RECORDED;
+    }
+
+    private CallbackEventRepository.CallbackEventRecord callbackEventRecord(
+        String tenantId,
+        String taskId,
+        com.meeting.api.client.internal.callback.CallbackMetadata metadata,
+        int httpStatus,
+        String errorCode
+    ) {
+        return new CallbackEventRepository.CallbackEventRecord(
             tenantId,
             taskId,
             metadata.workerId(),
@@ -319,8 +348,18 @@ public class ProcessingTaskCallbackApplicationService {
             errorCode,
             metadata.traceId(),
             OffsetDateTime.now(clock)
-        ));
-        return true;
+        );
+    }
+
+    private static boolean isSameCallbackEvent(
+        CallbackEventRepository.CallbackEventRecord previous,
+        CallbackEventRepository.CallbackEventRecord current
+    ) {
+        return previous.bodySha256().equals(current.bodySha256())
+            && previous.taskId().equals(current.taskId())
+            && previous.workerId().equals(current.workerId())
+            && previous.attemptNo() == current.attemptNo()
+            && Objects.equals(previous.leaseOwner(), current.leaseOwner());
     }
 
     private static List<TranscriptRepository.TranscriptSegmentRecord> toTranscriptSegments(TranscriptCallbackCommand command, int transcriptVersion) {

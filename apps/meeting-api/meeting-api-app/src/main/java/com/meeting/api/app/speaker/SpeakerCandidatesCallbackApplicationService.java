@@ -186,19 +186,15 @@ public class SpeakerCandidatesCallbackApplicationService {
     }
 
     private boolean persistCallbackEvent(String tenantId, String taskId, CallbackMetadata metadata) {
-        var existing = callbackEventRepository.findByIdempotencyKey(tenantId, metadata.idempotencyKey());
-        if (existing.isPresent()) {
-            if (!existing.get().bodySha256().equals(metadata.bodySha256())) {
-                throw new IllegalStateException("callback idempotency body hash conflict");
-            }
-            return false;
-        }
-        callbackEventRepository.save(new CallbackEventRepository.CallbackEventRecord(
+        var result = callbackEventRepository.recordOnce(new CallbackEventRepository.CallbackEventRecord(
             tenantId, taskId, metadata.workerId(), metadata.idempotencyKey(),
             metadata.bodySha256(), metadata.attemptNo(), metadata.leaseOwner(),
             "", 200, null, metadata.traceId(), OffsetDateTime.now(clock)
         ));
-        return true;
+        if (result.status() == CallbackEventRepository.RecordStatus.BODY_HASH_CONFLICT) {
+            throw new IllegalStateException("callback idempotency body hash conflict");
+        }
+        return result.status() == CallbackEventRepository.RecordStatus.RECORDED;
     }
 
     private static void zeroFloats(float[] values) {
