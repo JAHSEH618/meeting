@@ -419,6 +419,6 @@ async def test_reject_speaker_passthrough_to_java(app: FastAPI, auth_headers: di
     stub: _StubJavaClient = app.state.java_stub
     reject = next(c for c in stub.received if c["method"] == "POST" and c["path"].endswith("/reject"))
     assert reject["path"] == "/api/meetings/m_01/speakers/SPEAKER_01/reject"
-    assert reject["body"] is None
+    assert reject["body"] == {"reason": "user_rejected"}
     assert reject["idempotency"] == "idem_t1"
     assert reject["tenant"] == "tenant_01"

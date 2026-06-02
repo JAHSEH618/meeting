@@ -141,11 +141,15 @@ public class MeetingSpeakerApplicationService {
         });
     }
 
-    public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy) {
+    public void reject(String tenantId, String meetingId, String speakerLabel, String reason, String rejectedBy) {
+        if (!hasText(reason)) {
+            throw new IllegalArgumentException("reason is required");
+        }
         tenantScopedTransaction.execute(tenantId, rejectedBy, null, () -> {
             OffsetDateTime now = OffsetDateTime.now(clock);
             meetingSpeakerRepository.reject(tenantId, meetingId, speakerLabel, rejectedBy, now);
-            log.info("speaker_rejected tenant={} meeting={} label={}", tenantId, meetingId, speakerLabel);
+            log.info("speaker_rejected tenant={} meeting={} label={} reason={}",
+                tenantId, meetingId, speakerLabel, reason);
             return null;
         });
     }

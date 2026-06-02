@@ -173,6 +173,7 @@ describe("admin endpoint helpers", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/meetings/m1/speakers/SPEAKER_01:reject");
     const [, init] = fetchMock.mock.calls[0]!;
     expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ reason: "user_rejected" });
   });
 
   it("exposes task detail and SSE helpers", async () => {

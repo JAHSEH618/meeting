@@ -595,7 +595,7 @@ export async function rejectMeetingSpeaker(meetingId: string, speakerLabel: stri
   return request<void>(
     "POST",
     `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/reject`,
-    {},
+    { reason: "user_rejected" },
     generateId("reject-meeting-speaker"),
   );
 }

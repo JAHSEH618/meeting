@@ -125,7 +125,7 @@ export const confirmSpeaker = (
 export const rejectSpeaker = (meetingId: string, label: string) =>
   apiCall<void>(
     `${API}/meetings/${encodeURIComponent(meetingId)}/speakers/${encodeURIComponent(label)}:reject`,
-    { method: "POST" },
+    { method: "POST", body: { reason: "user_rejected" } },
   );
 
 export const createExport = (meetingId: string, format: "DOCX" | "PDF" | "MARKDOWN" = "DOCX") =>

@@ -59,15 +59,22 @@ public class MeetingSpeakerController {
     public ResponseEntity<ApiResponse<Void>> reject(
         @PathVariable String meetingId,
         @PathVariable String speakerLabel,
+        @RequestBody RejectRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
-        service.reject(TenantContextHolder.currentTenantId(), meetingId, speakerLabel, userId);
+        if (body == null || !hasText(body.reason())) {
+            throw new IllegalArgumentException("reason is required");
+        }
+        service.reject(TenantContextHolder.currentTenantId(), meetingId, speakerLabel, body.reason(), userId);
         return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));
     }
 
     public record ConfirmRequest(String personId, String speakerProfileId, Integer expectedTranscriptVersion) {
+    }
+
+    public record RejectRequest(String reason, String candidatePersonId, String candidateSpeakerProfileId) {
     }
 
     public record MeetingSpeakerListData(String meetingId, List<MeetingSpeakerResponse> speakers) {
@@ -91,5 +98,9 @@ public class MeetingSpeakerController {
                 dto.candidates() == null ? List.of() : dto.candidates()
             );
         }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

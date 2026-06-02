@@ -75,10 +75,55 @@ class MeetingSpeakerControllerTest {
             .isInstanceOf(TenantContextMissingException.class);
     }
 
+    @Test
+    void rejectRequiresOpenApiReasonAndPassesItToService() {
+        RecordingMeetingSpeakerService service = new RecordingMeetingSpeakerService(List.of());
+        MeetingSpeakerController controller = new MeetingSpeakerController(service);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        var response = controller.reject(
+            "meeting_01",
+            "SPEAKER_00",
+            new MeetingSpeakerController.RejectRequest("user_rejected", "person_01", "profile_01"),
+            "req_01",
+            "trace_01",
+            "user_01"
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(service.lastTenantId).isEqualTo("tenant_01");
+        assertThat(service.lastMeetingId).isEqualTo("meeting_01");
+        assertThat(service.lastSpeakerLabel).isEqualTo("SPEAKER_00");
+        assertThat(service.lastReason).isEqualTo("user_rejected");
+        assertThat(service.lastUserId).isEqualTo("user_01");
+    }
+
+    @Test
+    void rejectRejectsBlankReasonBeforeCallingService() {
+        RecordingMeetingSpeakerService service = new RecordingMeetingSpeakerService(List.of());
+        MeetingSpeakerController controller = new MeetingSpeakerController(service);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.reject(
+            "meeting_01",
+            "SPEAKER_00",
+            new MeetingSpeakerController.RejectRequest(" ", null, null),
+            "req_01",
+            "trace_01",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("reason is required");
+
+        assertThat(service.lastReason).isNull();
+    }
+
     private static final class RecordingMeetingSpeakerService extends MeetingSpeakerApplicationService {
         private final List<MeetingSpeakerDTO> speakers;
         private String lastTenantId;
         private String lastMeetingId;
+        private String lastSpeakerLabel;
+        private String lastReason;
+        private String lastUserId;
 
         private RecordingMeetingSpeakerService(List<MeetingSpeakerDTO> speakers) {
             super(null, null, null, null, TenantScopedTransaction.immediate(), Clock.systemUTC());
@@ -90,6 +135,15 @@ class MeetingSpeakerControllerTest {
             this.lastTenantId = tenantId;
             this.lastMeetingId = meetingId;
             return speakers;
+        }
+
+        @Override
+        public void reject(String tenantId, String meetingId, String speakerLabel, String reason, String rejectedBy) {
+            this.lastTenantId = tenantId;
+            this.lastMeetingId = meetingId;
+            this.lastSpeakerLabel = speakerLabel;
+            this.lastReason = reason;
+            this.lastUserId = rejectedBy;
         }
     }
 }
