@@ -56,6 +56,10 @@ public class SpeakerProfileController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("request body is required");
+        }
+        body.validate();
         SpeakerProfileDTO result = facade.create(new CreateSpeakerProfileCommand(
             TenantContextHolder.currentTenantId(),
             body.personId(),
@@ -135,6 +139,18 @@ public class SpeakerProfileController {
         String consentSource,
         String consentVersion
     ) {
+        void validate() {
+            if (personId == null || personId.isBlank()) {
+                throw new IllegalArgumentException("personId is required");
+            }
+            if (displayName == null || displayName.isBlank()) {
+                throw new IllegalArgumentException("displayName is required");
+            }
+            if (consentReference == null || consentReference.isBlank()) {
+                throw new IllegalArgumentException("consentReference is required");
+            }
+        }
+
         String resolvedConsentSource() {
             if (consentReference == null || consentReference.isBlank()) {
                 return consentSource;

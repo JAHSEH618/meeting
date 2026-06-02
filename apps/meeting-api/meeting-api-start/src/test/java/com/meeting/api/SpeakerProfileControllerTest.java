@@ -52,6 +52,78 @@ class SpeakerProfileControllerTest {
     }
 
     @Test
+    void createRejectsMissingPersonId() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.create(
+            new SpeakerProfileController.CreateProfileRequest(
+                null,
+                "Alice",
+                "USER_ENROLLMENT:v1",
+                null,
+                null
+            ),
+            "req_01",
+            "trace_01",
+            "idem_01",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("personId is required");
+
+        assertThat(facade.lastCreate).isNull();
+    }
+
+    @Test
+    void createRejectsMissingDisplayName() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.create(
+            new SpeakerProfileController.CreateProfileRequest(
+                "person_01",
+                " ",
+                "USER_ENROLLMENT:v1",
+                null,
+                null
+            ),
+            "req_01",
+            "trace_01",
+            "idem_01",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("displayName is required");
+
+        assertThat(facade.lastCreate).isNull();
+    }
+
+    @Test
+    void createRejectsMissingConsentReference() {
+        CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
+        SpeakerProfileController controller = new SpeakerProfileController(facade);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.create(
+            new SpeakerProfileController.CreateProfileRequest(
+                "person_01",
+                "Alice",
+                null,
+                "USER_ENROLLMENT",
+                "v1"
+            ),
+            "req_01",
+            "trace_01",
+            "idem_01",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("consentReference is required");
+
+        assertThat(facade.lastCreate).isNull();
+    }
+
+    @Test
     void addEnrollmentMapsOpenApiAudioFileIdToApplicationCommand() {
         CapturingSpeakerProfileFacade facade = new CapturingSpeakerProfileFacade();
         SpeakerProfileController controller = new SpeakerProfileController(facade);
