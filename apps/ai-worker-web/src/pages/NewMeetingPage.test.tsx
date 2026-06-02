@@ -7,6 +7,22 @@ import { NewMeetingPage } from "./NewMeetingPage";
 const navigateTarget = vi.fn();
 
 vi.mock("@/shared/api/endpoints", () => ({
+  searchPersons: vi.fn(async () => [
+    {
+      personId: "p1",
+      displayName: "李四",
+      email: "li@example.com",
+      externalId: null,
+      createdAt: "2026-06-02T00:00:00Z",
+    },
+  ]),
+  createPerson: vi.fn(async () => ({
+    personId: "p-new",
+    displayName: "王五",
+    email: null,
+    externalId: null,
+    createdAt: "2026-06-02T00:00:00Z",
+  })),
   createMeeting: vi.fn(async () => ({ meetingId: "m1", title: "季度评审", securityLevel: "INTERNAL", language: "zh", status: "CREATED", createdAt: "" })),
   updateMeetingGlossary: vi.fn(async () => undefined),
   attachMeetingDocument: vi.fn(async () => undefined),
@@ -50,8 +66,69 @@ describe("NewMeetingPage", () => {
     expect(screen.getByLabelText(/搜索已有文档/)).toHaveAttribute("name", "documentSearch");
     expect(screen.getByLabelText(/搜索已有文档/)).toHaveAttribute("autocomplete", "off");
     expect(screen.getByPlaceholderText("输入文档标题…")).toBeInTheDocument();
+    expect(screen.getByLabelText(/搜索人员/)).toHaveAttribute("name", "personSearch");
+    expect(screen.getByLabelText(/搜索人员/)).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByPlaceholderText("按姓名 / 邮箱搜索…")).toBeInTheDocument();
     expect(screen.getByLabelText(/参考文档上传/)).toHaveAttribute("name", "referenceDocument");
     expect(document.querySelector('input[name="meetingAudio"]')).toBeInTheDocument();
+  });
+
+  it("adds searched and newly created people to the Java meeting participants payload", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    render(
+      <MemoryRouter initialEntries={["/meetings/new"]}>
+        <Routes><Route path="/meetings/new" element={<NewMeetingPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/标题/), { target: { value: "季度评审" } });
+    fireEvent.change(screen.getByLabelText(/搜索人员/), { target: { value: "李" } });
+    await waitFor(() => expect(endpoints.searchPersons).toHaveBeenCalledWith("李", expect.any(Object)));
+    fireEvent.click(screen.getByRole("button", { name: "添加 李四" }));
+    expect(screen.getByText("li@example.com")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /新建人员/ }));
+    fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "王五" } });
+    fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
+    await waitFor(() => expect(screen.getByText("王五")).toBeInTheDocument());
+
+    const audioInput = document.getElementById("meeting-audio-file");
+    if (!audioInput) throw new Error("missing audio input");
+    fireEvent.change(audioInput, {
+      target: { files: [new File([new Uint8Array(4)], "demo.mp3", { type: "audio/mpeg" })] },
+    });
+    fireEvent.click(screen.getByTestId("start-processing"));
+
+    await waitFor(() => expect(endpoints.createMeeting).toHaveBeenCalled());
+    expect(endpoints.createMeeting).toHaveBeenCalledWith(expect.objectContaining({
+      participants: [
+        { personId: "p1", displayName: "李四", role: "PARTICIPANT" },
+        { personId: "p-new", displayName: "王五", role: "PARTICIPANT" },
+      ],
+    }));
+  });
+
+  it("does not add the same participant twice from search results", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    render(<MemoryRouter><NewMeetingPage /></MemoryRouter>);
+
+    fireEvent.change(screen.getByLabelText(/标题/), { target: { value: "季度评审" } });
+    fireEvent.change(screen.getByLabelText(/搜索人员/), { target: { value: "李" } });
+    await waitFor(() => expect(endpoints.searchPersons).toHaveBeenCalledWith("李", expect.any(Object)));
+    fireEvent.click(screen.getByRole("button", { name: "添加 李四" }));
+    expect(screen.getByRole("button", { name: "已添加 李四" })).toBeDisabled();
+
+    const audioInput = document.getElementById("meeting-audio-file");
+    if (!audioInput) throw new Error("missing audio input");
+    fireEvent.change(audioInput, {
+      target: { files: [new File([new Uint8Array(4)], "demo.mp3", { type: "audio/mpeg" })] },
+    });
+    fireEvent.click(screen.getByTestId("start-processing"));
+
+    await waitFor(() => expect(endpoints.createMeeting).toHaveBeenCalled());
+    expect(endpoints.createMeeting).toHaveBeenCalledWith(expect.objectContaining({
+      participants: [{ personId: "p1", displayName: "李四", role: "PARTICIPANT" }],
+    }));
   });
 
   it("uploads docs immediately, starts meeting orchestration, and navigates to detail", async () => {

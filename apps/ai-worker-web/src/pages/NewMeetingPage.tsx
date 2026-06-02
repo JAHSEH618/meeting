@@ -13,6 +13,7 @@ import {
   createMeeting,
   initAudioUpload,
   initFileUpload,
+  searchPersons,
   searchDocuments,
   updateMeetingGlossary,
 } from "@/shared/api/endpoints";
@@ -21,13 +22,16 @@ import type {
   DocumentType,
   FileUploadCompleteResponseDTO,
   GlossaryTermDTO,
+  PersonDTO,
   SecurityLevel,
 } from "@/shared/api/types";
+import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { MultipartUploader, MultipartUploadError } from "@/shared/upload/MultipartUploader";
 
 const MAX_GLOSSARY_TERMS = 200;
 const MAX_TERM_LENGTH = 64;
+const DEFAULT_PARTICIPANT_ROLE = "PARTICIPANT";
 
 interface SelectedDocument {
   documentId: string;
@@ -44,6 +48,12 @@ interface UploadingDocument {
   error?: string;
 }
 
+interface SelectedParticipant {
+  personId: string;
+  displayName: string;
+  role: string;
+}
+
 export function NewMeetingPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
@@ -53,14 +63,19 @@ export function NewMeetingPage() {
   const [termDraft, setTermDraft] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioProgress, setAudioProgress] = useState(0);
+  const [selectedParticipants, setSelectedParticipants] = useState<SelectedParticipant[]>([]);
+  const [personModalOpen, setPersonModalOpen] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<SelectedDocument[]>([]);
   const [uploadingDocuments, setUploadingDocuments] = useState<UploadingDocument[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeAudioUploader = useRef<MultipartUploader<unknown> | null>(null);
 
+  const personFetcher = useCallback((q: string, signal: AbortSignal) => searchPersons(q, { signal }), []);
+  const personSearch = useDebouncedSearch<PersonDTO>(personFetcher);
   const documentFetcher = useCallback((q: string, signal: AbortSignal) => searchDocuments(q, { signal }), []);
   const documentSearch = useDebouncedSearch<DocumentSummaryDTO>(documentFetcher);
+  const persons = personSearch.results ?? [];
   const hasDocumentUploadInFlight = uploadingDocuments.some((document) => document.status === "uploading");
   const canStart = title.trim().length > 0 && !!audioFile && !busy && !hasDocumentUploadInFlight;
 
@@ -77,6 +92,22 @@ export function NewMeetingPage() {
       current.some((item) => item.documentId === document.documentId)
         ? current
         : [...current, { documentId: document.documentId, title: document.title, source: "existing" }],
+    );
+  };
+
+  const addParticipant = (person: PersonDTO) => {
+    if (!person.personId) return;
+    setSelectedParticipants((current) =>
+      current.some((item) => item.personId === person.personId)
+        ? current
+        : [
+          ...current,
+          {
+            personId: person.personId,
+            displayName: person.displayName,
+            role: DEFAULT_PARTICIPANT_ROLE,
+          },
+        ],
     );
   };
 
@@ -132,7 +163,11 @@ export function NewMeetingPage() {
         title: title.trim(),
         securityLevel,
         language,
-        participants: [],
+        participants: selectedParticipants.map((participant) => ({
+          personId: participant.personId,
+          displayName: participant.displayName,
+          role: participant.role,
+        })),
       });
       if (terms.length > 0) await updateMeetingGlossary(meeting.meetingId, terms);
       for (const document of selectedDocuments) {
@@ -255,6 +290,72 @@ export function NewMeetingPage() {
         </div>
       </section>
 
+      <section className="card stack" aria-labelledby="new-meeting-participants">
+        <h2 id="new-meeting-participants">参会人</h2>
+        <div className="field">
+          <label className="field__label" htmlFor="person-search">搜索人员</label>
+          <input
+            id="person-search"
+            name="personSearch"
+            className="input"
+            placeholder="按姓名 / 邮箱搜索…"
+            onChange={(event) => personSearch.search(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        {personSearch.loading ? <p className="page-subtitle" aria-live="polite">搜索中…</p> : null}
+        {persons.length ? (
+          <div className="stack">
+            {persons.map((person) => {
+              const alreadyAdded = selectedParticipants.some((participant) => participant.personId === person.personId);
+              return (
+                <div key={person.personId} className="toolbar">
+                  <span>{person.displayName}</span>
+                  {person.email ? <span className="page-subtitle">{person.email}</span> : null}
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    aria-label={`${alreadyAdded ? "已添加" : "添加"} ${person.displayName}`}
+                    disabled={alreadyAdded}
+                    onClick={() => addParticipant(person)}
+                  >
+                    {alreadyAdded ? "已添加" : "添加"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className="toolbar">
+          <button className="button button--secondary" type="button" onClick={() => setPersonModalOpen(true)}>
+            + 新建人员
+          </button>
+          {selectedParticipants.map((participant) => (
+            <span key={participant.personId} className="chip">
+              {participant.displayName}
+              <button
+                className="chip__remove"
+                type="button"
+                aria-label={`移除 ${participant.displayName}`}
+                onClick={() => setSelectedParticipants((current) =>
+                  current.filter((item) => item.personId !== participant.personId),
+                )}
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+        <PersonCreateModal
+          open={personModalOpen}
+          onClose={() => setPersonModalOpen(false)}
+          onCreated={(person) => {
+            addParticipant(person);
+            setPersonModalOpen(false);
+          }}
+        />
+      </section>
+
       <section className="card stack" aria-labelledby="new-meeting-documents">
         <h2 id="new-meeting-documents">参考文档</h2>
         <div className="field">
@@ -340,7 +441,9 @@ export function NewMeetingPage() {
         {audioProgress > 0 ? <progress value={audioProgress} max={1} aria-label="音频上传进度" /> : null}
       </section>
 
-      {error ? <div className="banner banner--danger" role="alert">{error}</div> : null}
+      {error || personSearch.error ? (
+        <div className="banner banner--danger" role="alert">{error ?? formatError(personSearch.error)}</div>
+      ) : null}
 
       <footer className="toolbar">
         <button className="button button--primary" type="button" data-testid="start-processing" disabled={!canStart} onClick={() => void startProcessing()}>

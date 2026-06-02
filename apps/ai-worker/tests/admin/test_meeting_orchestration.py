@@ -261,3 +261,36 @@ async def test_list_meetings_proxies_java_public_api(app: FastAPI, auth_headers:
     stub: _StubJavaClient = app.state.java_stub
     list_call = next(c for c in stub.received if c["method"] == "GET" and c["path"] == "/api/meetings")
     assert list_call["tenant"] == "tenant_01"
+
+
+@pytest.mark.asyncio
+async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_headers: dict[str, str]):
+    async with _client(app) as client:
+        response = await client.post(
+            "/admin/meetings",
+            json={
+                "title": "季度评审",
+                "securityLevel": "INTERNAL",
+                "language": "zh",
+                "participants": [
+                    {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
+                    {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},
+                ],
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    stub: _StubJavaClient = app.state.java_stub
+    create = next(c for c in stub.received if c["method"] == "POST" and c["path"] == "/api/meetings")
+    assert create["body"] == {
+        "title": "季度评审",
+        "securityLevel": "INTERNAL",
+        "language": "zh",
+        "participants": [
+            {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
+            {"personId": "p_02", "displayName": "王五", "role": "PARTICIPANT"},
+        ],
+    }
+    assert create["idempotency"] == "idem_t1"
+    assert create["tenant"] == "tenant_01"
