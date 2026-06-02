@@ -12,7 +12,9 @@ import {
   getProcessingTask,
   initAudioUpload,
   initFileUpload,
+  listSpeakerProfiles,
   processingTaskEventsUrl,
+  revokeSpeakerProfile,
   searchPersons,
 } from "./endpoints";
 import { authStore } from "@/shared/auth/store";
@@ -141,6 +143,36 @@ describe("admin endpoint helpers", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/processing-tasks/task%201");
     expect(processingTaskEventsUrl("task 1")).toBe("/api/processing-tasks/task%201/events");
+  });
+
+  it("uses speaker-profile semantics for voiceprint administration", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          speakerProfileId: "sp1",
+          personId: "p1",
+          displayName: "李四",
+          consentStatus: "ACTIVE",
+          enrollmentCount: 2,
+          lastEnrolledAt: "2026-06-02T00:00:00Z",
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse(null));
+
+    const profiles = await listSpeakerProfiles("p1");
+    await revokeSpeakerProfile("sp1", "operator_request");
+
+    expect(profiles[0]).toMatchObject({
+      speakerProfileId: "sp1",
+      personId: "p1",
+      displayName: "李四",
+      status: "ACTIVE",
+      enrollmentCount: 2,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/voiceprints?personId=p1");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/admin/voiceprints/sp1:revoke");
+    const [, init] = fetchMock.mock.calls[1]!;
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ reason: "operator_request" });
   });
 });
 

@@ -18,7 +18,7 @@ import math
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 
 from ai_worker.admin.envelopes import error, ok, passthrough
 from ai_worker.admin.java_client import JavaPublicClient
@@ -315,7 +315,7 @@ def build_voiceprint_router(*, java_client: JavaPublicClient) -> APIRouter:
 
     @router.get("", status_code=200)
     async def list_voiceprints(
-        person_id: str | None = None,
+        person_id: str | None = Query(None, alias="personId"),
         claims: AdminClaims = Depends(admin_claims_dependency),
         x_request_id: str | None = Header(None, alias="X-Request-Id"),
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),

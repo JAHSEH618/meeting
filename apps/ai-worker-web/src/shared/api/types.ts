@@ -46,12 +46,17 @@ export interface EnrollmentSessionDTO {
   sizeBytes?: number;
 }
 
-export interface VoiceprintDTO {
-  enrollmentId: string;
+export interface SpeakerProfileDTO {
+  speakerProfileId: string;
   personId: string;
-  qualityScore: number;
-  createdAt: string;
+  displayName: string;
+  status?: string;
+  enrollmentCount?: number | null;
+  lastEnrolledAt?: string | null;
+  consentStatus?: string;
   revokedAt: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MeetingSummaryDTO {

@@ -139,6 +139,10 @@
 }
 
 .button:hover:not(:disabled) { border-color: var(--ink-4); }
+.button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 .button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -189,6 +193,17 @@
   background: var(--line-3);
   color: var(--ink-1);
   border-color: transparent;
+}
+
+.button--danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--danger-ink);
+  border-color: var(--danger-ink);
 }
 
 .field { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -425,6 +440,7 @@
   place-items: center;
   padding: var(--space-6);
   background: rgba(15, 23, 42, 0.38);
+  overscroll-behavior: contain;
   z-index: 50;
 }
 

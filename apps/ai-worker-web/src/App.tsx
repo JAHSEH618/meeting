@@ -14,6 +14,10 @@ const MeetingDetailPage = lazy(() =>
   import("@/pages/MeetingDetailPage").then((m) => ({ default: m.MeetingDetailPage })),
 );
 
+const SpeakerProfilesPage = lazy(() =>
+  import("@/pages/SpeakerProfilesPage").then((m) => ({ default: m.SpeakerProfilesPage })),
+);
+
 export default function App() {
   const { ready, token } = useAuth();
   if (!ready) {
@@ -31,6 +35,7 @@ export default function App() {
         <nav className="layout__nav" aria-label="主导航">
           <NavLink to="/meetings" className={({ isActive }) => (isActive ? "active" : "")}>会议</NavLink>
           <NavLink to="/enrollment" className={({ isActive }) => (isActive ? "active" : "")}>声纹录入</NavLink>
+          <NavLink to="/speaker-profiles" className={({ isActive }) => (isActive ? "active" : "")}>声纹档案</NavLink>
         </nav>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{token ? "已登录" : "未登录"}</span>
       </header>
@@ -43,6 +48,7 @@ export default function App() {
             <Route path="/meetings/new" element={<NewMeetingPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/enrollment" element={<EnrollmentPage />} />
+            <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />
           </Routes>
         </Suspense>
       </main>

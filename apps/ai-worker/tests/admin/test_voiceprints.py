@@ -61,6 +61,22 @@ def test_list_voiceprints_uses_current_java_speaker_profile_endpoint() -> None:
     assert args.kwargs["trace_id"] == "tr1"
 
 
+def test_list_voiceprints_forwards_camel_case_person_id_filter() -> None:
+    client = MagicMock()
+    client.request = AsyncMock(return_value=_resp(200, b'{"success":true,"data":[]}'))
+
+    response = _app(client).get(
+        "/admin/voiceprints?personId=p1",
+        headers={"X-Request-Id": "r1", "X-Trace-Id": "tr1"},
+    )
+
+    assert response.status_code == 200
+    client.request.assert_awaited_once()
+    args = client.request.await_args
+    assert args.args[:2] == ("GET", "/api/speaker-profiles")
+    assert args.kwargs["params"] == {"personId": "p1"}
+
+
 def test_revoke_voiceprint_uses_current_java_profile_revoke_endpoint() -> None:
     client = MagicMock()
     client.request = AsyncMock(return_value=_resp(200, b'{"success":true,"data":null}'))

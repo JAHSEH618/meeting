@@ -16,7 +16,7 @@ import type {
   PersonDTO,
   ProcessingTaskDTO,
   SecurityLevel,
-  VoiceprintDTO,
+  SpeakerProfileDTO,
 } from "@/shared/api/types";
 import { apiCall, apiUpload } from "@/shared/api/client";
 
@@ -52,11 +52,16 @@ export const commitEnrollment = (sessionId: string) =>
     { method: "POST" },
   );
 
-export const listVoiceprints = (personId?: string) =>
-  apiCall<VoiceprintDTO[]>(`${API}/voiceprints`, { query: { personId } });
+export async function listSpeakerProfiles(personId?: string): Promise<SpeakerProfileDTO[]> {
+  const profiles = await apiCall<SpeakerProfileDTO[]>(`${API}/voiceprints`, { query: { personId } });
+  return profiles.map(normalizeSpeakerProfile);
+}
 
-export const revokeVoiceprint = (enrollmentId: string) =>
-  apiCall<void>(`${API}/voiceprints/${encodeURIComponent(enrollmentId)}:revoke`, { method: "POST" });
+export const revokeSpeakerProfile = (profileId: string, reason = "operator_request") =>
+  apiCall<void>(
+    `${API}/voiceprints/${encodeURIComponent(profileId)}:revoke`,
+    { method: "POST", body: { reason } },
+  );
 
 /** Meetings + workstation pages. */
 export const createMeeting = (body: {
@@ -203,5 +208,15 @@ function normalizePerson(person: PersonDTO): PersonDTO {
     email: person.email ?? null,
     externalId: person.externalId ?? null,
     createdAt: person.createdAt ?? "",
+  };
+}
+
+function normalizeSpeakerProfile(profile: SpeakerProfileDTO): SpeakerProfileDTO {
+  return {
+    ...profile,
+    status: profile.status ?? profile.consentStatus ?? "UNKNOWN",
+    revokedAt: profile.revokedAt ?? null,
+    enrollmentCount: profile.enrollmentCount ?? null,
+    lastEnrolledAt: profile.lastEnrolledAt ?? null,
   };
 }
