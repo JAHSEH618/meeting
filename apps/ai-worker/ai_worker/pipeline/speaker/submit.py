@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
 from ai_worker.pipeline.speaker.callback_payload import (
+    build_speaker_enrollment_embedding,
     build_speaker_candidate_entry,
     clear_embedding_values,
 )
@@ -78,4 +79,41 @@ async def submit_and_clear_speaker_candidates(
             "speaker_candidates_plaintext_cleared task=%s submissions=%d",
             task_id,
             len(submissions),
+        )
+
+
+async def submit_and_clear_speaker_enrollment_embedding(
+    client: JavaCallbackClient,
+    task_id: str,
+    tenant_id: str,
+    attempt_no: int,
+    speaker_profile_id: str,
+    speaker_enrollment_id: str,
+    audio_file_id: str,
+    embedding: SpeakerEmbedding,
+    trace_id: str = "",
+) -> CallbackResponse:
+    payload = build_speaker_enrollment_embedding(embedding)
+    try:
+        return await client.submit_speaker_enrollment_embedding(
+            task_id=task_id,
+            tenant_id=tenant_id,
+            attempt_no=attempt_no,
+            speaker_profile_id=speaker_profile_id,
+            speaker_enrollment_id=speaker_enrollment_id,
+            audio_file_id=audio_file_id,
+            embedding=payload,
+            trace_id=trace_id,
+        )
+    finally:
+        clear_embedding_values(embedding)
+        values = payload.get("values")
+        if isinstance(values, list):
+            for i in range(len(values)):
+                values[i] = 0.0
+        logger.debug(
+            "speaker_enrollment_plaintext_cleared task=%s profile=%s enrollment=%s",
+            task_id,
+            speaker_profile_id,
+            speaker_enrollment_id,
         )

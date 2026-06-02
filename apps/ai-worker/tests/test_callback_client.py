@@ -224,6 +224,36 @@ class TestUpdateStep:
         ]
 
 
+class TestSubmitSpeakerEnrollmentEmbedding:
+    @pytest.mark.asyncio
+    async def test_uses_dedicated_endpoint_and_payload(self, client: JavaCallbackClient) -> None:
+        captured: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured.update(method=method, path=path, body=body, idempotency_key=idempotency_key)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.submit_speaker_enrollment_embedding(
+                task_id="task_enroll",
+                tenant_id="tenant_01",
+                attempt_no=2,
+                speaker_profile_id="sp_01",
+                speaker_enrollment_id="se_01",
+                audio_file_id="audio_01",
+                embedding={"format": "FLOAT32_ARRAY", "dimension": 2, "values": [0.1, 0.2]},
+                trace_id="trace_01",
+            )
+
+        assert captured["method"] == "POST"
+        assert captured["path"] == "/internal/processing-tasks/task_enroll/speaker-enrollment"
+        assert captured["idempotency_key"] == "task_enroll:speaker-enrollment:2:se_01:v1"
+        assert captured["body"]["speakerProfileId"] == "sp_01"
+        assert captured["body"]["speakerEnrollmentId"] == "se_01"
+        assert captured["body"]["audioFileId"] == "audio_01"
+        assert "speakerCandidates" not in captured["body"]
+
+
 class TestCompleteWorkerPhase:
     @pytest.mark.asyncio
     async def test_completed_steps_is_string_array(self, client: JavaCallbackClient) -> None:

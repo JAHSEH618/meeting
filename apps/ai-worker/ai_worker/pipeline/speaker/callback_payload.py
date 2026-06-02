@@ -48,6 +48,19 @@ def build_speaker_candidate_entry(
     }
 
 
+def build_speaker_enrollment_embedding(embedding: SpeakerEmbedding) -> dict:
+    return {
+        "format": "FLOAT32_ARRAY",
+        "dimension": embedding.dimension,
+        "values": list(embedding.values),
+        "checksum": embedding.checksum,
+        "modelVersion": embedding.model_version,
+        "qualityScore": embedding.quality_score,
+        "plaintextTransport": "INTERNAL_TLS_HMAC_CALLBACK",
+        "persistedBy": "MEETING_API_KMS_ENVELOPE_ENCRYPTION",
+    }
+
+
 def clear_embedding_values(embedding: SpeakerEmbedding) -> None:
     """Overwrite the plaintext values list in place.
 

@@ -141,6 +141,35 @@ paths:
           $ref: '#/components/responses/CallbackAuthFailed'
         '409':
           $ref: '#/components/responses/CallbackConflict'
+  /processing-tasks/{taskId}/speaker-enrollment:
+    post:
+      operationId: submitSpeakerEnrollment
+      description: Submit a speaker enrollment embedding for a Java-owned speaker profile and enrollment.
+      tags: [Callback]
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - $ref: '#/components/parameters/WorkerId'
+        - $ref: '#/components/parameters/AttemptNo'
+        - $ref: '#/components/parameters/LeaseOwner'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeakerEnrollmentCallbackRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/CallbackAuthFailed'
+        '409':
+          $ref: '#/components/responses/CallbackConflict'
   /processing-tasks/{taskId}/embeddings:
     post:
       operationId: submitTextEmbeddings
@@ -426,6 +455,19 @@ components:
               embedding:
                 $ref: '#/components/schemas/PlainSpeakerEmbedding'
         artifactManifestId: {type: [string, 'null']}
+    SpeakerEnrollmentCallbackRequest:
+      type: object
+      required: [tenantId, taskId, attemptNo, speakerProfileId, speakerEnrollmentId, audioFileId, embedding]
+      properties:
+        tenantId: {type: string}
+        taskId: {type: string}
+        attemptNo: {type: integer, minimum: 1}
+        speakerProfileId: {type: string}
+        speakerEnrollmentId: {type: string}
+        audioFileId: {type: string}
+        embedding:
+          $ref: '#/components/schemas/PlainSpeakerEmbedding'
+        artifactManifestId: {type: [string, 'null']}
     PlainSpeakerEmbedding:
       type: object
       description: Plaintext embedding transported only over internal TLS + HMAC callback. meeting-api encrypts it with KMS before persistence.
@@ -438,6 +480,7 @@ components:
           items: {type: number}
         checksum: {type: string}
         modelVersion: {type: string}
+        qualityScore: {type: number, minimum: 0, maximum: 1}
         plaintextTransport: {type: string, enum: [INTERNAL_TLS_HMAC_CALLBACK]}
         persistedBy: {type: string, enum: [MEETING_API_KMS_ENVELOPE_ENCRYPTION]}
     EmbeddingsCallbackRequest:

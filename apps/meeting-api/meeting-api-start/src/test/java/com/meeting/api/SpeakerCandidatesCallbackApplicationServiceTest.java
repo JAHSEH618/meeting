@@ -9,7 +9,6 @@ import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
 import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
-import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
@@ -29,6 +28,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SpeakerCandidatesCallbackApplicationServiceTest {
     private static final String SECRET = "callback-secret";
@@ -95,20 +95,77 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
         assertThat(speakers.savedAutoMatchScore).isEqualTo(0.91);
     }
 
+    @Test
+    void writeCandidatesRejectsSpeakerEnrollmentTask() {
+        InMemorySpeakers speakers = new InMemorySpeakers();
+        SpeakerCandidatesCallbackApplicationService service = service(
+            new InMemoryTasks(ProcessingTask.create(
+                "task_01",
+                "tenant_01",
+                null,
+                "SPEAKER_ENROLLMENT",
+                List.of(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING),
+                NOW
+            )),
+            speakers,
+            new InMemoryProfiles(List.of())
+        );
+
+        assertThatThrownBy(() -> service.writeCandidates(candidateCommand("meeting_01")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("MEETING_FULL_PIPELINE");
+
+        assertThat(speakers.savedCandidates).isEmpty();
+    }
+
+    @Test
+    void writeCandidatesRejectsMismatchedMeetingId() {
+        InMemorySpeakers speakers = new InMemorySpeakers();
+        SpeakerCandidatesCallbackApplicationService service = service(speakers, new InMemoryProfiles(List.of()));
+
+        assertThatThrownBy(() -> service.writeCandidates(candidateCommand("meeting_other")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(speakers.savedCandidates).isEmpty();
+    }
+
     private static SpeakerCandidatesCallbackApplicationService service(
         MeetingSpeakerRepository meetingSpeakerRepository,
         SpeakerProfileRepository speakerProfileRepository
     ) {
+        return service(new InMemoryTasks(), meetingSpeakerRepository, speakerProfileRepository);
+    }
+
+    private static SpeakerCandidatesCallbackApplicationService service(
+        ProcessingTaskRepository taskRepository,
+        MeetingSpeakerRepository meetingSpeakerRepository,
+        SpeakerProfileRepository speakerProfileRepository
+    ) {
         return new SpeakerCandidatesCallbackApplicationService(
-            new InMemoryTasks(),
+            taskRepository,
             new InMemoryCallbackEvents(),
             speakerProfileRepository,
-            new NoopSpeakerEmbeddings(),
             meetingSpeakerRepository,
             new NoopEnvelopeGateway(),
             TenantScopedTransaction.immediate(),
             new CallbackSecurityVerifier(SECRET, 300, CLOCK),
             CLOCK
+        );
+    }
+
+    private static SpeakerCandidatesCallbackCommand candidateCommand(String meetingId) {
+        return new SpeakerCandidatesCallbackCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/speaker-candidates", "{}"),
+            "tenant_01",
+            meetingId,
+            "task_01",
+            1,
+            List.of(new SpeakerCandidatesCallbackCommand.SpeakerEntry(
+                "SPEAKER_00",
+                List.of(),
+                null
+            ))
         );
     }
 
@@ -152,19 +209,29 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
     }
 
     private static final class InMemoryTasks implements ProcessingTaskRepository {
-        private final ProcessingTask task = ProcessingTask.create(
-            "task_01",
-            "tenant_01",
-            "meeting_01",
-            "MEETING_FULL_PIPELINE",
-            List.of(
-                ProcessingStep.AUDIO_PREPROCESS,
-                ProcessingStep.ASR,
-                ProcessingStep.SPEAKER_MATCHING,
-                ProcessingStep.TRANSCRIPT_MERGE
-            ),
-            NOW
-        );
+        private final ProcessingTask task;
+
+        private InMemoryTasks() {
+            this(ProcessingTask.create(
+                "task_01",
+                "tenant_01",
+                "meeting_01",
+                "MEETING_FULL_PIPELINE",
+                List.of(
+                    ProcessingStep.AUDIO_PREPROCESS,
+                    ProcessingStep.ASR,
+                    ProcessingStep.SPEAKER_MATCHING,
+                    ProcessingStep.TRANSCRIPT_MERGE
+                ),
+                NOW
+            ));
+        }
+
+        private InMemoryTasks(ProcessingTask task) {
+            task.enqueue(NOW);
+            task.claimLease("worker_01", "worker_01:task_01:1", NOW.plusMinutes(5), NOW);
+            this.task = task;
+        }
 
         @Override
         public ProcessingTask save(ProcessingTask task) {
@@ -316,27 +383,6 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
 
         @Override
         public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy, OffsetDateTime now) {
-        }
-    }
-
-    private static final class NoopSpeakerEmbeddings implements SpeakerEmbeddingRepository {
-        @Override
-        public void save(SpeakerEmbeddingRecord record) {
-        }
-
-        @Override
-        public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) {
-            return List.of();
-        }
-
-        @Override
-        public int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) {
-            return 0;
-        }
-
-        @Override
-        public int deleteForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) {
-            return 0;
         }
     }
 

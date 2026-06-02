@@ -65,6 +65,9 @@ FIXTURE_API_MAP = {
     "valid/callback-fail-task-200.json": {
         "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/fail", "method": "post", "status": 200,
     },
+    "valid/callback-speaker-enrollment-200.json": {
+        "spec": "internal-callback-api.yaml", "path": "/processing-tasks/{taskId}/speaker-enrollment", "method": "post", "status": 200,
+    },
     "valid/ai-worker-rerank-200.json": {
         "spec": "ai-worker-internal-api.yaml", "path": "/rerank", "method": "post", "status": 200,
     },

@@ -207,6 +207,30 @@ class JavaCallbackClient:
             body["meetingId"] = meeting_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
+    async def submit_speaker_enrollment_embedding(
+        self,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        speaker_profile_id: str,
+        speaker_enrollment_id: str,
+        audio_file_id: str,
+        embedding: dict,
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        path = f"/internal/processing-tasks/{task_id}/speaker-enrollment"
+        idempotency_key = f"{task_id}:speaker-enrollment:{attempt_no}:{speaker_enrollment_id}:v1"
+        body = {
+            "tenantId": tenant_id,
+            "taskId": task_id,
+            "attemptNo": attempt_no,
+            "speakerProfileId": speaker_profile_id,
+            "speakerEnrollmentId": speaker_enrollment_id,
+            "audioFileId": audio_file_id,
+            "embedding": embedding,
+        }
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
     async def submit_artifacts(
         self,
         task_id: str,

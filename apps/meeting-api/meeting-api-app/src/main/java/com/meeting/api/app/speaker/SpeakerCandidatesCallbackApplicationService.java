@@ -2,13 +2,12 @@ package com.meeting.api.app.speaker;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.task.CallbackSecurityVerifier;
+import com.meeting.api.app.task.ProcessingTaskApplicationService;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand;
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
-import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository.SpeakerCandidate;
-import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
 import com.meeting.api.domain.speaker.SpeakerProfile;
 import com.meeting.api.domain.speaker.SpeakerProfileRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
@@ -20,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +28,9 @@ import org.springframework.stereotype.Service;
  * Speaker-candidates callback handler.
  *
  * <p>Receives plaintext speaker embeddings over the internal TLS + HMAC callback,
- * envelope-encrypts them via {@link EmbeddingEnvelopeGateway}, persists ciphertext-only
- * into {@code speaker_embeddings}, and stores the candidate profile list into
- * {@code meeting_speakers} for user confirmation.</p>
+ * uses {@link EmbeddingEnvelopeGateway} only to avoid logging/persisting plaintext
+ * vectors, and stores the candidate profile list into {@code meeting_speakers}
+ * for user confirmation.</p>
  *
  * <p>Plaintext embeddings live only for the duration of this method; arrays are
  * zeroized in the finally block. Plaintext is never logged or persisted.</p>
@@ -44,7 +42,6 @@ public class SpeakerCandidatesCallbackApplicationService {
     private final ProcessingTaskRepository taskRepository;
     private final CallbackEventRepository callbackEventRepository;
     private final SpeakerProfileRepository speakerProfileRepository;
-    private final SpeakerEmbeddingRepository speakerEmbeddingRepository;
     private final MeetingSpeakerRepository meetingSpeakerRepository;
     private final EmbeddingEnvelopeGateway envelopeGateway;
     private final TenantScopedTransaction tenantScopedTransaction;
@@ -56,21 +53,19 @@ public class SpeakerCandidatesCallbackApplicationService {
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
         SpeakerProfileRepository speakerProfileRepository,
-        SpeakerEmbeddingRepository speakerEmbeddingRepository,
         MeetingSpeakerRepository meetingSpeakerRepository,
         EmbeddingEnvelopeGateway envelopeGateway,
         TenantScopedTransaction tenantScopedTransaction,
         CallbackSecurityVerifier securityVerifier
     ) {
         this(taskRepository, callbackEventRepository, speakerProfileRepository,
-            speakerEmbeddingRepository, meetingSpeakerRepository, envelopeGateway,
+            meetingSpeakerRepository, envelopeGateway,
             tenantScopedTransaction, securityVerifier, Clock.systemUTC());
     }
     public SpeakerCandidatesCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
         CallbackEventRepository callbackEventRepository,
         SpeakerProfileRepository speakerProfileRepository,
-        SpeakerEmbeddingRepository speakerEmbeddingRepository,
         MeetingSpeakerRepository meetingSpeakerRepository,
         EmbeddingEnvelopeGateway envelopeGateway,
         TenantScopedTransaction tenantScopedTransaction,
@@ -80,7 +75,6 @@ public class SpeakerCandidatesCallbackApplicationService {
         this.taskRepository = taskRepository;
         this.callbackEventRepository = callbackEventRepository;
         this.speakerProfileRepository = speakerProfileRepository;
-        this.speakerEmbeddingRepository = speakerEmbeddingRepository;
         this.meetingSpeakerRepository = meetingSpeakerRepository;
         this.envelopeGateway = envelopeGateway;
         this.tenantScopedTransaction = tenantScopedTransaction;
@@ -92,8 +86,20 @@ public class SpeakerCandidatesCallbackApplicationService {
         tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
                 .orElseThrow(() -> new IllegalArgumentException("task not found: " + command.taskId()));
+            if (!ProcessingTaskApplicationService.MEETING_FULL_PIPELINE.equals(task.taskType())) {
+                throw new IllegalStateException("speaker candidates callback requires MEETING_FULL_PIPELINE task");
+            }
+            if (command.meetingId() == null || command.meetingId().isBlank()) {
+                throw new IllegalArgumentException("meetingId is required for speaker candidates callback");
+            }
+            if (!command.meetingId().equals(task.meetingId())) {
+                throw new IllegalStateException("callback meeting does not match task");
+            }
             if (task.attemptNo() != command.attemptNo()) {
                 throw new IllegalStateException("callback attempt does not match current attempt");
+            }
+            if (!command.metadata().leaseOwner().equals(task.leaseOwner())) {
+                throw new IllegalStateException("callback lease owner does not match current lease");
             }
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata())) {
                 return null;
@@ -126,36 +132,15 @@ public class SpeakerCandidatesCallbackApplicationService {
                     }
                 }
 
-                EncryptedEmbedding encrypted = null;
                 float[] plaintext = speaker.embedding() == null ? null : speaker.embedding().values();
                 try {
                     if (plaintext != null && plaintext.length > 0) {
-                        encrypted = envelopeGateway.encrypt(command.tenantId(), plaintext);
+                        envelopeGateway.encrypt(command.tenantId(), plaintext);
                     }
                 } finally {
                     zeroFloats(plaintext);
                 }
 
-                if (encrypted != null && command.meetingId() != null) {
-                    speakerEmbeddingRepository.save(new SpeakerEmbeddingRepository.SpeakerEmbeddingRecord(
-                        "emb_" + UUID.randomUUID().toString().replace("-", ""),
-                        command.tenantId(),
-                        null,
-                        null,
-                        "ACTIVE",
-                        encrypted.keyId(),
-                        encrypted.wrappedDek(),
-                        encrypted.algorithm(),
-                        encrypted.ciphertext(),
-                        encrypted.plaintextHash(),
-                        null,
-                        speaker.embedding() == null ? null : Double.NaN,
-                        speaker.embedding() == null ? null : speaker.embedding().modelVersion(),
-                        null,
-                        null,
-                        now
-                    ));
-                }
                 if (command.meetingId() != null) {
                     meetingSpeakerRepository.saveCandidates(
                         command.tenantId(),
