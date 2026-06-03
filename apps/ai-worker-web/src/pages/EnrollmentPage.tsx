@@ -51,7 +51,7 @@ export function EnrollmentPage() {
   };
 
   const handleUploadAndPreview = async () => {
-    if (!session || !file) return;
+    if (!session || !file || session.state === "COMMITTED") return;
     setBusy(true);
     setError(null);
     try {
@@ -171,7 +171,7 @@ export function EnrollmentPage() {
             type="file"
             accept="audio/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            disabled={!session}
+            disabled={!session || committed}
             className="upload-dropzone__input"
             name="enrollmentAudio"
           />
@@ -186,7 +186,7 @@ export function EnrollmentPage() {
         <button
           className="button button--primary"
           onClick={() => void handleUploadAndPreview()}
-          disabled={!session || !file || busy}
+          disabled={!session || !file || busy || committed}
         >
           {busy ? "处理中…" : "上传并预览"}
         </button>

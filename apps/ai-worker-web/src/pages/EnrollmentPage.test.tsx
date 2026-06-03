@@ -103,6 +103,41 @@ describe("EnrollmentPage", () => {
     expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("音频文件 file_01");
   });
 
+  it("does not let a committed enrollment session upload or preview again", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.previewEnrollment).mockResolvedValueOnce({
+      sessionId: "s1",
+      state: "PREVIEWED",
+      personId: "p-new",
+      qualityScore: 0.72,
+    });
+    vi.mocked(endpoints.commitEnrollment).mockResolvedValueOnce({
+      sessionId: "s1",
+      state: "COMMITTED",
+      personId: "p-new",
+      qualityScore: 0.72,
+      profileId: "sp_01",
+      fileId: "file_01",
+    });
+
+    renderEnrollmentPage();
+    await createSelectedSession();
+    chooseEnrollmentAudio();
+    fireEvent.click(screen.getByRole("button", { name: /上传并预览/ }));
+    expect(await screen.findByText("质量分 0.72")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /确认录入/ }));
+
+    expect(await screen.findByText(/状态: COMMITTED/)).toBeInTheDocument();
+    vi.mocked(endpoints.uploadEnrollmentAudio).mockClear();
+    vi.mocked(endpoints.previewEnrollment).mockClear();
+
+    expect(screen.getByRole("button", { name: /上传并预览/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /上传并预览/ }));
+
+    expect(endpoints.uploadEnrollmentAudio).not.toHaveBeenCalled();
+    expect(endpoints.previewEnrollment).not.toHaveBeenCalled();
+  });
+
   it("offers a return link after committing enrollment from a meeting", async () => {
     const endpoints = await import("@/shared/api/endpoints");
     vi.mocked(endpoints.previewEnrollment).mockResolvedValueOnce({
