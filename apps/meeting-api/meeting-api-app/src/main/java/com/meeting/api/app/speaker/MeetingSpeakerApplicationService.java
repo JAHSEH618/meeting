@@ -115,6 +115,8 @@ public class MeetingSpeakerApplicationService {
             throw new IllegalArgumentException("expectedTranscriptVersion is required");
         }
         tenantScopedTransaction.execute(tenantId, confirmedBy, null, () -> {
+            meetingSpeakerRepository.find(tenantId, meetingId, speakerLabel)
+                .orElseThrow(() -> new IllegalArgumentException("speaker label not found: " + speakerLabel));
             int currentTranscriptVersion = transcriptRepository.currentTranscriptVersion(tenantId, meetingId);
             int effectiveExpectedVersion = expectedTranscriptVersion == null ? currentTranscriptVersion : expectedTranscriptVersion;
             if (effectiveExpectedVersion != currentTranscriptVersion) {

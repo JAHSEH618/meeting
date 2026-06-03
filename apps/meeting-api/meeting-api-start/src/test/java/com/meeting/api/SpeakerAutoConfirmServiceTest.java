@@ -353,6 +353,60 @@ class SpeakerAutoConfirmServiceTest {
         assertThat(transcriptRepository.lastDisplayName).isNull();
     }
 
+    @Test
+    void humanConfirmRejectsUnknownSpeakerLabelBeforeMutatingSpeakerTranscriptOrRag() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speaker("SPEAKER_00", List.of("person_01"), 0.92, "CANDIDATE")
+        ));
+        CapturingTranscriptRepository transcriptRepository = new CapturingTranscriptRepository();
+        CapturingKnowledgeChunkRepository knowledgeChunkRepository = new CapturingKnowledgeChunkRepository();
+        MeetingSpeakerApplicationService confirmService = new MeetingSpeakerApplicationService(
+            speakers,
+            new Profiles(List.of(SpeakerProfile.restore(
+                "profile_01",
+                "tenant_01",
+                "person_01",
+                "Alice Profile",
+                "ACTIVE",
+                "INVITE",
+                "v1",
+                "user_01",
+                null,
+                null,
+                NOW,
+                NOW
+            ))),
+            new InMemoryPersons(List.of(new Person(
+                "person_01",
+                "tenant_01",
+                "李四",
+                "lisi@example.com",
+                null,
+                "ACTIVE",
+                NOW
+            ))),
+            transcriptRepository,
+            knowledgeChunkRepository,
+            TenantScopedTransaction.immediate(),
+            CLOCK
+        );
+
+        assertThatThrownBy(() -> confirmService.confirm(
+            "tenant_01",
+            "meeting_01",
+            "SPEAKER_99",
+            "person_01",
+            "profile_01",
+            1,
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("speaker label not found");
+
+        assertThat(speakers.confirmedLabels).isEmpty();
+        assertThat(transcriptRepository.lastDisplayName).isNull();
+        assertThat(knowledgeChunkRepository.staleCalls).isZero();
+    }
+
     private static SpeakerAutoConfirmService service(InMemorySpeakers speakers, AuditEventLogger audit) {
         return service(speakers, confirmService(speakers, new NoopTranscriptRepository(), new InMemoryPersons(List.of())), audit);
     }
@@ -694,6 +748,16 @@ class SpeakerAutoConfirmServiceTest {
     private static final class NoopKnowledgeChunkRepository implements KnowledgeChunkRepository {
         @Override public int markStaleForMeeting(String tenantId, String meetingId) {
             return 0;
+        }
+    }
+
+    private static final class CapturingKnowledgeChunkRepository implements KnowledgeChunkRepository {
+        private int staleCalls;
+
+        @Override
+        public int markStaleForMeeting(String tenantId, String meetingId) {
+            staleCalls++;
+            return 1;
         }
     }
 }
