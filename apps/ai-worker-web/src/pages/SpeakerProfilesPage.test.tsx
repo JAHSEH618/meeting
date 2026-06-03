@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "@/shared/queries/queryClient";
@@ -58,6 +58,21 @@ describe("SpeakerProfilesPage", () => {
 
     await waitFor(() => expect(endpoints.revokeSpeakerProfile).toHaveBeenCalledWith("sp1", "operator_request"));
     await waitFor(() => expect(endpoints.listSpeakerProfiles).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps revoke failures inside the confirmation dialog without refreshing profiles", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.revokeSpeakerProfile).mockRejectedValueOnce(new Error("CALLBACK_AUTH_FAILED"));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "撤销 李四" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认撤销" }));
+
+    await waitFor(() => expect(endpoints.revokeSpeakerProfile).toHaveBeenCalledWith("sp1", "operator_request"));
+    const dialog = screen.getByRole("dialog", { name: "撤销声纹档案" });
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("CALLBACK_AUTH_FAILED");
+    expect(endpoints.listSpeakerProfiles).toHaveBeenCalledTimes(1);
   });
 });
 

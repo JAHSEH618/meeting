@@ -18,17 +18,19 @@ export function SpeakerProfilesPage() {
   const revoke = useRevokeSpeakerProfile();
   const [pendingRevokeProfile, setPendingRevokeProfile] = useState<SpeakerProfileDTO | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   const profiles = profilesQuery.data ?? [];
-  const error = localError ?? formatOptionalError(profilesQuery.error ?? revoke.error);
+  const error = localError ?? formatOptionalError(profilesQuery.error);
 
   const handleConfirmRevoke = async () => {
     if (!pendingRevokeProfile) return;
     setLocalError(null);
+    setRevokeError(null);
     try {
       await revoke.mutateAsync({ profileId: pendingRevokeProfile.speakerProfileId, reason: "operator_request" });
       setPendingRevokeProfile(null);
     } catch (e) {
-      setLocalError(formatError(e));
+      setRevokeError(formatError(e));
     }
   };
 
@@ -106,7 +108,10 @@ export function SpeakerProfilesPage() {
                       className="button button--secondary"
                       type="button"
                       disabled={revoke.isPending || profile.status === "REVOKED"}
-                      onClick={() => setPendingRevokeProfile(profile)}
+                      onClick={() => {
+                        setRevokeError(null);
+                        setPendingRevokeProfile(profile);
+                      }}
                     >
                       撤销 {profile.displayName}
                     </button>
@@ -138,12 +143,21 @@ export function SpeakerProfilesPage() {
               <strong className="banner__title">{pendingRevokeProfile.displayName}</strong>
               <span className="banner__body" translate="no">{pendingRevokeProfile.speakerProfileId}</span>
             </div>
+            {revokeError ? (
+              <div className="banner banner--danger" role="alert">
+                <strong className="banner__title">撤销失败</strong>
+                <span className="banner__body">{revokeError}</span>
+              </div>
+            ) : null}
             <footer className="toolbar">
               <button
                 className="button button--ghost"
                 type="button"
                 disabled={revoke.isPending}
-                onClick={() => setPendingRevokeProfile(null)}
+                onClick={() => {
+                  setRevokeError(null);
+                  setPendingRevokeProfile(null);
+                }}
               >
                 取消
               </button>
