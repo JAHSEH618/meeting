@@ -81,6 +81,7 @@ export function EnrollmentPage() {
   const qualityScore = session?.qualityScore;
   const qualityHigh = typeof qualityScore === "number" && qualityScore >= QUALITY_THRESHOLD;
   const canCommit = session?.state === "PREVIEWED" && qualityHigh && !busy;
+  const committed = session?.state === "COMMITTED";
   const selectedPersonLabel = selectedPerson?.displayName ?? personId;
 
   return (
@@ -214,6 +215,31 @@ export function EnrollmentPage() {
         >
           确认录入
         </button>
+        {committed ? (
+          <div
+            className="banner banner--success"
+            role="status"
+            aria-live="polite"
+            aria-label="录入已写入 Java 工作流"
+          >
+            <strong className="banner__title">录入已写入 Java 工作流</strong>
+            <span className="banner__body">
+              {session.profileId ? (
+                <>
+                  声纹档案 <span translate="no">{session.profileId}</span>
+                </>
+              ) : (
+                "声纹档案已创建"
+              )}
+              {session.fileId ? (
+                <>
+                  {" · "}
+                  音频文件 <span translate="no">{session.fileId}</span>
+                </>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
       </section>
 
       {error || personSearch.error ? (

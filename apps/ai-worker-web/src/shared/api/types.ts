@@ -44,6 +44,8 @@ export interface EnrollmentSessionDTO {
   qualityScore?: number;
   durationMs?: number;
   sizeBytes?: number;
+  profileId?: string | null;
+  fileId?: string | null;
 }
 
 export interface SpeakerProfileDTO {

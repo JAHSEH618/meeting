@@ -85,6 +85,8 @@ describe("EnrollmentPage", () => {
       state: "COMMITTED",
       personId: "p-new",
       qualityScore: 0.72,
+      profileId: "sp_01",
+      fileId: "file_01",
     });
 
     renderEnrollmentPage();
@@ -97,6 +99,8 @@ describe("EnrollmentPage", () => {
 
     await waitFor(() => expect(endpoints.commitEnrollment).toHaveBeenCalledWith("s1"));
     expect(await screen.findByText(/状态: COMMITTED/)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("声纹档案 sp_01");
+    expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("音频文件 file_01");
   });
 });
 
