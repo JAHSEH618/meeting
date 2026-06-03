@@ -46,6 +46,9 @@ export function DocumentsPage() {
   const [contentHash, setContentHash] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ documentId: string; title: string } | null>(
+    null,
+  );
 
   const apiErr = (create.error ?? remove.error ?? reindex.error) as ApiClientError | null;
   const apiErrMsg = apiErr
@@ -82,11 +85,24 @@ export function DocumentsPage() {
     }
   };
 
-  const handleDelete = async (documentId: string, docTitle: string) => {
-    if (!window.confirm(`确认删除文档「${docTitle}」？关联的知识块也会被清理。`)) return;
+  const openDeleteDialog = (documentId: string, title: string) => {
+    setDeleteTarget({ documentId, title });
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteTarget && pendingId === deleteTarget.documentId) return;
+    setDeleteTarget(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    const { documentId } = deleteTarget;
     setPendingId(documentId);
     try {
       await remove.mutateAsync(documentId);
+      setDeleteTarget(null);
+    } catch {
+      /* surfaces via apiErrMsg */
     } finally {
       setPendingId(null);
     }
@@ -260,7 +276,7 @@ export function DocumentsPage() {
               <button
                 type="button"
                 className="button"
-                onClick={() => void handleDelete(doc.documentId, doc.title)}
+                onClick={() => openDeleteDialog(doc.documentId, doc.title)}
                 disabled={pendingId === doc.documentId}
               >
                 删除
@@ -269,6 +285,53 @@ export function DocumentsPage() {
           </article>
         ))}
       </div>
+
+      {deleteTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="documents-delete-title"
+            aria-describedby="documents-delete-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="documents-delete-title" className="card-title">删除文档</h2>
+                <p id="documents-delete-description" className="muted">
+                  {deleteTarget.title} 的元数据和关联知识块将被清理。
+                </p>
+              </div>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={closeDeleteDialog}
+                disabled={pendingId === deleteTarget.documentId}
+              >
+                取消
+              </button>
+            </div>
+            <div className="modal-actions" aria-live="polite">
+              <button
+                type="button"
+                className="button"
+                onClick={closeDeleteDialog}
+                disabled={pendingId === deleteTarget.documentId}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="button button--danger"
+                onClick={() => void handleDeleteConfirm()}
+                disabled={pendingId === deleteTarget.documentId}
+              >
+                {pendingId === deleteTarget.documentId ? "删除中…" : "确认删除"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
