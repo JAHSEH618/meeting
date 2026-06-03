@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
@@ -163,6 +164,16 @@ class StubEnrollmentWorkflowEngine(StubWorkflowEngine):
         await super().run_step(context, step_name)
 
 
+class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
+    async def run_step(self, context, step_name: str) -> None:
+        raise WorkerPipelineError(
+            step_name,
+            "AUDIO_SOURCE_MISSING",
+            "task audioUri is missing",
+            retryable=False,
+        )
+
+
 @pytest.mark.asyncio
 async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
@@ -288,6 +299,25 @@ async def test_speaker_enrollment_callback_failure_records_writeback_failed(call
     assert callback_client.fail_task.await_args.kwargs["speaker_enrollment_id"] == "se_01"
     callback_client.complete_worker_phase.assert_not_awaited()
     assert engine.embedding.values == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_pipeline_error_is_reported_to_java(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=NonRetryableFailingWorkflowEngine(state_store),
+        state_store=state_store,
+    )
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["failed_step"] == "AUDIO_PREPROCESS"
+    assert fail_kwargs["error_code"] == "AUDIO_SOURCE_MISSING"
+    assert fail_kwargs["retryable"] is False
+    callback_client.complete_worker_phase.assert_not_awaited()
 
 
 @pytest.mark.asyncio

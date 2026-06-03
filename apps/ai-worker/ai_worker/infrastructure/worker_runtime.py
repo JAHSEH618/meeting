@@ -229,6 +229,7 @@ class MvpWorkerRuntime:
                         progress=100,
                         error_code=exc.error_code,
                         error_message=str(exc),
+                        retryable=exc.retryable,
                     ),
                 )
                 return task
@@ -305,6 +306,7 @@ class MvpWorkerRuntime:
                 progress=100,
                 error_code=exc.error_code,
                 error_message=str(exc),
+                retryable=exc.retryable,
             )
 
         succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
@@ -386,7 +388,7 @@ class MvpWorkerRuntime:
             "failed_step": result.step_name,
             "error_code": error_code,
             "error_message": message,
-            "retryable": True,
+            "retryable": result.retryable,
             "trace_id": task.trace_id,
             "meeting_id": task.meeting_id,
         }

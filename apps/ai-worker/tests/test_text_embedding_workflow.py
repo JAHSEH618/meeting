@@ -317,3 +317,4 @@ async def test_runtime_fails_task_when_chunks_missing(state_store, fake_runtime)
     callback_client.fail_task.assert_awaited_once()
     fail_kwargs = callback_client.fail_task.await_args.kwargs
     assert fail_kwargs["error_code"] == "TEXT_EMBEDDING_NO_CHUNKS"
+    assert fail_kwargs["retryable"] is False
