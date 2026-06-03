@@ -64,6 +64,8 @@ export function ExportsPage() {
   const [includeSpeakers, setIncludeSpeakers] = useState(true);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<ExportJob | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const hasActiveJob = useMemo(
     () => jobs.some((j) => !TERMINAL_STATUSES.has(j.status)),
@@ -178,16 +180,25 @@ export function ExportsPage() {
     }
   }, [loadAll]);
 
-  const handleRevoke = useCallback(async (exportId: string) => {
-    if (!window.confirm("撤销下载链接后将不可恢复，确认要撤销？")) return;
+  const closeRevokeDialog = useCallback(() => {
+    if (revokeTarget && revokingId === revokeTarget.exportId) return;
+    setRevokeTarget(null);
+  }, [revokeTarget, revokingId]);
+
+  const handleRevokeConfirm = useCallback(async () => {
+    if (!revokeTarget) return;
+    setRevokingId(revokeTarget.exportId);
     try {
-      await revokeExportLink(exportId);
+      await revokeExportLink(revokeTarget.exportId);
       await loadAll();
+      setRevokeTarget(null);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "撤销链接失败");
+    } finally {
+      setRevokingId(null);
     }
-  }, [loadAll]);
+  }, [loadAll, revokeTarget]);
 
   return (
     <main className="page">
@@ -307,13 +318,70 @@ export function ExportsPage() {
                   key={job.exportId}
                   job={job}
                   onCancel={() => void handleCancel(job.exportId)}
-                  onRevoke={() => void handleRevoke(job.exportId)}
+                  onRevoke={() => setRevokeTarget(job)}
                 />
               ))}
             </tbody>
           </table>
         )}
       </section>
+
+      {revokeTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-revoke-title"
+            aria-describedby="export-revoke-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="export-revoke-title" className="card-title">撤销下载链接</h2>
+                <p id="export-revoke-description" className="muted">
+                  撤销后将不可恢复，已分享的下载链接会立即失效。
+                </p>
+              </div>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={closeRevokeDialog}
+                disabled={revokingId === revokeTarget.exportId}
+              >
+                取消
+              </button>
+            </div>
+            <dl className="grid">
+              <div>
+                <dt className="muted">格式</dt>
+                <dd>{FORMAT_LABELS[revokeTarget.format]}</dd>
+              </div>
+              <div>
+                <dt className="muted">创建时间</dt>
+                <dd>{formatTimestamp(revokeTarget.createdAt)}</dd>
+              </div>
+            </dl>
+            <div className="modal-actions" aria-live="polite">
+              <button
+                className="button"
+                type="button"
+                onClick={closeRevokeDialog}
+                disabled={revokingId === revokeTarget.exportId}
+              >
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => void handleRevokeConfirm()}
+                disabled={revokingId === revokeTarget.exportId}
+              >
+                {revokingId === revokeTarget.exportId ? "撤销中..." : "确认撤销"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
