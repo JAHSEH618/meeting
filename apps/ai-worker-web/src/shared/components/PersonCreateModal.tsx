@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/shared/api/client";
 import { createPerson } from "@/shared/api/endpoints";
 import type { CreatePersonRequest, PersonDTO } from "@/shared/api/types";
@@ -17,10 +17,28 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const reset = useCallback(() => {
+    setDisplayName("");
+    setEmail("");
+    setDuplicates([]);
+    setBusy(false);
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!open) reset();
+  }, [open, reset]);
+
   if (!open) return null;
 
   const finish = (person: PersonDTO) => {
+    reset();
     onCreated(person);
+    onClose();
+  };
+
+  const handleClose = () => {
+    reset();
     onClose();
   };
 
@@ -114,7 +132,7 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
         {error ? <div className="error" role="alert">{error}</div> : null}
 
         <footer className="toolbar">
-          <button className="button button--ghost" type="button" onClick={onClose}>取消</button>
+          <button className="button button--ghost" type="button" onClick={handleClose}>取消</button>
           <button
             className="button button--primary"
             type="button"

@@ -112,4 +112,33 @@ describe("PersonCreateModal", () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ personId: "p2" })));
     expect(createFn).toHaveBeenLastCalledWith({ displayName: "李四", email: "li-new@example.com" });
   });
+
+  it("resets form fields and duplicate matches when closed and reopened", async () => {
+    const onClose = vi.fn();
+    const createFn = vi.fn(async () => {
+      throw new ApiError(409, {
+        code: "PERSON_DUPLICATE",
+        message: "duplicate",
+        retryable: false,
+        details: { matches: [match] },
+      }, "r", "t");
+    });
+    const props = { onClose, onCreated: vi.fn(), createFn };
+    const { rerender } = render(<PersonCreateModal open {...props} />);
+
+    fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "李四" } });
+    fireEvent.change(screen.getByLabelText(/邮箱/), { target: { value: "li@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
+    await waitFor(() => expect(screen.getByText(/已存在/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(<PersonCreateModal open={false} {...props} />);
+    rerender(<PersonCreateModal open {...props} />);
+
+    expect(screen.getByLabelText(/姓名/)).toHaveValue("");
+    expect(screen.getByLabelText(/邮箱/)).toHaveValue("");
+    expect(screen.queryByText(/已存在/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^创建$/ })).toBeDisabled();
+  });
 });
