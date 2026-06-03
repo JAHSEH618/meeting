@@ -106,6 +106,7 @@ describe("NewMeetingPage", () => {
         { personId: "p-new", displayName: "王五", role: "PARTICIPANT" },
       ],
     }));
+    await waitFor(() => expect(navigateTarget).toHaveBeenCalledWith("/meetings/m1"));
   });
 
   it("does not add the same participant twice from search results", async () => {
@@ -129,6 +130,7 @@ describe("NewMeetingPage", () => {
     expect(endpoints.createMeeting).toHaveBeenCalledWith(expect.objectContaining({
       participants: [{ personId: "p1", displayName: "李四", role: "PARTICIPANT" }],
     }));
+    await waitFor(() => expect(navigateTarget).toHaveBeenCalledWith("/meetings/m1"));
   });
 
   it("uploads docs immediately, starts meeting orchestration, and navigates to detail", async () => {
@@ -189,6 +191,32 @@ describe("NewMeetingPage", () => {
     );
     expect(screen.getByRole("link", { name: "查看已创建会议" })).toHaveAttribute("href", "/meetings/m1");
     expect(navigateTarget).not.toHaveBeenCalled();
+  });
+
+  it("removes a selected reference document before attaching documents to the Java meeting", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    render(
+      <MemoryRouter initialEntries={["/meetings/new"]}>
+        <Routes><Route path="/meetings/new" element={<NewMeetingPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/参考文档上传/), {
+      target: { files: [new File([new Uint8Array(4)], "ref.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(endpoints.createDocument).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "移除 ref.pdf" }));
+    fireEvent.change(screen.getByLabelText(/标题/), { target: { value: "季度评审" } });
+    const audioInput = document.getElementById("meeting-audio-file");
+    if (!audioInput) throw new Error("missing audio input");
+    fireEvent.change(audioInput, {
+      target: { files: [new File([new Uint8Array(4)], "demo.mp3", { type: "audio/mpeg" })] },
+    });
+    fireEvent.click(screen.getByTestId("start-processing"));
+
+    await waitFor(() => expect(navigateTarget).toHaveBeenCalledWith("/meetings/m1"));
+    expect(endpoints.attachMeetingDocument).not.toHaveBeenCalled();
   });
 
   it("surfaces backend document upload MIME errors with the business error code", async () => {

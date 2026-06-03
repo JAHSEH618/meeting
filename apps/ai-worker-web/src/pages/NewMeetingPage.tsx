@@ -422,7 +422,19 @@ export function NewMeetingPage() {
 
         <div className="toolbar">
           {selectedDocuments.map((document) => (
-            <span key={document.documentId} className="chip">{document.title}</span>
+            <span key={document.documentId} className="chip">
+              {document.title}
+              <button
+                className="chip__remove"
+                type="button"
+                aria-label={`移除 ${document.title}`}
+                onClick={() => setSelectedDocuments((current) =>
+                  current.filter((item) => item.documentId !== document.documentId),
+                )}
+              >
+                x
+              </button>
+            </span>
           ))}
         </div>
       </section>
