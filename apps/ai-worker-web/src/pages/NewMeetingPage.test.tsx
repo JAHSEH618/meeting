@@ -161,6 +161,36 @@ describe("NewMeetingPage", () => {
     expect(endpoints.completeAudioUpload).toHaveBeenCalled();
   });
 
+  it("keeps a recovery link when audio upload fails after the Java meeting is created", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.initAudioUpload).mockRejectedValueOnce(new ApiError(
+      503,
+      { code: "AUDIO_UPLOAD_INIT_FAILED", message: "audio upload unavailable", retryable: true },
+      "r",
+      "t",
+    ));
+    render(
+      <MemoryRouter initialEntries={["/meetings/new"]}>
+        <Routes><Route path="/meetings/new" element={<NewMeetingPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/标题/), { target: { value: "季度评审" } });
+    const audioInput = document.getElementById("meeting-audio-file");
+    if (!audioInput) throw new Error("missing audio input");
+    fireEvent.change(audioInput, {
+      target: { files: [new File([new Uint8Array(4)], "demo.mp3", { type: "audio/mpeg" })] },
+    });
+    fireEvent.click(screen.getByTestId("start-processing"));
+
+    await waitFor(() => expect(endpoints.createMeeting).toHaveBeenCalled());
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "AUDIO_UPLOAD_INIT_FAILED: audio upload unavailable",
+    );
+    expect(screen.getByRole("link", { name: "查看已创建会议" })).toHaveAttribute("href", "/meetings/m1");
+    expect(navigateTarget).not.toHaveBeenCalled();
+  });
+
   it("surfaces backend document upload MIME errors with the business error code", async () => {
     const endpoints = await import("@/shared/api/endpoints");
     vi.mocked(endpoints.initFileUpload).mockRejectedValueOnce(new ApiError(

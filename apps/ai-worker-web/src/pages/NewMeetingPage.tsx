@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import {
   abortAudioUpload,
@@ -69,6 +69,7 @@ export function NewMeetingPage() {
   const [uploadingDocuments, setUploadingDocuments] = useState<UploadingDocument[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdMeetingId, setCreatedMeetingId] = useState<string | null>(null);
   const activeAudioUploader = useRef<MultipartUploader<unknown> | null>(null);
 
   const personFetcher = useCallback((q: string, signal: AbortSignal) => searchPersons(q, { signal }), []);
@@ -158,6 +159,7 @@ export function NewMeetingPage() {
     if (!canStart || !audioFile) return;
     setBusy(true);
     setError(null);
+    setCreatedMeetingId(null);
     try {
       const meeting = await createMeeting({
         title: title.trim(),
@@ -169,6 +171,7 @@ export function NewMeetingPage() {
           role: participant.role,
         })),
       });
+      setCreatedMeetingId(meeting.meetingId);
       if (terms.length > 0) await updateMeetingGlossary(meeting.meetingId, terms);
       for (const document of selectedDocuments) {
         await attachMeetingDocument(meeting.meetingId, { documentId: document.documentId, role: "REFERENCE" });
@@ -442,7 +445,14 @@ export function NewMeetingPage() {
       </section>
 
       {error || personSearch.error ? (
-        <div className="banner banner--danger" role="alert">{error ?? formatError(personSearch.error)}</div>
+        <div className="banner banner--danger" role="alert">
+          <span className="banner__body">{error ?? formatError(personSearch.error)}</span>
+          {createdMeetingId ? (
+            <Link className="button button--secondary" to={`/meetings/${createdMeetingId}`}>
+              查看已创建会议
+            </Link>
+          ) : null}
+        </div>
       ) : null}
 
       <footer className="toolbar">
