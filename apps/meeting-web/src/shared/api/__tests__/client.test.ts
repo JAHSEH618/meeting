@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker } from "../client";
+import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker, releaseLegalHold } from "../client";
 import { server } from "../mocks/server";
 import type { ApiResponse } from "../types";
 
@@ -99,5 +99,27 @@ describe("api client", () => {
 
     expect(captured.body).toEqual({ reason: "user_rejected" });
     expect(captured.idempotencyKey).toMatch(/^reject-meeting-speaker_/);
+  });
+
+  it("sends the OpenAPI legal hold release request shape", async () => {
+    const captured: { body?: unknown; idempotencyKey?: string | null } = {};
+    server.use(
+      http.delete("/api/legal-holds/:legalHoldId", async ({ request }) => {
+        captured.body = await request.json();
+        captured.idempotencyKey = request.headers.get("Idempotency-Key");
+        return HttpResponse.json<ApiResponse<unknown>>({
+          success: true,
+          data: null,
+          error: null,
+          requestId: "req_01",
+          traceId: "trace_01",
+        });
+      }),
+    );
+
+    await releaseLegalHold("lh_01", { reason: "case closed" });
+
+    expect(captured.body).toEqual({ reason: "case closed" });
+    expect(captured.idempotencyKey).toMatch(/^release-legal-hold_/);
   });
 });

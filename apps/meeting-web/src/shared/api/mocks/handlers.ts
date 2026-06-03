@@ -932,7 +932,7 @@ export const handlers = [
     return HttpResponse.json<ApiResponse>({ success: true, data: found, error: null, requestId: "r", traceId: "t" });
   }),
 
-  http.put("/api/legal-holds/:legalHoldId/release", async ({ params, request }) => {
+  http.delete("/api/legal-holds/:legalHoldId", async ({ params, request }) => {
     const id = String(params.legalHoldId);
     const body = (await request.json()) as { reason: string };
     const idx = legalHolds.findIndex((h) => h.legalHoldId === id);

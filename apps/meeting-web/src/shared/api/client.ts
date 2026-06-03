@@ -784,8 +784,8 @@ export async function getLegalHold(legalHoldId: string) {
 
 export async function releaseLegalHold(legalHoldId: string, input: ReleaseLegalHoldInput) {
   return request<void>(
-    "PUT",
-    `/legal-holds/${legalHoldId}/release`,
+    "DELETE",
+    `/legal-holds/${legalHoldId}`,
     input,
     generateId("release-legal-hold"),
   );
