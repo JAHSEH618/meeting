@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createLegalHold,
   listLegalHolds,
@@ -45,6 +45,11 @@ export function LegalHoldsPage() {
   const [reason, setReason] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [releaseTarget, setReleaseTarget] = useState<LegalHold | null>(null);
+  const [releaseReason, setReleaseReason] = useState("");
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState(false);
+  const releaseReasonRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -95,20 +100,40 @@ export function LegalHoldsPage() {
     }
   }, [scopeType, scopeId, reason]);
 
-  const handleRelease = useCallback(async (hold: LegalHold) => {
-    const userReason = window.prompt(
-      `释放 legal hold ${hold.legalHoldId} 的原因：`,
-      "",
-    );
-    if (!userReason || !userReason.trim()) return;
+  const openReleaseDialog = useCallback((hold: LegalHold) => {
+    setReleaseTarget(hold);
+    setReleaseReason("");
+    setReleaseError(null);
+  }, []);
+
+  const closeReleaseDialog = useCallback(() => {
+    if (releasing) return;
+    setReleaseTarget(null);
+    setReleaseReason("");
+    setReleaseError(null);
+  }, [releasing]);
+
+  const handleReleaseSubmit = useCallback(async () => {
+    if (!releaseTarget) return;
+    if (!releaseReason.trim()) {
+      setReleaseError("请填写释放原因");
+      releaseReasonRef.current?.focus();
+      return;
+    }
+    setReleaseError(null);
+    setReleasing(true);
     try {
-      await releaseLegalHold(hold.legalHoldId, { reason: userReason.trim() });
+      await releaseLegalHold(releaseTarget.legalHoldId, { reason: releaseReason.trim() });
       await loadAll();
+      setReleaseTarget(null);
+      setReleaseReason("");
     } catch (cause) {
       const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "释放失败");
+      setReleaseError(apiError.code ? getUserMessage(apiError.code) : "释放失败");
+    } finally {
+      setReleasing(false);
     }
-  }, [loadAll]);
+  }, [loadAll, releaseReason, releaseTarget]);
 
   return (
     <main className="page">
@@ -223,7 +248,7 @@ export function LegalHoldsPage() {
                     {hold.status === "ACTIVE" && (
                       <button
                         className="button"
-                        onClick={() => void handleRelease(hold)}
+                        onClick={() => openReleaseDialog(hold)}
                         data-testid={`lh-release-${hold.legalHoldId}`}
                       >
                         释放
@@ -241,6 +266,64 @@ export function LegalHoldsPage() {
           </table>
         )}
       </section>
+
+      {releaseTarget && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lh-release-title"
+            aria-describedby="lh-release-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="lh-release-title" className="card-title">释放法定保全</h2>
+                <p id="lh-release-description" className="muted">
+                  {releaseTarget.legalHoldId} · {SCOPE_LABELS[releaseTarget.scopeType]} {releaseTarget.scopeId}
+                </p>
+              </div>
+              <button className="button button--ghost" type="button" onClick={closeReleaseDialog} disabled={releasing}>
+                取消
+              </button>
+            </div>
+            <label className="field">
+              <span className="field__label">释放原因</span>
+              <textarea
+                className="field__input"
+                ref={releaseReasonRef}
+                name="releaseReason"
+                autoComplete="off"
+                value={releaseReason}
+                onChange={(event) => setReleaseReason(event.target.value)}
+                aria-invalid={releaseError ? "true" : "false"}
+                aria-describedby={releaseError ? "lh-release-error" : undefined}
+                rows={4}
+                data-testid="lh-release-reason"
+              />
+            </label>
+            {releaseError && (
+              <p className="field__error" id="lh-release-error" role="alert" data-testid="lh-release-error">
+                {releaseError}
+              </p>
+            )}
+            <div className="modal-actions" aria-live="polite">
+              <button className="button" type="button" onClick={closeReleaseDialog} disabled={releasing}>
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => void handleReleaseSubmit()}
+                disabled={releasing}
+                data-testid="lh-release-submit"
+              >
+                {releasing ? "释放中..." : "确认释放"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
