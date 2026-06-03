@@ -149,6 +149,10 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         tenantScopedTransaction.execute(tenantId, revokedBy, null, () -> {
             SpeakerProfile profile = profileRepository.findById(tenantId, profileId)
                 .orElseThrow(() -> new IllegalArgumentException("speaker profile not found: " + profileId));
+            if ("REVOKED".equals(profile.consentStatus())) {
+                log.info("speaker_profile_revoke_noop tenant={} profile={} by={} reason={}", tenantId, profileId, revokedBy, reason);
+                return null;
+            }
             OffsetDateTime now = OffsetDateTime.now(clock);
             profile.revoke(now);
             profileRepository.updateConsentStatus(tenantId, profileId, profile.consentStatus(),

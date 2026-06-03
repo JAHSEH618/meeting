@@ -69,6 +69,23 @@ class SpeakerProfileApplicationServiceTest {
     }
 
     @Test
+    void revokeIsIdempotentForAlreadyRevokedProfile() {
+        InMemoryProfileRepo profiles = new InMemoryProfileRepo();
+        var service = service(profiles, new InMemoryEnrollmentRepo());
+        var created = service.create(new CreateSpeakerProfileCommand(
+            "tenant_01", "person_01", "Alice", "INVITE", "v1", "user_01", "req_01", "trace_01", "idem_01"
+        ));
+
+        service.revoke("tenant_01", created.speakerProfileId(), "user_01", "first");
+        service.revoke("tenant_01", created.speakerProfileId(), "user_01", "duplicate");
+
+        var dto = service.get("tenant_01", created.speakerProfileId()).orElseThrow();
+        assertThat(dto.consentStatus()).isEqualTo("REVOKED");
+        assertThat(dto.revokedAt()).isEqualTo(NOW);
+        assertThat(profiles.consentUpdateCalls).isEqualTo(1);
+    }
+
+    @Test
     void deleteIsIdempotent() {
         InMemoryProfileRepo profiles = new InMemoryProfileRepo();
         var service = service(profiles, new InMemoryEnrollmentRepo());
@@ -207,6 +224,7 @@ class SpeakerProfileApplicationServiceTest {
 
     private static final class InMemoryProfileRepo implements SpeakerProfileRepository {
         private final Map<String, SpeakerProfile> store = new LinkedHashMap<>();
+        private int consentUpdateCalls;
 
         @Override
         public SpeakerProfile save(SpeakerProfile profile) {
@@ -247,6 +265,7 @@ class SpeakerProfileApplicationServiceTest {
         @Override
         public void updateConsentStatus(String tenantId, String profileId, String consentStatus,
                                          OffsetDateTime revokedAt, OffsetDateTime deletedAt, OffsetDateTime updatedAt) {
+            consentUpdateCalls++;
             var existing = store.get(profileId);
             if (existing == null) return;
             store.put(profileId, SpeakerProfile.restore(
