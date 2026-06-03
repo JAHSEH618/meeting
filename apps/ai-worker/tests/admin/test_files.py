@@ -69,6 +69,30 @@ def test_init_upload_passthrough() -> None:
     assert args.kwargs["idempotency_key"] == "i1"
 
 
+def test_init_upload_requires_idempotency_key_before_java() -> None:
+    client = MagicMock()
+    client.request = AsyncMock(return_value=_resp())
+    headers = {
+        "X-Request-Id": "r1",
+        "X-Trace-Id": "t1",
+    }
+
+    response = _app(client).post(
+        "/admin/files/uploads",
+        json={
+            "fileName": "ref.pdf",
+            "contentType": "application/pdf",
+            "fileSizeBytes": 4,
+            "fileSha256": "a" * 64,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    client.request.assert_not_awaited()
+
+
 def test_part_passthrough() -> None:
     client = MagicMock()
     client.request = AsyncMock(return_value=_resp())

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from ai_worker.admin.envelopes import passthrough
+from ai_worker.admin.envelopes import error, passthrough
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 
@@ -20,6 +20,15 @@ def build_files_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
+        if idempotency_key is None or not idempotency_key.strip():
+            return error(
+                status_code=400,
+                code="VALIDATION_FAILED",
+                message="Idempotency-Key is required",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
         body = await request.json()
         response = await java_client.request(
             "POST",
