@@ -304,7 +304,7 @@ class SpeakerAutoConfirmServiceTest {
             "meeting_01",
             "SPEAKER_00",
             "person_01",
-            null,
+            "profile_01",
             1,
             "user_01"
         )).isInstanceOf(TranscriptApplicationService.TranscriptVersionConflictException.class)
@@ -314,6 +314,41 @@ class SpeakerAutoConfirmServiceTest {
                 assertThat(conflict.actualVersion()).isEqualTo(2);
                 assertThat(conflict.expectedVersion()).isEqualTo(1);
             });
+        assertThat(speakers.confirmedLabels).isEmpty();
+        assertThat(transcriptRepository.lastDisplayName).isNull();
+    }
+
+    @Test
+    void humanConfirmRequiresSpeakerProfileIdBeforeMutatingSpeakerOrTranscript() {
+        InMemorySpeakers speakers = new InMemorySpeakers(List.of(
+            speaker("SPEAKER_00", List.of("person_01"), 0.92, "CANDIDATE")
+        ));
+        CapturingTranscriptRepository transcriptRepository = new CapturingTranscriptRepository();
+        MeetingSpeakerApplicationService confirmService = confirmService(
+            speakers,
+            transcriptRepository,
+            new InMemoryPersons(List.of(new Person(
+                "person_01",
+                "tenant_01",
+                "李四",
+                "lisi@example.com",
+                null,
+                "ACTIVE",
+                NOW
+            )))
+        );
+
+        assertThatThrownBy(() -> confirmService.confirm(
+            "tenant_01",
+            "meeting_01",
+            "SPEAKER_00",
+            "person_01",
+            " ",
+            1,
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("speakerProfileId is required");
+
         assertThat(speakers.confirmedLabels).isEmpty();
         assertThat(transcriptRepository.lastDisplayName).isNull();
     }

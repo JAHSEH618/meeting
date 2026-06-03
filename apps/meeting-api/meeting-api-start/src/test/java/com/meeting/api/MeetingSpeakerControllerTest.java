@@ -76,6 +76,50 @@ class MeetingSpeakerControllerTest {
     }
 
     @Test
+    void confirmRequiresOpenApiFieldsAndPassesThemToService() {
+        RecordingMeetingSpeakerService service = new RecordingMeetingSpeakerService(List.of());
+        MeetingSpeakerController controller = new MeetingSpeakerController(service);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        var response = controller.confirm(
+            "meeting_01",
+            "SPEAKER_00",
+            new MeetingSpeakerController.ConfirmRequest("person_01", "profile_01", 3),
+            "req_01",
+            "trace_01",
+            "user_01"
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(service.lastTenantId).isEqualTo("tenant_01");
+        assertThat(service.lastMeetingId).isEqualTo("meeting_01");
+        assertThat(service.lastSpeakerLabel).isEqualTo("SPEAKER_00");
+        assertThat(service.lastPersonId).isEqualTo("person_01");
+        assertThat(service.lastSpeakerProfileId).isEqualTo("profile_01");
+        assertThat(service.lastExpectedTranscriptVersion).isEqualTo(3);
+        assertThat(service.lastUserId).isEqualTo("user_01");
+    }
+
+    @Test
+    void confirmRejectsBlankSpeakerProfileBeforeCallingService() {
+        RecordingMeetingSpeakerService service = new RecordingMeetingSpeakerService(List.of());
+        MeetingSpeakerController controller = new MeetingSpeakerController(service);
+        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+
+        assertThatThrownBy(() -> controller.confirm(
+            "meeting_01",
+            "SPEAKER_00",
+            new MeetingSpeakerController.ConfirmRequest("person_01", " ", 3),
+            "req_01",
+            "trace_01",
+            "user_01"
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("speakerProfileId is required");
+
+        assertThat(service.lastSpeakerProfileId).isNull();
+    }
+
+    @Test
     void rejectRequiresOpenApiReasonAndPassesItToService() {
         RecordingMeetingSpeakerService service = new RecordingMeetingSpeakerService(List.of());
         MeetingSpeakerController controller = new MeetingSpeakerController(service);
@@ -122,6 +166,9 @@ class MeetingSpeakerControllerTest {
         private String lastTenantId;
         private String lastMeetingId;
         private String lastSpeakerLabel;
+        private String lastPersonId;
+        private String lastSpeakerProfileId;
+        private Integer lastExpectedTranscriptVersion;
         private String lastReason;
         private String lastUserId;
 
@@ -135,6 +182,19 @@ class MeetingSpeakerControllerTest {
             this.lastTenantId = tenantId;
             this.lastMeetingId = meetingId;
             return speakers;
+        }
+
+        @Override
+        public void confirm(String tenantId, String meetingId, String speakerLabel,
+                            String personId, String speakerProfileId, Integer expectedTranscriptVersion,
+                            String confirmedBy) {
+            this.lastTenantId = tenantId;
+            this.lastMeetingId = meetingId;
+            this.lastSpeakerLabel = speakerLabel;
+            this.lastPersonId = personId;
+            this.lastSpeakerProfileId = speakerProfileId;
+            this.lastExpectedTranscriptVersion = expectedTranscriptVersion;
+            this.lastUserId = confirmedBy;
         }
 
         @Override

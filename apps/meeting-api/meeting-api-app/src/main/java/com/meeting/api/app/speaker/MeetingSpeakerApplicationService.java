@@ -99,6 +99,9 @@ public class MeetingSpeakerApplicationService {
 
     public void confirm(String tenantId, String meetingId, String speakerLabel,
                          String personId, String speakerProfileId, Integer expectedTranscriptVersion, String confirmedBy) {
+        if (!hasText(speakerProfileId)) {
+            throw new IllegalArgumentException("speakerProfileId is required");
+        }
         confirmInternal(tenantId, meetingId, speakerLabel, personId, speakerProfileId, expectedTranscriptVersion, confirmedBy, true);
     }
 

@@ -43,6 +43,18 @@ public class MeetingSpeakerController {
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("confirm request is required");
+        }
+        if (!hasText(body.personId())) {
+            throw new IllegalArgumentException("personId is required");
+        }
+        if (!hasText(body.speakerProfileId())) {
+            throw new IllegalArgumentException("speakerProfileId is required");
+        }
+        if (body.expectedTranscriptVersion() == null) {
+            throw new IllegalArgumentException("expectedTranscriptVersion is required");
+        }
         service.confirm(
             TenantContextHolder.currentTenantId(),
             meetingId,
