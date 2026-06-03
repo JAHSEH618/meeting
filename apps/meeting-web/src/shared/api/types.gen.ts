@@ -144,6 +144,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retrieve a tenant-scoped multipart upload session. */
+        get: operations["getFileUpload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/{uploadId}/parts": {
         parameters: {
             query?: never;
@@ -2492,6 +2509,34 @@ export interface operations {
                 };
             };
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getFileUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upload session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     createFileUploadPart: {

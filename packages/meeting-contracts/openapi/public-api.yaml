@@ -361,6 +361,29 @@ paths:
         '422':
           $ref: '#/components/responses/Unprocessable'
 
+  /files/{uploadId}:
+    get:
+      operationId: getFileUpload
+      description: Retrieve a tenant-scoped multipart upload session.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Upload session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /files/{uploadId}/parts:
     post:
       operationId: createFileUploadPart
