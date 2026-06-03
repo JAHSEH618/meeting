@@ -37,6 +37,14 @@ describe("SpeakerProfilesPage", () => {
     expect(screen.getByText("声纹向量已用 KMS 信封加密存储")).toBeInTheDocument();
   });
 
+  it("filters speaker profiles by personId from the URL", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    renderPage("/speaker-profiles?personId=p1");
+
+    await waitFor(() => expect(endpoints.listSpeakerProfiles).toHaveBeenCalledWith("p1"));
+    expect(screen.getByRole("link", { name: "去录入" })).toHaveAttribute("href", "/enrollment?personId=p1");
+  });
+
   it("requires confirmation before revoking a speaker profile", async () => {
     const endpoints = await import("@/shared/api/endpoints");
     renderPage();
@@ -53,10 +61,10 @@ describe("SpeakerProfilesPage", () => {
   });
 });
 
-function renderPage() {
+function renderPage(path = "/speaker-profiles") {
   return render(
     <QueryClientProvider client={createQueryClient()}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <SpeakerProfilesPage />
       </MemoryRouter>
     </QueryClientProvider>,

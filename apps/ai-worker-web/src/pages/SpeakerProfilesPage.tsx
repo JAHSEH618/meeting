@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useRevokeSpeakerProfile, useSpeakerProfilesQuery } from "@/features/speaker-profiles/queries";
 import { ApiError } from "@/shared/api/client";
@@ -12,7 +12,9 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export function SpeakerProfilesPage() {
-  const profilesQuery = useSpeakerProfilesQuery();
+  const [searchParams] = useSearchParams();
+  const personId = searchParams.get("personId");
+  const profilesQuery = useSpeakerProfilesQuery(personId);
   const revoke = useRevokeSpeakerProfile();
   const [pendingRevokeProfile, setPendingRevokeProfile] = useState<SpeakerProfileDTO | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -38,7 +40,12 @@ export function SpeakerProfilesPage() {
           <p className="page-subtitle">Java 管理授权、档案状态和人员绑定。</p>
         </div>
         <div className="toolbar">
-          <Link className="button button--primary" to="/enrollment">去录入</Link>
+          <Link
+            className="button button--primary"
+            to={personId ? `/enrollment?personId=${encodeURIComponent(personId)}` : "/enrollment"}
+          >
+            去录入
+          </Link>
         </div>
       </header>
 
@@ -46,6 +53,7 @@ export function SpeakerProfilesPage() {
         <div className="toolbar">
           <strong id="speaker-profile-list">档案列表</strong>
           <span className="pill pill--neutral">{profiles.length} 个</span>
+          {personId ? <span className="pill pill--neutral" translate="no">Person {personId}</span> : null}
         </div>
         <p className="page-subtitle">声纹向量已用 KMS 信封加密存储</p>
 

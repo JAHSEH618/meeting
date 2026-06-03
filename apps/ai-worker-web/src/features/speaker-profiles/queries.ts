@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listSpeakerProfiles, revokeSpeakerProfile } from "@/shared/api/endpoints";
 import type { SpeakerProfileDTO } from "@/shared/api/types";
 
-export function useSpeakerProfilesQuery() {
+export function useSpeakerProfilesQuery(personId?: string | null) {
   return useQuery<SpeakerProfileDTO[]>({
-    queryKey: ["admin", "speaker-profiles"],
-    queryFn: () => listSpeakerProfiles(),
+    queryKey: ["admin", "speaker-profiles", personId ?? null],
+    queryFn: () => listSpeakerProfiles(personId ?? undefined),
   });
 }
 
