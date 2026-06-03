@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDeletionJob,
   listDeletionJobs,
@@ -57,6 +57,10 @@ export function DeletionJobsPage() {
   const [reason, setReason] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<CreateDeletionJobInput | null>(null);
+  const [tenantConfirmPhrase, setTenantConfirmPhrase] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const tenantConfirmRef = useRef<HTMLInputElement | null>(null);
 
   const hasActiveJob = useMemo(
     () => jobs.some((j) => !TERMINAL_STATUSES.has(j.status)),
@@ -94,39 +98,53 @@ export function DeletionJobsPage() {
     [jobs],
   );
 
-  const handleCreate = useCallback(async () => {
+  const openCreateConfirmation = useCallback(() => {
     if (!scopeId.trim() || !reason.trim()) {
       setCreateError("请填写 scopeId 和原因");
       return;
     }
-    const confirmMsg = scopeType === "TENANT"
-      ? `你正在请求删除整个租户的数据。\n输入 "DELETE-TENANT" 确认：`
-      : `确认提交删除任务？\nscope: ${SCOPE_LABELS[scopeType]} / ${scopeId.trim()}\n原因: ${reason.trim()}`;
-    const confirmed = scopeType === "TENANT"
-      ? window.prompt(confirmMsg) === "DELETE-TENANT"
-      : window.confirm(confirmMsg);
-    if (!confirmed) return;
-
     setCreateError(null);
+    setConfirmError(null);
+    setTenantConfirmPhrase("");
+    setConfirmTarget({
+      scopeType,
+      scopeId: scopeId.trim(),
+      reason: reason.trim(),
+    });
+  }, [scopeType, scopeId, reason]);
+
+  const closeCreateConfirmation = useCallback(() => {
+    if (creating) return;
+    setConfirmTarget(null);
+    setConfirmError(null);
+    setTenantConfirmPhrase("");
+  }, [creating]);
+
+  const handleCreateConfirm = useCallback(async () => {
+    if (!confirmTarget) return;
+    if (confirmTarget.scopeType === "TENANT" && tenantConfirmPhrase !== "DELETE-TENANT") {
+      setConfirmError("请输入 DELETE-TENANT 确认整租户删除");
+      tenantConfirmRef.current?.focus();
+      return;
+    }
+
+    setConfirmError(null);
     setCreating(true);
     try {
-      const input: CreateDeletionJobInput = {
-        scopeType,
-        scopeId: scopeId.trim(),
-        reason: reason.trim(),
-      };
-      const created = await createDeletionJob(input);
+      const created = await createDeletionJob(confirmTarget);
       setJobs((prev) => [created, ...prev]);
       setScopeId("");
       setReason("");
       setShowCreate(false);
+      setConfirmTarget(null);
+      setTenantConfirmPhrase("");
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setCreateError(apiError.code ? getUserMessage(apiError.code) : "创建失败");
     } finally {
       setCreating(false);
     }
-  }, [scopeType, scopeId, reason]);
+  }, [confirmTarget, tenantConfirmPhrase]);
 
   return (
     <main className="page">
@@ -200,7 +218,7 @@ export function DeletionJobsPage() {
           <button
             className="button danger"
             disabled={creating}
-            onClick={handleCreate}
+            onClick={openCreateConfirmation}
             data-testid="dj-create-submit"
           >
             {creating ? "提交中..." : "提交"}
@@ -257,6 +275,93 @@ export function DeletionJobsPage() {
           </table>
         )}
       </section>
+
+      {confirmTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dj-confirm-title"
+            aria-describedby="dj-confirm-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="dj-confirm-title" className="card-title">确认删除任务</h2>
+                <p id="dj-confirm-description" className="muted">
+                  提交后系统将检查法定保全，并异步清理命中的数据。
+                </p>
+              </div>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={closeCreateConfirmation}
+                disabled={creating}
+              >
+                取消
+              </button>
+            </div>
+            <dl className="grid">
+              <div>
+                <dt className="muted">范围</dt>
+                <dd>{SCOPE_LABELS[confirmTarget.scopeType]}</dd>
+              </div>
+              <div>
+                <dt className="muted">scopeId</dt>
+                <dd><code translate="no">{confirmTarget.scopeId}</code></dd>
+              </div>
+              <div>
+                <dt className="muted">原因</dt>
+                <dd>{confirmTarget.reason}</dd>
+              </div>
+            </dl>
+            {confirmTarget.scopeType === "TENANT" ? (
+              <div className="field">
+                <label className="field__label" htmlFor="dj-tenant-confirmation">
+                  确认口令
+                </label>
+                <input
+                  id="dj-tenant-confirmation"
+                  className="field__input"
+                  ref={tenantConfirmRef}
+                  name="tenantDeletionConfirmation"
+                  autoComplete="off"
+                  value={tenantConfirmPhrase}
+                  onChange={(event) => setTenantConfirmPhrase(event.target.value)}
+                  aria-invalid={confirmError ? "true" : "false"}
+                  aria-describedby={confirmError ? "dj-confirm-error" : "dj-confirm-hint"}
+                />
+                <span className="muted" id="dj-confirm-hint">
+                  输入 DELETE-TENANT 才能提交整租户删除任务。
+                </span>
+              </div>
+            ) : null}
+            {confirmError ? (
+              <p className="field__error" id="dj-confirm-error" role="alert">
+                {confirmError}
+              </p>
+            ) : null}
+            <div className="modal-actions" aria-live="polite">
+              <button
+                className="button"
+                type="button"
+                onClick={closeCreateConfirmation}
+                disabled={creating}
+              >
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => void handleCreateConfirm()}
+                disabled={creating}
+              >
+                {creating ? "提交中..." : "确认提交"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
