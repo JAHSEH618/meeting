@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   commitEnrollment,
   createEnrollmentSession,
@@ -21,6 +21,7 @@ const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
 export function EnrollmentPage() {
   const [searchParams] = useSearchParams();
   const initialPersonId = searchParams.get("personId");
+  const returnTo = getSafeReturnTo(searchParams.get("returnTo"));
   const [personId, setPersonId] = useState<string | null>(initialPersonId);
   const [selectedPerson, setSelectedPerson] = useState<PersonDTO | null>(null);
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
@@ -238,6 +239,7 @@ export function EnrollmentPage() {
                 </>
               ) : null}
             </span>
+            {returnTo ? <Link className="button button--secondary" to={returnTo}>返回会议</Link> : null}
           </div>
         ) : null}
       </section>
@@ -256,4 +258,9 @@ function formatError(e: unknown): string {
     return `${e.error.code}: ${e.error.message}`;
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+function getSafeReturnTo(returnTo: string | null): string | null {
+  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) return null;
+  return returnTo;
 }

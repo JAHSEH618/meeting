@@ -102,6 +102,35 @@ describe("EnrollmentPage", () => {
     expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("声纹档案 sp_01");
     expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("音频文件 file_01");
   });
+
+  it("offers a return link after committing enrollment from a meeting", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.previewEnrollment).mockResolvedValueOnce({
+      sessionId: "s1",
+      state: "PREVIEWED",
+      personId: "p-link",
+      qualityScore: 0.72,
+    });
+    vi.mocked(endpoints.commitEnrollment).mockResolvedValueOnce({
+      sessionId: "s1",
+      state: "COMMITTED",
+      personId: "p-link",
+      qualityScore: 0.72,
+      profileId: "sp_01",
+      fileId: "file_01",
+    });
+
+    renderEnrollmentPage("/enrollment?personId=p-link&returnTo=%2Fmeetings%2Fm1");
+    fireEvent.click(screen.getByRole("button", { name: /创建录入会话/ }));
+    await screen.findByTestId("session-id");
+    chooseEnrollmentAudio();
+    fireEvent.click(screen.getByRole("button", { name: /上传并预览/ }));
+
+    expect(await screen.findByText("质量分 0.72")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /确认录入/ }));
+
+    expect(await screen.findByRole("link", { name: "返回会议" })).toHaveAttribute("href", "/meetings/m1");
+  });
 });
 
 function renderEnrollmentPage(path = "/enrollment") {

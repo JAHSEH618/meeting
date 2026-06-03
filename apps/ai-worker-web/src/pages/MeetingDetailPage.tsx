@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ApiError } from "@/shared/api/client";
 import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
 import {
@@ -369,6 +369,14 @@ export function MeetingDetailPage() {
                           ) : null}
                         </div>
                       ) : null}
+                      {canEnrollSpeaker(speaker) ? (
+                        <Link
+                          className="button button--secondary"
+                          to={`/enrollment?personId=${encodeURIComponent(speaker.personId ?? "")}&returnTo=${encodeURIComponent(`/meetings/${meetingId}`)}`}
+                        >
+                          为 {speaker.displayName ?? speaker.personId} 录入声纹
+                        </Link>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -503,6 +511,13 @@ function canConfirmSpeaker(speaker: MeetingSpeakerDTO): boolean {
 
 function canRejectSpeaker(speaker: MeetingSpeakerDTO): boolean {
   return !hasFinalSpeakerDecision(speaker) && !!speaker.candidates?.length;
+}
+
+function canEnrollSpeaker(speaker: MeetingSpeakerDTO): boolean {
+  return !hasFinalSpeakerDecision(speaker) &&
+    !!speaker.personId &&
+    !speaker.speakerProfileId &&
+    !speaker.candidates?.length;
 }
 
 function formatError(e: unknown): string {

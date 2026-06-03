@@ -167,6 +167,29 @@ describe("MeetingDetailPage", () => {
     await waitFor(() => expect(endpoints.getMeetingAggregate).toHaveBeenCalledTimes(2));
   });
 
+  it("offers enrollment for candidate speakers without a usable voiceprint", async () => {
+    const endpoints = await import("@/shared/api/endpoints");
+    vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce(defaultAggregate({
+      speakers: [speaker({
+        speakerLabel: "SPEAKER_04",
+        personId: "p2",
+        displayName: "王五",
+        speakerProfileId: null,
+        confirmationStatus: "CANDIDATE",
+        candidates: [],
+      })],
+      latestTask: succeededTask(),
+      minutes: null,
+    }));
+
+    renderPage();
+
+    const speakers = await screen.findByRole("region", { name: "说话人" });
+    const enrollLink = within(speakers).getByRole("link", { name: "为 王五 录入声纹" });
+
+    expect(enrollLink).toHaveAttribute("href", "/enrollment?personId=p2&returnTo=%2Fmeetings%2Fm1");
+  });
+
   it("requires confirmation before rejecting a speaker candidate set", async () => {
     const endpoints = await import("@/shared/api/endpoints");
     vi.mocked(endpoints.getMeetingAggregate).mockResolvedValueOnce(defaultAggregate({
