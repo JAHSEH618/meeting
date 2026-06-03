@@ -147,7 +147,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             if (!MEETING_FULL_PIPELINE.equals(command.taskType())) {
                 throw new IllegalArgumentException("unsupported taskType: " + command.taskType());
             }
-            meetingRepository.findById(command.tenantId(), command.meetingId())
+            Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
                 .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + command.meetingId()));
 
             OffsetDateTime now = OffsetDateTime.now(clock);
@@ -179,7 +179,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
                 MEETING_WORKER_STEPS,
                 0,
                 now,
-                processingTaskMessagePayload(command, saved)
+                processingTaskMessagePayload(command, saved, meeting)
             ));
             return ProcessingTaskAssembler.toDto(saved);
         });
@@ -353,7 +353,11 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return gated;
     }
 
-    private Map<String, Object> processingTaskMessagePayload(CreateProcessingTaskCommand command, ProcessingTask task) {
+    private Map<String, Object> processingTaskMessagePayload(
+        CreateProcessingTaskCommand command,
+        ProcessingTask task,
+        Meeting meeting
+    ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", task.taskId());
         payload.put("taskType", task.taskType());
@@ -362,7 +366,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
         payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
-        payload.put("expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion());
+        payload.put("expectedInputVersion", expectedInputVersionForMeeting(command.expectedInputVersion(), meeting));
         payload.put("options", command.options() == null ? Map.of() : command.options());
         payload.put("traceId", command.traceId() == null ? "" : command.traceId());
         addWorkstationContext(payload, task.tenantId(), task.meetingId());
@@ -419,7 +423,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
         payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
-        payload.put("expectedInputVersion", Map.of("chunkStrategyVersion", "v1"));
+        payload.put("expectedInputVersion", expectedInputVersionForMeeting(null, meeting));
         payload.put("language", meeting.language());
         payload.put("channelMap", Map.of("channelCount", 1, "layout", "mono"));
         payload.put("knownParticipants", knownParticipantIds(meeting));
@@ -491,5 +495,18 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             })
             .filter(value -> value != null && !value.isBlank())
             .toList();
+    }
+
+    private static Map<String, Object> expectedInputVersionForMeeting(
+        Map<String, Object> requested,
+        Meeting meeting
+    ) {
+        Map<String, Object> expectedInputVersion = new LinkedHashMap<>();
+        expectedInputVersion.put("chunkStrategyVersion", "v1");
+        if (requested != null) {
+            expectedInputVersion.putAll(requested);
+        }
+        expectedInputVersion.put("transcriptVersion", meeting.transcriptVersion());
+        return expectedInputVersion;
     }
 }

@@ -152,7 +152,7 @@ class MvpWorkerRuntime:
                 tenant_id=task.tenant_id,
                 meeting_id=task.meeting_id,
                 attempt_no=task.attempt_no,
-                transcript_version=1,
+                transcript_version=_transcript_version_for_task(task),
                 segments=artifact.transcript_segments,
                 metadata={
                     "workflowId": f"wf_{task.task_id}_{task.attempt_no}",
@@ -431,6 +431,14 @@ def _speaker_enrollment_id_for_task(task: TaskMessage) -> str | None:
     if task.task_type != "SPEAKER_ENROLLMENT":
         return None
     return task.speaker_enrollment_id
+
+
+def _transcript_version_for_task(task: TaskMessage) -> int:
+    expected = task.expected_input_version if isinstance(task.expected_input_version, dict) else {}
+    version = expected.get("transcriptVersion")
+    if type(version) is int:
+        return version + 1
+    return 1
 
 
 def _add_skipped_step(context: Any, step_name: str, reason: str) -> None:

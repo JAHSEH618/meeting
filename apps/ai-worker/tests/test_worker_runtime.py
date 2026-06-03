@@ -175,12 +175,17 @@ class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
 
 
 @pytest.mark.asyncio
-async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback_client) -> None:
+async def test_consume_message_submits_java_transcript_version_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
     engine = StubWorkflowEngine(state_store)
     runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    raw_message = _valid_message()
+    raw_message["expectedInputVersion"] = {
+        "chunkStrategyVersion": "v1",
+        "transcriptVersion": 6,
+    }
 
-    task = await runtime.consume_message(_valid_message())
+    task = await runtime.consume_message(raw_message)
 
     assert task is not None
     snapshot = state_store.get("task_runtime_01")
@@ -191,6 +196,7 @@ async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback
     assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
     assert callback_client.update_step.await_args_list[0].kwargs["meeting_id"] == "mtg_01"
     callback_client.submit_transcript.assert_awaited_once()
+    assert callback_client.submit_transcript.await_args.kwargs["transcript_version"] == 7
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]
     assert completed_steps == _valid_message()["pipelineSteps"]
