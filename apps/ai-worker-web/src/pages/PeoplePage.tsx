@@ -141,6 +141,9 @@ function PersonRow({ person }: { person: PersonDTO }) {
         </span>
       </div>
       <div className="toolbar">
+        <Link className="button button--ghost" to={`/speaker-profiles?personId=${encodeURIComponent(person.personId)}`}>
+          查看 {person.displayName} 声纹档案
+        </Link>
         <Link className="button button--secondary" to={`/enrollment?personId=${encodeURIComponent(person.personId)}`}>
           为 {person.displayName} 录入声纹
         </Link>

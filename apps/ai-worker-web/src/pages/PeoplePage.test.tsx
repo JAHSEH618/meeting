@@ -61,6 +61,21 @@ describe("PeoplePage", () => {
     expect(await screen.findByText("新成员")).toBeInTheDocument();
     expect(screen.getByText("new@example.com")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "为 新成员 录入声纹" })).toHaveAttribute("href", "/enrollment?personId=p99");
+    expect(screen.getByRole("link", { name: "查看 新成员 声纹档案" })).toHaveAttribute(
+      "href",
+      "/speaker-profiles?personId=p99",
+    );
+  });
+
+  it("links each Java person to their speaker-profile filter", async () => {
+    searchResults = [makePerson(1, "李四", "li@example.com")];
+
+    renderPeoplePage();
+
+    expect(await screen.findByRole("link", { name: "查看 李四 声纹档案" })).toHaveAttribute(
+      "href",
+      "/speaker-profiles?personId=p1",
+    );
   });
 
   it("virtualizes long person result sets instead of rendering every row", async () => {
