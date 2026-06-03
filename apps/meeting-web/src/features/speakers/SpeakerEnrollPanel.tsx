@@ -54,6 +54,10 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
   const [statusText, setStatusText] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [pollingEnrollmentId, setPollingEnrollmentId] = useState<string | null>(null);
+  const [enrollmentFeedback, setEnrollmentFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -75,11 +79,14 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
         const match = resp.items.find((e) => e.enrollmentId === pollingEnrollmentId);
         if (match) {
           if (match.enrollmentStatus === "SUCCEEDED") {
-            window.alert("🎉 声纹注册成功！");
+            setEnrollmentFeedback({ tone: "success", message: "声纹注册成功" });
             setPollingEnrollmentId(null);
             onEnrollSuccess();
           } else if (match.enrollmentStatus === "FAILED") {
-            window.alert("❌ 声纹注册失败，请重新录制清晰明亮的音频进行尝试！");
+            setEnrollmentFeedback({
+              tone: "error",
+              message: "声纹注册失败，请重新录制清晰明亮的音频进行尝试",
+            });
             setPollingEnrollmentId(null);
             onEnrollSuccess();
           }
@@ -134,6 +141,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
 
   const handleEnroll = async () => {
     setError(null);
+    setEnrollmentFeedback(null);
     setEnrolling(true);
     setStatusText("准备上传通道…");
     try {
@@ -207,6 +215,20 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
     <div className="speaker-enroll-panel stack">
       <span className="speaker-enroll-panel__heading">添加参考音频</span>
 
+      {enrollmentFeedback ? (
+        <div
+          className={
+            enrollmentFeedback.tone === "success"
+              ? "banner banner--success"
+              : "banner banner--danger"
+          }
+          role={enrollmentFeedback.tone === "success" ? "status" : "alert"}
+          aria-live={enrollmentFeedback.tone === "success" ? "polite" : "assertive"}
+        >
+          {enrollmentFeedback.message}
+        </div>
+      ) : null}
+
       <div className="speaker-enroll-panel__tabs">
         <button
           type="button"
@@ -234,7 +256,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
               🎙️ 音频上传成功，后端正在提取并注册声纹…
             </span>
             <span className="page-subtitle">
-              正在等待机器学习特征匹配完成，完成后将自动为您弹窗提示。
+              正在等待机器学习特征匹配完成，完成后将自动在页面内提示。
             </span>
           </div>
         </div>
