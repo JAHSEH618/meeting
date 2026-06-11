@@ -1,11 +1,16 @@
 from dataclasses import dataclass
+import asyncio
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
+import structlog
+
 from ai_worker.common.config import settings
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -79,12 +84,15 @@ class LocalArtifactStore:
         path = self._path_for(bucket, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-        return ArtifactRef(
+        ref = ArtifactRef(
             uri=f"tos://{bucket}/{key}",
             sha256=hashlib.sha256(data).hexdigest(),
             size_bytes=len(data),
             content_type=content_type,
         )
+        if settings.enable_tos_backup:
+            asyncio.create_task(_backup_to_tos_async(bucket, key, data, content_type))
+        return ref
 
     async def upload_json(self, bucket: str, key: str, payload: dict[str, Any]) -> ArtifactRef:
         data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -134,6 +142,29 @@ def _parse_artifact_uri(uri: str) -> tuple[str, str, str]:
     if parsed.scheme == "tos" and parsed.netloc and parsed.path:
         return parsed.scheme, parsed.netloc, parsed.path.lstrip("/")
     raise ValueError(f"invalid artifact uri: {uri}")
+
+
+async def _backup_to_tos_async(bucket: str, key: str, data: bytes, content_type: str) -> None:
+    """Background task to upload workstation artifacts to TOS."""
+    if settings.storage_backend != "tos":
+        return
+    if not (settings.tos_endpoint and settings.tos_region and settings.tos_access_key_id and settings.tos_access_key_secret):
+        logger.warning("tos_backup_skipped", reason="credentials_missing", bucket=bucket, key=key)
+        return
+    try:
+        from ai_worker.infrastructure.tos_artifact_store import TosArtifactStore
+        local = LocalArtifactStore()
+        tos = TosArtifactStore(
+            endpoint=settings.tos_endpoint,
+            region=settings.tos_region,
+            access_key_id=settings.tos_access_key_id,
+            access_key_secret=settings.tos_access_key_secret,
+            local_writer=local,
+        )
+        await tos.upload_direct(bucket, key, data, content_type)
+        logger.info("tos_backup_success", bucket=bucket, key=key, size=len(data))
+    except Exception as e:
+        logger.error("tos_backup_failed", bucket=bucket, key=key, error=str(e))
 
 
 def build_artifact_store() -> "ArtifactStore":
