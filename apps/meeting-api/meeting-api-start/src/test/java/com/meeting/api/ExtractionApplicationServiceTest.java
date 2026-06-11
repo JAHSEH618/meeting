@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.extraction.ExtractionApplicationService;
 import com.meeting.api.client.enums.MeetingStatus;
+import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.extraction.ExtractionSummary;
 import com.meeting.api.domain.extraction.ActionItemRepository;
@@ -156,6 +157,7 @@ class ExtractionApplicationServiceTest {
             .title("M")
             .status(MeetingStatus.PROCESSING)
             .language("zh")
+            .securityLevel(SecurityLevel.INTERNAL)
             .transcriptVersion(2)
             .minutesVersion(0)
             .createdAt(NOW.minusMinutes(10))
