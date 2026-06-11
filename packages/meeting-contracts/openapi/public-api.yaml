@@ -2290,14 +2290,12 @@ components:
     # ── Meeting ────────────────────────────────────────────────
     CreateMeetingRequest:
       type: object
-      required: [title, securityLevel]
+      required: [title]
       properties:
         title: {type: string}
         scheduledStartAt:
           type: string
           format: date-time
-        securityLevel:
-          $ref: '#/components/schemas/SecurityLevel'
         language: {type: string, default: 'zh'}
         participants:
           type: array
@@ -2363,14 +2361,12 @@ components:
 
     Meeting:
       type: object
-      required: [meetingId, tenantId, title, securityLevel, status, language, transcriptVersion, minutesVersion, createdAt]
+      required: [meetingId, tenantId, title, status, language, transcriptVersion, minutesVersion, createdAt]
       properties:
         meetingId: {type: string}
         tenantId: {type: string}
         title: {type: string}
         scheduledStartAt: {type: string, format: date-time}
-        securityLevel:
-          $ref: '#/components/schemas/SecurityLevel'
         status:
           $ref: '#/components/schemas/MeetingStatus'
         language: {type: string}
@@ -3061,15 +3057,13 @@ components:
         upload flow analogous to audio's multipart upload — the file is
         ingested out-of-band, the API registers its metadata and triggers
         the parse / chunk / embed pipeline.
-      required: [title, fileId, documentType, securityLevel]
+      required: [title, fileId, documentType]
       properties:
         title: {type: string, minLength: 1}
         fileId: {type: string, minLength: 1, description: 'TOS / MinIO object key for the source file'}
         documentType:
           type: string
           enum: [PDF, DOCX, MARKDOWN, TXT]
-        securityLevel:
-          $ref: '#/components/schemas/SecurityLevel'
         contentHash:
           type: [string, 'null']
           description: 'SHA-256 of the source file content (optional, recorded for audit / dedup)'
@@ -3083,7 +3077,7 @@ components:
         on both.
       required:
         [documentId, tenantId, title, fileId, documentType, status,
-         securityLevel, textExtractionStatus, createdAt, updatedAt]
+         textExtractionStatus, createdAt, updatedAt]
       properties:
         documentId: {type: string}
         tenantId: {type: string}
@@ -3095,8 +3089,6 @@ components:
         status:
           type: string
           enum: [ACTIVE, DELETED]
-        securityLevel:
-          $ref: '#/components/schemas/SecurityLevel'
         textExtractionStatus:
           type: string
           enum: [PENDING, EXTRACTED, FAILED, OCR_UNSUPPORTED, TYPE_UNSUPPORTED]
@@ -3388,10 +3380,6 @@ components:
           minLength: 1
 
     # ── Enums (fact source: schemas/common/enums.yaml) ──────────
-    SecurityLevel:
-      type: string
-      enum: [PUBLIC, INTERNAL, CONFIDENTIAL, SECRET]
-
     MeetingStatus:
       type: string
       enum: [CREATED, PROCESSING, SUCCEEDED, FAILED, DELETED]
@@ -3451,8 +3439,6 @@ components:
           type: [string, 'null']
         role:
           $ref: '#/components/schemas/DocumentRole'
-        securityLevel:
-          $ref: '#/components/schemas/SecurityLevel'
         attachedBy:
           type: [string, 'null']
         attachedAt:

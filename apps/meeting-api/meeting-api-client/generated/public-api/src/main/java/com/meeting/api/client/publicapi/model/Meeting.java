@@ -21,7 +21,6 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.meeting.api.client.publicapi.model.CreateMeetingRequestParticipantsInner;
 import com.meeting.api.client.publicapi.model.MeetingStatus;
-import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -75,11 +74,6 @@ public class Meeting {
   @SerializedName(SERIALIZED_NAME_SCHEDULED_START_AT)
   @javax.annotation.Nullable
   private OffsetDateTime scheduledStartAt;
-
-  public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
-  @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
-  @javax.annotation.Nonnull
-  private SecurityLevel securityLevel;
 
   public static final String SERIALIZED_NAME_STATUS = "status";
   @SerializedName(SERIALIZED_NAME_STATUS)
@@ -187,25 +181,6 @@ public class Meeting {
 
   public void setScheduledStartAt(@javax.annotation.Nullable OffsetDateTime scheduledStartAt) {
     this.scheduledStartAt = scheduledStartAt;
-  }
-
-
-  public Meeting securityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-    return this;
-  }
-
-  /**
-   * Get securityLevel
-   * @return securityLevel
-   */
-  @javax.annotation.Nonnull
-  public SecurityLevel getSecurityLevel() {
-    return securityLevel;
-  }
-
-  public void setSecurityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
   }
 
 
@@ -347,7 +322,6 @@ public class Meeting {
         Objects.equals(this.tenantId, meeting.tenantId) &&
         Objects.equals(this.title, meeting.title) &&
         Objects.equals(this.scheduledStartAt, meeting.scheduledStartAt) &&
-        Objects.equals(this.securityLevel, meeting.securityLevel) &&
         Objects.equals(this.status, meeting.status) &&
         Objects.equals(this.language, meeting.language) &&
         Objects.equals(this.transcriptVersion, meeting.transcriptVersion) &&
@@ -358,7 +332,7 @@ public class Meeting {
 
   @Override
   public int hashCode() {
-    return Objects.hash(meetingId, tenantId, title, scheduledStartAt, securityLevel, status, language, transcriptVersion, minutesVersion, participants, createdAt);
+    return Objects.hash(meetingId, tenantId, title, scheduledStartAt, status, language, transcriptVersion, minutesVersion, participants, createdAt);
   }
 
   @Override
@@ -369,7 +343,6 @@ public class Meeting {
     sb.append("    tenantId: ").append(toIndentedString(tenantId)).append("\n");
     sb.append("    title: ").append(toIndentedString(title)).append("\n");
     sb.append("    scheduledStartAt: ").append(toIndentedString(scheduledStartAt)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    language: ").append(toIndentedString(language)).append("\n");
     sb.append("    transcriptVersion: ").append(toIndentedString(transcriptVersion)).append("\n");
@@ -394,10 +367,10 @@ public class Meeting {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "scheduledStartAt", "securityLevel", "status", "language", "transcriptVersion", "minutesVersion", "participants", "createdAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "scheduledStartAt", "status", "language", "transcriptVersion", "minutesVersion", "participants", "createdAt"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "securityLevel", "status", "language", "transcriptVersion", "minutesVersion", "createdAt"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "status", "language", "transcriptVersion", "minutesVersion", "createdAt"));
   }
 
   /**
@@ -437,8 +410,6 @@ public class Meeting {
       if (!jsonObj.get("title").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `title` to be a primitive type in the JSON string but got `%s`", jsonObj.get("title").toString()));
       }
-      // validate the required field `securityLevel`
-      SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
       // validate the required field `status`
       MeetingStatus.validateJsonElement(jsonObj.get("status"));
       if (!jsonObj.get("language").isJsonPrimitive()) {

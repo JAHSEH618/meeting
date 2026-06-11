@@ -20,7 +20,6 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.meeting.api.client.publicapi.model.DocumentRole;
-import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -73,11 +72,6 @@ public class MeetingDocumentItem {
   @SerializedName(SERIALIZED_NAME_ROLE)
   @javax.annotation.Nonnull
   private DocumentRole role;
-
-  public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
-  @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
-  @javax.annotation.Nullable
-  private SecurityLevel securityLevel;
 
   public static final String SERIALIZED_NAME_ATTACHED_BY = "attachedBy";
   @SerializedName(SERIALIZED_NAME_ATTACHED_BY)
@@ -168,25 +162,6 @@ public class MeetingDocumentItem {
   }
 
 
-  public MeetingDocumentItem securityLevel(@javax.annotation.Nullable SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-    return this;
-  }
-
-  /**
-   * Get securityLevel
-   * @return securityLevel
-   */
-  @javax.annotation.Nullable
-  public SecurityLevel getSecurityLevel() {
-    return securityLevel;
-  }
-
-  public void setSecurityLevel(@javax.annotation.Nullable SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-  }
-
-
   public MeetingDocumentItem attachedBy(@javax.annotation.Nullable String attachedBy) {
     this.attachedBy = attachedBy;
     return this;
@@ -239,7 +214,6 @@ public class MeetingDocumentItem {
         Objects.equals(this.documentId, meetingDocumentItem.documentId) &&
         Objects.equals(this.title, meetingDocumentItem.title) &&
         Objects.equals(this.role, meetingDocumentItem.role) &&
-        Objects.equals(this.securityLevel, meetingDocumentItem.securityLevel) &&
         Objects.equals(this.attachedBy, meetingDocumentItem.attachedBy) &&
         Objects.equals(this.attachedAt, meetingDocumentItem.attachedAt);
   }
@@ -250,7 +224,7 @@ public class MeetingDocumentItem {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, documentId, title, role, securityLevel, attachedBy, attachedAt);
+    return Objects.hash(id, documentId, title, role, attachedBy, attachedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -268,7 +242,6 @@ public class MeetingDocumentItem {
     sb.append("    documentId: ").append(toIndentedString(documentId)).append("\n");
     sb.append("    title: ").append(toIndentedString(title)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    attachedBy: ").append(toIndentedString(attachedBy)).append("\n");
     sb.append("    attachedAt: ").append(toIndentedString(attachedAt)).append("\n");
     sb.append("}");
@@ -289,7 +262,7 @@ public class MeetingDocumentItem {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("id", "documentId", "title", "role", "securityLevel", "attachedBy", "attachedAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("id", "documentId", "title", "role", "attachedBy", "attachedAt"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("id", "documentId", "role", "attachedAt"));
@@ -334,10 +307,6 @@ public class MeetingDocumentItem {
       }
       // validate the required field `role`
       DocumentRole.validateJsonElement(jsonObj.get("role"));
-      // validate the optional field `securityLevel`
-      if (jsonObj.get("securityLevel") != null && !jsonObj.get("securityLevel").isJsonNull()) {
-        SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
-      }
       if ((jsonObj.get("attachedBy") != null && !jsonObj.get("attachedBy").isJsonNull()) && !jsonObj.get("attachedBy").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `attachedBy` to be a primitive type in the JSON string but got `%s`", jsonObj.get("attachedBy").toString()));
       }

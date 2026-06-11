@@ -10,12 +10,6 @@ meetingStatus:
   - FAILED
   - DELETED
 
-securityLevel:
-  - PUBLIC
-  - INTERNAL
-  - CONFIDENTIAL
-  - SECRET
-
 processingTaskStatus:
   - PENDING
   - QUEUED
