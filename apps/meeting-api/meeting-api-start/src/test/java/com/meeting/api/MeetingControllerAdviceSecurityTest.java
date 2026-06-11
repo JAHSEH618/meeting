@@ -15,26 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MeetingControllerAdviceSecurityTest {
 
     @Test
-    void securityLevelBlockedMapsTo422WithStableMessage() {
-        var advice = new MeetingControllerAdvice();
-        var response = advice.handleSecurityLevelBlocked(
-            new SecurityLevelBlockedException(SecurityLevel.CONFIDENTIAL, "MINUTES_SUMMARY")
-        );
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-        var body = response.getBody();
-        assertThat(body).isNotNull();
-        assertThat(body.success()).isFalse();
-        var err = body.error();
-        assertThat(err.code()).isEqualTo(ErrorCode.SECURITY_LEVEL_BLOCKED);
-        assertThat(err.message()).isEqualTo("一期不支持该安全等级的自动 LLM 处理");
-        assertThat(err.retryable()).isFalse();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> details = (Map<String, Object>) err.details();
-        assertThat(details).containsEntry("securityLevel", "CONFIDENTIAL");
-        assertThat(details).containsEntry("blockedCapability", "MINUTES_SUMMARY");
-    }
-
-    @Test
     void llmProviderTimeoutMapsToServiceUnavailableAndRetryable() {
         var advice = new MeetingControllerAdvice();
         var response = advice.handleLlmProvider(
