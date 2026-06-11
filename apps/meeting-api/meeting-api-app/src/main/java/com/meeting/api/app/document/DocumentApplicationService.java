@@ -66,7 +66,6 @@ public class DocumentApplicationService implements DocumentFacade {
                 command.fileId(),
                 command.documentType(),
                 "UPLOADED",
-                command.securityLevel(),
                 "PENDING",
                 null,
                 command.contentHash(),
@@ -128,7 +127,6 @@ public class DocumentApplicationService implements DocumentFacade {
                 existing.fileId(),
                 existing.documentType(),
                 "REINDEXING",
-                existing.securityLevel(),
                 "PENDING",
                 existing.sourceUri(),
                 existing.contentHash(),
@@ -143,7 +141,7 @@ public class DocumentApplicationService implements DocumentFacade {
     private static DocumentDTO toDto(DocumentRecord r) {
         return new DocumentDTO(
             r.id(), r.tenantId(), r.title(), r.fileId(), r.documentType(),
-            r.status(), r.securityLevel(), r.textExtractionStatus(),
+            r.status(), r.textExtractionStatus(),
             r.contentHash(), r.sourceUri(),
             r.createdAt(), r.updatedAt(), r.deletedAt()
         );

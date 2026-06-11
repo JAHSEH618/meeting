@@ -2,7 +2,6 @@ package com.meeting.api.app.rag;
 
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.enums.ProcessingStep;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
@@ -193,7 +192,6 @@ public class EmbeddingTaskDispatcher {
         payload.put("tenantId", task.tenantId());
         if (event.meetingId() != null) payload.put("meetingId", event.meetingId());
         if (event.documentId() != null) payload.put("documentId", event.documentId());
-        payload.put("securityLevel", securityLabel(event.securityLevel()));
         payload.put("attemptNo", task.attemptNo());
         payload.put("pipelineSteps", WORKER_STEPS.stream().map(Enum::name).toList());
         payload.put("expectedInputVersion", expectedVersion);
@@ -202,10 +200,6 @@ public class EmbeddingTaskDispatcher {
             ? "trace_" + task.taskId()
             : event.traceId());
         return payload;
-    }
-
-    private static String securityLabel(SecurityLevel level) {
-        return level == null ? "INTERNAL" : level.name();
     }
 
     /** Result of one fan-out: the new task IDs ai-worker will consume from {@code embed-queue}. */

@@ -7,7 +7,6 @@ import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.RagAnswerCoverage;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.DocumentChunkCitationDTO;
 import com.meeting.api.client.rag.MeetingSegmentCitationDTO;
 import com.meeting.api.client.rag.RagAnswerDTO;
@@ -198,13 +197,12 @@ public class RagQueryApplicationService implements RagQueryFacade {
     private RagAnswerDTO doQuery(RagQueryCommand command) {
         String tenantId = command.tenantId();
         String userId = command.userId();
-        SecurityLevel clearance = command.clearance();
 
         Timer.Sample authorizeSample = Timer.start(meterRegistry);
         RetrievalScope authorizedScope;
         try {
             authorizedScope = authorizationService.authorizeScope(
-                tenantId, userId, clearance, toRetrievalScope(command.scope())
+                tenantId, userId, toRetrievalScope(command.scope())
             );
         } finally {
             authorizeSample.stop(metrics.ragQueryPhaseTimer("authorize"));
@@ -259,7 +257,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
         List<KnowledgeChunkCandidate> authorized;
         try {
             authorized = authorizationService.filterAuthorized(
-                tenantId, userId, clearance, fused
+                tenantId, userId, fused
             );
         } finally {
             authzFilterSample.stop(metrics.ragQueryPhaseTimer("authorize_filter"));
@@ -298,11 +296,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
             citeSample.stop(metrics.ragQueryPhaseTimer("cite"));
         }
 
-        // The LLM is called under the highest security level surfaced in the
-        // citations — that way DashScopeLlmGateway can fail closed if any
-        // CONFIDENTIAL / SECRET chunk slipped through (it shouldn't, since
-        // filterAuthorized drops them, but defense in depth is cheap here).
-        SecurityLevel effectiveLevel = highestSecurityLevel(top);
+        // The LLM is called with the top-N reranked chunks.
         String firstMeetingId = top.stream()
             .map(KnowledgeChunkCandidate::meetingId)
             .filter(java.util.Objects::nonNull)
@@ -322,7 +316,6 @@ public class RagQueryApplicationService implements RagQueryFacade {
                 null,
                 LLM_CAPABILITY,
                 LLM_TASK_NAME,
-                effectiveLevel,
                 variables,
                 null,
                 command.traceId()
@@ -557,16 +550,6 @@ public class RagQueryApplicationService implements RagQueryFacade {
         return false;
     }
 
-    private static SecurityLevel highestSecurityLevel(List<KnowledgeChunkCandidate> chunks) {
-        SecurityLevel max = SecurityLevel.PUBLIC;
-        for (KnowledgeChunkCandidate c : chunks) {
-            if (c.securityLevel() != null && c.securityLevel().ordinal() > max.ordinal()) {
-                max = c.securityLevel();
-            }
-        }
-        return max;
-    }
-
     private ParsedAnswer parseAnswer(String llmOutput, int topSize) {
         if (llmOutput == null || llmOutput.isBlank()) {
             throw new LlmProviderException(
@@ -611,7 +594,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
 
     private static RagAnswerCache.RagCacheKey toCacheKey(RagQueryCommand command) {
         return new RagAnswerCache.RagCacheKey(
-            command.tenantId(), command.userId(), command.clearance(),
+            command.tenantId(), command.userId(),
             command.question(), command.scope(), command.topN(), command.includeStale()
         );
     }

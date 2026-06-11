@@ -85,7 +85,6 @@ public class MarkdownExportGateway implements ExportGateway {
 
     private void renderHeader(StringBuilder sb, MeetingSnapshot s) {
         sb.append("# ").append(s.title() == null ? "(untitled)" : s.title()).append("\n\n");
-        sb.append("- 安全等级: ").append(s.securityLevel().name()).append("\n");
         sb.append("- 语言: ").append(s.language() == null ? "zh" : s.language()).append("\n");
         if (s.durationSeconds() != null) {
             sb.append("- 时长: ").append(formatDuration(s.durationSeconds())).append("\n");

@@ -115,7 +115,6 @@ public class ExtractionApplicationService {
             taskId,
             CAPABILITY,
             TASK_NAME,
-            meeting.securityLevel(),
             Map.of(
                 "meetingTitle", meeting.title(),
                 "meetingId", meetingId,

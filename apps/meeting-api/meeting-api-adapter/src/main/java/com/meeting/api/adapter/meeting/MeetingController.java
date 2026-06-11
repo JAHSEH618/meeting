@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.common.ApiResponse;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
@@ -56,7 +55,6 @@ public class MeetingController {
             TenantContextHolder.currentTenantId(),
             request.title(),
             request.scheduledStartAt(),
-            request.securityLevel(),
             request.language(),
             request.participants(),
             TenantContextHolder.currentUserId()
@@ -137,7 +135,6 @@ public class MeetingController {
     public record CreateMeetingRequest(
         String title,
         java.time.OffsetDateTime scheduledStartAt,
-        SecurityLevel securityLevel,
         String language,
         List<CreateMeetingCommand.ParticipantCommand> participants
     ) {

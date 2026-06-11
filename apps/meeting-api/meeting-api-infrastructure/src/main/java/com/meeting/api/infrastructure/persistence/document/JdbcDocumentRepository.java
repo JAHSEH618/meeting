@@ -1,6 +1,5 @@
 package com.meeting.api.infrastructure.persistence.document;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.document.DocumentRepository;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
@@ -23,9 +22,9 @@ public class JdbcDocumentRepository implements DocumentRepository {
             """
             INSERT INTO documents (
               id, tenant_id, project_id, title, file_id, document_type, status,
-              security_level, text_extraction_status, source_uri, content_hash,
+              text_extraction_status, source_uri, content_hash,
               created_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::security_level, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record.id(),
             record.tenantId(),
@@ -34,7 +33,6 @@ public class JdbcDocumentRepository implements DocumentRepository {
             record.fileId(),
             record.documentType(),
             record.status(),
-            record.securityLevel().name(),
             record.textExtractionStatus(),
             record.sourceUri(),
             record.contentHash(),
@@ -50,7 +48,7 @@ public class JdbcDocumentRepository implements DocumentRepository {
         return jdbcTemplate.query(
             """
             SELECT id, tenant_id, project_id, title, file_id, document_type, status,
-                   security_level::text AS security_level, text_extraction_status,
+                   text_extraction_status,
                    source_uri, content_hash, created_by, created_at, updated_at, deleted_at
               FROM documents
              WHERE tenant_id = ? AND id = ?
@@ -66,7 +64,7 @@ public class JdbcDocumentRepository implements DocumentRepository {
         String filter = includeDeleted ? "" : " AND deleted_at IS NULL";
         return jdbcTemplate.query(
             "SELECT id, tenant_id, project_id, title, file_id, document_type, status,"
-                + " security_level::text AS security_level, text_extraction_status, source_uri,"
+                + " text_extraction_status, source_uri,"
                 + " content_hash, created_by, created_at, updated_at, deleted_at"
                 + " FROM documents WHERE tenant_id = ?" + filter + " ORDER BY created_at DESC",
             (rs, n) -> mapRow(rs),
@@ -112,7 +110,6 @@ public class JdbcDocumentRepository implements DocumentRepository {
             rs.getString("file_id"),
             rs.getString("document_type"),
             rs.getString("status"),
-            SecurityLevel.valueOf(rs.getString("security_level")),
             rs.getString("text_extraction_status"),
             rs.getString("source_uri"),
             rs.getString("content_hash"),

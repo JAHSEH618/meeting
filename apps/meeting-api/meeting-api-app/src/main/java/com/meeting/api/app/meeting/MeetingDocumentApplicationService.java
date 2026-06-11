@@ -4,7 +4,6 @@ import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.DocumentRole;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.AttachMeetingDocumentCommand;
 import com.meeting.api.client.meeting.DetachMeetingDocumentCommand;
 import com.meeting.api.client.meeting.MeetingDocumentDTO;
@@ -34,8 +33,6 @@ import org.springframework.stereotype.Service;
  * <p>Invariants:
  * <ul>
  *   <li>Both meeting and document must exist and live in the same tenant.</li>
- *   <li>Effective security level of the link is {@code max(meeting, document)}.
- *       SECRET tier is rejected here (R4: fail-closed on the attach boundary).</li>
  *   <li>Duplicate active link (meeting + document) is a no-op idempotent return.</li>
  *   <li>Outbox event published in the same transaction (R6 outbox rule).</li>
  * </ul>
@@ -97,17 +94,6 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
                     "document is soft-deleted: " + command.documentId(), false
                 );
             }
-            SecurityLevel effective = maxSecurity(meeting.securityLevel(), document.securityLevel());
-            // R4: SECRET fail-closed when attaching reference docs — minutes prompt would otherwise
-            // pull SECRET content into the LLM call.
-            if (command.role() == DocumentRole.REFERENCE
-                && (effective == SecurityLevel.CONFIDENTIAL || effective == SecurityLevel.SECRET)) {
-                throw new ApplicationException(
-                    ErrorCode.SECURITY_LEVEL_BLOCKED, 422,
-                    "REFERENCE document role rejected: effective security level " + effective
-                        + " forbids LLM context injection", false
-                );
-            }
 
             // Idempotent attach — return existing link as DTO when one already exists.
             var existing = linkRepository.findActive(command.tenantId(), command.meetingId(), command.documentId());
@@ -115,7 +101,7 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
                 MeetingDocumentRecord rec = existing.get();
                 return new MeetingDocumentDTO(
                     rec.id(), rec.meetingId(), rec.documentId(), document.title(),
-                    rec.role(), effective, rec.attachedBy(), rec.attachedAt()
+                    rec.role(), rec.attachedBy(), rec.attachedAt()
                 );
             }
 
@@ -132,19 +118,18 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
                 savedId,
                 command.documentId(),
                 command.role(),
-                effective,
                 command.actorUserId(),
                 1L,
                 now
             ));
             log.info(
-                "meeting_document_attached tenant={} meeting={} document={} role={} effectiveSecurity={} by={}",
+                "meeting_document_attached tenant={} meeting= document={} role= by={}",
                 command.tenantId(), command.meetingId(), command.documentId(),
-                command.role(), effective, command.actorUserId()
+                command.role(), command.actorUserId()
             );
             return new MeetingDocumentDTO(
                 savedId, command.meetingId(), command.documentId(), document.title(),
-                command.role(), effective, command.actorUserId(), now
+                command.role(), command.actorUserId(), now
             );
         });
     }
@@ -196,14 +181,9 @@ public class MeetingDocumentApplicationService implements MeetingDocumentFacade 
             return rows.stream()
                 .map(r -> new MeetingDocumentDTO(
                     r.linkId(), r.meetingId(), r.documentId(), r.documentTitle(),
-                    r.role(), r.documentSecurityLevel(), r.attachedBy(), r.attachedAt()
+                    r.role(), r.attachedBy(), r.attachedAt()
                 ))
                 .toList();
         });
-    }
-
-    private static SecurityLevel maxSecurity(SecurityLevel a, SecurityLevel b) {
-        // Ordinal ordering matches enum declaration: PUBLIC < INTERNAL < CONFIDENTIAL < SECRET.
-        return a.ordinal() >= b.ordinal() ? a : b;
     }
 }

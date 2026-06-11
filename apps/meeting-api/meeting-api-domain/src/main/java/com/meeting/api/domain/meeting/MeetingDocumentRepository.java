@@ -44,7 +44,6 @@ public interface MeetingDocumentRepository {
         String documentId,
         String documentTitle,
         DocumentRole role,
-        SecurityLevel documentSecurityLevel,
         String attachedBy,
         OffsetDateTime attachedAt
     ) {

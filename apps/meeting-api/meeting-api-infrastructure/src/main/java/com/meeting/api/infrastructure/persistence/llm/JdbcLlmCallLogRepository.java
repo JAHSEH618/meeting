@@ -19,9 +19,9 @@ public class JdbcLlmCallLogRepository implements LlmCallLogRepository {
             """
             INSERT INTO llm_call_logs (
               id, tenant_id, meeting_id, task_id, capability, provider, configured_model, actual_model_version,
-              prompt_template_id, prompt_template_version, security_level, input_hash, output_hash,
+              prompt_template_id, prompt_template_version, input_hash, output_hash,
               token_input, token_output, token_total, latency_ms, status, error_code, created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?::security_level,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             record.id(),
             record.tenantId(),
@@ -33,7 +33,6 @@ public class JdbcLlmCallLogRepository implements LlmCallLogRepository {
             record.actualModelVersion(),
             record.promptTemplateId(),
             record.promptTemplateVersion(),
-            record.securityLevel().name(),
             record.inputHash(),
             record.outputHash(),
             record.tokenInput(),

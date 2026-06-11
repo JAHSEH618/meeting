@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.DocumentRole;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.minutes.MinutesDTO;
 import com.meeting.api.client.minutes.MinutesEvidenceDTO;
@@ -198,7 +197,6 @@ public class MinutesApplicationService implements MinutesFacade {
             taskId,
             CAPABILITY,
             TASK_NAME,
-            meeting.securityLevel(),
             buildLlmContext(meeting, command, segments),
             null,
             null

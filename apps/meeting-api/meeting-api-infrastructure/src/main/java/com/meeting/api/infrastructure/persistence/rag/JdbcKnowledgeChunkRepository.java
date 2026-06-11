@@ -1,6 +1,5 @@
 package com.meeting.api.infrastructure.persistence.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.domain.rag.ChunkStatus;
 import com.meeting.api.domain.rag.KnowledgeChunk;
@@ -50,14 +49,14 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
               id, tenant_id, project_id, meeting_id, document_id,
               source_type, source_id, source_segment_id,
               content, content_hash, embedding,
-              security_level, chunk_version, transcript_version, minutes_version,
+              chunk_version, transcript_version, minutes_version,
               chunk_strategy_version, embedding_model_version,
               status, stale_status, created_at, updated_at
             ) VALUES (
               ?, ?, ?, ?, ?,
               ?, ?, ?,
               ?, ?, ?::vector,
-              ?::security_level, ?, ?, ?,
+              ?, ?, ?,
               ?, ?,
               ?::content_status, ?::stale_status, ?, ?
             )
@@ -71,7 +70,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
               content = EXCLUDED.content,
               content_hash = EXCLUDED.content_hash,
               embedding = EXCLUDED.embedding,
-              security_level = EXCLUDED.security_level,
               chunk_version = EXCLUDED.chunk_version,
               transcript_version = EXCLUDED.transcript_version,
               minutes_version = EXCLUDED.minutes_version,
@@ -99,7 +97,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
         ps.setString(i++, chunk.content());
         ps.setString(i++, chunk.contentHash());
         setNullableString(ps, i++, formatVector(chunk.embedding()));
-        ps.setString(i++, chunk.securityLevel().name());
         ps.setInt(i++, chunk.chunkVersion());
         setNullableInt(ps, i++, chunk.transcriptVersion());
         setNullableInt(ps, i++, chunk.minutesVersion());
@@ -134,7 +131,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
             SELECT id, tenant_id, project_id, meeting_id, document_id,
                    source_type, source_id, source_segment_id,
                    content, content_hash, embedding::text AS embedding,
-                   security_level::text AS security_level,
                    chunk_version, transcript_version, minutes_version,
                    chunk_strategy_version, embedding_model_version,
                    status::text AS status, stale_status::text AS stale_status,
@@ -158,7 +154,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
             .content(rs.getString("content"))
             .contentHash(rs.getString("content_hash"))
             .embedding(parseVector(rs.getString("embedding")))
-            .securityLevel(SecurityLevel.valueOf(rs.getString("security_level")))
             .chunkVersion(rs.getInt("chunk_version"))
             .transcriptVersion((Integer) rs.getObject("transcript_version"))
             .minutesVersion((Integer) rs.getObject("minutes_version"))
@@ -236,7 +231,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
         StringBuilder sql = new StringBuilder("""
             SELECT id, tenant_id, project_id, meeting_id, document_id,
                    source_type, source_id, source_segment_id, content,
-                   security_level::text AS security_level,
                    transcript_version, minutes_version,
                    1 - (embedding <=> ?::vector) AS similarity
               FROM knowledge_chunks
@@ -265,7 +259,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
         StringBuilder sql = new StringBuilder("""
             SELECT id, tenant_id, project_id, meeting_id, document_id,
                    source_type, source_id, source_segment_id, content,
-                   security_level::text AS security_level,
                    transcript_version, minutes_version,
                    ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', ?)) AS rank
               FROM knowledge_chunks
@@ -320,7 +313,6 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
             rs.getString("source_id"),
             rs.getString("source_segment_id"),
             rs.getString("content"),
-            SecurityLevel.valueOf(rs.getString("security_level")),
             (Integer) rs.getObject("transcript_version"),
             (Integer) rs.getObject("minutes_version"),
             rs.getDouble(scoreColumn)

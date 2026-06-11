@@ -3,21 +3,17 @@ package com.meeting.api.infrastructure.gateway.llm;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.common.ErrorCode;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.artifact.ArtifactManifestRepository;
 import com.meeting.api.domain.llm.LlmCallLogRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.llm.PromptTemplateRepository;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
-import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,7 +28,6 @@ import org.springframework.stereotype.Component;
  *
  * Responsibilities:
  * <ol>
- *   <li>Fail closed when security level is {@code CONFIDENTIAL} or {@code SECRET} (configured set).</li>
  *   <li>Load active {@link PromptTemplateRepository.PromptTemplate} by task name.</li>
  *   <li>Render template by substituting {@code {{var}}} placeholders.</li>
  *   <li>Call the LLM via {@link OpenAiCompatibleChatClient}.</li>
@@ -57,7 +52,6 @@ public class DashScopeLlmGateway implements LlmGateway {
     private final ArtifactManifestRepository artifactManifestRepository;
     private final ObjectMapper objectMapper;
     private final String defaultModel;
-    private final Set<SecurityLevel> blockedSecurityLevels;
     private final Clock clock;
 
     @Autowired
@@ -68,7 +62,6 @@ public class DashScopeLlmGateway implements LlmGateway {
         ArtifactManifestRepository artifactManifestRepository,
         ObjectMapper objectMapper,
         @Value("${meeting.llm.dashscope.default-model:qwen-plus}") String defaultModel,
-        @Value("${meeting.llm.security-level-blocked:CONFIDENTIAL,SECRET}") String blockedLevelsCsv,
         Clock clock
     ) {
         this.client = client;
@@ -77,34 +70,11 @@ public class DashScopeLlmGateway implements LlmGateway {
         this.artifactManifestRepository = artifactManifestRepository;
         this.objectMapper = objectMapper;
         this.defaultModel = defaultModel;
-        this.blockedSecurityLevels = parseLevels(blockedLevelsCsv);
-        this.clock = clock;
-    }
-    public DashScopeLlmGateway(
-        OpenAiCompatibleChatClient client,
-        PromptTemplateRepository promptTemplateRepository,
-        LlmCallLogRepository llmCallLogRepository,
-        ArtifactManifestRepository artifactManifestRepository,
-        ObjectMapper objectMapper,
-        String defaultModel,
-        Set<SecurityLevel> blockedSecurityLevels,
-        Clock clock
-    ) {
-        this.client = client;
-        this.promptTemplateRepository = promptTemplateRepository;
-        this.llmCallLogRepository = llmCallLogRepository;
-        this.artifactManifestRepository = artifactManifestRepository;
-        this.objectMapper = objectMapper;
-        this.defaultModel = defaultModel;
-        this.blockedSecurityLevels = blockedSecurityLevels;
         this.clock = clock;
     }
 
     @Override
     public LlmResponse complete(LlmRequest request) {
-        if (blockedSecurityLevels.contains(request.securityLevel())) {
-            throw new SecurityLevelBlockedException(request.securityLevel(), request.capability());
-        }
         PromptTemplateRepository.PromptTemplate template = promptTemplateRepository
             .findActiveByTaskName(request.tenantId(), request.taskName())
             .or(() -> promptTemplateRepository.findActiveByTaskName(null, request.taskName()))
@@ -177,10 +147,9 @@ public class DashScopeLlmGateway implements LlmGateway {
         // hashes on llm_call_logs and full content can be re-derived from
         // the prompt template + input variables when reproducing the call.
         String inputJson = String.format(
-            "{\"capability\":%s,\"taskName\":%s,\"securityLevel\":\"%s\"}",
+            "{\"capability\":%s,\"taskName\":%s}",
             quoteJson(request.capability()),
-            quoteJson(request.taskName()),
-            request.securityLevel().name()
+            quoteJson(request.taskName())
         );
         String outputJson = String.format(
             "{\"promptTokens\":%d,\"completionTokens\":%d,\"latencyMs\":%d}",
@@ -261,20 +230,6 @@ public class DashScopeLlmGateway implements LlmGateway {
         }
     }
 
-    private static Set<SecurityLevel> parseLevels(String csv) {
-        Set<SecurityLevel> levels = new LinkedHashSet<>();
-        if (csv == null || csv.isBlank()) {
-            return levels;
-        }
-        for (String token : csv.split(",")) {
-            String trimmed = token.trim();
-            if (!trimmed.isEmpty()) {
-                levels.add(SecurityLevel.valueOf(trimmed));
-            }
-        }
-        return levels;
-    }
-
     private String extractStructuredJson(String content, String jsonSchema) {
         if (jsonSchema == null || jsonSchema.isBlank() || jsonSchema.equals("{}")) {
             return null;
@@ -344,7 +299,6 @@ public class DashScopeLlmGateway implements LlmGateway {
                 completion.modelVersion(),
                 template.id(),
                 template.version(),
-                request.securityLevel(),
                 inputHash,
                 outputHash,
                 completion.promptTokens(),
@@ -382,7 +336,6 @@ public class DashScopeLlmGateway implements LlmGateway {
                 null,
                 template.id(),
                 template.version(),
-                request.securityLevel(),
                 inputHash,
                 null,
                 null,

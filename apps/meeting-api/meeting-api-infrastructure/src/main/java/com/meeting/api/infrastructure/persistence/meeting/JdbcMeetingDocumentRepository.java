@@ -1,7 +1,6 @@
 package com.meeting.api.infrastructure.persistence.meeting;
 
 import com.meeting.api.client.enums.DocumentRole;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.meeting.MeetingDocumentRepository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -74,7 +73,7 @@ public class JdbcMeetingDocumentRepository implements MeetingDocumentRepository 
             """
             SELECT md.id AS link_id, md.meeting_id, md.document_id, md.role,
                    md.attached_by, md.attached_at,
-                   d.title AS document_title, d.security_level AS document_security_level
+                   d.title AS document_title
               FROM meeting_documents md
               JOIN documents d ON d.id = md.document_id AND d.tenant_id = md.tenant_id
              WHERE md.tenant_id = ? AND md.meeting_id = ? AND md.deleted_at IS NULL
@@ -106,7 +105,6 @@ public class JdbcMeetingDocumentRepository implements MeetingDocumentRepository 
             rs.getString("document_id"),
             rs.getString("document_title"),
             DocumentRole.valueOf(rs.getString("role")),
-            SecurityLevel.valueOf(rs.getString("document_security_level")),
             rs.getString("attached_by"),
             toOffsetDateTime(rs.getTimestamp("attached_at"))
         );

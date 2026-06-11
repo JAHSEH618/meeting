@@ -146,7 +146,6 @@ public class ChunkingApplicationService {
                         .contentHash(sha256(piece))
                         .chunkStrategyVersion(strategy.name())
                         .transcriptVersion(transcriptVersion)
-                        .securityLevel(meeting.securityLevel())
                         .createdAt(now)
                         .updatedAt(now)
                         .build());
@@ -181,7 +180,6 @@ public class ChunkingApplicationService {
                             .chunkStrategyVersion(strategy.name())
                             .transcriptVersion(transcriptVersion > 0 ? transcriptVersion : null)
                             .minutesVersion(minutesVersion)
-                            .securityLevel(meeting.securityLevel())
                             .createdAt(now)
                             .updatedAt(now)
                             .build());
@@ -221,7 +219,7 @@ public class ChunkingApplicationService {
         );
         publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
             tenantId, meetingId, null, refs,
-            meeting.securityLevel(), strategy.name(),
+            strategy.name(),
             transcriptVersion > 0 ? transcriptVersion : null,
             minutesVersion > 0 ? minutesVersion : null,
             null
@@ -255,7 +253,6 @@ public class ChunkingApplicationService {
                     .content(piece)
                     .contentHash(sha256(piece))
                     .chunkStrategyVersion(strategy.name())
-                    .securityLevel(doc.securityLevel())
                     .createdAt(now)
                     .updatedAt(now)
                     .build());
@@ -275,7 +272,7 @@ public class ChunkingApplicationService {
         );
         publishReindexEvent(new KnowledgeChunkReindexRequestedEvent(
             tenantId, null, documentId, refs,
-            doc.securityLevel(), strategy.name(),
+            strategy.name(),
             null, null, null
         ));
         return new ChunkingResult(stale, newChunkIds);
@@ -322,7 +319,6 @@ public class ChunkingApplicationService {
                 .chunkStrategyVersion(strategy.name())
                 .transcriptVersion(sourceTranscriptVersion)
                 .minutesVersion(minutesVersion > 0 ? minutesVersion : null)
-                .securityLevel(meeting.securityLevel())
                 .createdAt(now)
                 .updatedAt(now)
                 .build());

@@ -90,8 +90,6 @@ public class DocxExportGateway implements ExportGateway {
     private void renderMetadata(XWPFDocument doc, MeetingSnapshot s) {
         XWPFParagraph p = doc.createParagraph();
         XWPFRun r = p.createRun();
-        r.setText("安全等级: " + s.securityLevel().name());
-        r.addBreak();
         r.setText("语言: " + (s.language() == null ? "zh" : s.language()));
         if (s.durationSeconds() != null) {
             r.addBreak();

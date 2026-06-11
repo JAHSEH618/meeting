@@ -8,7 +8,6 @@ import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.task.ProcessingTaskDTO;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import org.springframework.stereotype.Service;
@@ -128,9 +127,6 @@ public class JavaLlmPhaseOrchestrator {
     private static String errorCode(RuntimeException ex) {
         if (ex instanceof ApplicationException appEx) {
             return appEx.errorCode().name();
-        }
-        if (ex instanceof SecurityLevelBlockedException) {
-            return ErrorCode.SECURITY_LEVEL_BLOCKED.name();
         }
         return "JAVA_LLM_PHASE_FAILED";
     }

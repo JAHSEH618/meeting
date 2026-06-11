@@ -47,7 +47,6 @@ public class InMemoryMeetingRepository implements MeetingRepository {
                 .id(meeting.id())
                 .tenantId(meeting.tenantId())
                 .title(meeting.title())
-                .securityLevel(meeting.securityLevel())
                 .status(status)
                 .language(meeting.language())
                 .transcriptVersion(meeting.transcriptVersion())

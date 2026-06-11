@@ -1,6 +1,5 @@
 package com.meeting.api.app.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryScope;
 import java.util.Optional;
@@ -17,9 +16,9 @@ import java.util.Optional;
  * answer) becoming stale removes every cached answer that depended on
  * it.
  *
- * <p>The cache is identity-aware on purpose: tenant + user + clearance
- * is part of the key, so a CONFIDENTIAL chunk visible to user A is
- * never served to user B who shares only the question and scope.
+ * <p>The cache is identity-aware on purpose: tenant + user is part of
+ * the key, so chunks visible to user A are never served to user B who
+ * shares only the question and scope.
  *
  * <p>Implementations MUST be thread-safe and SHOULD enforce a TTL —
  * the cache is best-effort, not a source of truth, and the
@@ -59,15 +58,14 @@ public interface RagAnswerCache {
     void clear();
 
     /**
-     * Cache key. Identity-bearing fields (tenantId, userId, clearance)
-     * are part of equality so the cache never returns a B-user answer
-     * to user A. {@code scope} is canonicalised inside the record so
-     * input order doesn't fragment the cache.
+     * Cache key. Identity-bearing fields (tenantId, userId) are part of
+     * equality so the cache never returns a B-user answer to user A.
+     * {@code scope} is canonicalised inside the record so input order
+     * doesn't fragment the cache.
      */
     record RagCacheKey(
         String tenantId,
         String userId,
-        SecurityLevel clearance,
         String question,
         RagQueryScope scope,
         int topN,
@@ -79,9 +77,6 @@ public interface RagAnswerCache {
             }
             if (userId == null || userId.isBlank()) {
                 throw new IllegalArgumentException("userId");
-            }
-            if (clearance == null) {
-                throw new IllegalArgumentException("clearance");
             }
             if (question == null || question.isBlank()) {
                 throw new IllegalArgumentException("question");

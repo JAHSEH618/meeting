@@ -5,7 +5,6 @@ import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.document.CreateDocumentCommand;
 import com.meeting.api.client.document.DocumentDTO;
 import com.meeting.api.client.document.DocumentFacade;
-import com.meeting.api.client.enums.SecurityLevel;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,7 +36,6 @@ public class DocumentController {
             body.title(),
             body.fileId(),
             body.documentType(),
-            body.securityLevel() == null ? SecurityLevel.INTERNAL : body.securityLevel(),
             body.contentHash(),
             userId,
             requestId,
@@ -93,7 +91,6 @@ public class DocumentController {
         String title,
         String fileId,
         String documentType,
-        SecurityLevel securityLevel,
         String contentHash
     ) {
     }

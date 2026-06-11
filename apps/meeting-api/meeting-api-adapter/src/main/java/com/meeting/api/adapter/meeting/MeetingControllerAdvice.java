@@ -7,7 +7,6 @@ import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.common.ErrorInfo;
 import com.meeting.api.domain.llm.LlmProviderException;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -24,19 +23,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class MeetingControllerAdvice {
     private static final Logger log = LoggerFactory.getLogger(MeetingControllerAdvice.class);
-    private static final String SECURITY_LEVEL_BLOCKED_MESSAGE = "一期不支持该安全等级的自动 LLM 处理";
 
     @ExceptionHandler(TenantContextMissingException.class)
     public ResponseEntity<ApiResponse<Void>> handleTenantContextMissing(TenantContextMissingException ex) {
         return error(HttpStatus.FORBIDDEN, ex.errorCode(), ex.getMessage(), false, Map.of());
-    }
-
-    @ExceptionHandler(SecurityLevelBlockedException.class)
-    public ResponseEntity<ApiResponse<Void>> handleSecurityLevelBlocked(SecurityLevelBlockedException ex) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("securityLevel", ex.securityLevel().name());
-        details.put("blockedCapability", ex.blockedCapability());
-        return error(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.SECURITY_LEVEL_BLOCKED, SECURITY_LEVEL_BLOCKED_MESSAGE, false, details);
     }
 
     @ExceptionHandler(LlmProviderException.class)
