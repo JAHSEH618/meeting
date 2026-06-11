@@ -1,11 +1,10 @@
 package com.meeting.api.client.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 
 /**
  * Immutable, fully-validated input to {@link RagQueryFacade#query}.
  *
- * <p>Identity (tenant + user) and clearance are required for every
+ * <p>Identity (tenant + user) are required for every
  * call — the second-pass authorization layer fails closed without them.
  * {@code requestId} / {@code traceId} are propagated to the LLM gateway
  * and the ai-worker rerank gateway so an end-to-end trace can be
@@ -14,7 +13,6 @@ import com.meeting.api.client.enums.SecurityLevel;
 public record RagQueryCommand(
     String tenantId,
     String userId,
-    SecurityLevel clearance,
     String question,
     RagQueryScope scope,
     int topN,
@@ -29,9 +27,6 @@ public record RagQueryCommand(
         }
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("userId must not be blank");
-        }
-        if (clearance == null) {
-            throw new IllegalArgumentException("clearance must not be null");
         }
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question must not be blank");

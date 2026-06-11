@@ -1,7 +1,6 @@
 package com.meeting.api.client.meeting;
 
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -10,7 +9,6 @@ public record MeetingDTO(
     String tenantId,
     String title,
     OffsetDateTime scheduledStartAt,
-    SecurityLevel securityLevel,
     MeetingStatus status,
     String language,
     int transcriptVersion,
@@ -22,7 +20,6 @@ public record MeetingDTO(
         String meetingId,
         String tenantId,
         String title,
-        SecurityLevel securityLevel,
         MeetingStatus status,
         String language,
         int transcriptVersion,
@@ -34,7 +31,6 @@ public record MeetingDTO(
             tenantId,
             title,
             null,
-            securityLevel,
             status,
             language,
             transcriptVersion,

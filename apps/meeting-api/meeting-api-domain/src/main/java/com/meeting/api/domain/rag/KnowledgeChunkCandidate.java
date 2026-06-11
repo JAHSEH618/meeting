@@ -1,6 +1,5 @@
 package com.meeting.api.domain.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 
 /**
  * Lightweight projection of a {@link KnowledgeChunk} surfaced by retrieval
@@ -22,7 +21,7 @@ public record KnowledgeChunkCandidate(
     String sourceId,
     String sourceSegmentId,
     String content,
-    SecurityLevel securityLevel,
+    
     Integer transcriptVersion,
     Integer minutesVersion,
     double score

@@ -1,6 +1,5 @@
 package com.meeting.api.domain.llm;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import java.time.OffsetDateTime;
 
 /**
@@ -21,7 +20,7 @@ public interface LlmCallLogRepository {
         String actualModelVersion,
         String promptTemplateId,
         String promptTemplateVersion,
-        SecurityLevel securityLevel,
+        
         String inputHash,
         String outputHash,
         Integer tokenInput,

@@ -1,7 +1,6 @@
 package com.meeting.api.domain.meeting;
 
 import com.meeting.api.client.enums.DocumentRole;
-import com.meeting.api.client.enums.SecurityLevel;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;

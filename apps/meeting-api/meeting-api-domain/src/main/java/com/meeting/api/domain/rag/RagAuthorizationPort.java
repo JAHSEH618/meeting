@@ -1,6 +1,5 @@
 package com.meeting.api.domain.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository.RetrievalScope;
 import java.util.Set;
 
@@ -30,11 +29,11 @@ public interface RagAuthorizationPort {
 
     /**
      * Compute the full set of meetings + documents the user can read in
-     * the given tenant, capped at {@code clearance}. Used to seed the
+     * the given tenant. Used to seed the
      * {@link RetrievalScope} for vector / keyword retrieval when the
      * caller did not specify one.
      */
-    RetrievalScope allowedScope(String tenantId, String userId, SecurityLevel clearance);
+    RetrievalScope allowedScope(String tenantId, String userId);
 
     /**
      * Return the subset of the candidate (meetingIds, documentIds) the
@@ -45,7 +44,6 @@ public interface RagAuthorizationPort {
     ReadableOwners readableOwners(
         String tenantId,
         String userId,
-        SecurityLevel clearance,
         Set<String> meetingIds,
         Set<String> documentIds
     );

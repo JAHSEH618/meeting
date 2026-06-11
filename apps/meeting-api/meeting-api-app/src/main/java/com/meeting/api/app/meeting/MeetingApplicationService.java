@@ -98,7 +98,6 @@ public class MeetingApplicationService implements MeetingFacade {
                 command.tenantId(),
                 command.title(),
                 command.scheduledStartAt(),
-                command.securityLevel(),
                 command.language(),
                 command.participants(),
                 command.createdBy()
@@ -241,7 +240,6 @@ public class MeetingApplicationService implements MeetingFacade {
             meeting.tenantId(),
             meeting.title(),
             meeting.scheduledStartAt(),
-            meeting.securityLevel(),
             meeting.status(),
             meeting.language(),
             meeting.transcriptVersion(),
@@ -311,7 +309,6 @@ public class MeetingApplicationService implements MeetingFacade {
             meeting.tenantId(),
             meeting.id(),
             meeting.title(),
-            meeting.securityLevel(),
             meeting.createdBy(),
             0,
             meeting.createdAt()
