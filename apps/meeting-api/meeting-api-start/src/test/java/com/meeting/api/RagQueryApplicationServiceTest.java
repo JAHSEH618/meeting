@@ -231,7 +231,6 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
 
-        // user clearance INTERNAL but a SECRET chunk slipped into retrieval
         chunkRepository.vectorReturns(
             meetingChunk("ck_internal", "mtg_a", "seg_1", "internal", 0.9),
             meetingChunk("ck_secret", "mtg_a", "seg_2", "secret leak", 0.95)
@@ -250,27 +249,6 @@ class RagQueryApplicationServiceTest {
         // The LLM saw only the internal chunk in its prompt.
         assertThat(llmGateway.lastVariables.get("retrievedChunks").toString())
             .contains("internal").doesNotContain("secret leak");
-    }
-
-    @Test
-    void llmSecurityLevelIsHighestAmongCitedChunks() {
-        authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
-        authzPort.allowReadable(Set.of("mtg_a"), Set.of());
-        chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "public chunk", 0.8),
-            meetingChunk("ck2", "mtg_a", "seg_2", "internal chunk", 0.7)
-        );
-        chunkRepository.keywordReturns(List.of());
-        rerankGateway.respondPreservingOrder();
-        enricher.meetingTitles.put("mtg_a", "M");
-        llmGateway.respond("{\"answer\":\"ok\",\"citations\":[]}");
-
-        service.query(new RagQueryCommand(
-            TENANT, USER, "q", RagQueryScope.EMPTY,
-            5, false, "req_8", "trace_8"
-        ));
-
-        assertThat(llmGateway.lastSecurityLevel).isEqualTo();
     }
 
     @Test
@@ -344,7 +322,7 @@ class RagQueryApplicationServiceTest {
             TENANT, USER, "  ", RagQueryScope.EMPTY, 5, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
-            TENANT, USER, null, "q", RagQueryScope.EMPTY, 5, false, "r", "t"
+            TENANT, USER, null, RagQueryScope.EMPTY, 5, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
             TENANT, USER, "q", RagQueryScope.EMPTY, 0, false, "r", "t"
@@ -471,23 +449,23 @@ class RagQueryApplicationServiceTest {
 
     private static KnowledgeChunkCandidate meetingChunk(
         String id, String meetingId, String segmentId, String content,
-        double score, SecurityLevel level
+        double score
     ) {
         return new KnowledgeChunkCandidate(
             id, TENANT, null, meetingId, null,
             KnowledgeSourceType.PRIMARY_TRANSCRIPT, meetingId, segmentId, content,
-            level, 1, null, score
+            1, null, score
         );
     }
 
     private static KnowledgeChunkCandidate documentChunk(
         String id, String documentId, String sourceId, String content,
-        double score, SecurityLevel level
+        double score
     ) {
         return new KnowledgeChunkCandidate(
             id, TENANT, null, null, documentId,
             KnowledgeSourceType.DOCUMENT, sourceId, null, content,
-            level, null, null, score
+            null, null, score
         );
     }
 
@@ -506,13 +484,13 @@ class RagQueryApplicationServiceTest {
         }
 
         @Override
-        public RetrievalScope allowedScope(String tenantId, String userId, SecurityLevel clearance) {
+        public RetrievalScope allowedScope(String tenantId, String userId) {
             return allowed;
         }
 
         @Override
         public ReadableOwners readableOwners(
-            String tenantId, String userId, SecurityLevel clearance,
+            String tenantId, String userId,
             Set<String> meetingIds, Set<String> documentIds
         ) {
             Set<String> okM = new HashSet<>(meetingIds);
@@ -586,7 +564,6 @@ class RagQueryApplicationServiceTest {
     private static final class FakeLlmGateway implements LlmGateway {
         final AtomicInteger callCount = new AtomicInteger();
         Map<String, Object> lastVariables = Map.of();
-        SecurityLevel lastSecurityLevel;
         private String responseBody = "{\"answer\":\"\",\"citations\":[]}";
 
         void respond(String json) { this.responseBody = json; }
@@ -595,7 +572,6 @@ class RagQueryApplicationServiceTest {
         public LlmResponse complete(LlmRequest request) {
             callCount.incrementAndGet();
             this.lastVariables = new HashMap<>(request.variables());
-            this.lastSecurityLevel = request.securityLevel();
             return new LlmResponse(responseBody, null, 0, 0, 0L, "qwen-plus-fake", "llmlog_fake", "art_fake");
         }
     }

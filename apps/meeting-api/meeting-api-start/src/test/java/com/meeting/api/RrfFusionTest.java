@@ -115,12 +115,12 @@ class RrfFusionTest {
         var vec = List.of(new KnowledgeChunkCandidate(
             "chunk_meta", "tenant", "project_v", "mtg_v", null,
             KnowledgeSourceType.PRIMARY_TRANSCRIPT, "src_v", "seg_v", "from_vector",
-            SecurityLevel.INTERNAL, 3, null, 0.5
+            3, null, 0.5
         ));
         var kw = List.of(new KnowledgeChunkCandidate(
             "chunk_meta", "tenant", "project_k", "mtg_k", null,
             KnowledgeSourceType.AI_SUMMARY, "src_k", "seg_k", "from_keyword",
-            SecurityLevel.CONFIDENTIAL, 9, 1, 0.5
+            9, 1, 0.5
         ));
 
         KnowledgeChunkCandidate fused = RrfFusion.fuse(vec, kw).get(0);
@@ -134,7 +134,7 @@ class RrfFusionTest {
         return new KnowledgeChunkCandidate(
             id, "tenant_01", null, "mtg_01", null,
             KnowledgeSourceType.PRIMARY_TRANSCRIPT, "src_" + id, null,
-            "content " + id, SecurityLevel.INTERNAL, 1, null, score
+            "content " + id, 1, null, score
         );
     }
 }

@@ -329,7 +329,7 @@ class AudioUploadApplicationServiceTest {
     }
 
     private static final class InMemoryMeetings implements MeetingRepository {
-        private Meeting meeting = Meeting.create("meeting_01", "tenant_01", "Weekly", INTERNAL, "zh", List.of(), "user_01");
+        private Meeting meeting = Meeting.create("meeting_01", "tenant_01", "Weekly", "zh", List.of(), "user_01");
 
         @Override
         public Meeting save(Meeting meeting) {

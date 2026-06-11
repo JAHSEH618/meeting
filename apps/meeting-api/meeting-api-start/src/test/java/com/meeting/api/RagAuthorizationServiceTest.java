@@ -48,11 +48,10 @@ class RagAuthorizationServiceTest {
     }
 
     @Test
-    void authorizeScopeRejectsNullClearance() {
+    void authorizeScopeRejectsNullScope() {
         var svc = new RagAuthorizationService(new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty()));
-        assertThatThrownBy(() -> svc.authorizeScope("t", "u", null, RetrievalScope.EMPTY))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("clearance");
+        assertThatThrownBy(() -> svc.authorizeScope("t", "u", null))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -150,21 +149,20 @@ class RagAuthorizationServiceTest {
     }
 
     @Test
-    void filterAuthorizedRejectsNullClearance() {
+    void filterAuthorizedRejectsNullCandidates() {
         var svc = new RagAuthorizationService(new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty()));
-        assertThatThrownBy(() -> svc.filterAuthorized("t", "u", null, List.of(
-            candidate("ck", "mtg_a", null)
-        ))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> svc.filterAuthorized("t", "u", null))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static KnowledgeChunkCandidate candidate(
-        String id, SecurityLevel level, String meetingId, String documentId
+        String id, String meetingId, String documentId
     ) {
         return new KnowledgeChunkCandidate(
             id, "tenant_01", null, meetingId, documentId,
             meetingId != null ? KnowledgeSourceType.PRIMARY_TRANSCRIPT : KnowledgeSourceType.DOCUMENT,
             "src_" + id, null, "content " + id,
-            level, meetingId != null ? 1 : null, null, 0.5
+            meetingId != null ? 1 : null, null, 0.5
         );
     }
 
@@ -190,13 +188,13 @@ class RagAuthorizationServiceTest {
         }
 
         @Override
-        public RetrievalScope allowedScope(String tenantId, String userId, SecurityLevel clearance) {
+        public RetrievalScope allowedScope(String tenantId, String userId) {
             return allowed;
         }
 
         @Override
         public ReadableOwners readableOwners(
-            String tenantId, String userId, SecurityLevel clearance,
+            String tenantId, String userId,
             Set<String> meetingIds, Set<String> documentIds
         ) {
             readableOwnersCalls++;

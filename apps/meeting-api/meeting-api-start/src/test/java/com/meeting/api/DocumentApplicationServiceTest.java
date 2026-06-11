@@ -123,7 +123,7 @@ class DocumentApplicationServiceTest {
             store.put(documentId, new DocumentRecord(
                 existing.id(), existing.tenantId(), existing.projectId(),
                 existing.title(), existing.fileId(), existing.documentType(),
-                status, existing.securityLevel(), extractionStatus,
+                status, extractionStatus,
                 existing.sourceUri(), existing.contentHash(), existing.createdBy(),
                 existing.createdAt(), now, existing.deletedAt()
             ));
@@ -136,7 +136,7 @@ class DocumentApplicationServiceTest {
             store.put(documentId, new DocumentRecord(
                 existing.id(), existing.tenantId(), existing.projectId(),
                 existing.title(), existing.fileId(), existing.documentType(),
-                "DELETED", existing.securityLevel(), existing.textExtractionStatus(),
+                "DELETED", existing.textExtractionStatus(),
                 existing.sourceUri(), existing.contentHash(), existing.createdBy(),
                 existing.createdAt(), now, now
             ));

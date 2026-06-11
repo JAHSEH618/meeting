@@ -77,22 +77,6 @@ class MeetingDocumentApplicationServiceTest {
     }
 
     @Test
-    void attachComputesMaxSecurityLevelAndRejectsConfidentialReference() {
-        Fixture f = fixture();
-        // meeting INTERNAL, document CONFIDENTIAL — effective = CONFIDENTIAL → REFERENCE fail-closed (R4)
-        f.documents.put("doc_01", document("Salary review"));
-        f.meetings.put("m_01", meeting());
-
-        assertThatThrownBy(() -> f.service.attach(new AttachMeetingDocumentCommand(
-            "tenant_01", "m_01", "doc_01", DocumentRole.REFERENCE,
-            "user_01", "idem_01", "req_01", "trace_01"
-        )))
-            .isInstanceOf(ApplicationException.class)
-            .extracting("errorCode")
-            .isEqualTo(ErrorCode.SECURITY_LEVEL_BLOCKED);
-    }
-
-    @Test
     void attachWithUnknownMeetingRaisesMeetingNotFound() {
         Fixture f = fixture();
         f.documents.put("doc_01", document("Spec"));
@@ -126,7 +110,7 @@ class MeetingDocumentApplicationServiceTest {
     }
 
     @Test
-    void listJoinsDocumentTitleAndSecurityLevel() {
+    void listJoinsDocumentTitle() {
         Fixture f = fixture();
         f.documents.put("doc_01", document("Doc One"));
         f.meetings.put("m_01", meeting());
@@ -160,16 +144,16 @@ class MeetingDocumentApplicationServiceTest {
     private static Meeting meeting() {
         return new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Q2 Review")
-            .securityLevel(level).status(MeetingStatus.CREATED).language("zh")
+            .status(MeetingStatus.CREATED).language("zh")
             .transcriptVersion(0).minutesVersion(0).createdAt(NOW)
             .createdBy("user_01").participants(List.of())
             .build();
     }
 
-    private static DocumentRepository.DocumentRecord document(SecurityLevel level, String title) {
+    private static DocumentRepository.DocumentRecord document(String title) {
         return new DocumentRepository.DocumentRecord(
             "doc_01", "tenant_01", null, title, "file_01", "PDF", "READY",
-            level, "DONE", null, "hash", "user_admin",
+            "DONE", null, "hash", "user_admin",
             NOW.minusDays(1), NOW.minusDays(1), null
         );
     }
@@ -233,7 +217,7 @@ class MeetingDocumentApplicationServiceTest {
         public void softDelete(String tenantId, String documentId, OffsetDateTime now) {
             byId.computeIfPresent(documentId, (k, d) ->
                 new DocumentRecord(d.id(), d.tenantId(), d.projectId(), d.title(), d.fileId(), d.documentType(),
-                    d.status(), d.securityLevel(), d.textExtractionStatus(), d.sourceUri(), d.contentHash(),
+                    d.status(), d.textExtractionStatus(), d.sourceUri(), d.contentHash(),
                     d.createdBy(), d.createdAt(), now, now));
         }
     }
@@ -277,7 +261,6 @@ class MeetingDocumentApplicationServiceTest {
                 out.add(new MeetingDocumentJoinRow(
                     r.id(), r.meetingId(), r.documentId(),
                     d == null ? null : d.title(), r.role(),
-                    d == null ? SecurityLevel.INTERNAL : d.securityLevel(),
                     r.attachedBy(), r.attachedAt()
                 ));
             }

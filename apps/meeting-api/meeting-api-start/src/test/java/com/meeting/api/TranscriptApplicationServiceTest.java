@@ -155,7 +155,6 @@ class TranscriptApplicationServiceTest {
                 .id("meeting_01")
                 .tenantId("tenant_01")
                 .title("Weekly")
-                .securityLevel(INTERNAL)
                 .status(MeetingStatus.PROCESSING)
                 .language("zh")
                 .transcriptVersion(transcriptVersion)

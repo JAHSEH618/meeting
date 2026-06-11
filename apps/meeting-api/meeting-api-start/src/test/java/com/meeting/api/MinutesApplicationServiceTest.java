@@ -136,24 +136,6 @@ class MinutesApplicationServiceTest {
     }
 
     @Test
-    void securityLevelBlockedSurfacesAsException() {
-        InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", 1, 0));
-        FakeLlmGateway llm = new FakeLlmGateway();
-        llm.failWith = new SecurityLevelBlockedException("MINUTES_SUMMARY");
-        MinutesApplicationService service = service(
-            meetings,
-            new InMemoryTranscriptRepo(1),
-            new InMemoryMinutesRepo(),
-            llm
-        );
-
-        assertThatThrownBy(() -> service.regenerate(new RegenerateMinutesCommand(
-            "tenant_01", "meeting_01", "user_01", "req_01", "idem_01", null, null
-        ))).isInstanceOf(SecurityLevelBlockedException.class);
-    }
-
-    @Test
     void malformedLlmJsonRaisesProviderException() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
         meetings.add(meeting("meeting_01", 1, 0));
@@ -192,12 +174,11 @@ class MinutesApplicationServiceTest {
         return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t", "art_t");
     }
 
-    private static Meeting meeting(String id, SecurityLevel level, int transcriptVersion, int minutesVersion) {
+    private static Meeting meeting(String id, int transcriptVersion, int minutesVersion) {
         return new Meeting.Builder()
             .id(id)
             .tenantId("tenant_01")
             .title("M " + id)
-            .securityLevel(level)
             .status(MeetingStatus.PROCESSING)
             .language("zh")
             .transcriptVersion(transcriptVersion)

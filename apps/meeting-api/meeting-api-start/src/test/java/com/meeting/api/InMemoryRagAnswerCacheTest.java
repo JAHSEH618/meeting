@@ -229,7 +229,7 @@ class InMemoryRagAnswerCacheTest {
             "t", "", "q", RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagCacheKey(
-            "t", "u", null, "q", RagQueryScope.EMPTY, 5, false
+            "t", "u", null, RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagCacheKey(
             "t", "u", "  ", RagQueryScope.EMPTY, 5, false

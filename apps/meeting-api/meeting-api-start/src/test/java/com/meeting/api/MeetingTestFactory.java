@@ -45,7 +45,6 @@ final class MeetingTestFactory {
         setBuilder(builder, "id", source.id());
         setBuilder(builder, "tenantId", source.tenantId());
         setBuilder(builder, "title", source.title());
-        setBuilder(builder, "securityLevel", source.securityLevel());
         setBuilder(builder, "status", MeetingStatus.CREATED);
         setBuilder(builder, "language", source.language());
         setBuilder(builder, "transcriptVersion", transcriptVersion);

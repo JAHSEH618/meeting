@@ -48,7 +48,7 @@ class PdfExportGatewayTest {
     private static MeetingSnapshot sampleSnapshot() {
         return new MeetingSnapshot(
             "mtg_pdf_sample", "Sample Meeting",
-            SecurityLevel.INTERNAL, "zh",
+            "zh",
             120L, 1, 1,
             List.of(new TranscriptSegmentRow(
                 "seg_01", 0, 0L, 5000L,

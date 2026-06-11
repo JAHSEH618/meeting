@@ -171,7 +171,7 @@ class ProcessingTaskApplicationServiceTest {
     }
 
     private static final class OneMeetingRepository implements MeetingRepository {
-        private final Meeting meeting = Meeting.create("meeting_01", "tenant_01", "Planning", INTERNAL, "zh", List.of(), "user_01");
+        private final Meeting meeting = Meeting.create("meeting_01", "tenant_01", "Planning", "zh", List.of(), "user_01");
 
         @Override
         public Meeting save(Meeting meeting) {

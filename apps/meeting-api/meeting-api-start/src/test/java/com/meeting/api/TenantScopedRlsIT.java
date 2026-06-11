@@ -113,7 +113,7 @@ class TenantScopedRlsIT {
     void wrappedReadsSeeRowsCreatedInSameTenant() {
         MeetingDTO created = service.create(new CreateMeetingCommand(
             "tenant_rls_a", "RLS Tenant A meeting",
-            null, SecurityLevel.INTERNAL, "zh", List.of(), "user_a"
+            null, "zh", List.of(), "user_a"
         ));
 
         Optional<MeetingDTO> readBack = service.get("tenant_rls_a", created.meetingId());
@@ -126,7 +126,7 @@ class TenantScopedRlsIT {
     void rawReadWithoutTenantContextReturnsEmpty() {
         service.create(new CreateMeetingCommand(
             "tenant_rls_a", "second mtg for A",
-            null, SecurityLevel.INTERNAL, "zh", List.of(), "user_a"
+            null, "zh", List.of(), "user_a"
         ));
 
         // Reset any leftover GUC and run a bare SELECT — RLS must hide everything.
@@ -140,7 +140,7 @@ class TenantScopedRlsIT {
     void crossTenantReadsAreIsolated() {
         MeetingDTO ownedByA = service.create(new CreateMeetingCommand(
             "tenant_rls_a", "private to A",
-            null, SecurityLevel.INTERNAL, "zh", List.of(), "user_a"
+            null, "zh", List.of(), "user_a"
         ));
 
         // Same service instance, different tenant context → no leak.

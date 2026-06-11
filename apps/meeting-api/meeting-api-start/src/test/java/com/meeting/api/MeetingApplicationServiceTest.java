@@ -42,7 +42,6 @@ class MeetingApplicationServiceTest {
             "Sprint Review",
             OffsetDateTime.parse("2026-01-01T10:00:00Z"),
             null,
-            null,
             List.of(new CreateMeetingCommand.ParticipantCommand("person_01", "Ada", "HOST")),
             "user_01"
         ));
@@ -75,7 +74,6 @@ class MeetingApplicationServiceTest {
             "m_01",
             "tenant_01",
             "Planning",
-            SecurityLevel.CONFIDENTIAL,
             "en",
             List.of(),
             "user_01"
