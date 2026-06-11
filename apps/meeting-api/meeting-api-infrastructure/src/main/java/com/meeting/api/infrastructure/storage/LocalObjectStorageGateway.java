@@ -19,7 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "meeting.storage.type", havingValue = "minio", matchIfMissing = true)
+@ConditionalOnProperty(name = "meeting.storage.type", havingValue = "local", matchIfMissing = true)
 public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LocalObjectStorageGateway.class);
