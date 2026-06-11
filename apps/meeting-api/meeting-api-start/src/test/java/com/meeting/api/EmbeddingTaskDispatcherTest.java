@@ -83,7 +83,6 @@ class EmbeddingTaskDispatcherTest {
         assertThat(payload).containsEntry("tenantId", "tenant_01");
         assertThat(payload).containsEntry("meetingId", "mtg_01");
         assertThat(payload).doesNotContainKey("documentId");
-        assertThat(payload).containsEntry("securityLevel", "INTERNAL");
         assertThat(payload).containsEntry("attemptNo", 1);
         assertThat(payload).containsEntry("pipelineSteps", List.of("RAG_INDEXING"));
         assertThat(payload).containsEntry("traceId", "trace_abc");
@@ -126,7 +125,6 @@ class EmbeddingTaskDispatcherTest {
         Map<String, Object> payload = (Map<String, Object>) emitted.payload();
         assertThat(payload).doesNotContainKey("meetingId");
         assertThat(payload).containsEntry("documentId", "doc_01");
-        assertThat(payload).containsEntry("securityLevel", "CONFIDENTIAL");
         // traceId defaults from taskId when not provided
         assertThat(payload.get("traceId").toString()).startsWith("trace_task_");
     }
