@@ -1,6 +1,5 @@
 package com.meeting.api.domain.document;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -25,7 +24,7 @@ public interface DocumentRepository {
         String fileId,
         String documentType,
         String status,
-        SecurityLevel securityLevel,
+        
         String textExtractionStatus,
         String sourceUri,
         String contentHash,

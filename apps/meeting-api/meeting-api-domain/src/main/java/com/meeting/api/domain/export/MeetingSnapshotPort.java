@@ -1,6 +1,5 @@
 package com.meeting.api.domain.export;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,7 +31,7 @@ public interface MeetingSnapshotPort {
     record MeetingSnapshot(
         String meetingId,
         String title,
-        SecurityLevel securityLevel,
+        
         String language,
         Long durationSeconds,
         int transcriptVersion,

@@ -1,6 +1,5 @@
 package com.meeting.api.domain.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import java.time.OffsetDateTime;
 import java.util.Objects;
