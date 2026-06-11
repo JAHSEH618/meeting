@@ -3,7 +3,6 @@ import { useMinutesQuery, useMeetingForMinutes, useRegenerateMinutes } from "./q
 import type { ApiClientError } from "@shared/api/client";
 import type { MinutesSection } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
-import { SecurityLevelBlockedNotice } from "@shared/components/SecurityLevelBlockedNotice";
 import { SafeMarkdown } from "@shared/components/SafeMarkdown";
 import { MeetingTabBar } from "@features/meetings/MeetingTabBar";
 import { formatMs } from "@shared/utils/formatters";
@@ -17,17 +16,13 @@ export function MinutesPage() {
   const loadErr = error as ApiClientError | null;
   const regenErr = regen.error as ApiClientError | null;
 
-  const getBlocked = loadErr?.code === "SECURITY_LEVEL_BLOCKED";
-  const regenBlocked = regenErr?.code === "SECURITY_LEVEL_BLOCKED";
-  const blocked = getBlocked || regenBlocked;
-
   const notFound = loadErr?.status === 404;
   const otherLoadErrMsg =
-    loadErr && !getBlocked && !notFound
+    loadErr && !notFound
       ? (loadErr.code ? getUserMessage(loadErr.code) : "纪要加载失败")
       : null;
   const regenErrMsg =
-    regenErr && !regenBlocked
+    regenErr
       ? (regenErr.code === "VERSION_CONFLICT"
           ? "内容已被更新，请刷新后重试"
           : (regenErr.code ? getUserMessage(regenErr.code) : "重新生成失败"))
@@ -72,13 +67,6 @@ export function MinutesPage() {
       {otherLoadErrMsg ? <div className="error" role="alert">{otherLoadErrMsg}</div> : null}
       {regenErrMsg ? <div className="error" role="alert">{regenErrMsg}</div> : null}
 
-      {blocked ? (
-        <SecurityLevelBlockedNotice
-          securityLevel={meeting?.securityLevel}
-          blockedCapability="MINUTES_SUMMARY"
-        />
-      ) : null}
-
       {isStale ? (
         <section className="banner banner--warn" role="status" aria-live="polite">
           <strong className="banner__title">当前纪要标记为 {minutes?.staleStatus}</strong>
@@ -86,7 +74,7 @@ export function MinutesPage() {
         </section>
       ) : null}
 
-      {!isPending && !minutes && !blocked ? (
+      {!isPending && !minutes ? (
         <section className="empty-state">
           <strong>暂无纪要</strong>
           <span>完成转录后点击"重新生成纪要"。</span>

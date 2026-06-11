@@ -26,7 +26,6 @@ async function getOrCreateSystemMeeting(): Promise<string> {
   const newMeeting = await createMeeting({
     title: "声纹注册临时载体会议",
     language: "zh",
-    securityLevel: "INTERNAL",
   });
   return newMeeting.meetingId;
 }

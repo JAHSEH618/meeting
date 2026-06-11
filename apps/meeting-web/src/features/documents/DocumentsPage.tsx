@@ -6,11 +6,8 @@ import {
   useReindexDocument,
 } from "./queries";
 import type { ApiClientError } from "@shared/api/client";
-import type { SecurityLevel } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import { formatDate } from "@shared/utils/formatters";
-
-const SECURITY_LEVELS: SecurityLevel[] = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"];
 
 const FILE_ID_HINT =
   "fileId 指向已上传到对象存储的源文件。当前阶段文件上传由后台管道完成；在此处仅登记元数据并触发解析 / 索引。";
@@ -42,7 +39,6 @@ export function DocumentsPage() {
   const [title, setTitle] = useState("");
   const [fileId, setFileId] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>(DEFAULT_DOCUMENT_TYPE);
-  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>("INTERNAL");
   const [contentHash, setContentHash] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -60,7 +56,6 @@ export function DocumentsPage() {
     setTitle("");
     setFileId("");
     setDocumentType(DEFAULT_DOCUMENT_TYPE);
-    setSecurityLevel("INTERNAL");
     setContentHash("");
   };
 
@@ -75,7 +70,6 @@ export function DocumentsPage() {
         title: title.trim(),
         fileId: fileId.trim(),
         documentType,
-        securityLevel,
         contentHash: contentHash.trim() || null,
       });
       setShowCreate(false);
@@ -179,19 +173,6 @@ export function DocumentsPage() {
             </select>
           </div>
           <div className="field">
-            <label className="field__label" htmlFor="doc-security">密级</label>
-            <select
-              id="doc-security"
-              name="securityLevel"
-              value={securityLevel}
-              onChange={(e) => setSecurityLevel(e.target.value as SecurityLevel)}
-            >
-              {SECURITY_LEVELS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
             <label className="field__label" htmlFor="doc-hash">SHA-256（可选）</label>
             <input
               id="doc-hash"
@@ -240,7 +221,6 @@ export function DocumentsPage() {
             <div className="toolbar">
               <strong>{doc.title}</strong>
               <span className="pill pill--neutral">{doc.documentType}</span>
-              <span className="pill pill--info">{doc.securityLevel}</span>
               <span className={`pill ${INDEX_TONE[doc.status] ?? "pill--neutral"}`}>
                 {doc.status}
               </span>
