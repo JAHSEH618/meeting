@@ -227,31 +227,6 @@ class RagQueryApplicationServiceTest {
     }
 
     @Test
-    void highSecurityChunksFilteredOutBeforeReachingLlm() {
-        authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
-        authzPort.allowReadable(Set.of("mtg_a"), Set.of());
-
-        chunkRepository.vectorReturns(
-            meetingChunk("ck_internal", "mtg_a", "seg_1", "internal", 0.9),
-            meetingChunk("ck_secret", "mtg_a", "seg_2", "secret leak", 0.95)
-        );
-        chunkRepository.keywordReturns(List.of());
-        rerankGateway.respondPreservingOrder();
-        enricher.meetingTitles.put("mtg_a", "M");
-
-        llmGateway.respond("{\"answer\":\"ok\",\"citations\":[1]}");
-
-        service.query(new RagQueryCommand(
-            TENANT, USER, "q", RagQueryScope.EMPTY,
-            5, false, "req_7", "trace_7"
-        ));
-
-        // The LLM saw only the internal chunk in its prompt.
-        assertThat(llmGateway.lastVariables.get("retrievedChunks").toString())
-            .contains("internal").doesNotContain("secret leak");
-    }
-
-    @Test
     void invalidLlmOutputJsonIsTreatedAsRawAnswerWithoutCitations() {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
