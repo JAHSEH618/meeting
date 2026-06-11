@@ -22,7 +22,7 @@ def _valid_message() -> dict:
         "tenantId": "tenant_01",
         "meetingId": "mtg_01",
         "audioFileId": "audio_01",
-        "audioUri": "oss://meeting-audio-auska/audio_01.wav",
+        "audioUri": "tos://meeting-audio-auska/audio_01.wav",
         "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": [
@@ -60,7 +60,7 @@ def _speaker_enrollment_message() -> dict:
         "speakerProfileId": "sp_01",
         "speakerEnrollmentId": "se_01",
         "audioFileId": "audio_enroll_01",
-        "audioUri": "oss://meeting-audio-auska/enroll.wav",
+        "audioUri": "tos://meeting-audio-auska/enroll.wav",
         "language": "zh",
         "securityLevel": "INTERNAL",
         "attemptNo": 1,
@@ -118,7 +118,7 @@ class StubWorkflowEngine:
                     "timestampPrecision": "SEGMENT",
                 }
             ],
-            artifact_manifest_id="oss://meeting-artifacts/manifest.json",
+            artifact_manifest_id="tos://meeting-artifacts/manifest.json",
             terminal_status="SUCCEEDED",
         )
 

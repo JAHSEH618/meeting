@@ -183,7 +183,7 @@ class AudioUploadApplicationServiceTest {
                 "RAG_INDEXING"
             );
         assertThat(event.payload().get("audioFileId")).isEqualTo(completed.fileId());
-        assertThat(event.payload().get("audioUri")).asString().startsWith("oss://meeting-local/");
+        assertThat(event.payload().get("audioUri")).asString().startsWith("tos://meeting-local/");
         assertThat(event.payload().get("language")).isEqualTo("zh");
         assertThat(event.payload().get("minSpeakers")).isEqualTo(1);
         assertThat(event.payload().get("maxSpeakers")).isEqualTo(4);
