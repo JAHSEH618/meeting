@@ -1,0 +1,184 @@
+"""CAM++ speaker embedding runtime with deterministic fake fallback.
+
+Follows the same pattern as Qwen3-ASR/pyannote/bge runtimes:
+
+- **fake** (default): wraps DeterministicSpeakerEmbeddingRuntime for tests/CI
+- **real**: lazy-loads 3D-Speaker CAM++ model for production embeddings
+
+Production requirements:
+1. Install: `uv sync --extra real-models`
+2. Stage weights: `/opt/models/cam++/v1`
+3. Set offline: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
+"""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Any, Literal
+
+from ai_worker.pipeline.audio.preprocess import AudioMetadata
+from ai_worker.pipeline.diarization.runtime import SpeakerTurn
+from ai_worker.pipeline.speaker.runtime import (
+    DeterministicSpeakerEmbeddingRuntime,
+    SpeakerEmbedding,
+    SpeakerEmbeddingRuntime,
+    SpeakerEmbeddingRuntimeError,
+)
+
+ModelStatus = Literal["NOT_LOADED", "LOADING", "READY", "ERROR"]
+
+
+class CamPlusPlusRuntimeError(SpeakerEmbeddingRuntimeError):
+    """Raised when CAM++ runtime fails."""
+
+
+class CamPlusPlusRuntime:
+    """Async-aware speaker embedding runtime with fake/real toggle."""
+
+    FAKE_MODEL_VERSION = DeterministicSpeakerEmbeddingRuntime.model_version
+    REAL_MODEL_VERSION = "cam++-v1"
+    EMBEDDING_DIM = 192
+
+    def __init__(
+        self,
+        *,
+        use_fake: bool,
+        models_dir: Path | None = None,
+        device: str = "cpu",
+    ) -> None:
+        self._use_fake = use_fake
+        self._models_dir = models_dir
+        self._device = "fake" if use_fake else device
+        self._model: Any = None
+        self._fake = DeterministicSpeakerEmbeddingRuntime()
+        self._status: ModelStatus = "READY" if use_fake else "NOT_LOADED"
+        self._last_error: str | None = None
+        self._load_lock = asyncio.Lock()
+
+    @property
+    def model_version(self) -> str:
+        return self.FAKE_MODEL_VERSION if self._use_fake else self.REAL_MODEL_VERSION
+
+    @property
+    def status(self) -> ModelStatus:
+        return self._status
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    @property
+    def device(self) -> str:
+        return self._device
+
+    async def ensure_loaded(self) -> None:
+        """Idempotently load the real model."""
+        if self._status == "READY":
+            return
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            async with self._load_lock:
+                if self._status == "READY":
+                    return
+                self._status = "LOADING"
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._load_model_blocking
+                    )
+                    self._status = "READY"
+                    self._last_error = None
+                except Exception as exc:
+                    self._status = "ERROR"
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    raise CamPlusPlusRuntimeError(
+                        "SPEAKER_EMBEDDING_FAILED",
+                        f"failed to load cam++: {exc}",
+                    ) from exc
+
+    def _load_model_blocking(self) -> None:
+        """Load CAM++ model synchronously."""
+        if not self._models_dir:
+            raise ValueError("models_dir required for real mode")
+
+        # Lazy import to avoid torch dependency in fake mode
+        try:
+            from modelscope.pipelines import pipeline as ms_pipeline
+        except ImportError as exc:
+            raise CamPlusPlusRuntimeError(
+                "SPEAKER_EMBEDDING_FAILED",
+                "modelscope not installed - run: uv sync --extra real-models",
+            ) from exc
+
+        model_path = self._models_dir / "cam++" / "v1"
+        if not model_path.exists():
+            raise FileNotFoundError(f"CAM++ model not found: {model_path}")
+
+        self._model = ms_pipeline(
+            task="speaker-verification",
+            model=str(model_path),
+            device=self._device,
+        )
+
+    async def embed(
+        self,
+        audio_path: Path,
+        metadata: AudioMetadata,
+        speaker_turn: SpeakerTurn,
+    ) -> SpeakerEmbedding:
+        """Extract speaker embedding from audio segment."""
+        if self._use_fake:
+            return await self._fake.embed(audio_path, metadata, speaker_turn)
+
+        await self.ensure_loaded()
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._embed_blocking,
+            audio_path,
+            metadata,
+            speaker_turn,
+        )
+
+    def _embed_blocking(
+        self,
+        audio_path: Path,
+        metadata: AudioMetadata,
+        speaker_turn: SpeakerTurn,
+    ) -> SpeakerEmbedding:
+        """Synchronous embedding extraction."""
+        try:
+            # Extract segment audio and compute embedding
+            result = self._model(
+                audio_in=str(audio_path),
+                audio_fs=metadata.sample_rate,
+            )
+
+            embedding_values = result["embs"][0].tolist()
+
+            # Ensure correct dimension
+            if len(embedding_values) != self.EMBEDDING_DIM:
+                raise CamPlusPlusRuntimeError(
+                    "SPEAKER_EMBEDDING_FAILED",
+                    f"Expected {self.EMBEDDING_DIM} dims, got {len(embedding_values)}",
+                )
+
+            # Compute checksum
+            import hashlib
+            checksum = hashlib.sha256(
+                ",".join(f"{v:.6f}" for v in embedding_values).encode("utf-8")
+            ).hexdigest()
+
+            return SpeakerEmbedding(
+                speaker_label=speaker_turn.speaker_label,
+                values=embedding_values,
+                dimension=self.EMBEDDING_DIM,
+                model_version=self.REAL_MODEL_VERSION,
+                checksum=checksum,
+                quality_score=float(speaker_turn.confidence),
+            )
+        except Exception as exc:
+            raise CamPlusPlusRuntimeError(
+                "SPEAKER_EMBEDDING_FAILED",
+                f"CAM++ inference failed: {exc}",
+            ) from exc
