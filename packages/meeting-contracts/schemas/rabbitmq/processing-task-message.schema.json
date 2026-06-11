@@ -31,7 +31,7 @@
     "speakerProfileId": {"type": ["string", "null"]},
     "speakerEnrollmentId": {"type": ["string", "null"]},
     "audioFileId": {"type": ["string", "null"]},
-    "audioUri": {"type": ["string", "null"], "pattern": "^(oss://.+)?$"},
+    "audioUri": {"type": ["string", "null"], "pattern": "^(tos://.+)?$"},
     "securityLevel": {
       "type": "string",
       "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]

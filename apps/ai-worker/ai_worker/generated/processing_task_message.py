@@ -113,7 +113,7 @@ class ProcessingTaskMessage(BaseModel):
     speakerProfileId: Optional[str] = None
     speakerEnrollmentId: Optional[str] = None
     audioFileId: Optional[str] = None
-    audioUri: Optional[constr(regex=r'^(oss://.+)?$')] = None
+    audioUri: Optional[constr(regex=r'^(tos://.+)?$')] = None
     securityLevel: SecurityLevel
     attemptNo: conint(ge=1)
     pipelineSteps: List[PipelineStep] = Field(..., min_items=1, unique_items=True)

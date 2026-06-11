@@ -169,7 +169,7 @@ public class ExportRenderService {
             return tenantTx.execute(msg.tenantId(), "system:export-consumer", msg.traceId(), () -> {
                 OffsetDateTime now = OffsetDateTime.now(clock);
                 String fileId = "mf_" + UUID.randomUUID().toString().replace("-", "");
-                String uri = "oss://" + persisted.bucket() + "/" + persisted.objectKey();
+                String uri = "tos://" + persisted.bucket() + "/" + persisted.objectKey();
                 MeetingFile saved = meetingFileRepo.save(new MeetingFile(
                     fileId,
                     job.tenantId(),

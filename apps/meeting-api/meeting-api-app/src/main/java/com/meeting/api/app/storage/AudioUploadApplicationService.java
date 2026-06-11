@@ -376,7 +376,7 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
     }
 
     private static String storageUri(String bucket, String objectKey) {
-        return "oss://" + bucket + "/" + objectKey;
+        return "tos://" + bucket + "/" + objectKey;
     }
 
     private OffsetDateTime now() {
