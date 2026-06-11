@@ -97,7 +97,10 @@ class TosArtifactStore:
     async def download(self, uri: str) -> bytes:
         bucket, key = _parse_tos_uri(uri)
         result = self._client.get_object(bucket, key)
-        return result.read()
+        content = result.read()
+        if not isinstance(content, bytes):
+            raise TypeError(f"Expected bytes from TOS, got {type(content)}")
+        return content
 
     async def download_json(self, uri: str) -> dict[str, Any]:
         return json.loads((await self.download(uri)).decode("utf-8"))
