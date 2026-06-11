@@ -22,10 +22,9 @@ import java.util.Map;
  * contribute nothing for that channel (no penalty).
  *
  * <p>The fused score replaces the per-channel score on the returned
- * {@link KnowledgeChunkCandidate}; metadata (chunkId, securityLevel,
- * content, …) is copied from whichever channel surfaced the chunk first
- * (vector wins ties because dense retrieval typically carries more
- * authoritative embeddings).
+ * {@link KnowledgeChunkCandidate}; metadata (chunkId, content, …) is
+ * copied from whichever channel surfaced the chunk first (vector wins
+ * ties because dense retrieval typically carries more authoritative embeddings).
  */
 public final class RrfFusion {
 
@@ -71,7 +70,6 @@ public final class RrfFusion {
                 base.sourceId(),
                 base.sourceSegmentId(),
                 base.content(),
-                base.securityLevel(),
                 base.transcriptVersion(),
                 base.minutesVersion(),
                 entry.getValue()

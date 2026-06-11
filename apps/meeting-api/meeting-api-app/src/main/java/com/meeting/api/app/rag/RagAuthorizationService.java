@@ -1,6 +1,5 @@
 package com.meeting.api.app.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.rag.KnowledgeChunkCandidate;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository.RetrievalScope;
 import com.meeting.api.domain.rag.RagAuthorizationPort;
@@ -31,9 +30,8 @@ import org.springframework.stereotype.Service;
  *       {@link RetrievalScope} that becomes the SQL pre-filter for
  *       vector + keyword search.</li>
  *   <li>{@link #filterAuthorized} runs against the candidate list AFTER
- *       retrieval — drops chunks whose security level exceeds clearance,
- *       and drops chunks whose owner the user can no longer read (e.g.
- *       a meeting was deleted between retrieval and this check).</li>
+ *       retrieval — drops chunks whose owner the user can no longer read
+ *       (e.g. a meeting was deleted between retrieval and this check).</li>
  * </ol>
  *
  * <p>Both methods are pure functions of the port — no caching, no
@@ -58,12 +56,9 @@ public class RagAuthorizationService {
      * the retrieval layer treats as "no rows" rather than "unrestricted").
      */
     public RetrievalScope authorizeScope(
-        String tenantId, String userId, SecurityLevel clearance, RetrievalScope requested
+        String tenantId, String userId, RetrievalScope requested
     ) {
-        if (clearance == null) {
-            throw new IllegalArgumentException("clearance must not be null");
-        }
-        RetrievalScope allowed = port.allowedScope(tenantId, userId, clearance);
+        RetrievalScope allowed = port.allowedScope(tenantId, userId);
         if (requested == null || requested.isEmpty()) {
             return allowed;
         }
@@ -83,37 +78,24 @@ public class RagAuthorizationService {
 
     /**
      * Filter a retrieved candidate list to those the user can read right
-     * now. Two passes:
+     * now. Drops candidates whose owning meeting or document is no
+     * longer readable (deleted, moved out of scope, …).
      *
-     * <ol>
-     *   <li>Drop candidates whose {@code securityLevel} exceeds
-     *       {@code clearance}.</li>
-     *   <li>Drop candidates whose owning meeting or document is no
-     *       longer readable (deleted, moved out of scope, …).</li>
-     * </ol>
-     *
-     * The two-step batched query keeps this O(1) round-trip even on
+     * The batched query keeps this O(1) round-trip even on
      * large candidate lists.
      */
     public List<KnowledgeChunkCandidate> filterAuthorized(
-        String tenantId, String userId, SecurityLevel clearance,
+        String tenantId, String userId,
         List<KnowledgeChunkCandidate> candidates
     ) {
         if (candidates == null || candidates.isEmpty()) {
             return List.of();
         }
-        if (clearance == null) {
-            throw new IllegalArgumentException("clearance must not be null");
-        }
-        int clearanceRank = clearance.ordinal();
 
         List<KnowledgeChunkCandidate> cleared = new ArrayList<>(candidates.size());
         Set<String> meetingIds = new HashSet<>();
         Set<String> documentIds = new HashSet<>();
         for (KnowledgeChunkCandidate c : candidates) {
-            if (c.securityLevel() != null && c.securityLevel().ordinal() > clearanceRank) {
-                continue;
-            }
             cleared.add(c);
             if (c.meetingId() != null) meetingIds.add(c.meetingId());
             if (c.documentId() != null) documentIds.add(c.documentId());
@@ -126,7 +108,7 @@ public class RagAuthorizationService {
             return cleared;
         }
 
-        ReadableOwners readable = port.readableOwners(tenantId, userId, clearance, meetingIds, documentIds);
+        ReadableOwners readable = port.readableOwners(tenantId, userId, meetingIds, documentIds);
 
         List<KnowledgeChunkCandidate> out = new ArrayList<>(cleared.size());
         for (KnowledgeChunkCandidate c : cleared) {

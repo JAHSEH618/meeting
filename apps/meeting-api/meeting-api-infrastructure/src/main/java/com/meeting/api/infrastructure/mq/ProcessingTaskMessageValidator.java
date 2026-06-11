@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.enums.ProcessingStep;
-import com.meeting.api.client.enums.SecurityLevel;
 import java.util.Set;
 
 /**
@@ -15,14 +14,13 @@ import java.util.Set;
  * {@code packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json}.
  * Until this validator existed, {@link OutboxPublisher} only checked
  * {@code pipelineSteps} (via routing-key resolution); a payload missing
- * {@code taskId} / {@code tenantId} / {@code securityLevel} would be
- * marked PUBLISHED and only ai-worker's fail-fast would reject it —
- * but by then any malformed callback could already be routed against
- * an unknown task/tenant.
+ * {@code taskId} / {@code tenantId} would be marked PUBLISHED and only
+ * ai-worker's fail-fast would reject it — but by then any malformed
+ * callback could already be routed against an unknown task/tenant.
  *
  * <p>This validator checks the required top-level fields, the enums
- * Java owns ({@code taskType}, {@code securityLevel}, {@code pipelineSteps}
- * including the no-Java-owned-steps invariant), and the
+ * Java owns ({@code taskType}, {@code pipelineSteps} including the
+ * no-Java-owned-steps invariant), and the
  * {@code expectedInputVersion.chunkStrategyVersion} requirement that
  * downstream chunkers depend on. A failure leaves the outbox row in
  * PENDING and the call site marks it FAILED with
@@ -72,7 +70,6 @@ public final class ProcessingTaskMessageValidator {
         requireNonBlankString(root, "taskId");
         requireTaskType(root.get("taskType"));
         requireNonBlankString(root, "tenantId");
-        requireSecurityLevel(root.get("securityLevel"));
         requireAttemptNo(root.get("attemptNo"));
         requirePipelineSteps(root.get("pipelineSteps"));
         requireExpectedInputVersion(root.get("expectedInputVersion"));
@@ -92,20 +89,6 @@ public final class ProcessingTaskMessageValidator {
             throw new InvalidPayloadException(
                 "taskType is required and must be one of " + ALLOWED_TASK_TYPES
                     + ", got: " + (node == null ? "<missing>" : node.asText())
-            );
-        }
-    }
-
-    private static void requireSecurityLevel(JsonNode node) {
-        if (node == null || !node.isTextual()) {
-            throw new InvalidPayloadException("securityLevel is required and must be a string");
-        }
-        try {
-            SecurityLevel.valueOf(node.asText());
-        } catch (IllegalArgumentException ex) {
-            throw new InvalidPayloadException(
-                "securityLevel must be one of PUBLIC/INTERNAL/CONFIDENTIAL/SECRET, got: "
-                    + node.asText()
             );
         }
     }

@@ -21,7 +21,6 @@ public record KnowledgeChunkCandidate(
     String sourceId,
     String sourceSegmentId,
     String content,
-    
     Integer transcriptVersion,
     Integer minutesVersion,
     double score

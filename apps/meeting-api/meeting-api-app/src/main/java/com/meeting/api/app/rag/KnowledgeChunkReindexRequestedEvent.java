@@ -1,6 +1,5 @@
 package com.meeting.api.app.rag;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import java.util.List;
 import java.util.Objects;
 
@@ -29,7 +28,6 @@ public record KnowledgeChunkReindexRequestedEvent(
     String meetingId,
     String documentId,
     List<ChunkRef> chunks,
-    SecurityLevel securityLevel,
     String chunkStrategyVersion,
     Integer transcriptVersion,
     Integer minutesVersion,
@@ -37,7 +35,6 @@ public record KnowledgeChunkReindexRequestedEvent(
 ) {
     public KnowledgeChunkReindexRequestedEvent {
         Objects.requireNonNull(tenantId, "tenantId");
-        Objects.requireNonNull(securityLevel, "securityLevel");
         Objects.requireNonNull(chunkStrategyVersion, "chunkStrategyVersion");
         if ((meetingId == null) == (documentId == null)) {
             throw new IllegalArgumentException(

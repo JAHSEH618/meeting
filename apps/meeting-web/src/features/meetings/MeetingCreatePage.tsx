@@ -3,11 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { createMeeting } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import type { ApiClientError } from "@shared/api/client";
-import type { SecurityLevel } from "@shared/api/types";
 
 export function MeetingCreatePage() {
   const [title, setTitle] = useState("");
-  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>("INTERNAL");
   const [language, setLanguage] = useState("zh");
   const [participantsText, setParticipantsText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +28,6 @@ export function MeetingCreatePage() {
         }));
       const meeting = await createMeeting({
         title: title.trim(),
-        securityLevel,
         language,
         participants,
       });
@@ -56,15 +53,6 @@ export function MeetingCreatePage() {
           <div className="field">
             <label htmlFor="title">会议标题</label>
             <input id="title" value={title} onChange={(event) => setTitle(event.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="securityLevel">安全等级</label>
-            <select id="securityLevel" value={securityLevel} onChange={(event) => setSecurityLevel(event.target.value as SecurityLevel)}>
-              <option value="PUBLIC">PUBLIC</option>
-              <option value="INTERNAL">INTERNAL</option>
-              <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-              <option value="SECRET">SECRET</option>
-            </select>
           </div>
           <div className="field">
             <label htmlFor="language">语言</label>

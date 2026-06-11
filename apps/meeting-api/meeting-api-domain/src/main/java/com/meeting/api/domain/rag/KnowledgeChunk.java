@@ -33,7 +33,6 @@ public final class KnowledgeChunk {
     private final String chunkStrategyVersion;
     private final Integer transcriptVersion;
     private final Integer minutesVersion;
-    private final SecurityLevel securityLevel;
     private final int chunkVersion;
     private final OffsetDateTime createdAt;
 
@@ -57,7 +56,6 @@ public final class KnowledgeChunk {
         this.chunkStrategyVersion = Objects.requireNonNull(b.chunkStrategyVersion, "chunkStrategyVersion");
         this.transcriptVersion = b.transcriptVersion;
         this.minutesVersion = b.minutesVersion;
-        this.securityLevel = Objects.requireNonNull(b.securityLevel, "securityLevel");
         this.chunkVersion = b.chunkVersion;
         this.embedding = b.embedding == null ? null : b.embedding.clone();
         this.embeddingModelVersion = b.embeddingModelVersion;
@@ -99,7 +97,6 @@ public final class KnowledgeChunk {
     public String chunkStrategyVersion() { return chunkStrategyVersion; }
     public Integer transcriptVersion() { return transcriptVersion; }
     public Integer minutesVersion() { return minutesVersion; }
-    public SecurityLevel securityLevel() { return securityLevel; }
     public int chunkVersion() { return chunkVersion; }
     public OffsetDateTime createdAt() { return createdAt; }
     public OffsetDateTime updatedAt() { return updatedAt; }
@@ -167,7 +164,6 @@ public final class KnowledgeChunk {
         private String chunkStrategyVersion;
         private Integer transcriptVersion;
         private Integer minutesVersion;
-        private SecurityLevel securityLevel;
         private int chunkVersion = 1;
         private float[] embedding;
         private String embeddingModelVersion;
@@ -189,7 +185,6 @@ public final class KnowledgeChunk {
         public Builder chunkStrategyVersion(String v) { this.chunkStrategyVersion = v; return this; }
         public Builder transcriptVersion(Integer v) { this.transcriptVersion = v; return this; }
         public Builder minutesVersion(Integer v) { this.minutesVersion = v; return this; }
-        public Builder securityLevel(SecurityLevel v) { this.securityLevel = v; return this; }
         public Builder chunkVersion(int v) { this.chunkVersion = v; return this; }
         public Builder embedding(float[] v) { this.embedding = v; return this; }
         public Builder embeddingModelVersion(String v) { this.embeddingModelVersion = v; return this; }

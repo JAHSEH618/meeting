@@ -1,6 +1,5 @@
 package com.meeting.api.infrastructure.persistence.export;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.export.MeetingSnapshotPort;
 import java.util.List;
 import java.util.Optional;
@@ -40,7 +39,6 @@ public class JdbcMeetingSnapshotPort implements MeetingSnapshotPort {
         return Optional.of(new MeetingSnapshot(
             meetingId,
             h.title(),
-            h.securityLevel(),
             h.language(),
             h.durationSeconds(),
             transcriptVersion,
@@ -60,7 +58,7 @@ public class JdbcMeetingSnapshotPort implements MeetingSnapshotPort {
     ) {
         return jdbc.query(
             """
-            SELECT title, security_level, language, duration_seconds,
+            SELECT title, language, duration_seconds,
                    transcript_version, minutes_version
               FROM meetings
              WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
@@ -79,7 +77,6 @@ public class JdbcMeetingSnapshotPort implements MeetingSnapshotPort {
                 long duration = rs.getLong("duration_seconds");
                 return Optional.of(new MeetingHeader(
                     rs.getString("title"),
-                    SecurityLevel.valueOf(rs.getString("security_level")),
                     rs.getString("language"),
                     rs.wasNull() ? null : duration
                 ));
@@ -220,7 +217,6 @@ public class JdbcMeetingSnapshotPort implements MeetingSnapshotPort {
 
     private record MeetingHeader(
         String title,
-        SecurityLevel securityLevel,
         String language,
         Long durationSeconds
     ) {}

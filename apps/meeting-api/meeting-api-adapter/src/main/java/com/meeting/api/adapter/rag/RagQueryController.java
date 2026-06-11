@@ -5,7 +5,6 @@ import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryCommand;
 import com.meeting.api.client.rag.RagQueryFacade;
@@ -26,11 +25,6 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>Tenant + user identity come from {@link TenantContextHolder}
  * (populated by the auth filter from JWT claims).
- * {@code X-Security-Clearance} is an optional header — when absent we
- * default to {@code INTERNAL}, matching the default elsewhere in the
- * API (see {@code DocumentController}). This keeps the read-time
- * permission check fail-closed without forcing every caller to learn a
- * new header.
  *
  * <p>Rate limiting (Phase 8 final-check.md B2): a per-(tenant,user)
  * token bucket guards GPU rerank cost. When exceeded the controller
@@ -62,8 +56,7 @@ public class RagQueryController {
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId,
-        @RequestHeader(value = "X-Security-Clearance", required = false) String clearanceHeader
+        @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
         if (body == null || body.question() == null || body.question().isBlank()) {
             throw new IllegalArgumentException("question must not be blank");
@@ -80,10 +73,6 @@ public class RagQueryController {
             );
         }
 
-        SecurityLevel clearance = clearanceHeader == null || clearanceHeader.isBlank()
-            ? SecurityLevel.INTERNAL
-            : SecurityLevel.valueOf(clearanceHeader.trim().toUpperCase());
-
         RagQueryScope scope = body.scope() == null
             ? RagQueryScope.EMPTY
             : new RagQueryScope(
@@ -94,7 +83,6 @@ public class RagQueryController {
         RagAnswerDTO dto = facade.query(new RagQueryCommand(
             tenantId,
             effectiveUserId,
-            clearance,
             body.question(),
             scope,
             body.topN() == null ? DEFAULT_TOP_N : body.topN(),
