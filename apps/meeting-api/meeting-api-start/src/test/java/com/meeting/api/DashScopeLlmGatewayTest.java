@@ -15,7 +15,6 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,25 +26,7 @@ class DashScopeLlmGatewayTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-15T04:00:00Z");
 
     @Test
-    void confidentialSecurityLevelIsFailClosed() {
-        InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
-        InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
-        InMemoryManifestRepo manifests = new InMemoryManifestRepo();
-        DashScopeLlmGateway gateway = gateway(new CapturingClient(), templates, logs, manifests);
-
-        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.CONFIDENTIAL)))
-            .isInstanceOf(SecurityLevelBlockedException.class)
-            .satisfies(ex -> {
-                SecurityLevelBlockedException blocked = (SecurityLevelBlockedException) ex;
-                assertThat(blocked.securityLevel()).isEqualTo(SecurityLevel.CONFIDENTIAL);
-                assertThat(blocked.blockedCapability()).isEqualTo("MINUTES_SUMMARY");
-            });
-        assertThat(logs.records).isEmpty();
-        assertThat(manifests.records).isEmpty();
-    }
-
-    @Test
-    void internalSecurityLevelRendersTemplateAndCallsClient() {
+    void rendersTemplateAndCallsClient() {
         InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
         templates.put("tenant_01", "MINUTES_SUMMARY",
             "Summarize meeting {{meetingTitle}}: {{transcript}}",
@@ -70,7 +51,6 @@ class DashScopeLlmGatewayTest {
             "task_01",
             "MINUTES_SUMMARY",
             "MINUTES_SUMMARY",
-            SecurityLevel.INTERNAL,
             Map.of("meetingTitle", "Standup", "transcript", "hello world"),
             null,
             "trace_01"
@@ -122,7 +102,7 @@ class DashScopeLlmGatewayTest {
         client.next = new OpenAiCompatibleChatClient.ChatCompletion("answer", "qwen-plus", 1, 1, 1L, Map.of());
         DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
-        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
+        assertThatThrownBy(() -> gateway.complete(request()))
             .isInstanceOfSatisfying(LlmProviderException.class, ex ->
                 assertThat(ex.errorCode()).isEqualTo(ErrorCode.WRITEBACK_FAILED));
         // No call-log row either — manifest failure aborts before the call log is written.
@@ -149,7 +129,7 @@ class DashScopeLlmGatewayTest {
         );
         DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
-        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
+        assertThatThrownBy(() -> gateway.complete(request()))
             .isInstanceOf(LlmProviderException.class)
             .satisfies(ex -> assertThat(((LlmProviderException) ex).errorCode())
                 .isEqualTo(ErrorCode.LLM_SCHEMA_INVALID));
@@ -166,7 +146,7 @@ class DashScopeLlmGatewayTest {
         };
         DashScopeLlmGateway gateway = gateway(client, templates, logs, manifests);
 
-        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.INTERNAL)))
+        assertThatThrownBy(() -> gateway.complete(request()))
             .isInstanceOf(LlmProviderException.class);
 
         assertThat(logs.records).hasSize(1);
@@ -182,20 +162,19 @@ class DashScopeLlmGatewayTest {
             new CapturingClient(), new InMemoryTemplateRepo(), new InMemoryCallLogRepo(), new InMemoryManifestRepo()
         );
 
-        assertThatThrownBy(() -> gateway.complete(request(SecurityLevel.PUBLIC)))
+        assertThatThrownBy(() -> gateway.complete(request()))
             .isInstanceOf(LlmProviderException.class)
             .satisfies(ex -> assertThat(((LlmProviderException) ex).errorCode())
                 .isEqualTo(ErrorCode.LLM_SCHEMA_INVALID));
     }
 
-    private static LlmGateway.LlmRequest request(SecurityLevel level) {
+    private static LlmGateway.LlmRequest request() {
         return new LlmGateway.LlmRequest(
             "tenant_01",
             "meeting_01",
             "task_01",
             "MINUTES_SUMMARY",
             "MINUTES_SUMMARY",
-            level,
             Map.of("transcript", "hello"),
             null,
             "trace_01"
@@ -215,7 +194,6 @@ class DashScopeLlmGatewayTest {
             manifests,
             new ObjectMapper(),
             "qwen-plus",
-            EnumSet.of(SecurityLevel.CONFIDENTIAL, SecurityLevel.SECRET),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
