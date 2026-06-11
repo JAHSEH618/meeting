@@ -41,8 +41,8 @@ public class StorageConfigValidator implements ApplicationListener<ApplicationRe
                 throw new IllegalStateException(message);
             }
             log.info("storage_config_validated type={} localRoot={}", storageType, localRoot);
-        } else if ("oss".equalsIgnoreCase(storageType)) {
-            log.info("storage_config_validated type=oss (OSS gateway will validate credentials)");
+        } else if ("tos".equalsIgnoreCase(storageType)) {
+            log.info("storage_config_validated type=tos (TOS gateway will validate credentials)");
         } else {
             log.warn("storage_config_unknown_type type={}, proceeding anyway", storageType);
         }
