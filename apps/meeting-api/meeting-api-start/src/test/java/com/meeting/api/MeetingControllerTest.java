@@ -201,7 +201,6 @@ class MeetingControllerTest {
             "m_01",
             "tenant_01",
             "Weekly",
-            SecurityLevel.INTERNAL,
             MeetingStatus.CREATED,
             "zh",
             0,
