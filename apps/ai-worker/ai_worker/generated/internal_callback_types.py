@@ -19,7 +19,7 @@ class ErrorInfo(BaseModel):
 
 class Artifact(BaseModel):
     artifactType: str
-    artifactUri: constr(regex=r'^oss://.+')
+    artifactUri: constr(regex=r'^tos://.+')
     sha256: str
     sizeBytes: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -96,7 +96,7 @@ class Embedding(BaseModel):
     format: Format
     dimension: int
     values: Optional[List[float]] = None
-    artifactUri: Optional[constr(regex=r'^oss://.+')] = None
+    artifactUri: Optional[constr(regex=r'^tos://.+')] = None
     sha256: Optional[str] = None
 
 

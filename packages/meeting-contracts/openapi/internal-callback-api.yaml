@@ -388,7 +388,7 @@ components:
             required: [artifactType, artifactUri, sha256]
             properties:
               artifactType: {type: string}
-              artifactUri: {type: string, pattern: '^oss://.+'}
+              artifactUri: {type: string, pattern: '^tos://.+'}
               sha256: {type: string}
               sizeBytes: {type: integer}
               metadata:
@@ -517,7 +517,7 @@ components:
                     items: {type: number}
                   artifactUri:
                     type: [string, 'null']
-                    pattern: '^oss://.+'
+                    pattern: '^tos://.+'
                   sha256: {type: [string, 'null']}
         artifactManifestId: {type: [string, 'null']}
     CompleteWorkerPhaseRequest:
