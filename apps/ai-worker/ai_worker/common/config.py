@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     tos_region: str | None = None
     tos_access_key_id: str | None = None
     tos_access_key_secret: str | None = None
+    enable_tos_backup: bool = True
     # ── Phase 5 RAG model runtime ──────────────────────────────────────────
     # Default true: coding / CI / single dev tests run without downloading
     # bge-m3 (~3GB) or bge-reranker-v2-m3 (~568MB). Production deploys must
