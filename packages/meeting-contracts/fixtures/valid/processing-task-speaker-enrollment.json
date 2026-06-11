@@ -5,7 +5,7 @@
   "speakerProfileId": "sp_01HZ8XJK5PQR",
   "speakerEnrollmentId": "se_01HZ8XJK5STU",
   "audioFileId": "file_01HZ8XJK5ENR",
-  "audioUri": "oss://meeting-audio-auska/file_01HZ8XJK5ENR.wav",
+  "audioUri": "tos://meeting-audio-auska/file_01HZ8XJK5ENR.wav",
   "language": "zh",
   "securityLevel": "PUBLIC",
   "attemptNo": 1,
