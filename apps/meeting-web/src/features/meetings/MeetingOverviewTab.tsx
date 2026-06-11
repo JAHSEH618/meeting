@@ -12,10 +12,6 @@ export function MeetingOverviewTab({ meeting }: { meeting: Meeting }) {
           <div className="metric__value">{meeting.status}</div>
         </div>
         <div className="metric">
-          <div className="metric__label">安全等级</div>
-          <div className="metric__value">{meeting.securityLevel}</div>
-        </div>
-        <div className="metric">
           <div className="metric__label">语言</div>
           <div className="metric__value">{meeting.language}</div>
         </div>

@@ -29,7 +29,7 @@ export function MeetingDetailPage() {
             <div>
               <h1 className="page-title">{meeting.title}</h1>
               <p className="page-subtitle">
-                <span translate="no">{meeting.meetingId}</span> · {meeting.securityLevel} · {meeting.language}
+                <span translate="no">{meeting.meetingId}</span> · {meeting.language}
               </p>
             </div>
             <div className="page-actions">

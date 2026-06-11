@@ -6,15 +6,6 @@ import { getUserMessage } from "@shared/utils/error-mapper";
 import type { ApiClientError } from "@shared/api/client";
 import type { Meeting } from "@shared/api/types";
 
-const SECURITY_LEVELS = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"] as const;
-
-const SECURITY_TONE: Record<string, string> = {
-  PUBLIC: "pill--neutral",
-  INTERNAL: "pill--info",
-  CONFIDENTIAL: "pill--warn",
-  SECRET: "pill--danger",
-};
-
 const STATUS_TONE: Record<string, string> = {
   CREATED: "pill--neutral",
   PROCESSING: "pill--info",
@@ -26,23 +17,20 @@ const STATUS_TONE: Record<string, string> = {
 export function MeetingListPage() {
   const [params, setParams] = useSearchParams();
   const keyword = params.get("q") ?? "";
-  const security = params.get("securityLevel") ?? "ALL";
 
   const { data, isPending, error } = useMeetingsQuery();
   const meetings = data?.items ?? [];
 
   const filtered = useMemo(() => {
     return meetings.filter((m) => {
-      const titleMatch = m.title.toLowerCase().includes(keyword.trim().toLowerCase());
-      const securityMatch = security === "ALL" || m.securityLevel === security;
-      return titleMatch && securityMatch;
+      return m.title.toLowerCase().includes(keyword.trim().toLowerCase());
     });
-  }, [meetings, keyword, security]);
+  }, [meetings, keyword]);
 
   function update(next: Record<string, string>) {
     const merged = new URLSearchParams(params);
     for (const [k, v] of Object.entries(next)) {
-      if (!v || v === "ALL") merged.delete(k);
+      if (!v) merged.delete(k);
       else merged.set(k, v);
     }
     setParams(merged, { replace: true });
@@ -80,20 +68,6 @@ export function MeetingListPage() {
               onChange={(e) => update({ q: e.target.value })}
             />
           </div>
-          <div className="field" style={{ minWidth: 200 }}>
-            <label className="field__label" htmlFor="meeting-security">安全等级</label>
-            <select
-              id="meeting-security"
-              name="securityLevel"
-              value={security}
-              onChange={(e) => update({ securityLevel: e.target.value })}
-            >
-              <option value="ALL">全部安全等级</option>
-              {SECURITY_LEVELS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {isPending ? <p className="page-subtitle" aria-live="polite">加载中…</p> : null}
@@ -116,7 +90,6 @@ export function MeetingListPage() {
               <tr>
                 <th>标题</th>
                 <th>状态</th>
-                <th>安全等级</th>
                 <th>语言</th>
                 <th>创建时间</th>
               </tr>
@@ -130,11 +103,6 @@ export function MeetingListPage() {
                   <td>
                     <span className={`pill ${STATUS_TONE[meeting.status] ?? "pill--neutral"}`}>
                       {meeting.status}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`pill ${SECURITY_TONE[meeting.securityLevel] ?? "pill--neutral"}`}>
-                      {meeting.securityLevel}
                     </span>
                   </td>
                   <td>{meeting.language}</td>

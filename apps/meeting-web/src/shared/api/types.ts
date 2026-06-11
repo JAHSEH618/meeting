@@ -20,7 +20,6 @@ export interface Page<T> {
 export type AuthUser = components["schemas"]["AuthUser"];
 
 // ── Meeting ──────────────────────────────────────────────────────────
-export type SecurityLevel = components["schemas"]["SecurityLevel"];
 export type MeetingStatus = components["schemas"]["MeetingStatus"];
 export type Meeting = components["schemas"]["Meeting"];
 export type CreateMeetingRequest = components["schemas"]["CreateMeetingRequest"];

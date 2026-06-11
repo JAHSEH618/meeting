@@ -45,29 +45,55 @@ export function MeetingCreatePage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">新建会议</h1>
-          <p className="muted">创建后可在详情页启动 MVP-0 处理任务。</p>
+          <p className="muted">创建后可在详情页启动处理任务。</p>
         </div>
       </div>
       <section className="card">
         <form className="form" onSubmit={onSubmit}>
           <div className="field">
             <label htmlFor="title">会议标题</label>
-            <input id="title" value={title} onChange={(event) => setTitle(event.target.value)} />
+            <input
+              id="title"
+              type="text"
+              name="title"
+              autoComplete="off"
+              required
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </div>
           <div className="field">
             <label htmlFor="language">语言</label>
-            <select id="language" value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <select
+              id="language"
+              name="language"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
               <option value="zh">中文</option>
               <option value="en">English</option>
             </select>
           </div>
           <div className="field">
             <label htmlFor="participants">参会人</label>
-            <textarea id="participants" rows={4} value={participantsText} onChange={(event) => setParticipantsText(event.target.value)} placeholder="每行一个姓名" />
+            <textarea
+              id="participants"
+              name="participants"
+              rows={4}
+              autoComplete="off"
+              spellCheck={false}
+              value={participantsText}
+              onChange={(event) => setParticipantsText(event.target.value)}
+              placeholder="每行一个姓名…"
+            />
           </div>
-          {error ? <div className="error" role="alert">{error}</div> : null}
+          {error ? (
+            <div className="error" role="alert" aria-live="polite">
+              {error}
+            </div>
+          ) : null}
           <button className="primary" type="submit" disabled={submitting || !title.trim()}>
-            {submitting ? "创建中" : "创建会议"}
+            {submitting ? "创建中…" : "创建会议"}
           </button>
         </form>
       </section>
