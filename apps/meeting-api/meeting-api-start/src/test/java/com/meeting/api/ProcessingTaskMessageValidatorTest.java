@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Until now the outbox publisher only checked {@code pipelineSteps}
  * (via routingKey resolution) before publishing — a payload missing
- * {@code taskId} / {@code tenantId} / {@code securityLevel} would be
+ * {@code taskId} / {@code tenantId} would be
  * marked PUBLISHED and only ai-worker would reject it, by which point
  * the callback path may end up routing to an unknown task/tenant.
  */
@@ -27,7 +27,6 @@ class ProcessingTaskMessageValidatorTest {
           "taskId": "task_01",
           "taskType": "TEXT_EMBEDDING",
           "tenantId": "tenant_01",
-          "securityLevel": "INTERNAL",
           "attemptNo": 1,
           "pipelineSteps": ["RAG_INDEXING"],
           "expectedInputVersion": {"chunkStrategyVersion": "v1"},
@@ -86,14 +85,6 @@ class ProcessingTaskMessageValidatorTest {
         assertThatThrownBy(() -> ProcessingTaskMessageValidator.INSTANCE.validate(bad, mapper))
             .isInstanceOf(InvalidPayloadException.class)
             .hasMessageContaining("taskType");
-    }
-
-    @Test
-    void rejectsUnknownSecurityLevel() {
-        String bad = VALID.replace("\"INTERNAL\"", "\"TOP_SECRET\"");
-        assertThatThrownBy(() -> ProcessingTaskMessageValidator.INSTANCE.validate(bad, mapper))
-            .isInstanceOf(InvalidPayloadException.class)
-            .hasMessageContaining("securityLevel");
     }
 
     @Test
