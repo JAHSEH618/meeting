@@ -3,7 +3,6 @@ package com.meeting.api;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.document.DocumentApplicationService;
 import com.meeting.api.client.document.CreateDocumentCommand;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.document.DocumentRepository;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import org.junit.jupiter.api.Test;

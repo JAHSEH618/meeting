@@ -5,7 +5,6 @@ import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.meeting.MeetingGlossaryApplicationService;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.GlossaryTermDTO;
 import com.meeting.api.client.meeting.MeetingGlossaryDTO;
 import com.meeting.api.client.meeting.UpdateMeetingGlossaryCommand;
@@ -139,7 +138,7 @@ class MeetingGlossaryApplicationServiceTest {
     private static Meeting meeting() {
         return new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Q2 Review")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED).language("zh")
+            .status(MeetingStatus.CREATED).language("zh")
             .transcriptVersion(0).minutesVersion(0).createdAt(NOW)
             .createdBy("user_01").participants(List.of())
             .build();

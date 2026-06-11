@@ -1,7 +1,6 @@
 package com.meeting.api;
 
 import com.meeting.api.client.enums.DeletionScopeType;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.compliance.DeletionExecutorPort.DeletionOutcome;
 import com.meeting.api.domain.document.DocumentRepository;
 import com.meeting.api.domain.document.DocumentRepository.DocumentRecord;

@@ -3,7 +3,6 @@ package com.meeting.api.app.task;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.task.CreateProcessingTaskCommand;
 import com.meeting.api.domain.common.DomainEvent;
 import com.meeting.api.domain.meeting.Meeting;
@@ -102,7 +101,6 @@ class ProcessingTaskApplicationServiceTest {
             .id("meeting_01")
             .tenantId("tenant_01")
             .title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL)
             .status(MeetingStatus.CREATED)
             .language("zh")
             .transcriptVersion(transcriptVersion)
@@ -154,7 +152,6 @@ class ProcessingTaskApplicationServiceTest {
                     .id(meeting.id())
                     .tenantId(meeting.tenantId())
                     .title(meeting.title())
-                    .securityLevel(meeting.securityLevel())
                     .status(status)
                     .language(meeting.language())
                     .transcriptVersion(meeting.transcriptVersion())

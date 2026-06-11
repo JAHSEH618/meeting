@@ -1,7 +1,6 @@
 package com.meeting.api;
 
 import com.meeting.api.app.rag.RagAuthorizationService;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.rag.KnowledgeChunkCandidate;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository.RetrievalScope;
 import com.meeting.api.domain.rag.KnowledgeSourceType;

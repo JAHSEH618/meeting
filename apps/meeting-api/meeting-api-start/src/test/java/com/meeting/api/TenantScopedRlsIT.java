@@ -2,7 +2,6 @@ package com.meeting.api;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.meeting.MeetingApplicationService;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.MeetingDTO;
 import com.meeting.api.domain.audit.AuditEventLogger;

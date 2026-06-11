@@ -1,6 +1,5 @@
 package com.meeting.api;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.domain.rag.ChunkStatus;
 import com.meeting.api.domain.rag.KnowledgeChunk;
@@ -113,7 +112,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .contentHash("hash_1")
             .chunkStrategyVersion("default-zh-v1")
             .transcriptVersion(1)
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .embedding(vec)
             .embeddingModelVersion("bge-m3-v1")
             .createdAt(NOW)
@@ -159,7 +158,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content("文档第一段。")
             .contentHash("hash_doc_1")
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.CONFIDENTIAL)
+            
             .createdAt(NOW)
             .updatedAt(NOW)
             .build();
@@ -188,7 +187,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content("旧内容").contentHash("h1")
             .chunkStrategyVersion("default-zh-v1")
             .transcriptVersion(1)
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .createdAt(NOW).updatedAt(NOW)
             .build();
 
@@ -202,7 +201,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content("新内容").contentHash("h2")
             .chunkStrategyVersion("default-zh-v1")
             .transcriptVersion(2)
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .createdAt(NOW).updatedAt(NOW.plusMinutes(1))
             .build();
 
@@ -432,7 +431,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content("内容 " + suffix).contentHash("h_" + suffix)
             .chunkStrategyVersion("default-zh-v1")
             .transcriptVersion(1)
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .createdAt(NOW).updatedAt(NOW)
             .build();
     }
@@ -445,7 +444,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .sourceId("src_" + suffix)
             .content("文档 " + suffix).contentHash("hd_" + suffix)
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.CONFIDENTIAL)
+            
             .createdAt(NOW).updatedAt(NOW)
             .build();
     }
@@ -480,7 +479,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content("content " + id)
             .contentHash("h_" + id)
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .embedding(embedding)
             .embeddingModelVersion("bge-m3-v1")
             .createdAt(NOW)
@@ -502,7 +501,7 @@ class JdbcKnowledgeChunkRepositoryIT {
             .content(content).contentHash("h_" + id)
             .chunkStrategyVersion("default-zh-v1")
             .transcriptVersion(1)
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .createdAt(NOW).updatedAt(NOW)
             .build();
     }

@@ -4,14 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.extraction.ExtractionApplicationService;
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.extraction.ExtractionSummary;
 import com.meeting.api.domain.extraction.ActionItemRepository;
 import com.meeting.api.domain.extraction.DecisionRepository;
 import com.meeting.api.domain.extraction.RiskRepository;
 import com.meeting.api.domain.llm.LlmGateway;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.transcript.TranscriptRepository;
@@ -36,7 +34,7 @@ class ExtractionApplicationServiceTest {
     @Test
     void extractPersistsAllThreeKindsWithDraftAcceptanceAndEnrichedEvidence() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting(SecurityLevel.INTERNAL));
+        meetings.add(meeting());
         InMemoryTranscript transcripts = new InMemoryTranscript(2);
         transcripts.add(segment("seg_01", 0, 1000, "Vendor delay risk."));
         transcripts.add(segment("seg_02", 1000, 2000, "Action: cut PO."));
@@ -90,7 +88,7 @@ class ExtractionApplicationServiceTest {
     @Test
     void hallucinatedEvidenceSegmentIdIsDropped() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting(SecurityLevel.PUBLIC));
+        meetings.add(meeting());
         InMemoryTranscript transcripts = new InMemoryTranscript(1);
         transcripts.add(segment("seg_real", 0, 500, "Real text."));
         InMemoryActionItemRepo actions = new InMemoryActionItemRepo();
@@ -113,7 +111,7 @@ class ExtractionApplicationServiceTest {
     @Test
     void missingArraysProduceZeroCounts() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting(SecurityLevel.INTERNAL));
+        meetings.add(meeting());
         FakeLlmGateway llm = new FakeLlmGateway();
         llm.next = llmResponse("{}");
 
@@ -124,20 +122,6 @@ class ExtractionApplicationServiceTest {
         assertThat(summary.actionItemsCreated()).isZero();
         assertThat(summary.decisionsCreated()).isZero();
         assertThat(summary.risksCreated()).isZero();
-    }
-
-    @Test
-    void securityLevelBlockedPropagatesAndPersistsNothing() {
-        InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting(SecurityLevel.SECRET));
-        FakeLlmGateway llm = new FakeLlmGateway();
-        llm.failWith = new SecurityLevelBlockedException(SecurityLevel.SECRET, "ITEM_EXTRACTION");
-        InMemoryActionItemRepo actions = new InMemoryActionItemRepo();
-
-        assertThatThrownBy(() -> service(meetings, new InMemoryTranscript(1), actions, new InMemoryDecisionRepo(), new InMemoryRiskRepo(), llm)
-            .extractForTask("tenant_01", "meeting_01", "task_01"))
-            .isInstanceOf(SecurityLevelBlockedException.class);
-        assertThat(actions.saved).isEmpty();
     }
 
     private static ExtractionApplicationService service(
@@ -165,12 +149,11 @@ class ExtractionApplicationServiceTest {
         return new LlmGateway.LlmResponse(json, json, 10, 20, 30L, "qwen-plus", "llmlog_t", "art_t");
     }
 
-    private static Meeting meeting(SecurityLevel level) {
+    private static Meeting meeting() {
         return new Meeting.Builder()
             .id("meeting_01")
             .tenantId("tenant_01")
             .title("M")
-            .securityLevel(level)
             .status(MeetingStatus.PROCESSING)
             .language("zh")
             .transcriptVersion(2)

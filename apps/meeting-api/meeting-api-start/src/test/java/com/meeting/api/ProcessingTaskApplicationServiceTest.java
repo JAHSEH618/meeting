@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static com.meeting.api.client.enums.SecurityLevel.INTERNAL;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProcessingTaskApplicationServiceTest {

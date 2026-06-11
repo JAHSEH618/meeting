@@ -2,13 +2,11 @@ package com.meeting.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.client.common.ErrorCode;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.artifact.ArtifactManifestRepository;
 import com.meeting.api.domain.llm.LlmCallLogRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.llm.PromptTemplateRepository;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import com.meeting.api.infrastructure.gateway.llm.DashScopeLlmGateway;
 import com.meeting.api.infrastructure.gateway.llm.OpenAiCompatibleChatClient;
 import org.junit.jupiter.api.Test;

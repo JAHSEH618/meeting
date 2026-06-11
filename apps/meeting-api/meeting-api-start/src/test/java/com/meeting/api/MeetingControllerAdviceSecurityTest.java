@@ -4,9 +4,7 @@ import com.meeting.api.adapter.meeting.MeetingControllerAdvice;
 import com.meeting.api.app.minutes.MinutesApplicationService;
 import com.meeting.api.app.transcript.TranscriptApplicationService;
 import com.meeting.api.client.common.ErrorCode;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.llm.LlmProviderException;
-import com.meeting.api.domain.llm.SecurityLevelBlockedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 

@@ -7,7 +7,6 @@ import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.AuditAction;
 import com.meeting.api.client.enums.AuditResult;
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
@@ -95,7 +94,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
@@ -142,7 +141,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
@@ -171,7 +170,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
@@ -200,7 +199,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .createdBy("user_01").participants(List.of())
@@ -231,7 +230,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .createdBy("user_01").participants(List.of())
@@ -375,7 +374,7 @@ class MeetingApplicationServiceTest {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Planning")
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.SUCCEEDED)
+            .status(MeetingStatus.SUCCEEDED)
             .language("zh").transcriptVersion(3).minutesVersion(1)
             .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
             .createdBy("user_01").participants(List.of())

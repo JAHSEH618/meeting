@@ -6,7 +6,6 @@ import com.meeting.api.app.meeting.MeetingDocumentApplicationService;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.DocumentRole;
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.AttachMeetingDocumentCommand;
 import com.meeting.api.client.meeting.DetachMeetingDocumentCommand;
 import com.meeting.api.client.meeting.MeetingDocumentDTO;
@@ -44,7 +43,7 @@ class MeetingDocumentApplicationServiceTest {
     void attachLinksMeetingAndDocumentAndPublishesEvent() {
         Fixture f = fixture();
         f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec v1"));
-        f.meetings.put("m_01", meeting(SecurityLevel.INTERNAL));
+        f.meetings.put("m_01", meeting());
 
         MeetingDocumentDTO dto = f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.REFERENCE,
@@ -62,7 +61,7 @@ class MeetingDocumentApplicationServiceTest {
     void attachIsIdempotentForActiveLink() {
         Fixture f = fixture();
         f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec"));
-        f.meetings.put("m_01", meeting(SecurityLevel.INTERNAL));
+        f.meetings.put("m_01", meeting());
 
         f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.ATTACHMENT,
@@ -83,7 +82,7 @@ class MeetingDocumentApplicationServiceTest {
         Fixture f = fixture();
         // meeting INTERNAL, document CONFIDENTIAL — effective = CONFIDENTIAL → REFERENCE fail-closed (R4)
         f.documents.put("doc_01", document(SecurityLevel.CONFIDENTIAL, "Salary review"));
-        f.meetings.put("m_01", meeting(SecurityLevel.INTERNAL));
+        f.meetings.put("m_01", meeting());
 
         assertThatThrownBy(() -> f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.REFERENCE,
@@ -112,7 +111,7 @@ class MeetingDocumentApplicationServiceTest {
     void detachSoftDeletesActiveLink() {
         Fixture f = fixture();
         f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec"));
-        f.meetings.put("m_01", meeting(SecurityLevel.INTERNAL));
+        f.meetings.put("m_01", meeting());
         f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.ATTACHMENT,
             "user_01", "idem_a", "req_a", "trace_a"
@@ -131,7 +130,7 @@ class MeetingDocumentApplicationServiceTest {
     void listJoinsDocumentTitleAndSecurityLevel() {
         Fixture f = fixture();
         f.documents.put("doc_01", document(SecurityLevel.PUBLIC, "Doc One"));
-        f.meetings.put("m_01", meeting(SecurityLevel.INTERNAL));
+        f.meetings.put("m_01", meeting());
         f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.ATTACHMENT,
             "user_01", "idem", "req", "trace"
@@ -160,7 +159,7 @@ class MeetingDocumentApplicationServiceTest {
         return new Fixture(meetings.byId, documents.byId, service, publisher);
     }
 
-    private static Meeting meeting(SecurityLevel level) {
+    private static Meeting meeting() {
         return new Meeting.Builder()
             .id("m_01").tenantId("tenant_01").title("Q2 Review")
             .securityLevel(level).status(MeetingStatus.CREATED).language("zh")

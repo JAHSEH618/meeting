@@ -1,7 +1,6 @@
 package com.meeting.api;
 
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.meeting.Meeting;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;

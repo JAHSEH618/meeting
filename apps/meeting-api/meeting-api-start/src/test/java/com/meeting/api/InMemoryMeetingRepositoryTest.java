@@ -1,6 +1,5 @@
 package com.meeting.api;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.infrastructure.meeting.InMemoryMeetingRepository;
 import java.util.List;

@@ -10,7 +10,6 @@ import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.RagAnswerCoverage;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.MeetingSegmentCitationDTO;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryCommand;

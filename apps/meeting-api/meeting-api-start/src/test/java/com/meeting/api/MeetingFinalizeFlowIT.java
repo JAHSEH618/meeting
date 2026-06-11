@@ -12,7 +12,6 @@ import com.meeting.api.app.task.TaskStepProgressService;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.task.ResumeJavaPhaseCommand;
 import com.meeting.api.domain.common.DomainEvent;
 import com.meeting.api.domain.document.DocumentChunkRepository;

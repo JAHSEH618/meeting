@@ -6,7 +6,6 @@ import com.meeting.api.app.rag.RagAuthorizationService;
 import com.meeting.api.app.rag.RagQueryApplicationService;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.RagAnswerCoverage;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.DocumentChunkCitationDTO;
 import com.meeting.api.client.rag.MeetingSegmentCitationDTO;
 import com.meeting.api.client.rag.RagAnswerDTO;

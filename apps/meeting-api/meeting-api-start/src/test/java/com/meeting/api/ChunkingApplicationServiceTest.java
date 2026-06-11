@@ -4,7 +4,6 @@ import com.meeting.api.app.rag.ChunkingApplicationService;
 import com.meeting.api.app.rag.ChunkingApplicationService.ChunkingResult;
 import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent;
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.domain.document.DocumentChunkRepository;
 import com.meeting.api.domain.document.DocumentRepository;
@@ -300,7 +299,7 @@ class ChunkingApplicationServiceTest {
     private static Meeting meeting(String id) {
         return new Meeting.Builder()
             .id(id).tenantId("tenant_01").title("Test " + id)
-            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .status(MeetingStatus.CREATED)
             .language("zh").transcriptVersion(0).minutesVersion(0)
             .createdAt(NOW).createdBy("user_01").build();
     }

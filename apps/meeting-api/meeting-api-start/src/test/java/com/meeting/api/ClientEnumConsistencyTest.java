@@ -19,7 +19,6 @@ import com.meeting.api.client.enums.ProcessingStepUpdateSource;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.RagAnswerCoverage;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.enums.TaskEventType;

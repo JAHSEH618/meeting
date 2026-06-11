@@ -6,7 +6,6 @@ import com.meeting.api.app.rag.EmbeddingTaskDispatcher.DispatchResult;
 import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent;
 import com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent.ChunkRef;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.common.DomainEvent;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;

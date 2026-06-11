@@ -1,7 +1,6 @@
 package com.meeting.api;
 
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.meeting.Meeting;
 import com.meeting.api.infrastructure.persistence.meeting.JdbcMeetingRepository;
 import java.sql.DriverManager;
@@ -94,7 +93,7 @@ class JdbcMeetingRepositoryIT {
             .id("m_repo_it")
             .tenantId(TENANT)
             .title("Repo Meeting")
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .status(MeetingStatus.CREATED)
             .language("zh")
             .transcriptVersion(0)

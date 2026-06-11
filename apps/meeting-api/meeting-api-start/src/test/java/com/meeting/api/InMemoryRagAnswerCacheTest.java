@@ -6,7 +6,6 @@ import com.meeting.api.app.rag.RagAnswerCache;
 import com.meeting.api.app.rag.RagAnswerCache.CacheCoverage;
 import com.meeting.api.app.rag.RagAnswerCache.RagCacheKey;
 import com.meeting.api.client.enums.RagAnswerCoverage;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.rag.RagAnswerDTO;
 import com.meeting.api.client.rag.RagQueryScope;
 import java.time.Clock;

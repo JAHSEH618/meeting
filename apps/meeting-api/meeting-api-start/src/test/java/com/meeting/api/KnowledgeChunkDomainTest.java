@@ -1,6 +1,5 @@
 package com.meeting.api;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.domain.rag.ChunkStatus;
 import com.meeting.api.domain.rag.ChunkStrategy;
@@ -115,7 +114,7 @@ class KnowledgeChunkDomainTest {
             .content("hello world")
             .contentHash("h")
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .build()
         ).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("DOCUMENT-sourced chunk requires documentId");
@@ -132,7 +131,7 @@ class KnowledgeChunkDomainTest {
             .content("hello world")
             .contentHash("h")
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.INTERNAL)
+            
             .build()
         ).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("requires meetingId");
@@ -155,6 +154,6 @@ class KnowledgeChunkDomainTest {
             .content("This is some transcript content.")
             .contentHash("hash_abc123")
             .chunkStrategyVersion("default-zh-v1")
-            .securityLevel(SecurityLevel.INTERNAL);
+            ;
     }
 }

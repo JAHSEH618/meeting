@@ -40,7 +40,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-import static com.meeting.api.client.enums.SecurityLevel.INTERNAL;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -355,7 +354,7 @@ class AudioUploadApplicationServiceTest {
                     .id(meeting.id())
                     .tenantId(meeting.tenantId())
                     .title(meeting.title())
-                    .securityLevel(meeting.securityLevel())
+                    
                     .status(status)
                     .language(meeting.language())
                     .transcriptVersion(meeting.transcriptVersion())
