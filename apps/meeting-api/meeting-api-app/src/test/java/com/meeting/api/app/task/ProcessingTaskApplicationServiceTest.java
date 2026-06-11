@@ -72,7 +72,7 @@ class ProcessingTaskApplicationServiceTest {
             "tenant_01",
             "meeting_01",
             "audio_01",
-            "oss://meeting-audio-auska/audio_01.wav",
+            "tos://meeting-audio-auska/audio_01.wav",
             "meeting-audio-auska",
             "audio_01.wav",
             "a".repeat(64),

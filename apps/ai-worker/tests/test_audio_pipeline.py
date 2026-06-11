@@ -85,7 +85,7 @@ async def test_local_audio_pipeline_writes_artifacts_and_transcript(tmp_path: Pa
     store = LocalArtifactStore(audio_root)
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore(), artifact_store=store)
 
-    artifact = await engine.run_pipeline(_task("oss://meeting-audio-auska/meeting-audio-auska/tenant_01/meeting_01/upl_01/raw"))
+    artifact = await engine.run_pipeline(_task("tos://meeting-audio-auska/meeting-audio-auska/tenant_01/meeting_01/upl_01/raw"))
 
     assert artifact.terminal_status == "SUCCEEDED"
     assert artifact.artifact_manifest_id is not None
@@ -115,7 +115,7 @@ async def test_audio_pipeline_maps_low_sample_rate_to_stable_error(tmp_path: Pat
     )
 
     with pytest.raises(WorkerPipelineError) as exc_info:
-        await engine.run_pipeline(_task("oss://meeting-audio-auska/low-rate.wav"))
+        await engine.run_pipeline(_task("tos://meeting-audio-auska/low-rate.wav"))
 
     assert exc_info.value.step_name == "AUDIO_PREPROCESS"
     assert exc_info.value.error_code == "AUDIO_SAMPLE_RATE_TOO_LOW"
@@ -165,7 +165,7 @@ async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
         diarization_runtime=DiarizationRuntime(),
     )
 
-    artifact = await engine.run_pipeline(_task("oss://meeting-audio-auska/raw.wav"))
+    artifact = await engine.run_pipeline(_task("tos://meeting-audio-auska/raw.wav"))
 
     assert artifact.transcript_segments == [
         {
@@ -243,7 +243,7 @@ async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path
         speaker_reference_supplier=ReferenceSupplier(),
     )
     task = _task_with_steps(
-        "oss://meeting-audio-auska/raw.wav",
+        "tos://meeting-audio-auska/raw.wav",
         ("AUDIO_PREPROCESS", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING"),
     )
     task.known_participants.append("alice")
@@ -268,7 +268,7 @@ async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path
 @pytest.mark.asyncio
 async def test_audio_pipeline_fails_required_steps_that_are_not_implemented() -> None:
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
-    context = engine.start_pipeline(_task_with_steps("oss://meeting-audio-auska/raw.wav", ("ALIGNMENT",)))
+    context = engine.start_pipeline(_task_with_steps("tos://meeting-audio-auska/raw.wav", ("ALIGNMENT",)))
 
     with pytest.raises(WorkerPipelineError) as exc_info:
         await engine.run_step(context, "ALIGNMENT")

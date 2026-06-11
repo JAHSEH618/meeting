@@ -342,7 +342,7 @@ class SpeakerProfileApplicationServiceTest {
                 "audio/wav",
                 "meeting-audio",
                 "tenant_01/file_01.wav",
-                "oss://meeting-audio/tenant_01/file_01.wav",
+                "tos://meeting-audio/tenant_01/file_01.wav",
                 4096L,
                 "sha256",
                 1500L,
