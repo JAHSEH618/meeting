@@ -19,7 +19,6 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -190,11 +189,6 @@ public class Document {
   @SerializedName(SERIALIZED_NAME_STATUS)
   @javax.annotation.Nonnull
   private StatusEnum status;
-
-  public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
-  @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
-  @javax.annotation.Nonnull
-  private SecurityLevel securityLevel;
 
   /**
    * Gets or Sets textExtractionStatus
@@ -401,25 +395,6 @@ public class Document {
   }
 
 
-  public Document securityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-    return this;
-  }
-
-  /**
-   * Get securityLevel
-   * @return securityLevel
-   */
-  @javax.annotation.Nonnull
-  public SecurityLevel getSecurityLevel() {
-    return securityLevel;
-  }
-
-  public void setSecurityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-  }
-
-
   public Document textExtractionStatus(@javax.annotation.Nonnull TextExtractionStatusEnum textExtractionStatus) {
     this.textExtractionStatus = textExtractionStatus;
     return this;
@@ -550,7 +525,6 @@ public class Document {
         Objects.equals(this.fileId, document.fileId) &&
         Objects.equals(this.documentType, document.documentType) &&
         Objects.equals(this.status, document.status) &&
-        Objects.equals(this.securityLevel, document.securityLevel) &&
         Objects.equals(this.textExtractionStatus, document.textExtractionStatus) &&
         Objects.equals(this.contentHash, document.contentHash) &&
         Objects.equals(this.sourceUri, document.sourceUri) &&
@@ -565,7 +539,7 @@ public class Document {
 
   @Override
   public int hashCode() {
-    return Objects.hash(documentId, tenantId, title, fileId, documentType, status, securityLevel, textExtractionStatus, contentHash, sourceUri, createdAt, updatedAt, deletedAt);
+    return Objects.hash(documentId, tenantId, title, fileId, documentType, status, textExtractionStatus, contentHash, sourceUri, createdAt, updatedAt, deletedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -585,7 +559,6 @@ public class Document {
     sb.append("    fileId: ").append(toIndentedString(fileId)).append("\n");
     sb.append("    documentType: ").append(toIndentedString(documentType)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    textExtractionStatus: ").append(toIndentedString(textExtractionStatus)).append("\n");
     sb.append("    contentHash: ").append(toIndentedString(contentHash)).append("\n");
     sb.append("    sourceUri: ").append(toIndentedString(sourceUri)).append("\n");
@@ -610,10 +583,10 @@ public class Document {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("documentId", "tenantId", "title", "fileId", "documentType", "status", "securityLevel", "textExtractionStatus", "contentHash", "sourceUri", "createdAt", "updatedAt", "deletedAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("documentId", "tenantId", "title", "fileId", "documentType", "status", "textExtractionStatus", "contentHash", "sourceUri", "createdAt", "updatedAt", "deletedAt"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("documentId", "tenantId", "title", "fileId", "documentType", "status", "securityLevel", "textExtractionStatus", "createdAt", "updatedAt"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("documentId", "tenantId", "title", "fileId", "documentType", "status", "textExtractionStatus", "createdAt", "updatedAt"));
   }
 
   /**
@@ -666,8 +639,6 @@ public class Document {
       }
       // validate the required field `status`
       StatusEnum.validateJsonElement(jsonObj.get("status"));
-      // validate the required field `securityLevel`
-      SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
       if (!jsonObj.get("textExtractionStatus").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `textExtractionStatus` to be a primitive type in the JSON string but got `%s`", jsonObj.get("textExtractionStatus").toString()));
       }

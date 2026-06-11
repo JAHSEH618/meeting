@@ -1295,7 +1295,6 @@ export interface components {
             title: string;
             /** Format: date-time */
             scheduledStartAt?: string;
-            securityLevel: components["schemas"]["SecurityLevel"];
             /** @default zh */
             language: string;
             participants?: {
@@ -1338,7 +1337,6 @@ export interface components {
             title: string;
             /** Format: date-time */
             scheduledStartAt?: string;
-            securityLevel: components["schemas"]["SecurityLevel"];
             status: components["schemas"]["MeetingStatus"];
             language: string;
             transcriptVersion: number;
@@ -1755,7 +1753,6 @@ export interface components {
             fileId: string;
             /** @enum {string} */
             documentType: "PDF" | "DOCX" | "MARKDOWN" | "TXT";
-            securityLevel: components["schemas"]["SecurityLevel"];
             /** @description SHA-256 of the source file content (optional, recorded for audit / dedup) */
             contentHash?: string | null;
         };
@@ -1774,7 +1771,6 @@ export interface components {
             documentType: "PDF" | "DOCX" | "MARKDOWN" | "TXT";
             /** @enum {string} */
             status: "ACTIVE" | "DELETED";
-            securityLevel: components["schemas"]["SecurityLevel"];
             /** @enum {string} */
             textExtractionStatus: "PENDING" | "EXTRACTED" | "FAILED" | "OCR_UNSUPPORTED" | "TYPE_UNSUPPORTED";
             contentHash?: string | null;
@@ -1964,8 +1960,6 @@ export interface components {
             reason: string;
         };
         /** @enum {string} */
-        SecurityLevel: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "SECRET";
-        /** @enum {string} */
         MeetingStatus: "CREATED" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "DELETED";
         /** @enum {string} */
         ProcessingTaskStatus: "PENDING" | "QUEUED" | "RUNNING" | "ORPHANED" | "PARTIAL_SUCCEEDED" | "SUCCEEDED" | "FAILED" | "CANCEL_PENDING" | "CANCELLED";
@@ -1995,7 +1989,6 @@ export interface components {
             documentId: string;
             title?: string | null;
             role: components["schemas"]["DocumentRole"];
-            securityLevel?: components["schemas"]["SecurityLevel"];
             attachedBy?: string | null;
             /** Format: date-time */
             attachedAt: string;

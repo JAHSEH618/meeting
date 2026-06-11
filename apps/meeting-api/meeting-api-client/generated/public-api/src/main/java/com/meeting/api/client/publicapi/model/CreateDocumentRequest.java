@@ -19,7 +19,6 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -123,11 +122,6 @@ public class CreateDocumentRequest {
   @javax.annotation.Nonnull
   private DocumentTypeEnum documentType;
 
-  public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
-  @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
-  @javax.annotation.Nonnull
-  private SecurityLevel securityLevel;
-
   public static final String SERIALIZED_NAME_CONTENT_HASH = "contentHash";
   @SerializedName(SERIALIZED_NAME_CONTENT_HASH)
   @javax.annotation.Nullable
@@ -193,25 +187,6 @@ public class CreateDocumentRequest {
   }
 
 
-  public CreateDocumentRequest securityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-    return this;
-  }
-
-  /**
-   * Get securityLevel
-   * @return securityLevel
-   */
-  @javax.annotation.Nonnull
-  public SecurityLevel getSecurityLevel() {
-    return securityLevel;
-  }
-
-  public void setSecurityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-  }
-
-
   public CreateDocumentRequest contentHash(@javax.annotation.Nullable String contentHash) {
     this.contentHash = contentHash;
     return this;
@@ -244,7 +219,6 @@ public class CreateDocumentRequest {
     return Objects.equals(this.title, createDocumentRequest.title) &&
         Objects.equals(this.fileId, createDocumentRequest.fileId) &&
         Objects.equals(this.documentType, createDocumentRequest.documentType) &&
-        Objects.equals(this.securityLevel, createDocumentRequest.securityLevel) &&
         Objects.equals(this.contentHash, createDocumentRequest.contentHash);
   }
 
@@ -254,7 +228,7 @@ public class CreateDocumentRequest {
 
   @Override
   public int hashCode() {
-    return Objects.hash(title, fileId, documentType, securityLevel, contentHash);
+    return Objects.hash(title, fileId, documentType, contentHash);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -271,7 +245,6 @@ public class CreateDocumentRequest {
     sb.append("    title: ").append(toIndentedString(title)).append("\n");
     sb.append("    fileId: ").append(toIndentedString(fileId)).append("\n");
     sb.append("    documentType: ").append(toIndentedString(documentType)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    contentHash: ").append(toIndentedString(contentHash)).append("\n");
     sb.append("}");
     return sb.toString();
@@ -291,10 +264,10 @@ public class CreateDocumentRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType", "securityLevel", "contentHash"));
+    openapiFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType", "contentHash"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType", "securityLevel"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("title", "fileId", "documentType"));
   }
 
   /**
@@ -336,8 +309,6 @@ public class CreateDocumentRequest {
       }
       // validate the required field `documentType`
       DocumentTypeEnum.validateJsonElement(jsonObj.get("documentType"));
-      // validate the required field `securityLevel`
-      SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
       if ((jsonObj.get("contentHash") != null && !jsonObj.get("contentHash").isJsonNull()) && !jsonObj.get("contentHash").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `contentHash` to be a primitive type in the JSON string but got `%s`", jsonObj.get("contentHash").toString()));
       }

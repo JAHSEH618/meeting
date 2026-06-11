@@ -20,7 +20,6 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.meeting.api.client.publicapi.model.CreateMeetingRequestParticipantsInner;
-import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -64,11 +63,6 @@ public class CreateMeetingRequest {
   @SerializedName(SERIALIZED_NAME_SCHEDULED_START_AT)
   @javax.annotation.Nullable
   private OffsetDateTime scheduledStartAt;
-
-  public static final String SERIALIZED_NAME_SECURITY_LEVEL = "securityLevel";
-  @SerializedName(SERIALIZED_NAME_SECURITY_LEVEL)
-  @javax.annotation.Nonnull
-  private SecurityLevel securityLevel;
 
   public static final String SERIALIZED_NAME_LANGUAGE = "language";
   @SerializedName(SERIALIZED_NAME_LANGUAGE)
@@ -118,25 +112,6 @@ public class CreateMeetingRequest {
 
   public void setScheduledStartAt(@javax.annotation.Nullable OffsetDateTime scheduledStartAt) {
     this.scheduledStartAt = scheduledStartAt;
-  }
-
-
-  public CreateMeetingRequest securityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
-    return this;
-  }
-
-  /**
-   * Get securityLevel
-   * @return securityLevel
-   */
-  @javax.annotation.Nonnull
-  public SecurityLevel getSecurityLevel() {
-    return securityLevel;
-  }
-
-  public void setSecurityLevel(@javax.annotation.Nonnull SecurityLevel securityLevel) {
-    this.securityLevel = securityLevel;
   }
 
 
@@ -198,14 +173,13 @@ public class CreateMeetingRequest {
     CreateMeetingRequest createMeetingRequest = (CreateMeetingRequest) o;
     return Objects.equals(this.title, createMeetingRequest.title) &&
         Objects.equals(this.scheduledStartAt, createMeetingRequest.scheduledStartAt) &&
-        Objects.equals(this.securityLevel, createMeetingRequest.securityLevel) &&
         Objects.equals(this.language, createMeetingRequest.language) &&
         Objects.equals(this.participants, createMeetingRequest.participants);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(title, scheduledStartAt, securityLevel, language, participants);
+    return Objects.hash(title, scheduledStartAt, language, participants);
   }
 
   @Override
@@ -214,7 +188,6 @@ public class CreateMeetingRequest {
     sb.append("class CreateMeetingRequest {\n");
     sb.append("    title: ").append(toIndentedString(title)).append("\n");
     sb.append("    scheduledStartAt: ").append(toIndentedString(scheduledStartAt)).append("\n");
-    sb.append("    securityLevel: ").append(toIndentedString(securityLevel)).append("\n");
     sb.append("    language: ").append(toIndentedString(language)).append("\n");
     sb.append("    participants: ").append(toIndentedString(participants)).append("\n");
     sb.append("}");
@@ -235,10 +208,10 @@ public class CreateMeetingRequest {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("title", "scheduledStartAt", "securityLevel", "language", "participants"));
+    openapiFields = new HashSet<String>(Arrays.asList("title", "scheduledStartAt", "language", "participants"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("title", "securityLevel"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("title"));
   }
 
   /**
@@ -272,8 +245,6 @@ public class CreateMeetingRequest {
       if (!jsonObj.get("title").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `title` to be a primitive type in the JSON string but got `%s`", jsonObj.get("title").toString()));
       }
-      // validate the required field `securityLevel`
-      SecurityLevel.validateJsonElement(jsonObj.get("securityLevel"));
       if ((jsonObj.get("language") != null && !jsonObj.get("language").isJsonNull()) && !jsonObj.get("language").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `language` to be a primitive type in the JSON string but got `%s`", jsonObj.get("language").toString()));
       }
