@@ -111,7 +111,7 @@ class MarkdownExportGatewayTest {
     @Test
     void handlesEmptyMeetingSnapshotGracefully() {
         MeetingSnapshot empty = new MeetingSnapshot(
-            "mtg_empty", "Empty meeting", SecurityLevel.INTERNAL, "zh",
+            "mtg_empty", "Empty meeting", "zh",
             null, 0, null,
             List.of(), null, List.of(), List.of(), List.of(), List.of()
         );
@@ -129,7 +129,7 @@ class MarkdownExportGatewayTest {
     private static MeetingSnapshot sampleSnapshot() {
         return new MeetingSnapshot(
             "mtg_sample", "Sample Meeting",
-            SecurityLevel.INTERNAL, "zh",
+            "zh",
             /* duration */ 3725L,
             /* transcriptVersion */ 3,
             /* minutesVersion */ 2,

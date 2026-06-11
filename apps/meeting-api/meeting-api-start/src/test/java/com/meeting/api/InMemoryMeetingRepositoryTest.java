@@ -13,7 +13,7 @@ class InMemoryMeetingRepositoryTest {
 
     @Test
     void findByIdRequiresMatchingTenant() {
-        Meeting meeting = Meeting.create("m_01", "tenant_01", "Weekly", SecurityLevel.INTERNAL, "zh", List.of(), "user_01");
+        Meeting meeting = Meeting.create("m_01", "tenant_01", "Weekly", "zh", List.of(), "user_01");
 
         repository.save(meeting);
 
@@ -23,8 +23,8 @@ class InMemoryMeetingRepositoryTest {
 
     @Test
     void listReturnsOnlyRequestedTenantMeetings() {
-        Meeting first = Meeting.create("m_01", "tenant_01", "Weekly", SecurityLevel.INTERNAL, "zh", List.of(), "user_01");
-        Meeting second = Meeting.create("m_02", "tenant_02", "Retro", SecurityLevel.PUBLIC, "en", List.of(), "user_02");
+        Meeting first = Meeting.create("m_01", "tenant_01", "Weekly", "zh", List.of(), "user_01");
+        Meeting second = Meeting.create("m_02", "tenant_02", "Retro", "en", List.of(), "user_02");
 
         repository.save(first);
         repository.save(second);

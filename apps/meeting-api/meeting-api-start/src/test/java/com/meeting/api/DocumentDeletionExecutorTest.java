@@ -80,7 +80,7 @@ class DocumentDeletionExecutorTest {
     private static DocumentRecord record(String id, boolean deleted) {
         return new DocumentRecord(
             id, "tenant_01", null, "Doc " + id, "file_" + id, "PDF", "UPLOADED",
-            SecurityLevel.INTERNAL, "READY", null, null, "user_test",
+            "READY", null, null, "user_test",
             NOW.minusDays(1), NOW.minusHours(1), deleted ? NOW.minusMinutes(5) : null
         );
     }

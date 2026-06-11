@@ -81,12 +81,12 @@ class RagQueryApplicationServiceTest {
         authzPort.allowReadable(Set.of("mtg_a"), Set.of("doc_a"));
 
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "Alice 在第一次会议讨论了路线图", 0.9, SecurityLevel.INTERNAL),
-            documentChunk("ck2", "doc_a", "dc_1#0", "路线图设计文档第3页", 0.8, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "Alice 在第一次会议讨论了路线图", 0.9),
+            documentChunk("ck2", "doc_a", "dc_1#0", "路线图设计文档第3页", 0.8)
         );
         chunkRepository.keywordReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "Alice 在第一次会议讨论了路线图", 0.6, SecurityLevel.INTERNAL),
-            documentChunk("ck2", "doc_a", "dc_1#0", "路线图设计文档第3页", 0.5, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "Alice 在第一次会议讨论了路线图", 0.6),
+            documentChunk("ck2", "doc_a", "dc_1#0", "路线图设计文档第3页", 0.5)
         );
         rerankGateway.respondPreservingOrder();
 
@@ -100,7 +100,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"基于会议与文档的综合回答\",\"citations\":[1,2]}");
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "路线图是什么？", RagQueryScope.EMPTY,
+            TENANT, USER, "路线图是什么？", RagQueryScope.EMPTY,
             5, false, "req_1", "trace_1"
         ));
 
@@ -128,7 +128,7 @@ class RagQueryApplicationServiceTest {
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
 
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "transcript content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "transcript content", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -137,7 +137,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"transcript-grounded answer\",\"citations\":[1]}");
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "what was decided?", RagQueryScope.EMPTY,
+            TENANT, USER, "what was decided?", RagQueryScope.EMPTY,
             5, false, "req_2", "trace_2"
         ));
 
@@ -153,7 +153,7 @@ class RagQueryApplicationServiceTest {
         chunkRepository.keywordReturns(List.of());
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "anything?", RagQueryScope.EMPTY,
+            TENANT, USER, "anything?", RagQueryScope.EMPTY,
             5, false, "req_3", "trace_3"
         ));
 
@@ -169,7 +169,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q",
+            TENANT, USER, "q",
             new RagQueryScope(List.of("mtg_x"), List.of()),
             5, false, "req_4", "trace_4"
         ));
@@ -187,12 +187,12 @@ class RagQueryApplicationServiceTest {
         authzPort.allowReadable(Set.of(), Set.of());
 
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "internal content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "internal content", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_5", "trace_5"
         ));
 
@@ -206,8 +206,8 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck_top", "mtg_a", "seg_1", "vector-top hit", 0.95, SecurityLevel.INTERNAL),
-            meetingChunk("ck_low", "mtg_a", "seg_2", "lower hit", 0.50, SecurityLevel.INTERNAL)
+            meetingChunk("ck_top", "mtg_a", "seg_1", "vector-top hit", 0.95),
+            meetingChunk("ck_low", "mtg_a", "seg_2", "lower hit", 0.50)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.unavailable();
@@ -216,7 +216,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"ok\",\"citations\":[1]}");
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             2, false, "req_6", "trace_6"
         ));
 
@@ -233,8 +233,8 @@ class RagQueryApplicationServiceTest {
 
         // user clearance INTERNAL but a SECRET chunk slipped into retrieval
         chunkRepository.vectorReturns(
-            meetingChunk("ck_internal", "mtg_a", "seg_1", "internal", 0.9, SecurityLevel.INTERNAL),
-            meetingChunk("ck_secret", "mtg_a", "seg_2", "secret leak", 0.95, SecurityLevel.SECRET)
+            meetingChunk("ck_internal", "mtg_a", "seg_1", "internal", 0.9),
+            meetingChunk("ck_secret", "mtg_a", "seg_2", "secret leak", 0.95)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -243,7 +243,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"ok\",\"citations\":[1]}");
 
         service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_7", "trace_7"
         ));
 
@@ -257,8 +257,8 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "public chunk", 0.8, SecurityLevel.PUBLIC),
-            meetingChunk("ck2", "mtg_a", "seg_2", "internal chunk", 0.7, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "public chunk", 0.8),
+            meetingChunk("ck2", "mtg_a", "seg_2", "internal chunk", 0.7)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -266,11 +266,11 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"ok\",\"citations\":[]}");
 
         service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_8", "trace_8"
         ));
 
-        assertThat(llmGateway.lastSecurityLevel).isEqualTo(SecurityLevel.INTERNAL);
+        assertThat(llmGateway.lastSecurityLevel).isEqualTo();
     }
 
     @Test
@@ -278,7 +278,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "x", 0.5, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "x", 0.5)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -286,7 +286,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("this is not json");
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_9", "trace_9"
         ));
 
@@ -299,7 +299,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "x", 0.5, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "x", 0.5)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -307,7 +307,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("");
 
         assertThatThrownBy(() -> service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_10", "trace_10"
         ))).isInstanceOfSatisfying(LlmProviderException.class, ex ->
             assertThat(ex.errorCode()).isEqualTo(ErrorCode.LLM_SCHEMA_INVALID));
@@ -318,7 +318,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "only chunk", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "only chunk", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -328,7 +328,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"a\",\"citations\":[1,99,1]}");
 
         RagAnswerDTO out = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_11", "trace_11"
         ));
 
@@ -338,19 +338,19 @@ class RagQueryApplicationServiceTest {
     @Test
     void commandRejectsInvalidInputs() {
         assertThatThrownBy(() -> new RagQueryCommand(
-            "", USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 5, false, "r", "t"
+            "", USER, "q", RagQueryScope.EMPTY, 5, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "  ", RagQueryScope.EMPTY, 5, false, "r", "t"
+            TENANT, USER, "  ", RagQueryScope.EMPTY, 5, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
             TENANT, USER, null, "q", RagQueryScope.EMPTY, 5, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 0, false, "r", "t"
+            TENANT, USER, "q", RagQueryScope.EMPTY, 0, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 21, false, "r", "t"
+            TENANT, USER, "q", RagQueryScope.EMPTY, 21, false, "r", "t"
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -359,7 +359,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -367,7 +367,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"a\",\"citations\":[]}");
 
         service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY,
+            TENANT, USER, "q", RagQueryScope.EMPTY,
             5, false, "req_12", "trace_12"
         ));
 
@@ -385,7 +385,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -393,7 +393,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"cached body\",\"citations\":[1]}");
 
         var cmd = new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "shared question", RagQueryScope.EMPTY,
+            TENANT, USER, "shared question", RagQueryScope.EMPTY,
             5, false, "req_a", "trace_a"
         );
         service.query(cmd);
@@ -402,7 +402,7 @@ class RagQueryApplicationServiceTest {
 
         // Second call with same identity + question — should hit the cache and skip the LLM.
         var out2 = service.query(new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "shared question", RagQueryScope.EMPTY,
+            TENANT, USER, "shared question", RagQueryScope.EMPTY,
             5, false, "req_b", "trace_b"
         ));
 
@@ -416,7 +416,7 @@ class RagQueryApplicationServiceTest {
         authzPort.setAllowed(new RetrievalScope(List.of("mtg_a"), List.of()));
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "content", 0.9)
         );
         chunkRepository.keywordReturns(List.of());
         rerankGateway.respondPreservingOrder();
@@ -424,7 +424,7 @@ class RagQueryApplicationServiceTest {
         llmGateway.respond("{\"answer\":\"stale\",\"citations\":[1]}");
 
         var cmd = new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "what?", RagQueryScope.EMPTY,
+            TENANT, USER, "what?", RagQueryScope.EMPTY,
             5, false, "req_a", "trace_a"
         );
         service.query(cmd);
@@ -432,7 +432,7 @@ class RagQueryApplicationServiceTest {
         // Simulate a reindex of mtg_a — the cache entry should be dropped.
         cache.onChunkReindex(new com.meeting.api.app.rag.KnowledgeChunkReindexRequestedEvent(
             TENANT, "mtg_a", null, List.of(),
-            SecurityLevel.INTERNAL, "v1", 1, null, null
+            "v1", 1, null, null
         ));
 
         llmGateway.respond("{\"answer\":\"fresh\",\"citations\":[1]}");
@@ -447,7 +447,7 @@ class RagQueryApplicationServiceTest {
         chunkRepository.keywordReturns(List.of());
 
         var cmd = new RagQueryCommand(
-            TENANT, USER, SecurityLevel.INTERNAL, "none?", RagQueryScope.EMPTY,
+            TENANT, USER, "none?", RagQueryScope.EMPTY,
             5, false, "req_a", "trace_a"
         );
         var first = service.query(cmd);
@@ -455,7 +455,7 @@ class RagQueryApplicationServiceTest {
 
         // Make a fresh LLM-backed answer possible for the next call.
         chunkRepository.vectorReturns(
-            meetingChunk("ck1", "mtg_a", "seg_1", "now there's content", 0.9, SecurityLevel.INTERNAL)
+            meetingChunk("ck1", "mtg_a", "seg_1", "now there's content", 0.9)
         );
         authzPort.allowReadable(Set.of("mtg_a"), Set.of());
         rerankGateway.respondPreservingOrder();

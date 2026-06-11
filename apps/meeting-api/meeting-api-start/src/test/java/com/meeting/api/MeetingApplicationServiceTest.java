@@ -54,7 +54,6 @@ class MeetingApplicationServiceTest {
         assertThat(saved.title()).isEqualTo("Sprint Review");
         assertThat(saved.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-01T10:00:00Z"));
         assertThat(saved.status()).isEqualTo(MeetingStatus.CREATED);
-        assertThat(saved.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(saved.language()).isEqualTo("zh");
         assertThat(saved.participants()).hasSize(1);
 
@@ -284,7 +283,7 @@ class MeetingApplicationServiceTest {
     void deleteSoftDeletesAndAuditsSuccess() {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(Meeting.create(
-            "m_01", "tenant_01", "Planning", SecurityLevel.INTERNAL, "zh",
+            "m_01", "tenant_01", "Planning", "zh",
             List.of(), "user_01"
         ));
         StubLegalHold legalHold = new StubLegalHold(Set.of());
@@ -342,7 +341,7 @@ class MeetingApplicationServiceTest {
     void deleteBlockedByLegalHoldAuditsBlockedEntry() {
         CapturingMeetingRepository repository = new CapturingMeetingRepository();
         repository.save(Meeting.create(
-            "m_01", "tenant_01", "Sensitive", SecurityLevel.CONFIDENTIAL, "zh",
+            "m_01", "tenant_01", "Sensitive", "zh",
             List.of(), "user_01"
         ));
         CapturingAudit audit = new CapturingAudit();

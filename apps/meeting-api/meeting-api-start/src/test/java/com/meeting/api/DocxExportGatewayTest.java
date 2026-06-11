@@ -127,7 +127,7 @@ class DocxExportGatewayTest {
     @Test
     void handlesEmptySnapshotGracefully() throws Exception {
         MeetingSnapshot empty = new MeetingSnapshot(
-            "mtg_empty", "Empty meeting", SecurityLevel.INTERNAL, "zh",
+            "mtg_empty", "Empty meeting", "zh",
             null, 0, null,
             List.of(), null, List.of(), List.of(), List.of(), List.of()
         );
@@ -149,7 +149,7 @@ class DocxExportGatewayTest {
     private static MeetingSnapshot sampleSnapshot() {
         return new MeetingSnapshot(
             "mtg_sample", "Sample Meeting",
-            SecurityLevel.INTERNAL, "zh",
+            "zh",
             3725L, 3, 2,
             List.of(
                 new TranscriptSegmentRow("seg_01", 0, 0L, 5000L,

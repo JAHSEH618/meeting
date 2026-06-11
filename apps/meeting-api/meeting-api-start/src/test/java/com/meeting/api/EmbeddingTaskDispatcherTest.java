@@ -36,7 +36,7 @@ class EmbeddingTaskDispatcherTest {
         var fx = new Fixtures();
         var event = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_01", null, List.<ChunkRef>of(),
-            SecurityLevel.INTERNAL, "default-zh-v1", 1, null, null
+            "default-zh-v1", 1, null, null
         );
 
         DispatchResult result = fx.dispatcher().onReindexRequested(event);
@@ -52,7 +52,7 @@ class EmbeddingTaskDispatcherTest {
         var event = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_01", null,
             List.of(ref("c1", "text 1"), ref("c2", "text 2"), ref("c3", "text 3")),
-            SecurityLevel.INTERNAL, "default-zh-v1", 3, 1, "trace_abc"
+            "default-zh-v1", 3, 1, "trace_abc"
         );
 
         DispatchResult result = fx.dispatcher().onReindexRequested(event);
@@ -113,7 +113,7 @@ class EmbeddingTaskDispatcherTest {
         var event = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", null, "doc_01",
             List.of(ref("c1", "alpha"), ref("c2", "beta")),
-            SecurityLevel.CONFIDENTIAL, "default-zh-v1", null, null, null
+            "default-zh-v1", null, null, null
         );
 
         DispatchResult result = fx.dispatcher().onReindexRequested(event);
@@ -139,7 +139,7 @@ class EmbeddingTaskDispatcherTest {
             .toList();
         var event = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_large", null, chunkRefs,
-            SecurityLevel.INTERNAL, "default-zh-v1", 5, null, null
+            "default-zh-v1", 5, null, null
         );
 
         DispatchResult result = fx.dispatcher().onReindexRequested(event);
@@ -183,7 +183,7 @@ class EmbeddingTaskDispatcherTest {
         var event = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_x", null,
             List.of(ref("a", "1"), ref("b", "2"), ref("c", "3"), ref("d", "4"), ref("e", "5")),
-            SecurityLevel.INTERNAL, "default-zh-v1", 1, null, null
+            "default-zh-v1", 1, null, null
         );
 
         DispatchResult result = tiny.dispatch(event);
@@ -205,12 +205,12 @@ class EmbeddingTaskDispatcherTest {
     void reindexEventRejectsBothMeetingAndDocumentIds() {
         assertThatThrownBy(() -> new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_a", "doc_b", List.of(ref("c1", "x")),
-            SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
+            "default-zh-v1", null, null, null
         )).isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", null, null, List.of(ref("c1", "x")),
-            SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
+            "default-zh-v1", null, null, null
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -219,7 +219,7 @@ class EmbeddingTaskDispatcherTest {
         List<ChunkRef> mutable = new ArrayList<>(List.of(ref("c1", "x")));
         var evt = new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_01", null, mutable,
-            SecurityLevel.INTERNAL, "default-zh-v1", null, null, null
+            "default-zh-v1", null, null, null
         );
         mutable.add(ref("c2", "y"));
         assertThat(evt.chunks()).hasSize(1);

@@ -25,7 +25,7 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         RetrievalScope effective = svc.authorizeScope(
-            "tenant_01", "user_01", SecurityLevel.INTERNAL, RetrievalScope.EMPTY
+            "tenant_01", "user_01", RetrievalScope.EMPTY
         );
 
         assertThat(effective.meetingIds()).containsExactly("mtg_1", "mtg_2");
@@ -41,7 +41,7 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         var requested = new RetrievalScope(List.of("mtg_1", "mtg_unauthorized", "mtg_2"), List.of("doc_other"));
-        RetrievalScope effective = svc.authorizeScope("tenant_01", "user_01", SecurityLevel.INTERNAL, requested);
+        RetrievalScope effective = svc.authorizeScope("tenant_01", "user_01", requested);
 
         assertThat(effective.meetingIds()).containsExactly("mtg_1", "mtg_2");
         assertThat(effective.documentIds()).isEmpty();
@@ -64,14 +64,14 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         var candidates = List.of(
-            candidate("ck_public", SecurityLevel.PUBLIC, "mtg_1", null),
-            candidate("ck_internal", SecurityLevel.INTERNAL, "mtg_1", null),
-            candidate("ck_confidential", SecurityLevel.CONFIDENTIAL, "mtg_1", null),
-            candidate("ck_secret", SecurityLevel.SECRET, "mtg_1", null)
+            candidate("ck_public", "mtg_1", null),
+            candidate("ck_internal", "mtg_1", null),
+            candidate("ck_confidential", "mtg_1", null),
+            candidate("ck_secret", "mtg_1", null)
         );
 
         List<KnowledgeChunkCandidate> out = svc.filterAuthorized(
-            "tenant_01", "user_01", SecurityLevel.INTERNAL, candidates
+            "tenant_01", "user_01", candidates
         );
 
         assertThat(out).extracting(KnowledgeChunkCandidate::chunkId)
@@ -87,14 +87,14 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         var candidates = List.of(
-            candidate("ck_mv", SecurityLevel.INTERNAL, "mtg_visible", null),
-            candidate("ck_mh", SecurityLevel.INTERNAL, "mtg_hidden", null),
-            candidate("ck_dv", SecurityLevel.INTERNAL, null, "doc_visible"),
-            candidate("ck_dh", SecurityLevel.INTERNAL, null, "doc_hidden")
+            candidate("ck_mv", "mtg_visible", null),
+            candidate("ck_mh", "mtg_hidden", null),
+            candidate("ck_dv", null, "doc_visible"),
+            candidate("ck_dh", null, "doc_hidden")
         );
 
         List<KnowledgeChunkCandidate> out = svc.filterAuthorized(
-            "tenant_01", "user_01", SecurityLevel.SECRET, candidates
+            "tenant_01", "user_01", candidates
         );
 
         assertThat(out).extracting(KnowledgeChunkCandidate::chunkId)
@@ -110,13 +110,13 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         var candidates = List.of(
-            candidate("ck_1", SecurityLevel.INTERNAL, "mtg_a", null),
-            candidate("ck_2", SecurityLevel.INTERNAL, "mtg_a", null),
-            candidate("ck_3", SecurityLevel.INTERNAL, "mtg_b", null),
-            candidate("ck_4", SecurityLevel.INTERNAL, null, "doc_a")
+            candidate("ck_1", "mtg_a", null),
+            candidate("ck_2", "mtg_a", null),
+            candidate("ck_3", "mtg_b", null),
+            candidate("ck_4", null, "doc_a")
         );
 
-        svc.filterAuthorized("tenant_01", "user_01", SecurityLevel.INTERNAL, candidates);
+        svc.filterAuthorized("tenant_01", "user_01", candidates);
 
         assertThat(port.readableOwnersCalls).isEqualTo(1);
         assertThat(port.lastMeetingsQueried).containsExactlyInAnyOrder("mtg_a", "mtg_b");
@@ -128,8 +128,8 @@ class RagAuthorizationServiceTest {
         var port = new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty());
         var svc = new RagAuthorizationService(port);
 
-        assertThat(svc.filterAuthorized("t", "u", SecurityLevel.PUBLIC, List.of())).isEmpty();
-        assertThat(svc.filterAuthorized("t", "u", SecurityLevel.PUBLIC, null)).isEmpty();
+        assertThat(svc.filterAuthorized("t", "u", List.of())).isEmpty();
+        assertThat(svc.filterAuthorized("t", "u", null)).isEmpty();
         assertThat(port.readableOwnersCalls).isEqualTo(0);
     }
 
@@ -141,9 +141,9 @@ class RagAuthorizationServiceTest {
         var svc = new RagAuthorizationService(port);
 
         List<KnowledgeChunkCandidate> in = List.of(
-            candidate("ck_orphan", SecurityLevel.INTERNAL, null, null)
+            candidate("ck_orphan", null, null)
         );
-        List<KnowledgeChunkCandidate> out = svc.filterAuthorized("t", "u", SecurityLevel.INTERNAL, in);
+        List<KnowledgeChunkCandidate> out = svc.filterAuthorized("t", "u", in);
 
         assertThat(out).extracting(KnowledgeChunkCandidate::chunkId).containsExactly("ck_orphan");
         assertThat(port.readableOwnersCalls).isEqualTo(0);
@@ -153,7 +153,7 @@ class RagAuthorizationServiceTest {
     void filterAuthorizedRejectsNullClearance() {
         var svc = new RagAuthorizationService(new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty()));
         assertThatThrownBy(() -> svc.filterAuthorized("t", "u", null, List.of(
-            candidate("ck", SecurityLevel.PUBLIC, "mtg_a", null)
+            candidate("ck", "mtg_a", null)
         ))).isInstanceOf(IllegalArgumentException.class);
     }
 

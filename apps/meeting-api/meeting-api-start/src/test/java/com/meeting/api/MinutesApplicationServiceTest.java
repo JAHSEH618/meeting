@@ -33,7 +33,7 @@ class MinutesApplicationServiceTest {
     @Test
     void regenerateBuildsMinutesAndEnrichesEvidenceFromCurrentTranscript() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", SecurityLevel.INTERNAL, 3, 0));
+        meetings.add(meeting("meeting_01", 3, 0));
 
         InMemoryTranscriptRepo transcripts = new InMemoryTranscriptRepo(3);
         transcripts.add(segment("seg_01", 0, 1200, "SPEAKER_00", "Project status discussed."));
@@ -90,7 +90,7 @@ class MinutesApplicationServiceTest {
     @Test
     void evidenceWithUnknownSegmentIsDropped() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", SecurityLevel.PUBLIC, 1, 0));
+        meetings.add(meeting("meeting_01", 1, 0));
         InMemoryTranscriptRepo transcripts = new InMemoryTranscriptRepo(1);
         transcripts.add(segment("seg_real", 0, 500, "SPEAKER_00", "Real text."));
         InMemoryMinutesRepo minutes = new InMemoryMinutesRepo();
@@ -122,7 +122,7 @@ class MinutesApplicationServiceTest {
     @Test
     void versionConflictWhenTranscriptVersionStale() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", SecurityLevel.INTERNAL, 5, 0));
+        meetings.add(meeting("meeting_01", 5, 0));
         MinutesApplicationService service = service(
             meetings,
             new InMemoryTranscriptRepo(5),
@@ -138,9 +138,9 @@ class MinutesApplicationServiceTest {
     @Test
     void securityLevelBlockedSurfacesAsException() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", SecurityLevel.CONFIDENTIAL, 1, 0));
+        meetings.add(meeting("meeting_01", 1, 0));
         FakeLlmGateway llm = new FakeLlmGateway();
-        llm.failWith = new SecurityLevelBlockedException(SecurityLevel.CONFIDENTIAL, "MINUTES_SUMMARY");
+        llm.failWith = new SecurityLevelBlockedException("MINUTES_SUMMARY");
         MinutesApplicationService service = service(
             meetings,
             new InMemoryTranscriptRepo(1),
@@ -156,7 +156,7 @@ class MinutesApplicationServiceTest {
     @Test
     void malformedLlmJsonRaisesProviderException() {
         InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
-        meetings.add(meeting("meeting_01", SecurityLevel.INTERNAL, 1, 0));
+        meetings.add(meeting("meeting_01", 1, 0));
         FakeLlmGateway llm = new FakeLlmGateway();
         llm.next = new LlmGateway.LlmResponse("not json", "not json", 0, 0, 1L, "qwen", "llmlog_x", "art_x");
         MinutesApplicationService service = service(

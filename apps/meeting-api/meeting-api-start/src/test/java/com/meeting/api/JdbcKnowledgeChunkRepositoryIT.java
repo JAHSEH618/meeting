@@ -136,7 +136,6 @@ class JdbcKnowledgeChunkRepositoryIT {
         assertThat(r.chunkStrategyVersion()).isEqualTo("default-zh-v1");
         assertThat(r.transcriptVersion()).isEqualTo(1);
         assertThat(r.minutesVersion()).isNull();
-        assertThat(r.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(r.status()).isEqualTo(ChunkStatus.ACTIVE);
         assertThat(r.staleStatus()).isEqualTo(StaleStatus.ACTIVE);
         assertThat(r.embeddingModelVersion()).isEqualTo("bge-m3-v1");
@@ -170,7 +169,6 @@ class JdbcKnowledgeChunkRepositoryIT {
         KnowledgeChunk r = fetched.get(0);
         assertThat(r.documentId()).isEqualTo(DOCUMENT);
         assertThat(r.meetingId()).isNull();
-        assertThat(r.securityLevel()).isEqualTo(SecurityLevel.CONFIDENTIAL);
         assertThat(r.embedding()).isNull();
         assertThat(r.hasEmbedding()).isFalse();
     }

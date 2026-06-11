@@ -198,7 +198,7 @@ class ExportRenderServiceTest {
     private static MeetingSnapshot emptySnapshot() {
         return new MeetingSnapshot(
             "mtg_01", "Sample meeting",
-            SecurityLevel.INTERNAL, "zh",
+            "zh",
             null, 1, null,
             List.of(), null, List.of(), List.of(), List.of(), List.of()
         );

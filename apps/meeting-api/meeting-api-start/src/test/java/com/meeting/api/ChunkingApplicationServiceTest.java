@@ -78,7 +78,6 @@ class ChunkingApplicationServiceTest {
         assertThat(transcriptChunk.sourceId()).isEqualTo("seg_a#0");
         assertThat(transcriptChunk.transcriptVersion()).isEqualTo(3);
         assertThat(transcriptChunk.chunkStrategyVersion()).isEqualTo("default-zh-v1");
-        assertThat(transcriptChunk.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(transcriptChunk.createdAt()).isEqualTo(NOW);
         assertThat(transcriptChunk.contentHash()).hasSize(64);
 
@@ -205,7 +204,6 @@ class ChunkingApplicationServiceTest {
         assertThat(first.documentId()).isEqualTo("doc_01");
         assertThat(first.meetingId()).isNull();
         assertThat(first.sourceId()).isEqualTo("src_1#0");
-        assertThat(first.securityLevel()).isEqualTo(SecurityLevel.CONFIDENTIAL);
         assertThat(first.transcriptVersion()).isNull();
         assertThat(first.minutesVersion()).isNull();
     }
@@ -243,7 +241,6 @@ class ChunkingApplicationServiceTest {
         assertThat(evt.meetingId()).isEqualTo("mtg_evt");
         assertThat(evt.documentId()).isNull();
         assertThat(evt.chunkIds()).containsExactlyElementsOf(result.newChunkIds());
-        assertThat(evt.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(evt.chunkStrategyVersion()).isEqualTo("default-zh-v1");
         assertThat(evt.transcriptVersion()).isEqualTo(2);
         assertThat(evt.minutesVersion()).isEqualTo(1);
@@ -264,7 +261,6 @@ class ChunkingApplicationServiceTest {
         assertThat(evt.meetingId()).isNull();
         assertThat(evt.documentId()).isEqualTo("doc_evt");
         assertThat(evt.chunkIds()).containsExactlyElementsOf(result.newChunkIds());
-        assertThat(evt.securityLevel()).isEqualTo(SecurityLevel.CONFIDENTIAL);
         assertThat(evt.transcriptVersion()).isNull();
         assertThat(evt.minutesVersion()).isNull();
     }
@@ -357,7 +353,7 @@ class ChunkingApplicationServiceTest {
     private static DocumentRepository.DocumentRecord document(String id) {
         return new DocumentRepository.DocumentRecord(
             id, "tenant_01", null, "Doc " + id, "file_" + id, "PDF", "UPLOADED",
-            SecurityLevel.CONFIDENTIAL, "EXTRACTED", null, "sha256:" + id,
+            "EXTRACTED", null, "sha256:" + id,
             "user_01", NOW, NOW, null
         );
     }

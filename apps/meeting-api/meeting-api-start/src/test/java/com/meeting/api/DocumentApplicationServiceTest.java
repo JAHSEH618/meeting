@@ -29,7 +29,7 @@ class DocumentApplicationServiceTest {
 
         var dto = service.create(new CreateDocumentCommand(
             "tenant_01", "API 设计草案", "file_01", "PDF",
-            SecurityLevel.INTERNAL, "sha256:abc",
+            "sha256:abc",
             "user_01", "req_01", "trace_01", "idem_01"
         ));
 
@@ -82,7 +82,7 @@ class DocumentApplicationServiceTest {
     private static CreateDocumentCommand cmd(String title) {
         return new CreateDocumentCommand(
             "tenant_01", title, "file_" + title, "PDF",
-            SecurityLevel.INTERNAL, "sha256:" + title,
+            "sha256:" + title,
             "user_01", "req_" + title, "trace", "idem_" + title
         );
     }

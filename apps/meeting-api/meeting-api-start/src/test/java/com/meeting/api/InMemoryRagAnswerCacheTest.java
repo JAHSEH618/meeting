@@ -45,11 +45,11 @@ class InMemoryRagAnswerCacheTest {
     void differentUsersGetSeparateCacheSlotsEvenForSameQuestion() {
         InMemoryRagAnswerCache cache = newCache();
         RagCacheKey forUserA = new RagCacheKey(
-            "tenant_01", "userA", SecurityLevel.INTERNAL, "same question",
+            "tenant_01", "userA", "same question",
             RagQueryScope.EMPTY, 5, false
         );
         RagCacheKey forUserB = new RagCacheKey(
-            "tenant_01", "userB", SecurityLevel.INTERNAL, "same question",
+            "tenant_01", "userB", "same question",
             RagQueryScope.EMPTY, 5, false
         );
         cache.store(forUserA, answer("A's answer"), new CacheCoverage(Set.of("mtg_a"), Set.of()));
@@ -116,10 +116,10 @@ class InMemoryRagAnswerCacheTest {
     void invalidateTenantDropsEverythingForThatTenant() {
         InMemoryRagAnswerCache cache = newCache();
         RagCacheKey tenant1 = new RagCacheKey(
-            "tenant_01", "u", SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 5, false
+            "tenant_01", "u", "q", RagQueryScope.EMPTY, 5, false
         );
         RagCacheKey tenant2 = new RagCacheKey(
-            "tenant_02", "u", SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 5, false
+            "tenant_02", "u", "q", RagQueryScope.EMPTY, 5, false
         );
         cache.store(tenant1, answer("1"), new CacheCoverage(Set.of("m"), Set.of()));
         cache.store(tenant2, answer("2"), new CacheCoverage(Set.of("m"), Set.of()));
@@ -175,7 +175,7 @@ class InMemoryRagAnswerCacheTest {
 
         cache.onChunkReindex(new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", "mtg_x", null, List.of(),
-            SecurityLevel.INTERNAL, "v1", 1, null, null
+            "v1", 1, null, null
         ));
 
         assertThat(cache.lookup(k)).isEmpty();
@@ -189,7 +189,7 @@ class InMemoryRagAnswerCacheTest {
 
         cache.onChunkReindex(new KnowledgeChunkReindexRequestedEvent(
             "tenant_01", null, "doc_x", List.of(),
-            SecurityLevel.INTERNAL, "v1", null, null, null
+            "v1", null, null, null
         ));
 
         assertThat(cache.lookup(k)).isEmpty();
@@ -223,16 +223,16 @@ class InMemoryRagAnswerCacheTest {
     @Test
     void cacheKeyRejectsBlankIdentity() {
         assertThatThrownBy(() -> new RagCacheKey(
-            "", "u", SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 5, false
+            "", "u", "q", RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagCacheKey(
-            "t", "", SecurityLevel.INTERNAL, "q", RagQueryScope.EMPTY, 5, false
+            "t", "", "q", RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagCacheKey(
             "t", "u", null, "q", RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagCacheKey(
-            "t", "u", SecurityLevel.INTERNAL, "  ", RagQueryScope.EMPTY, 5, false
+            "t", "u", "  ", RagQueryScope.EMPTY, 5, false
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -244,7 +244,7 @@ class InMemoryRagAnswerCacheTest {
 
     private static RagCacheKey key(String question, RagQueryScope scope) {
         return new RagCacheKey(
-            "tenant_01", "user_01", SecurityLevel.INTERNAL, question, scope, 5, false
+            "tenant_01", "user_01", question, scope, 5, false
         );
     }
 

@@ -42,7 +42,7 @@ class MeetingDocumentApplicationServiceTest {
     @Test
     void attachLinksMeetingAndDocumentAndPublishesEvent() {
         Fixture f = fixture();
-        f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec v1"));
+        f.documents.put("doc_01", document("Spec v1"));
         f.meetings.put("m_01", meeting());
 
         MeetingDocumentDTO dto = f.service.attach(new AttachMeetingDocumentCommand(
@@ -52,7 +52,6 @@ class MeetingDocumentApplicationServiceTest {
 
         assertThat(dto.documentId()).isEqualTo("doc_01");
         assertThat(dto.role()).isEqualTo(DocumentRole.REFERENCE);
-        assertThat(dto.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(f.publisher.events).hasSize(1);
         assertThat(f.publisher.events.get(0)).isInstanceOf(MeetingDocumentAttachedEvent.class);
     }
@@ -60,7 +59,7 @@ class MeetingDocumentApplicationServiceTest {
     @Test
     void attachIsIdempotentForActiveLink() {
         Fixture f = fixture();
-        f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec"));
+        f.documents.put("doc_01", document("Spec"));
         f.meetings.put("m_01", meeting());
 
         f.service.attach(new AttachMeetingDocumentCommand(
@@ -81,7 +80,7 @@ class MeetingDocumentApplicationServiceTest {
     void attachComputesMaxSecurityLevelAndRejectsConfidentialReference() {
         Fixture f = fixture();
         // meeting INTERNAL, document CONFIDENTIAL — effective = CONFIDENTIAL → REFERENCE fail-closed (R4)
-        f.documents.put("doc_01", document(SecurityLevel.CONFIDENTIAL, "Salary review"));
+        f.documents.put("doc_01", document("Salary review"));
         f.meetings.put("m_01", meeting());
 
         assertThatThrownBy(() -> f.service.attach(new AttachMeetingDocumentCommand(
@@ -96,7 +95,7 @@ class MeetingDocumentApplicationServiceTest {
     @Test
     void attachWithUnknownMeetingRaisesMeetingNotFound() {
         Fixture f = fixture();
-        f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec"));
+        f.documents.put("doc_01", document("Spec"));
 
         assertThatThrownBy(() -> f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "missing", "doc_01", DocumentRole.REFERENCE,
@@ -110,7 +109,7 @@ class MeetingDocumentApplicationServiceTest {
     @Test
     void detachSoftDeletesActiveLink() {
         Fixture f = fixture();
-        f.documents.put("doc_01", document(SecurityLevel.INTERNAL, "Spec"));
+        f.documents.put("doc_01", document("Spec"));
         f.meetings.put("m_01", meeting());
         f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.ATTACHMENT,
@@ -129,7 +128,7 @@ class MeetingDocumentApplicationServiceTest {
     @Test
     void listJoinsDocumentTitleAndSecurityLevel() {
         Fixture f = fixture();
-        f.documents.put("doc_01", document(SecurityLevel.PUBLIC, "Doc One"));
+        f.documents.put("doc_01", document("Doc One"));
         f.meetings.put("m_01", meeting());
         f.service.attach(new AttachMeetingDocumentCommand(
             "tenant_01", "m_01", "doc_01", DocumentRole.ATTACHMENT,
@@ -142,7 +141,6 @@ class MeetingDocumentApplicationServiceTest {
             .satisfies(r -> {
                 assertThat(r.documentId()).isEqualTo("doc_01");
                 assertThat(r.title()).isEqualTo("Doc One");
-                assertThat(r.securityLevel()).isEqualTo(SecurityLevel.PUBLIC);
             });
     }
 

@@ -22,7 +22,7 @@ final class MeetingTestFactory {
     ) {
         Meeting base = Meeting.create(
             meetingId, tenantId, "test meeting " + meetingId,
-            SecurityLevel.INTERNAL, "zh",
+            "zh",
             java.util.List.of(),
             "user_test"
         );
