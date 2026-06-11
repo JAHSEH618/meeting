@@ -86,3 +86,8 @@ docs/spec*.md
 # Phase J — local staging weight fixtures (deterministic mocks generated
 # by apps/ai-worker/scripts/stage_mock_weights.py; not real model weights).
 .cache/
+
+# Claude/AI tools
+.claude-plugin-market/
+.clawhub/
+skills/
