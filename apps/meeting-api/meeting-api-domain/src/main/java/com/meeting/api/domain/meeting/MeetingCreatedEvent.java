@@ -1,6 +1,5 @@
 package com.meeting.api.domain.meeting;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.common.DomainEvent;
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -10,7 +9,6 @@ public record MeetingCreatedEvent(
     String tenantId,
     String meetingId,
     String title,
-    SecurityLevel securityLevel,
     String createdBy,
     long sequenceNo,
     OffsetDateTime occurredAt
@@ -40,7 +38,6 @@ public record MeetingCreatedEvent(
         return Map.of(
             "meetingId", meetingId,
             "title", title,
-            "securityLevel", securityLevel.name(),
             "createdBy", createdBy == null ? "" : createdBy
         );
     }

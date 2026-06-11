@@ -1,7 +1,6 @@
 package com.meeting.api.domain.meeting;
 
 import com.meeting.api.client.enums.MeetingStatus;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.client.meeting.CreateMeetingCommand;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -14,7 +13,6 @@ public final class Meeting {
     private final String tenantId;
     private final String title;
     private final OffsetDateTime scheduledStartAt;
-    private final SecurityLevel securityLevel;
     private final MeetingStatus status;
     private final String language;
     private final int transcriptVersion;
@@ -28,7 +26,6 @@ public final class Meeting {
         this.tenantId = requireText(builder.tenantId, "tenantId");
         this.title = requireText(builder.title, "title");
         this.scheduledStartAt = builder.scheduledStartAt;
-        this.securityLevel = Objects.requireNonNull(builder.securityLevel, "securityLevel");
         this.status = Objects.requireNonNull(builder.status, "status");
         this.language = requireText(builder.language, "language");
         this.transcriptVersion = builder.transcriptVersion;
@@ -43,16 +40,16 @@ public final class Meeting {
     /** Factory method — creates a new meeting in CREATED state. */
     public static Meeting create(
         String id, String tenantId, String title,
-        SecurityLevel securityLevel, String language,
+        String language,
         List<CreateMeetingCommand.ParticipantCommand> participantCommands,
         String createdBy
     ) {
-        return create(id, tenantId, title, null, securityLevel, language, participantCommands, createdBy);
+        return create(id, tenantId, title, null, language, participantCommands, createdBy);
     }
 
     public static Meeting create(
         String id, String tenantId, String title,
-        OffsetDateTime scheduledStartAt, SecurityLevel securityLevel, String language,
+        OffsetDateTime scheduledStartAt, String language,
         List<CreateMeetingCommand.ParticipantCommand> participantCommands,
         String createdBy
     ) {
@@ -67,7 +64,6 @@ public final class Meeting {
             .tenantId(tenantId)
             .title(title)
             .scheduledStartAt(scheduledStartAt)
-            .securityLevel(securityLevel == null ? SecurityLevel.INTERNAL : securityLevel)
             .status(MeetingStatus.CREATED)
             .language(language == null || language.isBlank() ? "zh" : language)
             .transcriptVersion(0)
@@ -113,7 +109,6 @@ public final class Meeting {
             .tenantId(tenantId)
             .title(nextTitle == null ? title : nextTitle)
             .scheduledStartAt(scheduledStartAtProvided ? nextScheduledStartAt : scheduledStartAt)
-            .securityLevel(securityLevel)
             .status(status)
             .language(language)
             .transcriptVersion(transcriptVersion)
@@ -138,7 +133,6 @@ public final class Meeting {
             .tenantId(tenantId)
             .title(title)
             .scheduledStartAt(scheduledStartAt)
-            .securityLevel(securityLevel)
             .status(nextStatus)
             .language(language)
             .transcriptVersion(transcriptVersion)
@@ -155,7 +149,6 @@ public final class Meeting {
     public String tenantId() { return tenantId; }
     public String title() { return title; }
     public OffsetDateTime scheduledStartAt() { return scheduledStartAt; }
-    public SecurityLevel securityLevel() { return securityLevel; }
     public MeetingStatus status() { return status; }
     public String language() { return language; }
     public int transcriptVersion() { return transcriptVersion; }
@@ -171,7 +164,6 @@ public final class Meeting {
         private String tenantId;
         private String title;
         private OffsetDateTime scheduledStartAt;
-        private SecurityLevel securityLevel;
         private MeetingStatus status;
         private String language;
         private int transcriptVersion;
@@ -184,7 +176,6 @@ public final class Meeting {
         public Builder tenantId(String v) { this.tenantId = v; return this; }
         public Builder title(String v) { this.title = v; return this; }
         public Builder scheduledStartAt(OffsetDateTime v) { this.scheduledStartAt = v; return this; }
-        public Builder securityLevel(SecurityLevel v) { this.securityLevel = v; return this; }
         public Builder status(MeetingStatus v) { this.status = v; return this; }
         public Builder language(String v) { this.language = v; return this; }
         public Builder transcriptVersion(int v) { this.transcriptVersion = v; return this; }
