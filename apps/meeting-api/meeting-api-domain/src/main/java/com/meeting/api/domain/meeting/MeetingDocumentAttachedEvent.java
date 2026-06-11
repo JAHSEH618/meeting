@@ -1,7 +1,6 @@
 package com.meeting.api.domain.meeting;
 
 import com.meeting.api.client.enums.DocumentRole;
-import com.meeting.api.client.enums.SecurityLevel;
 import com.meeting.api.domain.common.DomainEvent;
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -13,7 +12,6 @@ public record MeetingDocumentAttachedEvent(
     String linkId,
     String documentId,
     DocumentRole role,
-    SecurityLevel effectiveSecurityLevel,
     String attachedBy,
     long sequenceNo,
     OffsetDateTime occurredAt
@@ -44,7 +42,6 @@ public record MeetingDocumentAttachedEvent(
             "meetingId", meetingId,
             "documentId", documentId,
             "role", role.name(),
-            "effectiveSecurityLevel", effectiveSecurityLevel.name(),
             "attachedBy", attachedBy == null ? "" : attachedBy
         );
     }

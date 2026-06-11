@@ -1,6 +1,5 @@
 package com.meeting.api.domain.llm;
 
-import com.meeting.api.client.enums.SecurityLevel;
 import java.util.Map;
 
 /**
@@ -8,7 +7,6 @@ import java.util.Map;
  *
  * Implementations MUST:
  * <ul>
- *   <li>Fail closed when {@link SecurityLevel} is {@code CONFIDENTIAL} or {@code SECRET}.</li>
  *   <li>Resolve the prompt template by {@code taskName}, apply variables, audit the call.</li>
  *   <li>Hash input/output, capture token counts and latency, and write to {@code llm_call_logs}.</li>
  *   <li>Never log or persist plaintext audio/embedding/PII content beyond what the template renders.</li>
@@ -23,7 +21,6 @@ public interface LlmGateway {
         String taskId,
         String capability,
         String taskName,
-        SecurityLevel securityLevel,
         Map<String, Object> variables,
         String expectedJsonSchema,
         String traceId
