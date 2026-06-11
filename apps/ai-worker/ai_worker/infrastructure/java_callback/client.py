@@ -354,3 +354,23 @@ class JavaCallbackClient:
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
+
+def _step_update_idempotency_key(
+    task_id: str,
+    step_name: str,
+    status: str,
+    attempt_no: int,
+    progress: int,
+) -> str:
+    """Generate idempotency key for step updates.
+
+    Heartbeats (RUNNING with progress > 0) use a stable key to allow latest-wins updates.
+    First RUNNING, SUCCEEDED, and FAILED use unique keys to prevent duplicate callbacks.
+    """
+    if status == "RUNNING" and progress > 0:
+        # Heartbeat: stable key allows latest-wins update
+        return f"{task_id}:{step_name}:heartbeat:{attempt_no}"
+    else:
+        # State transition: unique key enforces idempotency
+        return f"{task_id}:{step_name}:{status}:{attempt_no}:v1"
