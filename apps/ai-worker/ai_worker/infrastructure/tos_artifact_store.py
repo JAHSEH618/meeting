@@ -78,6 +78,22 @@ class TosArtifactStore:
     async def upload_json(self, bucket: str, key: str, payload: dict[str, Any]) -> ArtifactRef:
         return await self._local_writer.upload_json(bucket, key, payload)
 
+    async def upload_direct(
+        self,
+        bucket: str,
+        key: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> ArtifactRef:
+        """Upload directly to TOS, bypassing local writer."""
+        self._client.put_object(bucket, key, content=data, content_type=content_type)
+        return ArtifactRef(
+            uri=f"tos://{bucket}/{key}",
+            sha256=hashlib.sha256(data).hexdigest(),
+            size_bytes=len(data),
+            content_type=content_type,
+        )
+
     async def download(self, uri: str) -> bytes:
         bucket, key = _parse_tos_uri(uri)
         result = self._client.get_object(bucket, key)
