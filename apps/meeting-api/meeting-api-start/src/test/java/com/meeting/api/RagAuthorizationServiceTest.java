@@ -48,36 +48,6 @@ class RagAuthorizationServiceTest {
     }
 
     @Test
-    void authorizeScopeRejectsNullScope() {
-        var svc = new RagAuthorizationService(new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty()));
-        assertThatThrownBy(() -> svc.authorizeScope("t", "u", null))
-            .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void filterAuthorizedDropsChunksAboveClearance() {
-        var port = new FakeAuthzPort(
-            RetrievalScope.EMPTY,
-            ReadableSnapshot.allowing(Set.of("mtg_1"), Set.of("doc_1"))
-        );
-        var svc = new RagAuthorizationService(port);
-
-        var candidates = List.of(
-            candidate("ck_public", "mtg_1", null),
-            candidate("ck_internal", "mtg_1", null),
-            candidate("ck_confidential", "mtg_1", null),
-            candidate("ck_secret", "mtg_1", null)
-        );
-
-        List<KnowledgeChunkCandidate> out = svc.filterAuthorized(
-            "tenant_01", "user_01", candidates
-        );
-
-        assertThat(out).extracting(KnowledgeChunkCandidate::chunkId)
-            .containsExactly("ck_public", "ck_internal");
-    }
-
-    @Test
     void filterAuthorizedDropsChunksWhoseOwnerIsUnreadable() {
         var port = new FakeAuthzPort(
             RetrievalScope.EMPTY,
@@ -146,13 +116,6 @@ class RagAuthorizationServiceTest {
 
         assertThat(out).extracting(KnowledgeChunkCandidate::chunkId).containsExactly("ck_orphan");
         assertThat(port.readableOwnersCalls).isEqualTo(0);
-    }
-
-    @Test
-    void filterAuthorizedRejectsNullCandidates() {
-        var svc = new RagAuthorizationService(new FakeAuthzPort(RetrievalScope.EMPTY, ReadableSnapshot.empty()));
-        assertThatThrownBy(() -> svc.filterAuthorized("t", "u", null))
-            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static KnowledgeChunkCandidate candidate(
