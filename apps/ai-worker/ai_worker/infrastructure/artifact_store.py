@@ -2,15 +2,14 @@ from dataclasses import dataclass
 import asyncio
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
-import structlog
-
 from ai_worker.common.config import settings
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -149,7 +148,7 @@ async def _backup_to_tos_async(bucket: str, key: str, data: bytes, content_type:
     if settings.storage_backend != "tos":
         return
     if not (settings.tos_endpoint and settings.tos_region and settings.tos_access_key_id and settings.tos_access_key_secret):
-        logger.warning("tos_backup_skipped", reason="credentials_missing", bucket=bucket, key=key)
+        logger.warning("TOS backup skipped: credentials missing (bucket=%s, key=%s)", bucket, key)
         return
     try:
         from ai_worker.infrastructure.tos_artifact_store import TosArtifactStore
@@ -162,9 +161,10 @@ async def _backup_to_tos_async(bucket: str, key: str, data: bytes, content_type:
             local_writer=local,
         )
         await tos.upload_direct(bucket, key, data, content_type)
-        logger.info("tos_backup_success", bucket=bucket, key=key, size=len(data))
+        logger.info("TOS backup success: bucket=%s, key=%s, size=%d", bucket, key, len(data))
     except Exception as e:
-        logger.error("tos_backup_failed", bucket=bucket, key=key, error=str(e))
+        logger.error("TOS backup failed: bucket=%s, key=%s, error=%s", bucket, key, str(e))
+
 
 
 def build_artifact_store() -> "ArtifactStore":
