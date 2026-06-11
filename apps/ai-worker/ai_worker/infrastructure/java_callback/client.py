@@ -137,7 +137,13 @@ class JavaCallbackClient:
         meeting_id: str | None = None,
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
-        idempotency_key = f"{task_id}:{step_name}:{status}:{attempt_no}:v1"
+        idempotency_key = _step_update_idempotency_key(
+            task_id=task_id,
+            step_name=step_name,
+            status=status,
+            attempt_no=attempt_no,
+            progress=progress,
+        )
         body = {
             "tenantId": tenant_id,
             "taskId": task_id,

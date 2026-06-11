@@ -244,6 +244,36 @@ class TestUpdateStep:
             "task_42:AUDIO_PREPROCESS:SUCCEEDED:1:v1",
         ]
 
+    @pytest.mark.asyncio
+    async def test_running_start_and_heartbeat_do_not_share_idempotency_key(self, client: JavaCallbackClient) -> None:
+        captured: list[tuple[dict, str]] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured.append((body, idempotency_key))
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=0,
+            )
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=50,
+            )
+
+        assert captured[0][0]["progress"] == 0
+        assert captured[1][0]["progress"] == 50
+        assert captured[0][1] != captured[1][1]
+
 
 class TestSubmitSpeakerEnrollmentEmbedding:
     @pytest.mark.asyncio
