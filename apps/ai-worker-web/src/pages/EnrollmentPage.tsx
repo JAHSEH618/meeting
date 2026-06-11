@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   commitEnrollment,
   createEnrollmentSession,
@@ -9,15 +10,25 @@ import {
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
 import { ApiError } from "@/shared/api/client";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
+import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 
 const QUALITY_THRESHOLD = 0.5;
+const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
 
 export function EnrollmentPage() {
-  const [personId, setPersonId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const initialPersonId = searchParams.get("personId");
+  const returnTo = getSafeReturnTo(searchParams.get("returnTo"));
+  const [personId, setPersonId] = useState<string | null>(initialPersonId);
+  const [selectedPerson, setSelectedPerson] = useState<PersonDTO | null>(null);
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [personModalOpen, setPersonModalOpen] = useState(false);
 
   const searchPersonsFetcher = useCallback(
     (q: string, signal: AbortSignal) => searchPersons(q, { signal }),
@@ -40,7 +51,7 @@ export function EnrollmentPage() {
   };
 
   const handleUploadAndPreview = async () => {
-    if (!session || !file) return;
+    if (!session || !file || session.state === "COMMITTED") return;
     setBusy(true);
     setError(null);
     try {
@@ -70,6 +81,9 @@ export function EnrollmentPage() {
 
   const qualityScore = session?.qualityScore;
   const qualityHigh = typeof qualityScore === "number" && qualityScore >= QUALITY_THRESHOLD;
+  const canCommit = session?.state === "PREVIEWED" && qualityHigh && !busy;
+  const committed = session?.state === "COMMITTED";
+  const selectedPersonLabel = selectedPerson?.displayName ?? personId;
 
   return (
     <div className="stack">
@@ -97,14 +111,17 @@ export function EnrollmentPage() {
         {persons.length > 0 ? (
           <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             {persons.map((p) => (
-              <li key={p.id}>
+              <li key={p.personId}>
                 <label className="toolbar">
                   <input
                     type="radio"
                     name="person"
-                    value={p.id}
-                    checked={personId === p.id}
-                    onChange={() => setPersonId(p.id)}
+                    value={p.personId}
+                    checked={personId === p.personId}
+                    onChange={() => {
+                      setPersonId(p.personId);
+                      setSelectedPerson(p);
+                    }}
                   />
                   <span>{p.displayName}</span>
                   {p.email ? <span className="page-subtitle">{p.email}</span> : null}
@@ -113,6 +130,25 @@ export function EnrollmentPage() {
             ))}
           </ul>
         ) : null}
+        <div className="toolbar">
+          <button className="button button--secondary" type="button" onClick={() => setPersonModalOpen(true)}>
+            + 新建人员
+          </button>
+          {selectedPersonLabel ? (
+            <span className="page-subtitle">
+              已选择：<span translate={selectedPerson ? undefined : "no"}>{selectedPersonLabel}</span>
+            </span>
+          ) : null}
+        </div>
+        <PersonCreateModal
+          open={personModalOpen}
+          onClose={() => setPersonModalOpen(false)}
+          onCreated={(person) => {
+            setPersonId(person.personId);
+            setSelectedPerson(person);
+            setPersonModalOpen(false);
+          }}
+        />
       </section>
 
       <section className="card stack" aria-labelledby="enroll-step-2">
@@ -135,22 +171,22 @@ export function EnrollmentPage() {
             type="file"
             accept="audio/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            disabled={!session}
+            disabled={!session || committed}
             className="upload-dropzone__input"
             name="enrollmentAudio"
           />
-          <span className="upload-dropzone__icon">📁</span>
+          <span className="upload-dropzone__icon" aria-hidden="true">📁</span>
           <span className="upload-dropzone__label">
             {file ? file.name : "点击选择音频文件 (MP3, WAV, M4A)"}
           </span>
           {file ? (
-            <span className="page-subtitle">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            <span className="page-subtitle">{FILE_SIZE_FORMATTER.format(file.size / 1024 / 1024)} MB</span>
           ) : null}
         </label>
         <button
           className="button button--primary"
           onClick={() => void handleUploadAndPreview()}
-          disabled={!session || !file || busy}
+          disabled={!session || !file || busy || committed}
         >
           {busy ? "处理中…" : "上传并预览"}
         </button>
@@ -176,10 +212,36 @@ export function EnrollmentPage() {
         <button
           className="button button--primary"
           onClick={() => void handleCommit()}
-          disabled={!session || session.state !== "PREVIEWED" || busy}
+          disabled={!canCommit}
         >
           确认录入
         </button>
+        {committed ? (
+          <div
+            className="banner banner--success"
+            role="status"
+            aria-live="polite"
+            aria-label="录入已写入 Java 工作流"
+          >
+            <strong className="banner__title">录入已写入 Java 工作流</strong>
+            <span className="banner__body">
+              {session.profileId ? (
+                <>
+                  声纹档案 <span translate="no">{session.profileId}</span>
+                </>
+              ) : (
+                "声纹档案已创建"
+              )}
+              {session.fileId ? (
+                <>
+                  {" · "}
+                  音频文件 <span translate="no">{session.fileId}</span>
+                </>
+              ) : null}
+            </span>
+            {returnTo ? <Link className="button button--secondary" to={returnTo}>返回会议</Link> : null}
+          </div>
+        ) : null}
       </section>
 
       {error || personSearch.error ? (
@@ -196,4 +258,9 @@ function formatError(e: unknown): string {
     return `${e.error.code}: ${e.error.message}`;
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+function getSafeReturnTo(returnTo: string | null): string | null {
+  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) return null;
+  return returnTo;
 }

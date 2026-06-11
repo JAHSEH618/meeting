@@ -134,9 +134,16 @@ class JavaCallbackClient:
         progress: int = 0,
         error_code: str | None = None,
         trace_id: str = "",
+        meeting_id: str | None = None,
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/steps/{step_name}"
-        idempotency_key = f"{task_id}:{step_name}:{attempt_no}:v1"
+        idempotency_key = _step_update_idempotency_key(
+            task_id=task_id,
+            step_name=step_name,
+            status=status,
+            attempt_no=attempt_no,
+            progress=progress,
+        )
         body = {
             "tenantId": tenant_id,
             "taskId": task_id,
@@ -145,6 +152,8 @@ class JavaCallbackClient:
             "status": status,
             "progress": progress,
         }
+        if meeting_id:
+            body["meetingId"] = meeting_id
         if error_code:
             body["errorCode"] = error_code
         return await self._request("PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key)
@@ -205,6 +214,30 @@ class JavaCallbackClient:
         }
         if meeting_id:
             body["meetingId"] = meeting_id
+        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
+    async def submit_speaker_enrollment_embedding(
+        self,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        speaker_profile_id: str,
+        speaker_enrollment_id: str,
+        audio_file_id: str,
+        embedding: dict,
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        path = f"/internal/processing-tasks/{task_id}/speaker-enrollment"
+        idempotency_key = f"{task_id}:speaker-enrollment:{attempt_no}:{speaker_enrollment_id}:v1"
+        body = {
+            "tenantId": tenant_id,
+            "taskId": task_id,
+            "attemptNo": attempt_no,
+            "speakerProfileId": speaker_profile_id,
+            "speakerEnrollmentId": speaker_enrollment_id,
+            "audioFileId": audio_file_id,
+            "embedding": embedding,
+        }
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
     async def submit_artifacts(
@@ -269,6 +302,7 @@ class JavaCallbackClient:
         status: str,
         completed_steps: list[str],
         skipped_steps: list[dict[str, str]] | None = None,
+        speaker_enrollment_id: str | None = None,
         trace_id: str = "",
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/complete"
@@ -284,6 +318,8 @@ class JavaCallbackClient:
             "skippedSteps": skipped_steps or [],
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if speaker_enrollment_id:
+            body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
 
     async def fail_task(
@@ -295,7 +331,9 @@ class JavaCallbackClient:
         error_code: str,
         error_message: str,
         retryable: bool = True,
+        speaker_enrollment_id: str | None = None,
         trace_id: str = "",
+        meeting_id: str | None = None,
     ) -> CallbackResponse:
         path = f"/internal/processing-tasks/{task_id}/fail"
         idempotency_key = f"{task_id}:fail:{attempt_no}:v1"
@@ -311,4 +349,8 @@ class JavaCallbackClient:
             },
             "failedAt": datetime.now(timezone.utc).isoformat(),
         }
+        if meeting_id:
+            body["meetingId"] = meeting_id
+        if speaker_enrollment_id:
+            body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)

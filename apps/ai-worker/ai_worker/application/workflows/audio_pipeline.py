@@ -17,6 +17,19 @@ from ai_worker.pipeline.diarization.runtime import (
     SingleSpeakerDiarizationRuntime,
     SpeakerTurn,
 )
+from ai_worker.pipeline.speaker.matcher import (
+    AuthorizedScopeMatcher,
+    ReferenceEmbeddingSupplier,
+    SpeakerMatcher,
+    SpeakerMatchResult,
+)
+from ai_worker.pipeline.speaker.runtime import (
+    DeterministicSpeakerEmbeddingRuntime,
+    SpeakerEmbedding,
+    SpeakerEmbeddingRuntime,
+    SpeakerEmbeddingRuntimeError,
+)
+from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
 
 
 class WorkerPipelineError(Exception):
@@ -35,12 +48,19 @@ class LocalAudioPipelineEngine:
         preprocessor: FfprobeAudioPreprocessor | None = None,
         asr_runtime: AsrModelRuntime | None = None,
         diarization_runtime: DiarizationRuntime | None = None,
+        speaker_embedding_runtime: SpeakerEmbeddingRuntime | None = None,
+        speaker_reference_supplier: ReferenceEmbeddingSupplier | None = None,
+        speaker_matcher: SpeakerMatcher | None = None,
     ) -> None:
         self._state_store = state_store
         self._artifact_store: ArtifactStore = artifact_store or LocalArtifactStore()
         self._preprocessor = preprocessor or FfprobeAudioPreprocessor()
         self._asr_runtime = asr_runtime or DeterministicAsrRuntime()
         self._diarization_runtime = diarization_runtime or SingleSpeakerDiarizationRuntime()
+        self._speaker_embedding_runtime = speaker_embedding_runtime or DeterministicSpeakerEmbeddingRuntime()
+        self._speaker_matcher = speaker_matcher or AuthorizedScopeMatcher(
+            reference_supplier=speaker_reference_supplier
+        )
 
     async def run_pipeline(self, task: TaskMessage) -> PipelineArtifact:
         context = self.start_pipeline(task)
@@ -66,16 +86,26 @@ class LocalAudioPipelineEngine:
             await self._run_asr(context)
         elif step_name == "DIARIZATION":
             await self._run_diarization(context)
+        elif step_name == "SPEAKER_EMBEDDING":
+            await self._run_speaker_embedding(context)
+        elif step_name == "SPEAKER_MATCHING":
+            await self._run_speaker_matching(context)
         elif step_name == "TRANSCRIPT_MERGE":
             await self._run_transcript_merge(context)
         else:
-            context.skipped_steps.append({"stepName": step_name, "reason": "OUT_OF_PHASE2_SCOPE"})
+            raise WorkerPipelineError(
+                step_name,
+                "WORKER_STEP_NOT_IMPLEMENTED",
+                f"worker step is required but not implemented by LocalAudioPipelineEngine: {step_name}",
+                retryable=False,
+            )
 
     async def complete_pipeline(self, context: "_PipelineContext") -> PipelineArtifact:
         manifest_ref = await self._write_manifest(context)
         return PipelineArtifact(
             task_id=context.task.task_id,
             transcript_segments=context.transcript_segments,
+            speaker_candidates=context.speaker_candidates,
             artifact_manifest_id=manifest_ref.uri,
             terminal_status="SUCCEEDED",
         )
@@ -165,6 +195,56 @@ class LocalAudioPipelineEngine:
         )
         context.artifacts.append(_artifact_dict("DIARIZATION_TURNS", ref.uri, ref.sha256, ref.size_bytes))
 
+    async def _run_speaker_embedding(self, context: "_PipelineContext") -> None:
+        preprocess = await self._ensure_preprocess(context)
+        audio_path = _required_audio_path(context)
+        ensure_loaded = getattr(self._speaker_embedding_runtime, "ensure_loaded", None)
+        if ensure_loaded is not None:
+            try:
+                await ensure_loaded()
+            except SpeakerEmbeddingRuntimeError as exc:
+                raise WorkerPipelineError("SPEAKER_EMBEDDING", exc.error_code, str(exc), retryable=True) from exc
+        try:
+            for speaker_turn in _speaker_turns_for_embedding(context):
+                context.speaker_embeddings.append(
+                    await self._speaker_embedding_runtime.embed(
+                        audio_path,
+                        preprocess.metadata,
+                        speaker_turn,
+                    )
+                )
+        except SpeakerEmbeddingRuntimeError as exc:
+            raise WorkerPipelineError("SPEAKER_EMBEDDING", exc.error_code, str(exc), retryable=True) from exc
+        if not context.speaker_embeddings:
+            raise WorkerPipelineError(
+                "SPEAKER_EMBEDDING",
+                "SPEAKER_EMBEDDING_FAILED",
+                "speaker embedding runtime returned no embeddings",
+                retryable=True,
+            )
+
+    async def _run_speaker_matching(self, context: "_PipelineContext") -> None:
+        if not context.speaker_embeddings:
+            raise WorkerPipelineError(
+                "SPEAKER_MATCHING",
+                "SPEAKER_MATCH_FAILED",
+                "speaker matching requires speaker embeddings",
+                retryable=True,
+            )
+        for embedding in context.speaker_embeddings:
+            try:
+                match = await self._speaker_matcher.match(context.task, embedding)
+            except Exception as exc:  # noqa: BLE001 - map model/reference failures to workflow errors
+                error_code = (
+                    "SPEAKER_REFERENCE_UNAVAILABLE"
+                    if exc.__class__.__name__ == "SpeakerReferenceUnavailable"
+                    else "SPEAKER_MATCH_FAILED"
+                )
+                raise WorkerPipelineError("SPEAKER_MATCHING", error_code, str(exc), retryable=True) from exc
+            context.speaker_matches.append(match)
+            context.speaker_submissions.append(SpeakerCandidateSubmission(embedding, match))
+            context.speaker_candidates.append(_speaker_candidate_summary(match))
+
     async def _run_transcript_merge(self, context: "_PipelineContext") -> None:
         context.transcript_segments = merge_transcript_segments(
             context.task,
@@ -196,9 +276,15 @@ class LocalAudioPipelineEngine:
             "modelVersions": {
                 "asr": getattr(self._asr_runtime, "model_version", "unknown"),
                 "diarization": getattr(self._diarization_runtime, "model_version", "unknown"),
+                "speakerEmbedding": getattr(self._speaker_embedding_runtime, "model_version", "unknown"),
             },
         }
         return await self._write_json_artifact(task, "manifest", "artifact-manifest.json", manifest)
+
+    async def _ensure_preprocess(self, context: "_PipelineContext") -> PreprocessResult:
+        if context.preprocess is None:
+            await self._run_audio_preprocess(context)
+        return _required_preprocess(context)
 
     async def _write_json_artifact(self, task: TaskMessage, category: str, name: str, payload: dict[str, Any]) -> Any:
         bucket = "meeting-artifacts"
@@ -225,6 +311,10 @@ class _PipelineContext:
         self.preprocess: PreprocessResult | None = None
         self.asr_segments: list[AsrSegment] = []
         self.speaker_turns: list[SpeakerTurn] = []
+        self.speaker_embeddings: list[SpeakerEmbedding] = []
+        self.speaker_matches: list[SpeakerMatchResult] = []
+        self.speaker_submissions: list[SpeakerCandidateSubmission] = []
+        self.speaker_candidates: list[dict[str, Any]] = []
         self.transcript_segments: list[dict[str, Any]] = []
         self.artifacts: list[dict[str, Any]] = []
         self.skipped_steps: list[dict[str, str]] = []
@@ -246,6 +336,35 @@ def _required_audio_path(context: _PipelineContext) -> Path:
     if context.audio_path is None:
         raise WorkerPipelineError("AUDIO_PREPROCESS", "AUDIO_PREPROCESS_MISSING", "audio path is missing", retryable=False)
     return context.audio_path
+
+
+def _speaker_turns_for_embedding(context: _PipelineContext) -> list[SpeakerTurn]:
+    if context.speaker_turns:
+        return context.speaker_turns
+    preprocess = _required_preprocess(context)
+    return [
+        SpeakerTurn(
+            speaker_label="SPEAKER_00",
+            start_ms=0,
+            end_ms=max(1, preprocess.metadata.duration_ms),
+            confidence=1.0,
+        )
+    ]
+
+
+def _speaker_candidate_summary(match: SpeakerMatchResult) -> dict[str, Any]:
+    return {
+        "speakerLabel": match.speaker_label,
+        "candidates": [
+            {
+                "personId": candidate.person_id,
+                "speakerProfileId": candidate.speaker_profile_id,
+                "confidence": candidate.confidence,
+                "matchStatus": candidate.match_status,
+            }
+            for candidate in match.candidates
+        ],
+    }
 
 
 def _artifact_dict(category: str, uri: str, sha256: str, size_bytes: int | None) -> dict[str, Any]:

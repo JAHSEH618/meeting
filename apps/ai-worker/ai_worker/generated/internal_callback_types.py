@@ -77,6 +77,7 @@ class PlainSpeakerEmbedding(BaseModel):
     values: List[float]
     checksum: str
     modelVersion: str
+    qualityScore: Optional[confloat(ge=0.0, le=1.0)] = None
     plaintextTransport: Optional[PlaintextTransport] = None
     persistedBy: PersistedBy
 
@@ -190,6 +191,17 @@ class SpeakerCandidatesCallbackRequest(BaseModel):
     artifactManifestId: Optional[str] = None
 
 
+class SpeakerEnrollmentCallbackRequest(BaseModel):
+    tenantId: str
+    taskId: str
+    attemptNo: conint(ge=1)
+    speakerProfileId: str
+    speakerEnrollmentId: str
+    audioFileId: str
+    embedding: PlainSpeakerEmbedding
+    artifactManifestId: Optional[str] = None
+
+
 class SkippedStep(BaseModel):
     stepName: Optional[ProcessingStep] = None
     reason: Optional[str] = None
@@ -204,6 +216,7 @@ class CompleteWorkerPhaseRequest(BaseModel):
     status: Status
     completedSteps: List[ProcessingStep]
     skippedSteps: Optional[List[SkippedStep]] = None
+    speakerEnrollmentId: Optional[str] = None
     artifactManifestId: Optional[str] = None
     finishedAt: datetime
 

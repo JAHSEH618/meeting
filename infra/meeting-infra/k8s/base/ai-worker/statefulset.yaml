@@ -118,7 +118,9 @@ spec:
       port: 8090
       targetPort: http
 ---
-# Phase 9 P6 / E1.5 — internal-only Ingress for /admin/* + /workstation/*.
+# Phase 9 P6 / E1.5 — internal-only workstation Ingress.
+# /admin/* + /workstation/* are served by ai-worker; /api/* stays on
+# meeting-api so the workstation SPA can tail Java SSE directly.
 # IP whitelist + TLS are overlay-specific; the base just declares the routing.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -146,6 +148,13 @@ spec:
                 name: ai-worker
                 port:
                   number: 8090
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: meeting-api
+                port:
+                  number: 8080
 ---
 apiVersion: v1
 kind: ConfigMap

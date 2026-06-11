@@ -6,6 +6,7 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.client.speaker.SpeakerProfileListDTO;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
 import com.meeting.api.domain.speaker.MeetingSpeakerRepository;
 import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
@@ -128,11 +129,19 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
     }
 
     @Override
-    public List<SpeakerProfileDTO> list(String tenantId) {
-        return tenantScopedTransaction.execute(tenantId, null, null,
-            () -> profileRepository.listByTenant(tenantId, false).stream()
-                .map(SpeakerProfileApplicationService::toDto)
-                .toList());
+    public SpeakerProfileListDTO list(String tenantId, String personId) {
+        return tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            List<SpeakerProfile> profiles = hasText(personId)
+                ? profileRepository.findByPersonIds(tenantId, List.of(personId))
+                : profileRepository.listByTenant(tenantId, false);
+            List<SpeakerProfileListDTO.Item> items = profiles.stream()
+                .map(SpeakerProfileApplicationService::toListItem)
+                .toList();
+            return new SpeakerProfileListDTO(
+                items,
+                new SpeakerProfileListDTO.PageInfo(null, false, items.size())
+            );
+        });
     }
 
     @Override
@@ -140,6 +149,10 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         tenantScopedTransaction.execute(tenantId, revokedBy, null, () -> {
             SpeakerProfile profile = profileRepository.findById(tenantId, profileId)
                 .orElseThrow(() -> new IllegalArgumentException("speaker profile not found: " + profileId));
+            if ("REVOKED".equals(profile.consentStatus())) {
+                log.info("speaker_profile_revoke_noop tenant={} profile={} by={} reason={}", tenantId, profileId, revokedBy, reason);
+                return null;
+            }
             OffsetDateTime now = OffsetDateTime.now(clock);
             profile.revoke(now);
             profileRepository.updateConsentStatus(tenantId, profileId, profile.consentStatus(),
@@ -203,28 +216,25 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
                 now,
                 now
             );
-            enrollmentRepository.save(rec);
 
-            // Automatically trigger the speaker enrollment task if dependencies are available
+            // If workflow dependencies are wired, Java must be able to create the
+            // enrollment task before exposing a durable PENDING enrollment.
             if (processingTaskService != null && meetingFileRepository != null) {
-                try {
-                    MeetingFile file = meetingFileRepository.findById(command.tenantId(), command.sourceAudioFileId())
-                        .orElseThrow(() -> new IllegalArgumentException("audio file not found: " + command.sourceAudioFileId()));
-                    processingTaskService.createForSpeakerEnrollment(
-                        command.tenantId(),
-                        command.speakerProfileId(),
-                        enrollmentId,
-                        file.fileId(),
-                        file.uri(),
-                        "zh",
-                        command.createdBy(),
-                        command.traceId()
-                    );
-                } catch (Exception e) {
-                    log.error("Failed to automatically start speaker enrollment task", e);
-                }
+                MeetingFile file = meetingFileRepository.findById(command.tenantId(), command.sourceAudioFileId())
+                    .orElseThrow(() -> new IllegalArgumentException("audio file not found: " + command.sourceAudioFileId()));
+                processingTaskService.createForSpeakerEnrollment(
+                    command.tenantId(),
+                    command.speakerProfileId(),
+                    enrollmentId,
+                    file.fileId(),
+                    file.uri(),
+                    "zh",
+                    command.createdBy(),
+                    command.traceId()
+                );
             }
 
+            enrollmentRepository.save(rec);
             return toDto(rec);
         });
     }
@@ -245,12 +255,27 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         );
     }
 
+    private static SpeakerProfileListDTO.Item toListItem(SpeakerProfile p) {
+        return new SpeakerProfileListDTO.Item(
+            p.id(),
+            p.personId(),
+            p.displayNameSnapshot(),
+            p.consentStatus(),
+            null,
+            null
+        );
+    }
+
     private static SpeakerEnrollmentDTO toDto(SpeakerEnrollmentRepository.SpeakerEnrollmentRecord r) {
         return new SpeakerEnrollmentDTO(
             r.id(), r.speakerProfileId(), r.tenantId(), r.sourceAudioFileId(),
             r.enrollmentStatus(), r.qualityScore(), r.modelVersion(), r.errorCode(),
             r.createdAt(), r.updatedAt()
         );
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static final class NoOpEmbeddingRepo implements SpeakerEmbeddingRepository {
@@ -265,7 +290,7 @@ public class SpeakerProfileApplicationService implements SpeakerProfileFacade {
         @Override public List<MeetingSpeakerRecord> findByMeeting(String tenantId, String meetingId) { return List.of(); }
         @Override public List<String> findMeetingIdsByConfirmedPerson(String tenantId, String personId) { return List.of(); }
         @Override public void saveCandidates(String tenantId, String meetingId, String speakerLabel, List<String> candidatePersonIds, Double autoMatchScore, String matchSource, OffsetDateTime now) { }
-        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedBy, OffsetDateTime now) { }
+        @Override public void confirm(String tenantId, String meetingId, String speakerLabel, String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now) { }
         @Override public void reject(String tenantId, String meetingId, String speakerLabel, String rejectedBy, OffsetDateTime now) { }
     }
 

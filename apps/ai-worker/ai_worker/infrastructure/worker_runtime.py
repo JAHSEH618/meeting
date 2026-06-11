@@ -15,11 +15,17 @@ from ai_worker.application.workflows.text_embedding import (
 from ai_worker.domain.task import StepResult, TaskMessage
 from ai_worker.infrastructure.artifact_store import build_artifact_store
 from ai_worker.infrastructure.java_callback.client import CallbackResponse, JavaCallbackClient
+from ai_worker.infrastructure.speaker.reference_client import build_default_client as build_speaker_reference_client
 from ai_worker.infrastructure.task_consumer import consume_and_validate
 from ai_worker.model_runtime.registry import (
     get_asr_runtime,
     get_bge_m3,
     get_diarization_runtime,
+)
+from ai_worker.pipeline.speaker.submit import (
+    SpeakerCandidateSubmission,
+    submit_and_clear_speaker_enrollment_embedding,
+    submit_and_clear_speaker_candidates,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +88,7 @@ class MvpWorkerRuntime:
             artifact_store=build_artifact_store(),
             asr_runtime=get_asr_runtime(),
             diarization_runtime=get_diarization_runtime(),
+            speaker_reference_supplier=build_speaker_reference_client(),
         )
         self.embedding_workflow = embedding_workflow or TextEmbeddingWorkflow(
             state_store, get_bge_m3()
@@ -104,6 +111,10 @@ class MvpWorkerRuntime:
 
         context = self.workflow_engine.start_pipeline(task)
         for step_name in task.pipeline_steps:
+            if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
+                self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, "NOT_REQUIRED_FOR_ENROLLMENT")
+                _add_skipped_step(context, step_name, "NOT_REQUIRED_FOR_ENROLLMENT")
+                continue
             result = await self.execute_step(task, step_name, context)
             if result.status == "FAILED":
                 if result.error_code == "WRITEBACK_FAILED":
@@ -114,13 +125,34 @@ class MvpWorkerRuntime:
 
         artifact = await self.workflow_engine.complete_pipeline(context)
 
+        if task.task_type == "SPEAKER_ENROLLMENT":
+            response = await self._submit_speaker_enrollment_embedding(task, context)
+            if not response.accepted:
+                await self._fail_for_writeback(task, "SPEAKER_EMBEDDING", "speaker enrollment callback failed")
+                return task
+
+        speaker_submissions = _speaker_submissions_from_context(context)
+        if speaker_submissions and task.task_type != "SPEAKER_ENROLLMENT":
+            submit_speakers_response = await submit_and_clear_speaker_candidates(
+                self.callback_client,
+                task_id=task.task_id,
+                tenant_id=task.tenant_id,
+                attempt_no=task.attempt_no,
+                submissions=speaker_submissions,
+                meeting_id=task.meeting_id,
+                trace_id=task.trace_id,
+            )
+            if not submit_speakers_response.accepted:
+                await self._fail_for_writeback(task, "SPEAKER_MATCHING", "speaker-candidates callback failed")
+                return task
+
         if task.meeting_id and "TRANSCRIPT_MERGE" in task.pipeline_steps:
             transcript_response = await self.callback_client.submit_transcript(
                 task_id=task.task_id,
                 tenant_id=task.tenant_id,
                 meeting_id=task.meeting_id,
                 attempt_no=task.attempt_no,
-                transcript_version=1,
+                transcript_version=_transcript_version_for_task(task),
                 segments=artifact.transcript_segments,
                 metadata={
                     "workflowId": f"wf_{task.task_id}_{task.attempt_no}",
@@ -134,22 +166,44 @@ class MvpWorkerRuntime:
                 await self._fail_for_writeback(task, "TRANSCRIPT_MERGE", "transcript callback failed")
                 return task
 
-        complete_response = await self.callback_client.complete_worker_phase(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            meeting_id=task.meeting_id or "",
-            attempt_no=task.attempt_no,
-            status=artifact.terminal_status,
-            completed_steps=list(task.pipeline_steps),
-            skipped_steps=[],
-            trace_id=task.trace_id,
-        )
+        complete_kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "meeting_id": task.meeting_id or "",
+            "attempt_no": task.attempt_no,
+            "status": artifact.terminal_status,
+            "completed_steps": _completed_steps_for_worker_phase(task, context),
+            "skipped_steps": _skipped_steps_from_context(context),
+            "trace_id": task.trace_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            complete_kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        complete_response = await self.callback_client.complete_worker_phase(**complete_kwargs)
         if not complete_response.accepted:
             await self._fail_for_writeback(task, task.pipeline_steps[-1], "complete callback failed")
             return task
 
         self.state_store.complete(task.task_id, artifact.terminal_status)
         return task
+
+    async def _submit_speaker_enrollment_embedding(self, task: TaskMessage, context: Any) -> CallbackResponse:
+        speaker_profile_id = task.speaker_profile_id
+        speaker_enrollment_id = task.speaker_enrollment_id
+        audio_file_id = task.audio_file_id
+        embedding = _speaker_enrollment_embedding_from_context(context)
+        if not speaker_profile_id or not speaker_enrollment_id or not audio_file_id or embedding is None:
+            return CallbackResponse(http_status=0, accepted=False, error_code="WRITEBACK_FAILED")
+        return await submit_and_clear_speaker_enrollment_embedding(
+            self.callback_client,
+            task_id=task.task_id,
+            tenant_id=task.tenant_id,
+            attempt_no=task.attempt_no,
+            speaker_profile_id=speaker_profile_id,
+            speaker_enrollment_id=speaker_enrollment_id,
+            audio_file_id=audio_file_id,
+            embedding=embedding,
+            trace_id=task.trace_id,
+        )
 
     async def _consume_embedding_message(self, task: TaskMessage) -> TaskMessage:
         """Run the TEXT_EMBEDDING / RAG_REINDEX path: embed inline chunks
@@ -175,6 +229,7 @@ class MvpWorkerRuntime:
                         progress=100,
                         error_code=exc.error_code,
                         error_message=str(exc),
+                        retryable=exc.retryable,
                     ),
                 )
                 return task
@@ -251,6 +306,7 @@ class MvpWorkerRuntime:
                 progress=100,
                 error_code=exc.error_code,
                 error_message=str(exc),
+                retryable=exc.retryable,
             )
 
         succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
@@ -274,6 +330,7 @@ class MvpWorkerRuntime:
             status=status,
             progress=progress,
             trace_id=task.trace_id,
+            meeting_id=task.meeting_id,
         )
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, status, progress)
@@ -288,6 +345,7 @@ class MvpWorkerRuntime:
             status="RUNNING",
             progress=progress,
             trace_id=task.trace_id,
+            meeting_id=task.meeting_id,
         )
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
@@ -297,16 +355,20 @@ class MvpWorkerRuntime:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)
         self.state_store.update_step(task.task_id, failed_step, "FAILED", 100, "WRITEBACK_FAILED")
         self.state_store.fail(task.task_id, "WRITEBACK_FAILED", message)
-        await self.callback_client.fail_task(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            attempt_no=task.attempt_no,
-            failed_step=failed_step,
-            error_code="WRITEBACK_FAILED",
-            error_message=message,
-            retryable=True,
-            trace_id=task.trace_id,
-        )
+        kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": failed_step,
+            "error_code": "WRITEBACK_FAILED",
+            "error_message": message,
+            "retryable": True,
+            "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        await self.callback_client.fail_task(**kwargs)
 
     async def _fail_for_pipeline_result(self, task: TaskMessage, result: StepResult) -> None:
         error_code = result.error_code or "PIPELINE_STEP_FAILED"
@@ -319,16 +381,20 @@ class MvpWorkerRuntime:
             message,
         )
         self.state_store.fail(task.task_id, error_code, message)
-        await self.callback_client.fail_task(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            attempt_no=task.attempt_no,
-            failed_step=result.step_name,
-            error_code=error_code,
-            error_message=message,
-            retryable=True,
-            trace_id=task.trace_id,
-        )
+        kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": result.step_name,
+            "error_code": error_code,
+            "error_message": message,
+            "retryable": result.retryable,
+            "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        await self.callback_client.fail_task(**kwargs)
 
     @staticmethod
     def _writeback_failed(step_name: str, message: str) -> StepResult:
@@ -339,3 +405,62 @@ class MvpWorkerRuntime:
             error_code="WRITEBACK_FAILED",
             error_message=message,
         )
+
+
+def _speaker_submissions_from_context(context: Any) -> list[SpeakerCandidateSubmission]:
+    if isinstance(context, dict):
+        submissions = context.get("speaker_submissions", [])
+    else:
+        submissions = getattr(context, "speaker_submissions", [])
+    if not isinstance(submissions, list):
+        return []
+    return [s for s in submissions if isinstance(s, SpeakerCandidateSubmission)]
+
+
+def _speaker_enrollment_embedding_from_context(context: Any) -> Any | None:
+    if isinstance(context, dict):
+        embeddings = context.get("speaker_embeddings", [])
+    else:
+        embeddings = getattr(context, "speaker_embeddings", [])
+    if not isinstance(embeddings, list) or not embeddings:
+        return None
+    return embeddings[0]
+
+
+def _speaker_enrollment_id_for_task(task: TaskMessage) -> str | None:
+    if task.task_type != "SPEAKER_ENROLLMENT":
+        return None
+    return task.speaker_enrollment_id
+
+
+def _transcript_version_for_task(task: TaskMessage) -> int:
+    expected = task.expected_input_version if isinstance(task.expected_input_version, dict) else {}
+    version = expected.get("transcriptVersion")
+    if type(version) is int:
+        return version + 1
+    return 1
+
+
+def _add_skipped_step(context: Any, step_name: str, reason: str) -> None:
+    skipped_step = {"stepName": step_name, "reason": reason}
+    if isinstance(context, dict):
+        context.setdefault("skipped_steps", []).append(skipped_step)
+        return
+    skipped_steps = getattr(context, "skipped_steps", None)
+    if isinstance(skipped_steps, list):
+        skipped_steps.append(skipped_step)
+
+
+def _skipped_steps_from_context(context: Any) -> list[dict[str, str]]:
+    if isinstance(context, dict):
+        skipped_steps = context.get("skipped_steps", [])
+    else:
+        skipped_steps = getattr(context, "skipped_steps", [])
+    if not isinstance(skipped_steps, list):
+        return []
+    return [s for s in skipped_steps if isinstance(s, dict)]
+
+
+def _completed_steps_for_worker_phase(task: TaskMessage, context: Any) -> list[str]:
+    skipped = {s.get("stepName") for s in _skipped_steps_from_context(context)}
+    return [step for step in task.pipeline_steps if step not in skipped]

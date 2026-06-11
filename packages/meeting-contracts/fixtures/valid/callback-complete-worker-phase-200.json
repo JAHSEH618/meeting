@@ -21,7 +21,7 @@
     "attemptNo": 1,
     "phase": "WORKER_DAG",
     "status": "SUCCEEDED",
-    "completedSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+    "completedSteps": ["AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
     "finishedAt": "2026-05-11T10:30:00Z"
   },
   "response": {
@@ -30,7 +30,7 @@
       "taskId": "task_01",
       "phase": "WORKER_DAG",
       "status": "SUCCEEDED",
-      "completedSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+      "completedSteps": ["AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
       "finishedAt": "2026-05-11T10:30:00Z"
     },
     "error": null,

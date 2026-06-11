@@ -110,6 +110,9 @@ class SpeakerReferenceEmbeddingRequest(BaseModel):
 
 class SpeakerReferenceEmbeddingItem(BaseModel):
     personId: str
+    speakerProfileId: str = Field(
+        ..., description='Active Java speaker profile id authorized for this person.'
+    )
     values: List[float] = Field(
         ...,
         description='L2-normalized centroid of active enrollments. Plaintext — do not log.',

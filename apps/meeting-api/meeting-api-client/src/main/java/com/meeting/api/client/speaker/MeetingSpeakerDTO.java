@@ -11,6 +11,6 @@ public record MeetingSpeakerDTO(
     String confirmationStatus,
     Double autoMatchScore,
     OffsetDateTime confirmedAt,
-    List<String> candidatePersonIds
+    List<MeetingSpeakerCandidateDTO> candidates
 ) {
 }

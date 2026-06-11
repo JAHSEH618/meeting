@@ -4,7 +4,7 @@ from typing import AsyncIterator
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from ai_worker.application.workflows.state import workflow_state_store
@@ -368,6 +368,128 @@ def _mount_auth_login_proxy(app: FastAPI) -> None:
         for value in upstream.headers.get_list("set-cookie"):
             response.raw_headers.append((b"set-cookie", value.encode("latin-1")))
         return response
+
+
+def _mount_processing_task_proxy(app: FastAPI) -> None:
+    """Narrow same-origin proxy for workstation task polling + SSE.
+
+    The workstation bundle is hosted by ai-worker under ``/workstation/``.
+    Native browser EventSource cannot attach an Authorization header, so the
+    frontend uses fetch-stream SSE and this route forwards only the task
+    read surfaces it needs to Java. General business writes remain under the
+    explicit ``/admin/*`` BFF.
+    """
+
+    def upstream_path(request: Request) -> str:
+        raw_path = request.scope.get("raw_path")
+        if isinstance(raw_path, bytes):
+            return raw_path.decode("ascii")
+        return request.url.path
+
+    def proxy_headers(request: Request, *, accept: str) -> dict[str, str]:
+        headers = {"Accept": accept}
+        for name in ("Authorization", "X-Request-Id", "X-Trace-Id", "Last-Event-Id"):
+            value = request.headers.get(name)
+            if value:
+                headers[name] = value
+        return headers
+
+    @app.get("/api/processing-tasks/{task_id}/events", include_in_schema=False)
+    async def proxy_processing_task_events(request: Request, task_id: str) -> Response:
+        if not settings.java_api_base_url:
+            async def unavailable() -> AsyncIterator[bytes]:
+                yield b'event: ERROR\ndata: {"code":"UPSTREAM_NOT_CONFIGURED"}\n\n'
+
+            return StreamingResponse(
+                unavailable(),
+                status_code=503,
+                media_type="text/event-stream",
+            )
+
+        path = upstream_path(request)
+        headers = proxy_headers(request, accept="text/event-stream")
+
+        client = httpx.AsyncClient(
+            base_url=settings.java_api_base_url.rstrip("/"),
+            timeout=120.0,
+        )
+        stream_context = client.stream("GET", path, headers=headers)
+        try:
+            upstream = await stream_context.__aenter__()
+        except httpx.RequestError as exc:
+            await client.aclose()
+            return _error_response(
+                status_code=502,
+                code="UPSTREAM_UNAVAILABLE",
+                message=f"meeting-api processing task events unavailable: {exc}",
+                retryable=True,
+                request_id=request.headers.get("X-Request-Id", ""),
+                trace_id=request.headers.get("X-Trace-Id", ""),
+            )
+
+        async def stream() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+            finally:
+                await stream_context.__aexit__(None, None, None)
+                await client.aclose()
+
+        response_headers: dict[str, str] = {}
+        cache_control = upstream.headers.get("cache-control")
+        if cache_control:
+            response_headers["Cache-Control"] = cache_control
+        elif upstream.status_code < 400:
+            response_headers["Cache-Control"] = "no-cache"
+
+        return StreamingResponse(
+            stream(),
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type") or "text/event-stream",
+            headers=response_headers,
+        )
+
+    @app.get("/api/processing-tasks/{task_id}", include_in_schema=False)
+    async def proxy_processing_task_detail(request: Request, task_id: str) -> Response:
+        request_id = request.headers.get("X-Request-Id", "")
+        trace_id = request.headers.get("X-Trace-Id", "")
+        if not settings.java_api_base_url:
+            return _error_response(
+                status_code=503,
+                code="UPSTREAM_NOT_CONFIGURED",
+                message="AI_WORKER_JAVA_API_BASE_URL is not configured",
+                retryable=False,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        try:
+            async with httpx.AsyncClient(
+                base_url=settings.java_api_base_url.rstrip("/"),
+                timeout=10.0,
+            ) as client:
+                upstream = await client.get(
+                    upstream_path(request),
+                    headers=proxy_headers(request, accept="application/json"),
+                )
+        except httpx.RequestError as exc:
+            return _error_response(
+                status_code=502,
+                code="UPSTREAM_UNAVAILABLE",
+                message=f"meeting-api processing task unavailable: {exc}",
+                retryable=True,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+
+        response_headers = {}
+        content_type = upstream.headers.get("content-type")
+        if content_type:
+            response_headers["content-type"] = content_type
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
 
 
 def _mount_admin_ui(app: FastAPI) -> None:
@@ -836,6 +958,7 @@ def create_app() -> FastAPI:
 
     _mount_admin_router(app)
     _mount_auth_login_proxy(app)
+    _mount_processing_task_proxy(app)
     _mount_admin_ui(app)
     return app
 

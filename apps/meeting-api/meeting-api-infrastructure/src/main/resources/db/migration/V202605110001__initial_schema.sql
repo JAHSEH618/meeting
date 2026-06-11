@@ -262,6 +262,7 @@ CREATE TABLE IF NOT EXISTS processing_task_steps (
   tenant_id text NOT NULL REFERENCES tenants(id),
   task_id text NOT NULL REFERENCES processing_tasks(id),
   step_name processing_step NOT NULL,
+  step_order smallint NOT NULL DEFAULT 0,
   status step_status NOT NULL DEFAULT 'PENDING',
   progress smallint NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
   attempt_count integer NOT NULL DEFAULT 0,

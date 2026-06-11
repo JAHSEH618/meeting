@@ -3,6 +3,7 @@ package com.meeting.api.adapter.internal;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.rag.EmbeddingsCallbackApplicationService;
 import com.meeting.api.app.speaker.SpeakerCandidatesCallbackApplicationService;
+import com.meeting.api.app.speaker.SpeakerEnrollmentCallbackApplicationService;
 import com.meeting.api.app.task.ProcessingTaskCallbackApplicationService;
 import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
@@ -15,6 +16,7 @@ import com.meeting.api.client.internal.callback.CompleteWorkerPhaseCommand;
 import com.meeting.api.client.internal.callback.EmbeddingsCallbackCommand;
 import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.SpeakerCandidatesCallbackCommand;
+import com.meeting.api.client.internal.callback.SpeakerEnrollmentCallbackCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
@@ -44,6 +46,7 @@ public class ProcessingTaskCallbackController {
     };
     private final ProcessingTaskCallbackApplicationService callbackApplicationService;
     private final SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService;
+    private final SpeakerEnrollmentCallbackApplicationService speakerEnrollmentCallbackApplicationService;
     private final EmbeddingsCallbackApplicationService embeddingsCallbackApplicationService;
     private final ObjectMapper objectMapper;
     private final MeetingApiMetrics metrics;
@@ -51,12 +54,14 @@ public class ProcessingTaskCallbackController {
     public ProcessingTaskCallbackController(
         ProcessingTaskCallbackApplicationService callbackApplicationService,
         SpeakerCandidatesCallbackApplicationService speakerCallbackApplicationService,
+        SpeakerEnrollmentCallbackApplicationService speakerEnrollmentCallbackApplicationService,
         EmbeddingsCallbackApplicationService embeddingsCallbackApplicationService,
         ObjectMapper objectMapper,
         MeetingApiMetrics metrics
     ) {
         this.callbackApplicationService = callbackApplicationService;
         this.speakerCallbackApplicationService = speakerCallbackApplicationService;
+        this.speakerEnrollmentCallbackApplicationService = speakerEnrollmentCallbackApplicationService;
         this.embeddingsCallbackApplicationService = embeddingsCallbackApplicationService;
         this.objectMapper = objectMapper;
         this.metrics = metrics;
@@ -121,6 +126,7 @@ public class ProcessingTaskCallbackController {
             ProcessingTaskStatus.valueOf(requiredString(payload, "status")),
             parseSteps(payload.get("completedSteps")),
             parseSkippedSteps(payload.get("skippedSteps")),
+            optionalString(payload, "speakerEnrollmentId"),
             optionalString(payload, "artifactManifestId"),
             optionalDateTime(payload, "finishedAt", OffsetDateTime.now())
         )), metadata.requestId(), metadata.traceId());
@@ -146,6 +152,7 @@ public class ProcessingTaskCallbackController {
             metadata.attemptNo(),
             ProcessingStep.valueOf(requiredString(payload, "failedStep")),
             ErrorInfo.of(code, String.valueOf(error.get("message")), Boolean.TRUE.equals(error.get("retryable"))),
+            optionalString(payload, "speakerEnrollmentId"),
             optionalString(payload, "artifactManifestId"),
             optionalDateTime(payload, "failedAt", OffsetDateTime.now())
         )), metadata.requestId(), metadata.traceId());
@@ -191,6 +198,35 @@ public class ProcessingTaskCallbackController {
             parseSpeakerCandidates(payload.get("speakerCandidates"))
         ));
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "SPEAKER_CANDIDATES"), metadata.requestId(), metadata.traceId());
+    }
+
+    @PostMapping("/speaker-enrollment")
+    public ApiResponse<Map<String, Object>> speakerEnrollment(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
+        CallbackMetadata metadata = metadata(request, rawBody);
+        Map<String, Object> payload = parseBody(rawBody);
+        metrics.callbackCounter("speaker_enrollment", "SPEAKER_EMBEDDING").increment();
+        var result = speakerEnrollmentCallbackApplicationService.writeEnrollment(new SpeakerEnrollmentCallbackCommand(
+            metadata,
+            requiredString(payload, "tenantId"),
+            taskId,
+            optionalInt(payload, "attemptNo", metadata.attemptNo()),
+            requiredString(payload, "speakerProfileId"),
+            requiredString(payload, "speakerEnrollmentId"),
+            requiredString(payload, "audioFileId"),
+            parsePlainSpeakerEmbedding(payload.get("embedding")),
+            optionalString(payload, "artifactManifestId")
+        ));
+        return ApiResponse.ok(
+            Map.of(
+                "accepted", true,
+                "taskId", taskId,
+                "callback", "SPEAKER_ENROLLMENT",
+                "speakerEnrollmentId", result.enrollmentId(),
+                "replayed", result.replayed()
+            ),
+            metadata.requestId(),
+            metadata.traceId()
+        );
     }
 
     @PostMapping("/embeddings")
@@ -415,6 +451,37 @@ public class ProcessingTaskCallbackController {
             result.add(new SpeakerCandidatesCallbackCommand.SpeakerEntry(speakerLabel, candidates, embedding));
         }
         return result;
+    }
+
+    private static SpeakerEnrollmentCallbackCommand.PlainEmbedding parsePlainSpeakerEmbedding(Object raw) {
+        if (!(raw instanceof Map<?, ?> em)) {
+            throw new IllegalArgumentException("embedding object is required");
+        }
+        Object valuesRaw = em.get("values");
+        float[] floatValues = null;
+        if (valuesRaw instanceof List<?> floats) {
+            floatValues = new float[floats.size()];
+            for (int i = 0; i < floats.size(); i++) {
+                Object v = floats.get(i);
+                floatValues[i] = v instanceof Number number ? number.floatValue() : 0f;
+            }
+        }
+        if (floatValues == null) {
+            throw new IllegalArgumentException("embedding.values array is required");
+        }
+        int dimension = em.get("dimension") instanceof Number dn ? dn.intValue() : floatValues.length;
+        Double qualityScore = null;
+        if (em.get("qualityScore") instanceof Number qn) {
+            qualityScore = qn.doubleValue();
+        }
+        return new SpeakerEnrollmentCallbackCommand.PlainEmbedding(
+            em.get("format") == null ? null : String.valueOf(em.get("format")),
+            dimension,
+            floatValues,
+            em.get("checksum") == null ? null : String.valueOf(em.get("checksum")),
+            em.get("modelVersion") == null ? null : String.valueOf(em.get("modelVersion")),
+            qualityScore
+        );
     }
 
     private static long requiredLong(Map<String, Object> payload, String key) {

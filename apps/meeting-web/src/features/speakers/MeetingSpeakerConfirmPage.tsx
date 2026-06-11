@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   confirmMeetingSpeaker,
+  getMeeting,
   listMeetingSpeakers,
   listSpeakerProfiles,
   rejectMeetingSpeaker,
@@ -20,16 +21,19 @@ export function MeetingSpeakerConfirmPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
+  const [transcriptVersion, setTranscriptVersion] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [speakersResp, profilesResp] = await Promise.all([
+      const [meeting, speakersResp, profilesResp] = await Promise.all([
+        getMeeting(meetingId),
         listMeetingSpeakers(meetingId),
         listSpeakerProfiles().catch(() => ({ items: [] as SpeakerProfile[] })),
       ]);
-      setSpeakers(speakersResp.items);
+      setTranscriptVersion(meeting.transcriptVersion);
+      setSpeakers(speakersResp.speakers);
       setProfiles(profilesResp.items);
     } catch (cause) {
       const apiError = cause as ApiClientError;
@@ -44,13 +48,18 @@ export function MeetingSpeakerConfirmPage() {
     void reload();
   }, [meetingId, reload]);
 
-  const handleConfirm = async (speakerLabel: string, personId: string, profile?: SpeakerProfile) => {
+  const handleConfirm = async (speakerLabel: string, personId: string, speakerProfileId: string) => {
+    if (transcriptVersion == null) {
+      setError("加载失败");
+      return;
+    }
     setPendingLabel(speakerLabel);
     setError(null);
     try {
       await confirmMeetingSpeaker(meetingId, speakerLabel, {
         personId,
-        speakerProfileId: profile?.speakerProfileId ?? null,
+        speakerProfileId,
+        expectedTranscriptVersion: transcriptVersion,
       });
       await reload();
     } catch (cause) {
@@ -100,11 +109,12 @@ export function MeetingSpeakerConfirmPage() {
       ) : null}
 
       {speakers.map((speaker) => {
-        const profileById = (id: string) => profiles.find((p) => p.personId === id);
+        const profileByCandidate = (personId: string, speakerProfileId: string) =>
+          profiles.find((p) => p.speakerProfileId === speakerProfileId) ?? profiles.find((p) => p.personId === personId);
         const isPending = pendingLabel === speaker.speakerLabel;
-        const candidatePersons = speaker.candidatePersonIds.map((personId) => ({
-          personId,
-          profile: profileById(personId),
+        const candidatePersons = speaker.candidates.map((candidate) => ({
+          ...candidate,
+          profile: profileByCandidate(candidate.personId, candidate.speakerProfileId),
         }));
         return (
           <section className="card stack" key={speaker.speakerLabel} data-speaker-label={speaker.speakerLabel}>
@@ -112,9 +122,6 @@ export function MeetingSpeakerConfirmPage() {
               <strong>{speaker.speakerLabel}</strong>
               <span className="badge" data-status={speaker.confirmationStatus}>{speaker.confirmationStatus}</span>
               {speaker.displayName ? <span className="muted">已确认 {speaker.displayName}</span> : null}
-              {typeof speaker.autoMatchScore === "number" ? (
-                <span className="muted">自动匹配 {Math.round(speaker.autoMatchScore * 100)}%</span>
-              ) : null}
             </div>
 
             {speaker.confirmationStatus === "CONFIRMED" ? (
@@ -127,10 +134,11 @@ export function MeetingSpeakerConfirmPage() {
 
             {speaker.confirmationStatus !== "CONFIRMED" && candidatePersons.length > 0 ? (
               <div className="stack">
-                {candidatePersons.map(({ personId, profile }) => (
-                  <article className="stack" key={personId}>
+                {candidatePersons.map(({ personId, speakerProfileId, displayName, confidence, profile }) => (
+                  <article className="stack" key={`${personId}:${speakerProfileId}`}>
                     <div className="toolbar">
-                      <strong>{profile?.displayName ?? personId}</strong>
+                      <strong>{profile?.displayName ?? displayName}</strong>
+                      <span className="muted">匹配 {Math.round(confidence * 100)}%</span>
                       {profile ? <span className="badge" data-consent={profile.consentStatus}>{profile.consentStatus}</span> : null}
                     </div>
                     <div className="toolbar">
@@ -138,9 +146,9 @@ export function MeetingSpeakerConfirmPage() {
                         type="button"
                         className="button primary"
                         disabled={isPending || (profile && profile.consentStatus !== "ACTIVE")}
-                        onClick={() => void handleConfirm(speaker.speakerLabel, personId, profile)}
+                        onClick={() => void handleConfirm(speaker.speakerLabel, personId, speakerProfileId)}
                       >
-                        确认为 {profile?.displayName ?? personId}
+                        确认为 {profile?.displayName ?? displayName}
                       </button>
                     </div>
                   </article>

@@ -15,6 +15,7 @@ import com.meeting.api.client.internal.callback.FailTaskCommand;
 import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.domain.common.DomainEvent;
+import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -40,6 +41,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProcessingTaskCallbackApplicationServiceTest {
     private static final String SECRET = "callback-secret";
@@ -73,6 +75,54 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void updateStepRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.updateStep(new StepCallbackCommand(
+            metadata("PATCH", "/internal/processing-tasks/task_01/steps/ASR", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            StepStatus.SUCCEEDED,
+            100,
+            null,
+            null
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.step(ProcessingStep.ASR).status()).isEqualTo(StepStatus.PENDING);
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
+    void updateStepHeartbeatRejectsMismatchedMeetingId() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.updateStep(new StepCallbackCommand(
+            metadata("PATCH", "/internal/processing-tasks/task_01/steps/AUDIO_PREPROCESS", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.AUDIO_PREPROCESS,
+            StepStatus.RUNNING,
+            25,
+            null,
+            null
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.step(ProcessingStep.AUDIO_PREPROCESS).progress()).isZero();
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
     void completeWorkerPhaseMovesPhaseButNotTaskTerminalAndPublishesEvent() {
         InMemoryTaskRepository tasks = runningTask();
         CapturingPublisher publisher = new CapturingPublisher();
@@ -98,6 +148,110 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void completeWorkerPhaseRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, publisher);
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
+            List.of(),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(publisher.events).isEmpty();
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
+    void completeWorkerPhaseRejectsJavaOwnedStepsFromWorkerPayload() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, publisher);
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.SUMMARY),
+            List.of(new CompleteWorkerPhaseCommand.SkippedStep(ProcessingStep.EXTRACTION, "not worker owned")),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ai-worker callback");
+
+        assertThat(publisher.events).isEmpty();
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(tasks.task.step(ProcessingStep.SUMMARY).status()).isEqualTo(StepStatus.PENDING);
+        assertThat(callbacks.records).hasSize(1);
+    }
+
+    @Test
+    void speakerEnrollmentCompleteRequiresSucceededEnrollment() {
+        InMemoryTaskRepository tasks = speakerEnrollmentTask();
+        InMemorySpeakerEnrollments enrollments = new InMemorySpeakerEnrollments();
+        enrollments.records.add(new SpeakerEnrollmentRepository.SpeakerEnrollmentRecord(
+            "enroll_01",
+            "tenant_01",
+            "profile_01",
+            "audio_01",
+            "PENDING",
+            null,
+            null,
+            null,
+            null,
+            "user_01",
+            NOW,
+            NOW
+        ));
+        CapturingPublisher publisher = new CapturingPublisher();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(
+            tasks,
+            callbacks,
+            publisher,
+            new InMemoryTranscriptRepository(),
+            enrollments
+        );
+
+        assertThatThrownBy(() -> service.completeWorkerPhase(new CompleteWorkerPhaseCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/complete", "{}"),
+            "tenant_01",
+            null,
+            "task_01",
+            1,
+            "WORKER_DAG",
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.SPEAKER_EMBEDDING),
+            List.of(new CompleteWorkerPhaseCommand.SkippedStep(ProcessingStep.SPEAKER_MATCHING, "NOT_REQUIRED_FOR_ENROLLMENT")),
+            "enroll_01",
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("speaker enrollment is not SUCCEEDED");
+
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(publisher.events).isEmpty();
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
     void failMovesTaskToTerminalFailed() {
         InMemoryTaskRepository tasks = runningTask();
         ProcessingTaskCallbackApplicationService service = service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher());
@@ -120,6 +274,103 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void failReplayWithSameBodyHashIsNoOp() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+        FailTaskCommand command = new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
+            null,
+            NOW.plusMinutes(1)
+        );
+
+        var first = service.fail(command);
+        var second = service.fail(command);
+
+        assertThat(first.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(second.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(second.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        assertThat(second.lastErrorCode()).isEqualTo("ASR_RUNTIME_ERROR");
+        assertThat(callbacks.records).hasSize(1);
+    }
+
+    @Test
+    void failRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
+
+        assertThatThrownBy(() -> service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_other",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
+            null,
+            NOW.plusMinutes(1)
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(tasks.task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(tasks.task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(callbacks.records).isEmpty();
+    }
+
+    @Test
+    void speakerEnrollmentFailMarksEnrollmentFailed() {
+        InMemoryTaskRepository tasks = speakerEnrollmentTask();
+        InMemorySpeakerEnrollments enrollments = new InMemorySpeakerEnrollments();
+        enrollments.records.add(new SpeakerEnrollmentRepository.SpeakerEnrollmentRecord(
+            "enroll_01",
+            "tenant_01",
+            "profile_01",
+            "audio_01",
+            "PENDING",
+            null,
+            null,
+            null,
+            null,
+            "user_01",
+            NOW,
+            NOW
+        ));
+        ProcessingTaskCallbackApplicationService service = service(
+            tasks,
+            new InMemoryCallbackEvents(),
+            new CapturingPublisher(),
+            new InMemoryTranscriptRepository(),
+            enrollments
+        );
+
+        service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            null,
+            "task_01",
+            1,
+            ProcessingStep.SPEAKER_EMBEDDING,
+            ErrorInfo.of(ErrorCode.SPEAKER_EMBEDDING_FAILED, "embedding failed", true),
+            "enroll_01",
+            null,
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(enrollments.findById("tenant_01", "enroll_01")).hasValueSatisfying(enrollment -> {
+            assertThat(enrollment.enrollmentStatus()).isEqualTo("FAILED");
+            assertThat(enrollment.errorCode()).isEqualTo("SPEAKER_EMBEDDING_FAILED");
+            assertThat(enrollment.updatedAt()).isEqualTo(NOW.plusMinutes(1));
+        });
+    }
+
+    @Test
     void transcriptCallbackPersistsSegmentsAndBumpsVersion() {
         InMemoryTaskRepository tasks = runningTask();
         InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
@@ -134,6 +385,43 @@ class ProcessingTaskCallbackApplicationServiceTest {
             assertThat(segment.currentText()).isEqualTo("hello world");
             assertThat(segment.segmentIndex()).isEqualTo(0);
         });
+    }
+
+    @Test
+    void transcriptCallbackRejectsMismatchedMeetingIdBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
+
+        assertThatThrownBy(() -> service.writeTranscript(transcriptCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}"),
+            "meeting_other",
+            1
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("callback meeting does not match task");
+
+        assertThat(callbacks.records).isEmpty();
+        assertThat(transcripts.replaceCount).isZero();
+    }
+
+    @Test
+    void transcriptCallbackRejectsVersionConflictBeforePersistingCallback() {
+        InMemoryTaskRepository tasks = runningTask();
+        InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
+        InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
+        transcripts.version = 2;
+        ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
+
+        assertThatThrownBy(() -> service.writeTranscript(transcriptCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}"),
+            "meeting_01",
+            1
+        ))).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("transcript version conflict");
+
+        assertThat(callbacks.records).isEmpty();
+        assertThat(transcripts.replaceCount).isZero();
     }
 
     @Test
@@ -166,6 +454,16 @@ class ProcessingTaskCallbackApplicationServiceTest {
         CapturingPublisher publisher,
         InMemoryTranscriptRepository transcripts
     ) {
+        return service(tasks, callbacks, publisher, transcripts, null);
+    }
+
+    private static ProcessingTaskCallbackApplicationService service(
+        InMemoryTaskRepository tasks,
+        InMemoryCallbackEvents callbacks,
+        CapturingPublisher publisher,
+        InMemoryTranscriptRepository transcripts,
+        SpeakerEnrollmentRepository enrollments
+    ) {
         return new ProcessingTaskCallbackApplicationService(
             tasks,
             callbacks,
@@ -174,6 +472,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
             transcripts,
             event -> {},
+            enrollments,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
     }
@@ -184,7 +483,28 @@ class ProcessingTaskCallbackApplicationServiceTest {
             "tenant_01",
             "meeting_01",
             "MEETING_FULL_PIPELINE",
-            List.of(ProcessingStep.AUDIO_UPLOAD, ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
+            List.of(
+                ProcessingStep.AUDIO_UPLOAD,
+                ProcessingStep.AUDIO_PREPROCESS,
+                ProcessingStep.ASR,
+                ProcessingStep.TRANSCRIPT_MERGE,
+                ProcessingStep.SUMMARY,
+                ProcessingStep.EXTRACTION
+            ),
+            NOW
+        );
+        task.enqueue(NOW);
+        task.claimLease("worker_01", "worker_01:task_01:1", NOW.plusMinutes(5), NOW);
+        return new InMemoryTaskRepository(task);
+    }
+
+    private static InMemoryTaskRepository speakerEnrollmentTask() {
+        ProcessingTask task = ProcessingTask.create(
+            "task_01",
+            "tenant_01",
+            null,
+            "SPEAKER_ENROLLMENT",
+            List.of(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING),
             NOW
         );
         task.enqueue(NOW);
@@ -232,13 +552,17 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     private static TranscriptCallbackCommand transcriptCommand(CallbackMetadata metadata) {
+        return transcriptCommand(metadata, "meeting_01", 1);
+    }
+
+    private static TranscriptCallbackCommand transcriptCommand(CallbackMetadata metadata, String meetingId, int transcriptVersion) {
         return new TranscriptCallbackCommand(
             metadata,
             "tenant_01",
-            "meeting_01",
+            meetingId,
             "task_01",
             1,
-            1,
+            transcriptVersion,
             List.of(new TranscriptCallbackCommand.Segment(
                 "seg_01",
                 0,
@@ -308,6 +632,58 @@ class ProcessingTaskCallbackApplicationServiceTest {
         public CallbackEventRecord save(CallbackEventRecord record) {
             records.add(record);
             return record;
+        }
+    }
+
+    private static final class InMemorySpeakerEnrollments implements SpeakerEnrollmentRepository {
+        private final List<SpeakerEnrollmentRecord> records = new ArrayList<>();
+
+        @Override
+        public String save(SpeakerEnrollmentRecord record) {
+            records.add(record);
+            return record.id();
+        }
+
+        @Override
+        public Optional<SpeakerEnrollmentRecord> findById(String tenantId, String enrollmentId) {
+            return records.stream()
+                .filter(record -> record.tenantId().equals(tenantId))
+                .filter(record -> record.id().equals(enrollmentId))
+                .findFirst();
+        }
+
+        @Override
+        public List<SpeakerEnrollmentRecord> findByProfile(String tenantId, String profileId) {
+            return records.stream()
+                .filter(record -> record.tenantId().equals(tenantId))
+                .filter(record -> record.speakerProfileId().equals(profileId))
+                .toList();
+        }
+
+        @Override
+        public void updateStatus(String tenantId, String enrollmentId, String enrollmentStatus,
+                                 Double qualityScore, String modelVersion, String errorCode, OffsetDateTime now) {
+            for (int i = 0; i < records.size(); i++) {
+                SpeakerEnrollmentRecord current = records.get(i);
+                if (!current.tenantId().equals(tenantId) || !current.id().equals(enrollmentId)) {
+                    continue;
+                }
+                records.set(i, new SpeakerEnrollmentRecord(
+                    current.id(),
+                    current.tenantId(),
+                    current.speakerProfileId(),
+                    current.sourceAudioFileId(),
+                    enrollmentStatus,
+                    qualityScore,
+                    modelVersion,
+                    current.artifactUri(),
+                    errorCode,
+                    current.createdBy(),
+                    current.createdAt(),
+                    now
+                ));
+                return;
+            }
         }
     }
 

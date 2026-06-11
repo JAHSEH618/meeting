@@ -10,6 +10,7 @@ import com.meeting.api.client.internal.callback.StepCallbackCommand;
 import com.meeting.api.client.internal.callback.StepProgressHeartbeatCommand;
 import com.meeting.api.client.internal.callback.TranscriptCallbackCommand;
 import com.meeting.api.client.task.ProcessingTaskDTO;
+import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,6 +36,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final CallbackSecurityVerifier securityVerifier;
     private final TranscriptRepository transcriptRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SpeakerEnrollmentRepository speakerEnrollmentRepository;
     private final Clock clock;
 
     @Autowired
@@ -44,9 +47,10 @@ public class ProcessingTaskCallbackApplicationService {
         TenantScopedTransaction tenantScopedTransaction,
         CallbackSecurityVerifier securityVerifier,
         TranscriptRepository transcriptRepository,
-        ApplicationEventPublisher applicationEventPublisher
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, Clock.systemUTC());
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, Clock.systemUTC());
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -58,6 +62,19 @@ public class ProcessingTaskCallbackApplicationService {
         ApplicationEventPublisher applicationEventPublisher,
         Clock clock
     ) {
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, clock);
+    }
+    public ProcessingTaskCallbackApplicationService(
+        ProcessingTaskRepository taskRepository,
+        CallbackEventRepository callbackEventRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        CallbackSecurityVerifier securityVerifier,
+        TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        Clock clock
+    ) {
         this.taskRepository = taskRepository;
         this.callbackEventRepository = callbackEventRepository;
         this.messagePublisher = messagePublisher;
@@ -65,6 +82,7 @@ public class ProcessingTaskCallbackApplicationService {
         this.securityVerifier = securityVerifier;
         this.transcriptRepository = transcriptRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.speakerEnrollmentRepository = speakerEnrollmentRepository;
         this.clock = clock;
     }
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
@@ -82,10 +100,11 @@ public class ProcessingTaskCallbackApplicationService {
             ));
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             task.updateWorkerStep(
                 command.stepName(),
                 command.status(),
@@ -103,6 +122,7 @@ public class ProcessingTaskCallbackApplicationService {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
             task.heartbeat(
                 command.stepName(),
                 command.progress(),
@@ -120,10 +140,12 @@ public class ProcessingTaskCallbackApplicationService {
             throw new IllegalArgumentException("complete phase must be WORKER_DAG");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            requireSpeakerEnrollmentSucceededForComplete(command, task);
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             var skipped = command.skippedSteps() == null ? java.util.List.<WorkerPhaseCompletedEvent.SkippedStep>of() : command.skippedSteps().stream()
                 .map(step -> new WorkerPhaseCompletedEvent.SkippedStep(step.stepName(), step.reason()))
                 .toList();
@@ -154,11 +176,48 @@ public class ProcessingTaskCallbackApplicationService {
             return ProcessingTaskAssembler.toDto(saved);
         });
     }
+
+    private static void requireCallbackMeetingMatchesTask(String callbackMeetingId, ProcessingTask task) {
+        if (task.meetingId() == null || task.meetingId().isBlank()) {
+            if (callbackMeetingId != null && !callbackMeetingId.isBlank()) {
+                throw new IllegalStateException("callback meeting does not match task");
+            }
+            return;
+        }
+        if (callbackMeetingId == null || callbackMeetingId.isBlank()) {
+            throw new IllegalArgumentException("meetingId is required for task callback");
+        }
+        if (!callbackMeetingId.equals(task.meetingId())) {
+            throw new IllegalStateException("callback meeting does not match task");
+        }
+    }
+
+    private void requireSpeakerEnrollmentSucceededForComplete(CompleteWorkerPhaseCommand command, ProcessingTask task) {
+        if (!ProcessingTaskApplicationService.SPEAKER_ENROLLMENT.equals(task.taskType())
+            || command.status() != ProcessingTaskStatus.SUCCEEDED) {
+            return;
+        }
+        if (speakerEnrollmentRepository == null) {
+            throw new IllegalStateException("speaker enrollment repository is required");
+        }
+        if (command.speakerEnrollmentId() == null || command.speakerEnrollmentId().isBlank()) {
+            throw new IllegalArgumentException("speakerEnrollmentId is required for speaker enrollment completion");
+        }
+        var enrollment = speakerEnrollmentRepository.findById(command.tenantId(), command.speakerEnrollmentId())
+            .orElseThrow(() -> new IllegalArgumentException("speaker enrollment not found: " + command.speakerEnrollmentId()));
+        if (!"SUCCEEDED".equals(enrollment.enrollmentStatus())) {
+            throw new IllegalStateException("speaker enrollment is not SUCCEEDED: " + command.speakerEnrollmentId());
+        }
+    }
+
     public ProcessingTaskDTO fail(FailTaskCommand command) {
         securityVerifier.verify(command.metadata());
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name());
             ProcessingTask task = load(command.tenantId(), command.taskId());
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name())) {
+                return ProcessingTaskAssembler.toDto(task);
+            }
             task.updateWorkerStep(
                 command.failedStep(),
                 StepStatus.FAILED,
@@ -169,22 +228,66 @@ public class ProcessingTaskCallbackApplicationService {
                 command.error().code().name(),
                 command.failedAt()
             );
+            markSpeakerEnrollmentFailedIfNeeded(command, task);
             task.completeTerminal(ProcessingTaskStatus.FAILED, command.error().code().name(), command.failedAt());
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
+
+    private void markSpeakerEnrollmentFailedIfNeeded(FailTaskCommand command, ProcessingTask task) {
+        if (speakerEnrollmentRepository == null
+            || !ProcessingTaskApplicationService.SPEAKER_ENROLLMENT.equals(task.taskType())
+            || command.speakerEnrollmentId() == null
+            || command.speakerEnrollmentId().isBlank()) {
+            return;
+        }
+        var enrollment = speakerEnrollmentRepository.findById(command.tenantId(), command.speakerEnrollmentId())
+            .orElseThrow(() -> new IllegalArgumentException("speaker enrollment not found: " + command.speakerEnrollmentId()));
+        if ("SUCCEEDED".equals(enrollment.enrollmentStatus())) {
+            return;
+        }
+        speakerEnrollmentRepository.updateStatus(
+            command.tenantId(),
+            command.speakerEnrollmentId(),
+            "FAILED",
+            enrollment.qualityScore(),
+            enrollment.modelVersion(),
+            command.error().code().name(),
+            command.failedAt()
+        );
+    }
+
     public ProcessingTaskDTO writeTranscript(TranscriptCallbackCommand command) {
         securityVerifier.verify(command.metadata());
         if (command.meetingId() == null || command.meetingId().isBlank()) {
             throw new IllegalArgumentException("meetingId is required for transcript callback");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
-                return ProcessingTaskAssembler.toDto(load(command.tenantId(), command.taskId()));
-            }
             ProcessingTask task = load(command.tenantId(), command.taskId());
-            if (!command.meetingId().equals(task.meetingId())) {
-                throw new IllegalStateException("callback meeting does not match task");
+            requireCallbackMeetingMatchesTask(command.meetingId(), task);
+            CallbackEventRepository.CallbackEventRecord callbackEvent = callbackEventRecord(
+                command.tenantId(),
+                command.taskId(),
+                command.metadata(),
+                200,
+                null
+            );
+            var existingCallback = callbackEventRepository.findByIdempotencyKey(
+                command.tenantId(),
+                command.metadata().idempotencyKey()
+            );
+            if (existingCallback.isPresent()) {
+                if (!isSameCallbackEvent(existingCallback.get(), callbackEvent)) {
+                    throw new IllegalStateException("callback idempotency body hash conflict");
+                }
+                return ProcessingTaskAssembler.toDto(task);
+            }
+            int nextVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId()) + 1;
+            if (command.transcriptVersion() != nextVersion) {
+                throw new IllegalStateException("transcript version conflict");
+            }
+            if (!persistCallbackEvent(callbackEvent)) {
+                return ProcessingTaskAssembler.toDto(task);
             }
             task.updateWorkerStep(
                 ProcessingStep.TRANSCRIPT_MERGE,
@@ -196,10 +299,6 @@ public class ProcessingTaskCallbackApplicationService {
                 null,
                 OffsetDateTime.now(clock)
             );
-            int nextVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId()) + 1;
-            if (command.transcriptVersion() != nextVersion) {
-                throw new IllegalStateException("transcript version conflict");
-            }
             transcriptRepository.replaceTranscript(
                 command.tenantId(),
                 command.meetingId(),
@@ -218,14 +317,25 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     private boolean persistCallbackEvent(String tenantId, String taskId, com.meeting.api.client.internal.callback.CallbackMetadata metadata, int httpStatus, String errorCode) {
-        var existing = callbackEventRepository.findByIdempotencyKey(tenantId, metadata.idempotencyKey());
-        if (existing.isPresent()) {
-            if (!existing.get().bodySha256().equals(metadata.bodySha256())) {
-                throw new IllegalStateException("callback idempotency body hash conflict");
-            }
-            return false;
+        return persistCallbackEvent(callbackEventRecord(tenantId, taskId, metadata, httpStatus, errorCode));
+    }
+
+    private boolean persistCallbackEvent(CallbackEventRepository.CallbackEventRecord callbackEvent) {
+        var result = callbackEventRepository.recordOnce(callbackEvent);
+        if (result.status() == CallbackEventRepository.RecordStatus.BODY_HASH_CONFLICT) {
+            throw new IllegalStateException("callback idempotency body hash conflict");
         }
-        callbackEventRepository.save(new CallbackEventRepository.CallbackEventRecord(
+        return result.status() == CallbackEventRepository.RecordStatus.RECORDED;
+    }
+
+    private CallbackEventRepository.CallbackEventRecord callbackEventRecord(
+        String tenantId,
+        String taskId,
+        com.meeting.api.client.internal.callback.CallbackMetadata metadata,
+        int httpStatus,
+        String errorCode
+    ) {
+        return new CallbackEventRepository.CallbackEventRecord(
             tenantId,
             taskId,
             metadata.workerId(),
@@ -238,8 +348,18 @@ public class ProcessingTaskCallbackApplicationService {
             errorCode,
             metadata.traceId(),
             OffsetDateTime.now(clock)
-        ));
-        return true;
+        );
+    }
+
+    private static boolean isSameCallbackEvent(
+        CallbackEventRepository.CallbackEventRecord previous,
+        CallbackEventRepository.CallbackEventRecord current
+    ) {
+        return previous.bodySha256().equals(current.bodySha256())
+            && previous.taskId().equals(current.taskId())
+            && previous.workerId().equals(current.workerId())
+            && previous.attemptNo() == current.attemptNo()
+            && Objects.equals(previous.leaseOwner(), current.leaseOwner());
     }
 
     private static List<TranscriptRepository.TranscriptSegmentRecord> toTranscriptSegments(TranscriptCallbackCommand command, int transcriptVersion) {

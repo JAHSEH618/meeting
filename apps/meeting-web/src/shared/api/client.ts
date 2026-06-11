@@ -35,6 +35,14 @@ function normalizeData<T>(data: unknown): T {
   return data as T;
 }
 
+function normalizeSpeakerProfile(profile: SpeakerProfile): SpeakerProfile {
+  return {
+    ...profile,
+    consentStatus: profile.consentStatus ?? profile.status ?? "UNKNOWN",
+    revokedAt: profile.revokedAt ?? null,
+  };
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -453,16 +461,19 @@ export async function rejectItem(meetingId: string, kind: ItemKind, itemId: stri
 
 export interface SpeakerProfile {
   speakerProfileId: string;
-  tenantId: string;
+  tenantId?: string;
   personId: string;
   displayName: string | null;
   consentStatus: string;
+  status?: string;
+  enrollmentCount?: number | null;
+  lastEnrolledAt?: string | null;
   consentSource?: string | null;
   consentVersion?: string | null;
   revokedAt?: string | null;
   deletedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SpeakerEnrollment {
@@ -484,13 +495,30 @@ export interface MeetingSpeaker {
   personId: string | null;
   speakerProfileId: string | null;
   confirmationStatus: string;
-  autoMatchScore?: number | null;
-  confirmedAt?: string | null;
-  candidatePersonIds: string[];
+  candidates: MeetingSpeakerCandidate[];
+}
+
+export interface MeetingSpeakerCandidate {
+  personId: string;
+  speakerProfileId: string;
+  displayName: string;
+  confidence: number;
+}
+
+export interface MeetingSpeakerList {
+  meetingId: string;
+  speakers: MeetingSpeaker[];
 }
 
 export async function listSpeakerProfiles() {
-  return request<{ items: SpeakerProfile[] }>("GET", `/speaker-profiles`);
+  const page = await request<{ items: SpeakerProfile[]; page?: { cursor?: string | null; hasMore?: boolean; limit?: number } }>(
+    "GET",
+    `/speaker-profiles`,
+  );
+  return {
+    ...page,
+    items: page.items.map(normalizeSpeakerProfile),
+  };
 }
 
 export async function getSpeakerProfile(profileId: string) {
@@ -500,8 +528,7 @@ export async function getSpeakerProfile(profileId: string) {
 export async function createSpeakerProfile(input: {
   personId: string;
   displayName: string;
-  consentSource?: string;
-  consentVersion?: string;
+  consentReference?: string;
 }) {
   return request<SpeakerProfile>(
     "POST",
@@ -509,8 +536,7 @@ export async function createSpeakerProfile(input: {
     {
       personId: input.personId,
       displayName: input.displayName,
-      consentSource: input.consentSource ?? "USER_ENROLLMENT",
-      consentVersion: input.consentVersion ?? "v1",
+      consentReference: input.consentReference ?? "USER_ENROLLMENT:v1",
     },
     generateId("create-speaker-profile"),
   );
@@ -533,11 +559,11 @@ export async function listSpeakerEnrollments(profileId: string) {
   return request<{ items: SpeakerEnrollment[] }>("GET", `/speaker-profiles/${profileId}/enrollments`);
 }
 
-export async function createSpeakerEnrollment(profileId: string, sourceAudioFileId: string) {
+export async function createSpeakerEnrollment(profileId: string, audioFileId: string) {
   return request<SpeakerEnrollment>(
     "POST",
     `/speaker-profiles/${profileId}/enrollments`,
-    { sourceAudioFileId },
+    { audioFileId, consentReference: "USER_ENROLLMENT:v1" },
     generateId("create-speaker-enrollment"),
   );
 }
@@ -545,21 +571,21 @@ export async function createSpeakerEnrollment(profileId: string, sourceAudioFile
 // ── Meeting speakers (per-meeting label confirmation) ──────────────
 
 export async function listMeetingSpeakers(meetingId: string) {
-  return request<{ items: MeetingSpeaker[] }>("GET", `/meetings/${meetingId}/speakers`);
+  return request<MeetingSpeakerList>("GET", `/meetings/${meetingId}/speakers`);
 }
 
 export async function confirmMeetingSpeaker(
   meetingId: string,
   speakerLabel: string,
-  body: { personId: string; speakerProfileId?: string | null; expectedTranscriptVersion?: number | null },
+  body: { personId: string; speakerProfileId: string; expectedTranscriptVersion: number },
 ) {
   return request<void>(
     "POST",
     `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/confirm`,
     {
       personId: body.personId,
-      speakerProfileId: body.speakerProfileId ?? null,
-      expectedTranscriptVersion: body.expectedTranscriptVersion ?? null,
+      speakerProfileId: body.speakerProfileId,
+      expectedTranscriptVersion: body.expectedTranscriptVersion,
     },
     generateId("confirm-meeting-speaker"),
   );
@@ -569,7 +595,7 @@ export async function rejectMeetingSpeaker(meetingId: string, speakerLabel: stri
   return request<void>(
     "POST",
     `/meetings/${meetingId}/speakers/${encodeURIComponent(speakerLabel)}/reject`,
-    {},
+    { reason: "user_rejected" },
     generateId("reject-meeting-speaker"),
   );
 }
@@ -758,8 +784,8 @@ export async function getLegalHold(legalHoldId: string) {
 
 export async function releaseLegalHold(legalHoldId: string, input: ReleaseLegalHoldInput) {
   return request<void>(
-    "PUT",
-    `/legal-holds/${legalHoldId}/release`,
+    "DELETE",
+    `/legal-holds/${legalHoldId}`,
     input,
     generateId("release-legal-hold"),
   );

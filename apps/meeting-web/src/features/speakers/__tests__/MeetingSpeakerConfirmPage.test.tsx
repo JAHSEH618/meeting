@@ -17,7 +17,7 @@ describe("MeetingSpeakerConfirmPage", () => {
     await waitFor(() => expect(screen.getByText("SPEAKER_00")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /确认为 Alice 张/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "拒绝候选" })).toBeInTheDocument();
-    expect(screen.getByText(/自动匹配 78%/)).toBeInTheDocument();
+    expect(screen.getByText(/匹配 78%/)).toBeInTheDocument();
   });
 
   it("confirms the candidate and triggers a reload", async () => {

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import copy
 from unittest.mock import AsyncMock
 
 import pytest
 
+from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
+from ai_worker.pipeline.speaker.matcher import SpeakerMatchCandidate, SpeakerMatchResult
+from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
+from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
 
@@ -23,8 +28,12 @@ def _valid_message() -> dict:
         "pipelineSteps": [
             "AUDIO_PREPROCESS",
             "ASR",
+            "ALIGNMENT",
             "DIARIZATION",
+            "SPEAKER_EMBEDDING",
+            "SPEAKER_MATCHING",
             "TRANSCRIPT_MERGE",
+            "RAG_INDEXING",
         ],
         "expectedInputVersion": {"chunkStrategyVersion": "v1"},
         "language": "zh",
@@ -32,8 +41,33 @@ def _valid_message() -> dict:
         "knownParticipants": [],
         "minSpeakers": 1,
         "maxSpeakers": 4,
-        "options": {"enableAsr": True},
+        "options": {
+            "enableAsr": True,
+            "enableAlignment": True,
+            "enableDiarization": True,
+            "enableSpeakerRecognition": True,
+            "enableRagIndexing": True,
+        },
         "traceId": "trace_runtime_01",
+    }
+
+
+def _speaker_enrollment_message() -> dict:
+    return {
+        "taskId": "task_enroll_01",
+        "taskType": "SPEAKER_ENROLLMENT",
+        "tenantId": "tenant_01",
+        "speakerProfileId": "sp_01",
+        "speakerEnrollmentId": "se_01",
+        "audioFileId": "audio_enroll_01",
+        "audioUri": "oss://meeting-audio-auska/enroll.wav",
+        "language": "zh",
+        "securityLevel": "INTERNAL",
+        "attemptNo": 1,
+        "pipelineSteps": ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING"],
+        "expectedInputVersion": {"chunkStrategyVersion": "v1"},
+        "options": {},
+        "traceId": "trace_enroll_01",
     }
 
 
@@ -42,6 +76,7 @@ def callback_client():
     client = AsyncMock()
     client.update_step.return_value = CallbackResponse(http_status=200, accepted=True)
     client.submit_transcript.return_value = CallbackResponse(http_status=200, accepted=True)
+    client.submit_speaker_candidates.return_value = CallbackResponse(http_status=200, accepted=True)
     client.complete_worker_phase.return_value = CallbackResponse(http_status=200, accepted=True)
     client.fail_task.return_value = CallbackResponse(http_status=200, accepted=True)
     return client
@@ -88,25 +123,207 @@ class StubWorkflowEngine:
         )
 
 
+class StubSpeakerWorkflowEngine(StubWorkflowEngine):
+    def start_pipeline(self, task):
+        context = super().start_pipeline(task)
+        embedding = SpeakerEmbedding(
+            speaker_label="SPEAKER_00",
+            values=[1.0, 0.0],
+            dimension=2,
+            model_version="test-speaker",
+            checksum="c" * 64,
+            quality_score=0.9,
+        )
+        match = SpeakerMatchResult(
+            speaker_label="SPEAKER_00",
+            candidates=[
+                SpeakerMatchCandidate("alice", "profile_alice_01", 0.99, "CANDIDATE"),
+            ],
+        )
+        context["speaker_submissions"] = [SpeakerCandidateSubmission(embedding, match)]
+        return context
+
+
+class StubEnrollmentWorkflowEngine(StubWorkflowEngine):
+    def start_pipeline(self, task):
+        context = super().start_pipeline(task)
+        self.embedding = SpeakerEmbedding(
+            speaker_label="SPEAKER_00",
+            values=[0.25, -0.5],
+            dimension=2,
+            model_version="test-speaker",
+            checksum="e" * 64,
+            quality_score=0.93,
+        )
+        context["speaker_embeddings"] = [self.embedding]
+        return context
+
+    async def run_step(self, context, step_name: str) -> None:
+        if step_name == "SPEAKER_MATCHING":
+            raise AssertionError("SPEAKER_ENROLLMENT must not run speaker matching")
+        await super().run_step(context, step_name)
+
+
+class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
+    async def run_step(self, context, step_name: str) -> None:
+        raise WorkerPipelineError(
+            step_name,
+            "AUDIO_SOURCE_MISSING",
+            "task audioUri is missing",
+            retryable=False,
+        )
+
+
 @pytest.mark.asyncio
-async def test_consume_message_runs_pipeline_steps_and_records_workflow(callback_client) -> None:
+async def test_consume_message_submits_java_transcript_version_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
     engine = StubWorkflowEngine(state_store)
     runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    raw_message = _valid_message()
+    raw_message["expectedInputVersion"] = {
+        "chunkStrategyVersion": "v1",
+        "transcriptVersion": 6,
+    }
 
-    task = await runtime.consume_message(_valid_message())
+    task = await runtime.consume_message(raw_message)
 
     assert task is not None
     snapshot = state_store.get("task_runtime_01")
     assert snapshot is not None
     assert snapshot.status == "SUCCEEDED"
-    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * 4
+    assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
     assert engine.ran_steps == _valid_message()["pipelineSteps"]
-    assert callback_client.update_step.await_count == 12
+    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
+    assert callback_client.update_step.await_args_list[0].kwargs["meeting_id"] == "mtg_01"
     callback_client.submit_transcript.assert_awaited_once()
+    assert callback_client.submit_transcript.await_args.kwargs["transcript_version"] == 7
     callback_client.complete_worker_phase.assert_awaited_once()
     completed_steps = callback_client.complete_worker_phase.await_args.kwargs["completed_steps"]
     assert completed_steps == _valid_message()["pipelineSteps"]
+
+
+@pytest.mark.asyncio
+async def test_consume_message_submits_speaker_candidates(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubSpeakerWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    captured: dict = {}
+
+    async def capture_speaker_candidates(**kwargs):
+        captured["kwargs"] = copy.deepcopy(kwargs)
+        return CallbackResponse(http_status=200, accepted=True)
+
+    callback_client.submit_speaker_candidates.side_effect = capture_speaker_candidates
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.submit_speaker_candidates.assert_awaited_once()
+    kwargs = captured["kwargs"]
+    assert kwargs["meeting_id"] == "mtg_01"
+    assert kwargs["speaker_candidates"][0]["speakerLabel"] == "SPEAKER_00"
+    assert kwargs["speaker_candidates"][0]["candidates"][0]["speakerProfileId"] == "profile_alice_01"
+    assert kwargs["speaker_candidates"][0]["embedding"]["values"] == [1.0, 0.0]
+    assert engine.ran_steps == _valid_message()["pipelineSteps"]
+
+
+@pytest.mark.asyncio
+async def test_speaker_candidate_callback_failure_records_writeback_failed(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubSpeakerWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    callback_client.submit_speaker_candidates.return_value = CallbackResponse(
+        http_status=503,
+        accepted=False,
+        error_code="WRITEBACK_FAILED",
+    )
+
+    await runtime.consume_message(_valid_message())
+
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None
+    assert snapshot.status == "FAILED"
+    assert snapshot.errorCode == "WRITEBACK_FAILED"
+    callback_client.fail_task.assert_awaited_once()
+    assert callback_client.fail_task.await_args.kwargs["failed_step"] == "SPEAKER_MATCHING"
+    assert callback_client.fail_task.await_args.kwargs["meeting_id"] == "mtg_01"
+    callback_client.complete_worker_phase.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_speaker_enrollment_submits_dedicated_embedding_not_candidates(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubEnrollmentWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    captured: dict = {}
+
+    async def capture_enrollment_embedding(**kwargs):
+        captured["kwargs"] = copy.deepcopy(kwargs)
+        return CallbackResponse(http_status=200, accepted=True)
+
+    callback_client.submit_speaker_enrollment_embedding.side_effect = capture_enrollment_embedding
+
+    await runtime.consume_message(_speaker_enrollment_message())
+
+    callback_client.submit_speaker_enrollment_embedding.assert_awaited_once()
+    callback_client.submit_speaker_candidates.assert_not_awaited()
+    assert engine.ran_steps == ["SPEAKER_EMBEDDING"]
+    kwargs = captured["kwargs"]
+    assert kwargs["speaker_profile_id"] == "sp_01"
+    assert kwargs["speaker_enrollment_id"] == "se_01"
+    assert kwargs["audio_file_id"] == "audio_enroll_01"
+    assert kwargs["embedding"]["values"] == [0.25, -0.5]
+    assert "candidates" not in kwargs
+    assert engine.embedding.values == [0.0, 0.0]
+    complete_kwargs = callback_client.complete_worker_phase.await_args.kwargs
+    assert complete_kwargs["speaker_enrollment_id"] == "se_01"
+    assert complete_kwargs["completed_steps"] == ["SPEAKER_EMBEDDING"]
+    assert complete_kwargs["skipped_steps"] == [
+        {"stepName": "SPEAKER_MATCHING", "reason": "NOT_REQUIRED_FOR_ENROLLMENT"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_speaker_enrollment_callback_failure_records_writeback_failed(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubEnrollmentWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    callback_client.submit_speaker_enrollment_embedding.return_value = CallbackResponse(
+        http_status=503,
+        accepted=False,
+        error_code="WRITEBACK_FAILED",
+    )
+
+    await runtime.consume_message(_speaker_enrollment_message())
+
+    snapshot = state_store.get("task_enroll_01")
+    assert snapshot is not None
+    assert snapshot.status == "FAILED"
+    assert snapshot.errorCode == "WRITEBACK_FAILED"
+    callback_client.submit_speaker_candidates.assert_not_awaited()
+    callback_client.fail_task.assert_awaited_once()
+    assert callback_client.fail_task.await_args.kwargs["failed_step"] == "SPEAKER_EMBEDDING"
+    assert callback_client.fail_task.await_args.kwargs["speaker_enrollment_id"] == "se_01"
+    callback_client.complete_worker_phase.assert_not_awaited()
+    assert engine.embedding.values == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_pipeline_error_is_reported_to_java(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=NonRetryableFailingWorkflowEngine(state_store),
+        state_store=state_store,
+    )
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["failed_step"] == "AUDIO_PREPROCESS"
+    assert fail_kwargs["error_code"] == "AUDIO_SOURCE_MISSING"
+    assert fail_kwargs["retryable"] is False
+    callback_client.complete_worker_phase.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -129,6 +346,7 @@ async def test_step_callback_failure_records_writeback_failed(callback_client) -
     assert snapshot.errorCode == "WRITEBACK_FAILED"
     callback_client.fail_task.assert_awaited_once()
     assert callback_client.fail_task.await_args.kwargs["error_code"] == "WRITEBACK_FAILED"
+    assert callback_client.fail_task.await_args.kwargs["meeting_id"] == "mtg_01"
 
 
 def test_default_workflow_engine_uses_registry_runtimes() -> None:

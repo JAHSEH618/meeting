@@ -361,10 +361,6 @@ function validateFile(file: File) {
   }
 }
 
-function formatTime(value: string): string {
-  return new Date(value).toLocaleString("zh-CN");
-}
-
 function isBusy(status: string): boolean {
   return status === "preparing" || status === "uploading" || status === "completing";
 }

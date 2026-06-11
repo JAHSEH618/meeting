@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@shared/test/TestRouter";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { server } from "@shared/api/mocks/server";
 import { DocumentsPage } from "../DocumentsPage";
 
 describe("DocumentsPage", () => {
@@ -55,8 +57,22 @@ describe("DocumentsPage", () => {
     );
   });
 
-  it("confirms before deleting", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("opens an inline confirmation dialog before deleting", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const deletedDocumentIds: string[] = [];
+    server.use(
+      http.delete("/api/documents/:documentId", ({ params }) => {
+        deletedDocumentIds.push(params.documentId as string);
+        return HttpResponse.json({
+          success: true,
+          data: null,
+          error: null,
+          requestId: "r",
+          traceId: "t",
+        });
+      }),
+    );
+
     render(
       <TestRouter>
         <DocumentsPage />
@@ -66,9 +82,27 @@ describe("DocumentsPage", () => {
     await screen.findByText("Roadmap.pdf");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
-    expect(confirmSpy).toHaveBeenCalledOnce();
-    // List unchanged because user cancelled.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "删除文档" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText(/Roadmap\.pdf/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "取消" })[0]);
+    expect(screen.queryByRole("dialog", { name: "删除文档" })).not.toBeInTheDocument();
+    expect(deletedDocumentIds).toEqual([]);
     expect(screen.getByText("Roadmap.pdf")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "删除文档" })).getByRole("button", {
+        name: "确认删除",
+      }),
+    );
+
+    await waitFor(() => expect(deletedDocumentIds).toEqual(["doc_01"]));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "删除文档" })).not.toBeInTheDocument(),
+    );
     confirmSpy.mockRestore();
   });
 

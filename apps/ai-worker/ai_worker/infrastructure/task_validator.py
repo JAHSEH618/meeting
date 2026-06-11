@@ -51,8 +51,10 @@ def validate_pipeline_steps(task_type: str, pipeline_steps: list[str]) -> Valida
         WORKFLOW_STEPS_BY_TASK_TYPE,
         JAVA_OWNED_STEPS,
     )
-    expected = set(WORKFLOW_STEPS_BY_TASK_TYPE.get(task_type, ()))
-    actual = set(pipeline_steps)
+    expected_steps = tuple(WORKFLOW_STEPS_BY_TASK_TYPE.get(task_type, ()))
+    expected = set(expected_steps)
+    actual_steps = tuple(pipeline_steps)
+    actual = set(actual_steps)
 
     errors: list[str] = []
 
@@ -66,5 +68,10 @@ def validate_pipeline_steps(task_type: str, pipeline_steps: list[str]) -> Valida
     unexpected = actual - expected
     if unexpected:
         errors.append(f"pipelineSteps contains unexpected steps for taskType={task_type}: {sorted(unexpected)}")
+
+    if expected_steps and actual_steps != expected_steps:
+        errors.append(
+            f"pipelineSteps must match exact ordered steps for taskType={task_type}: expected {list(expected_steps)}"
+        )
 
     return ValidationResult(valid=len(errors) == 0, errors=errors)

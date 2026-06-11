@@ -106,6 +106,27 @@ class TestBuildHeaders:
 
 class TestUpdateStep:
     @pytest.mark.asyncio
+    async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                meeting_id="meeting_42",
+                step_name="ASR",
+                attempt_no=1,
+                status="RUNNING",
+                progress=50,
+            )
+
+        assert captured_body["meetingId"] == "meeting_42"
+
+    @pytest.mark.asyncio
     async def test_request_body_contains_correct_fields(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
@@ -192,6 +213,97 @@ class TestUpdateStep:
 
         assert "errorCode" not in captured_body
 
+    @pytest.mark.asyncio
+    async def test_idempotency_key_distinguishes_step_status_events(self, client: JavaCallbackClient) -> None:
+        idempotency_keys: list[str] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            idempotency_keys.append(idempotency_key)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=0,
+            )
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="SUCCEEDED",
+                progress=100,
+            )
+
+        assert idempotency_keys == [
+            "task_42:AUDIO_PREPROCESS:RUNNING:1:v1",
+            "task_42:AUDIO_PREPROCESS:SUCCEEDED:1:v1",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_running_start_and_heartbeat_do_not_share_idempotency_key(self, client: JavaCallbackClient) -> None:
+        captured: list[tuple[dict, str]] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured.append((body, idempotency_key))
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=0,
+            )
+            await client.update_step(
+                task_id="task_42",
+                tenant_id="tenant_acme",
+                step_name="AUDIO_PREPROCESS",
+                attempt_no=1,
+                status="RUNNING",
+                progress=50,
+            )
+
+        assert captured[0][0]["progress"] == 0
+        assert captured[1][0]["progress"] == 50
+        assert captured[0][1] != captured[1][1]
+
+
+class TestSubmitSpeakerEnrollmentEmbedding:
+    @pytest.mark.asyncio
+    async def test_uses_dedicated_endpoint_and_payload(self, client: JavaCallbackClient) -> None:
+        captured: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured.update(method=method, path=path, body=body, idempotency_key=idempotency_key)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.submit_speaker_enrollment_embedding(
+                task_id="task_enroll",
+                tenant_id="tenant_01",
+                attempt_no=2,
+                speaker_profile_id="sp_01",
+                speaker_enrollment_id="se_01",
+                audio_file_id="audio_01",
+                embedding={"format": "FLOAT32_ARRAY", "dimension": 2, "values": [0.1, 0.2]},
+                trace_id="trace_01",
+            )
+
+        assert captured["method"] == "POST"
+        assert captured["path"] == "/internal/processing-tasks/task_enroll/speaker-enrollment"
+        assert captured["idempotency_key"] == "task_enroll:speaker-enrollment:2:se_01:v1"
+        assert captured["body"]["speakerProfileId"] == "sp_01"
+        assert captured["body"]["speakerEnrollmentId"] == "se_01"
+        assert captured["body"]["audioFileId"] == "audio_01"
+        assert "speakerCandidates" not in captured["body"]
+
 
 class TestCompleteWorkerPhase:
     @pytest.mark.asyncio
@@ -244,8 +356,51 @@ class TestCompleteWorkerPhase:
         assert captured_body["status"] == "SUCCEEDED"
         assert "finishedAt" in captured_body
 
+    @pytest.mark.asyncio
+    async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.complete_worker_phase(
+                task_id="task_enroll",
+                tenant_id="tenant_01",
+                meeting_id="",
+                attempt_no=1,
+                status="SUCCEEDED",
+                completed_steps=["SPEAKER_EMBEDDING"],
+                skipped_steps=[{"stepName": "SPEAKER_MATCHING", "reason": "NOT_REQUIRED_FOR_ENROLLMENT"}],
+                speaker_enrollment_id="se_01",
+            )
+
+        assert captured_body["speakerEnrollmentId"] == "se_01"
+
 
 class TestFailTask:
+    @pytest.mark.asyncio
+    async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.fail_task(
+                task_id="task_fail",
+                tenant_id="tenant_01",
+                meeting_id="meeting_01",
+                attempt_no=2,
+                failed_step="ASR",
+                error_code="GPU_OOM",
+                error_message="Out of memory",
+            )
+
+        assert captured_body["meetingId"] == "meeting_01"
+
     @pytest.mark.asyncio
     async def test_tenant_id_in_request_body(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
@@ -294,3 +449,24 @@ class TestFailTask:
             )
 
         assert captured_body["error"]["retryable"] is False
+
+    @pytest.mark.asyncio
+    async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
+        captured_body: dict = {}
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_body.update(body)
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            await client.fail_task(
+                task_id="task_enroll",
+                tenant_id="tenant_01",
+                attempt_no=1,
+                failed_step="SPEAKER_EMBEDDING",
+                error_code="SPEAKER_EMBEDDING_FAILED",
+                error_message="embedding failed",
+                speaker_enrollment_id="se_01",
+            )
+
+        assert captured_body["speakerEnrollmentId"] == "se_01"

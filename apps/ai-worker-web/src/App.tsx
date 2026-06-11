@@ -1,30 +1,26 @@
 import { Suspense, lazy } from "react";
-import { NavLink, Route, Routes, useParams } from "react-router-dom";
+import { NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/shared/auth/useAuth";
 import { SkipLink } from "@/shared/components/SkipLink";
 import { EnrollmentPage } from "@/pages/EnrollmentPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MeetingsPage } from "@/pages/MeetingsPage";
 
-const MeetingWorkstationPage = lazy(() =>
-  import("@/pages/MeetingWorkstationPage").then((m) => ({ default: m.MeetingWorkstationPage })),
+const NewMeetingPage = lazy(() =>
+  import("@/pages/NewMeetingPage").then((m) => ({ default: m.NewMeetingPage })),
 );
 
-/**
- * Wrap the workstation page so the route param doubles as a React key.
- *
- * Switching between two existing meetings (``/meetings/A`` → ``/meetings/B``)
- * matches the same ``/meetings/:meetingId`` route, so React Router reuses
- * the same component instance. ``useWizard`` initialises ``meetingId``
- * once from ``useParams()`` on mount, which means without a key the state
- * (including ``state.meetingId``) sticks at A and downstream calls hit
- * the wrong meeting. Keying on the param forces unmount → mount, giving
- * each meeting a clean slate.
- */
-function MeetingWorkstationRoute() {
-  const { meetingId } = useParams<{ meetingId?: string }>();
-  return <MeetingWorkstationPage key={meetingId ?? "new"} />;
-}
+const MeetingDetailPage = lazy(() =>
+  import("@/pages/MeetingDetailPage").then((m) => ({ default: m.MeetingDetailPage })),
+);
+
+const PeoplePage = lazy(() =>
+  import("@/pages/PeoplePage").then((m) => ({ default: m.PeoplePage })),
+);
+
+const SpeakerProfilesPage = lazy(() =>
+  import("@/pages/SpeakerProfilesPage").then((m) => ({ default: m.SpeakerProfilesPage })),
+);
 
 export default function App() {
   const { ready, token } = useAuth();
@@ -42,7 +38,9 @@ export default function App() {
         <strong className="layout__brand">运营工作站</strong>
         <nav className="layout__nav" aria-label="主导航">
           <NavLink to="/meetings" className={({ isActive }) => (isActive ? "active" : "")}>会议</NavLink>
+          <NavLink to="/people" className={({ isActive }) => (isActive ? "active" : "")}>人员</NavLink>
           <NavLink to="/enrollment" className={({ isActive }) => (isActive ? "active" : "")}>声纹录入</NavLink>
+          <NavLink to="/speaker-profiles" className={({ isActive }) => (isActive ? "active" : "")}>声纹档案</NavLink>
         </nav>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{token ? "已登录" : "未登录"}</span>
       </header>
@@ -52,9 +50,11 @@ export default function App() {
             <Route path="/" element={<MeetingsPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
-            <Route path="/meetings/new" element={<MeetingWorkstationRoute />} />
-            <Route path="/meetings/:meetingId" element={<MeetingWorkstationRoute />} />
+            <Route path="/meetings/new" element={<NewMeetingPage />} />
+            <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
+            <Route path="/people" element={<PeoplePage />} />
             <Route path="/enrollment" element={<EnrollmentPage />} />
+            <Route path="/speaker-profiles" element={<SpeakerProfilesPage />} />
           </Routes>
         </Suspense>
       </main>

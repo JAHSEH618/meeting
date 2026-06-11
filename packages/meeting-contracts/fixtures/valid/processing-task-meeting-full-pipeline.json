@@ -5,7 +5,7 @@
   "meetingId": "mtg_01HZ8XJK5GHIJKL",
   "securityLevel": "INTERNAL",
   "attemptNo": 1,
-  "pipelineSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+  "pipelineSteps": ["AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
   "expectedInputVersion": {
     "chunkStrategyVersion": "v1"
   },
@@ -28,7 +28,7 @@
     "enableDiarization": true,
     "enableSpeakerRecognition": true,
     "enableRagIndexing": true,
-    "enableAlignment": false
+    "enableAlignment": true
   },
   "traceId": "trace_01HZ8XJK5STUVWX",
   "createdAt": "2026-05-11T00:00:00Z"

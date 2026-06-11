@@ -59,6 +59,11 @@ public class SpeakerReferenceEmbeddingItem {
   @javax.annotation.Nonnull
   private String personId;
 
+  public static final String SERIALIZED_NAME_SPEAKER_PROFILE_ID = "speakerProfileId";
+  @SerializedName(SERIALIZED_NAME_SPEAKER_PROFILE_ID)
+  @javax.annotation.Nonnull
+  private String speakerProfileId;
+
   public static final String SERIALIZED_NAME_VALUES = "values";
   @SerializedName(SERIALIZED_NAME_VALUES)
   @javax.annotation.Nonnull
@@ -98,6 +103,25 @@ public class SpeakerReferenceEmbeddingItem {
 
   public void setPersonId(@javax.annotation.Nonnull String personId) {
     this.personId = personId;
+  }
+
+
+  public SpeakerReferenceEmbeddingItem speakerProfileId(@javax.annotation.Nonnull String speakerProfileId) {
+    this.speakerProfileId = speakerProfileId;
+    return this;
+  }
+
+  /**
+   * Active Java speaker profile id authorized for this person.
+   * @return speakerProfileId
+   */
+  @javax.annotation.Nonnull
+  public String getSpeakerProfileId() {
+    return speakerProfileId;
+  }
+
+  public void setSpeakerProfileId(@javax.annotation.Nonnull String speakerProfileId) {
+    this.speakerProfileId = speakerProfileId;
   }
 
 
@@ -197,6 +221,7 @@ public class SpeakerReferenceEmbeddingItem {
     }
     SpeakerReferenceEmbeddingItem speakerReferenceEmbeddingItem = (SpeakerReferenceEmbeddingItem) o;
     return Objects.equals(this.personId, speakerReferenceEmbeddingItem.personId) &&
+        Objects.equals(this.speakerProfileId, speakerReferenceEmbeddingItem.speakerProfileId) &&
         Objects.equals(this.values, speakerReferenceEmbeddingItem.values) &&
         Objects.equals(this.dim, speakerReferenceEmbeddingItem.dim) &&
         Objects.equals(this.hash, speakerReferenceEmbeddingItem.hash) &&
@@ -205,7 +230,7 @@ public class SpeakerReferenceEmbeddingItem {
 
   @Override
   public int hashCode() {
-    return Objects.hash(personId, values, dim, hash, computedAt);
+    return Objects.hash(personId, speakerProfileId, values, dim, hash, computedAt);
   }
 
   @Override
@@ -213,6 +238,7 @@ public class SpeakerReferenceEmbeddingItem {
     StringBuilder sb = new StringBuilder();
     sb.append("class SpeakerReferenceEmbeddingItem {\n");
     sb.append("    personId: ").append(toIndentedString(personId)).append("\n");
+    sb.append("    speakerProfileId: ").append(toIndentedString(speakerProfileId)).append("\n");
     sb.append("    values: ").append(toIndentedString(values)).append("\n");
     sb.append("    dim: ").append(toIndentedString(dim)).append("\n");
     sb.append("    hash: ").append(toIndentedString(hash)).append("\n");
@@ -235,10 +261,10 @@ public class SpeakerReferenceEmbeddingItem {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("personId", "values", "dim", "hash", "computedAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("personId", "speakerProfileId", "values", "dim", "hash", "computedAt"));
 
     // a set of required properties/fields (JSON key names)
-    openapiRequiredFields = new HashSet<String>(Arrays.asList("personId", "values", "dim", "hash", "computedAt"));
+    openapiRequiredFields = new HashSet<String>(Arrays.asList("personId", "speakerProfileId", "values", "dim", "hash", "computedAt"));
   }
 
   /**
@@ -271,6 +297,9 @@ public class SpeakerReferenceEmbeddingItem {
         JsonObject jsonObj = jsonElement.getAsJsonObject();
       if (!jsonObj.get("personId").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `personId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("personId").toString()));
+      }
+      if (!jsonObj.get("speakerProfileId").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `speakerProfileId` to be a primitive type in the JSON string but got `%s`", jsonObj.get("speakerProfileId").toString()));
       }
       // ensure the required json array is present
       if (jsonObj.get("values") == null) {

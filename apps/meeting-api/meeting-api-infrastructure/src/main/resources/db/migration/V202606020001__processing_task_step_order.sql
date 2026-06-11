@@ -1,0 +1,20 @@
+ALTER TABLE processing_task_steps
+  ADD COLUMN IF NOT EXISTS step_order smallint NOT NULL DEFAULT 0;
+
+UPDATE processing_task_steps
+   SET step_order = CASE step_name
+       WHEN 'AUDIO_UPLOAD' THEN 0
+       WHEN 'AUDIO_PREPROCESS' THEN 10
+       WHEN 'ASR' THEN 20
+       WHEN 'ALIGNMENT' THEN 30
+       WHEN 'DIARIZATION' THEN 40
+       WHEN 'SPEAKER_EMBEDDING' THEN 50
+       WHEN 'SPEAKER_MATCHING' THEN 60
+       WHEN 'TRANSCRIPT_MERGE' THEN 70
+       WHEN 'RAG_INDEXING' THEN 80
+       WHEN 'SUMMARY' THEN 90
+       WHEN 'EXTRACTION' THEN 100
+       WHEN 'EXPORT' THEN 110
+       ELSE step_order
+     END
+ WHERE step_order = 0;

@@ -52,6 +52,17 @@ export interface ApiCallOptions {
   signal?: AbortSignal;
 }
 
+export interface EventStreamSubscription {
+  close: () => void;
+}
+
+export interface EventStreamHandlers<T = unknown> {
+  lastEventId?: string | null;
+  onEvent: (event: T) => void;
+  onFallback: () => void;
+  maxFailures?: number;
+}
+
 /** Mainline fetch call. Returns ``data`` from the envelope, or throws ApiError. */
 export async function apiCall<T = unknown>(path: string, options: ApiCallOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
@@ -140,4 +151,67 @@ export async function apiUpload(
     );
   }
   return payload.data;
+}
+
+export function subscribeEventStream<T = unknown>(
+  path: string,
+  handlers: EventStreamHandlers<T>,
+): EventStreamSubscription {
+  const controller = new AbortController();
+  const maxFailures = handlers.maxFailures ?? 3;
+  let failures = 0;
+
+  const connect = async () => {
+    while (!controller.signal.aborted && failures < maxFailures) {
+      try {
+        const headers: Record<string, string> = {
+          Accept: "text/event-stream",
+          "X-Request-Id": uuid(),
+          "X-Trace-Id": uuid(),
+        };
+        const token = authStore.get();
+        if (token) headers.Authorization = `Bearer ${token}`;
+        if (handlers.lastEventId) headers["Last-Event-Id"] = handlers.lastEventId;
+
+        const response = await fetch(path, {
+          headers,
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          authStore.clear();
+          redirectToLogin();
+          throw new ApiError(401, { code: "UNAUTHENTICATED", message: "session expired", retryable: false }, "", "");
+        }
+        if (!response.ok || !response.body) throw new Error(`SSE ${response.status}`);
+
+        failures = 0;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split("\n\n");
+          buffer = chunks.pop() ?? "";
+          for (const chunk of chunks) {
+            const data = chunk
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trimStart())
+              .join("\n");
+            if (data) handlers.onEvent(JSON.parse(data) as T);
+          }
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        failures += 1;
+      }
+    }
+    if (!controller.signal.aborted) handlers.onFallback();
+  };
+
+  void connect();
+  return { close: () => controller.abort() };
 }

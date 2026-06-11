@@ -415,10 +415,13 @@ components:
           description: Optional point-in-time anchor; defaults to server clock.
     SpeakerReferenceEmbeddingItem:
       type: object
-      required: [personId, values, dim, hash, computedAt]
+      required: [personId, speakerProfileId, values, dim, hash, computedAt]
       properties:
         personId:
           type: string
+        speakerProfileId:
+          type: string
+          description: Active Java speaker profile id authorized for this person.
         values:
           type: array
           items:

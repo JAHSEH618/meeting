@@ -36,36 +36,43 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     public static final String MEETING_FULL_PIPELINE = "MEETING_FULL_PIPELINE";
     public static final String SPEAKER_ENROLLMENT = "SPEAKER_ENROLLMENT";
 
-    private static final List<ProcessingStep> MVP0_STEPS = List.of(
-        ProcessingStep.AUDIO_UPLOAD,
+    private static final List<ProcessingStep> MEETING_WORKER_STEPS = List.of(
         ProcessingStep.AUDIO_PREPROCESS,
         ProcessingStep.ASR,
+        ProcessingStep.ALIGNMENT,
         ProcessingStep.DIARIZATION,
+        ProcessingStep.SPEAKER_EMBEDDING,
+        ProcessingStep.SPEAKER_MATCHING,
         ProcessingStep.TRANSCRIPT_MERGE,
         ProcessingStep.RAG_INDEXING
     );
 
-    private static final List<ProcessingStep> MVP0_WORKER_STEPS = List.of(
+    private static final List<ProcessingStep> MVP0_STEPS = List.of(
+        ProcessingStep.AUDIO_UPLOAD,
         ProcessingStep.AUDIO_PREPROCESS,
         ProcessingStep.ASR,
+        ProcessingStep.ALIGNMENT,
         ProcessingStep.DIARIZATION,
+        ProcessingStep.SPEAKER_EMBEDDING,
+        ProcessingStep.SPEAKER_MATCHING,
         ProcessingStep.TRANSCRIPT_MERGE,
-        ProcessingStep.RAG_INDEXING
+        ProcessingStep.RAG_INDEXING,
+        ProcessingStep.SUMMARY,
+        ProcessingStep.EXTRACTION
     );
 
     private static final List<ProcessingStep> PHASE2_AUDIO_UPLOAD_STEPS = List.of(
         ProcessingStep.AUDIO_UPLOAD,
         ProcessingStep.AUDIO_PREPROCESS,
         ProcessingStep.ASR,
+        ProcessingStep.ALIGNMENT,
         ProcessingStep.DIARIZATION,
-        ProcessingStep.TRANSCRIPT_MERGE
-    );
-
-    private static final List<ProcessingStep> PHASE2_WORKER_STEPS = List.of(
-        ProcessingStep.AUDIO_PREPROCESS,
-        ProcessingStep.ASR,
-        ProcessingStep.DIARIZATION,
-        ProcessingStep.TRANSCRIPT_MERGE
+        ProcessingStep.SPEAKER_EMBEDDING,
+        ProcessingStep.SPEAKER_MATCHING,
+        ProcessingStep.TRANSCRIPT_MERGE,
+        ProcessingStep.RAG_INDEXING,
+        ProcessingStep.SUMMARY,
+        ProcessingStep.EXTRACTION
     );
 
     private static final List<ProcessingStep> SPEAKER_ENROLLMENT_STEPS = List.of(
@@ -140,7 +147,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             if (!MEETING_FULL_PIPELINE.equals(command.taskType())) {
                 throw new IllegalArgumentException("unsupported taskType: " + command.taskType());
             }
-            meetingRepository.findById(command.tenantId(), command.meetingId())
+            Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
                 .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + command.meetingId()));
 
             OffsetDateTime now = OffsetDateTime.now(clock);
@@ -169,10 +176,10 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
                 saved.meetingId(),
                 saved.taskType(),
                 saved.attemptNo(),
-                MVP0_WORKER_STEPS,
+                MEETING_WORKER_STEPS,
                 0,
                 now,
-                processingTaskMessagePayload(command, saved)
+                processingTaskMessagePayload(command, saved, meeting)
             ));
             return ProcessingTaskAssembler.toDto(saved);
         });
@@ -233,7 +240,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             saved.meetingId(),
             saved.taskType(),
             saved.attemptNo(),
-            PHASE2_WORKER_STEPS,
+            MEETING_WORKER_STEPS,
             0,
             now,
             phase2TaskMessagePayload(
@@ -346,7 +353,11 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         return gated;
     }
 
-    private Map<String, Object> processingTaskMessagePayload(CreateProcessingTaskCommand command, ProcessingTask task) {
+    private Map<String, Object> processingTaskMessagePayload(
+        CreateProcessingTaskCommand command,
+        ProcessingTask task,
+        Meeting meeting
+    ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", task.taskId());
         payload.put("taskType", task.taskType());
@@ -354,8 +365,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("meetingId", task.meetingId());
         payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
-        payload.put("pipelineSteps", MVP0_WORKER_STEPS.stream().map(Enum::name).toList());
-        payload.put("expectedInputVersion", command.expectedInputVersion() == null ? Map.of("chunkStrategyVersion", "v1") : command.expectedInputVersion());
+        payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
+        payload.put("expectedInputVersion", expectedInputVersionForMeeting(command.expectedInputVersion(), meeting));
         payload.put("options", command.options() == null ? Map.of() : command.options());
         payload.put("traceId", command.traceId() == null ? "" : command.traceId());
         addWorkstationContext(payload, task.tenantId(), task.meetingId());
@@ -411,8 +422,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("meetingId", task.meetingId());
         payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
-        payload.put("pipelineSteps", PHASE2_WORKER_STEPS.stream().map(Enum::name).toList());
-        payload.put("expectedInputVersion", Map.of("chunkStrategyVersion", "v1"));
+        payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
+        payload.put("expectedInputVersion", expectedInputVersionForMeeting(null, meeting));
         payload.put("language", meeting.language());
         payload.put("channelMap", Map.of("channelCount", 1, "layout", "mono"));
         payload.put("knownParticipants", knownParticipantIds(meeting));
@@ -423,9 +434,9 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("options", Map.of(
             "enableAsr", true,
             "enableDiarization", true,
-            "enableSpeakerRecognition", false,
-            "enableRagIndexing", false,
-            "enableAlignment", false,
+            "enableSpeakerRecognition", true,
+            "enableRagIndexing", true,
+            "enableAlignment", true,
             "inputAudioSha256", fileSha256,
             "inputAudioSizeBytes", fileSizeBytes
         ));
@@ -484,5 +495,18 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             })
             .filter(value -> value != null && !value.isBlank())
             .toList();
+    }
+
+    private static Map<String, Object> expectedInputVersionForMeeting(
+        Map<String, Object> requested,
+        Meeting meeting
+    ) {
+        Map<String, Object> expectedInputVersion = new LinkedHashMap<>();
+        expectedInputVersion.put("chunkStrategyVersion", "v1");
+        if (requested != null) {
+            expectedInputVersion.putAll(requested);
+        }
+        expectedInputVersion.put("transcriptVersion", meeting.transcriptVersion());
+        return expectedInputVersion;
     }
 }

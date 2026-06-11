@@ -3,6 +3,7 @@ package com.meeting.api.adapter.speaker;
 import com.meeting.api.adapter.meeting.TenantContextHolder;
 import com.meeting.api.app.speaker.MeetingSpeakerApplicationService;
 import com.meeting.api.client.common.ApiResponse;
+import com.meeting.api.client.speaker.MeetingSpeakerCandidateDTO;
 import com.meeting.api.client.speaker.MeetingSpeakerDTO;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -22,13 +23,15 @@ public class MeetingSpeakerController {
     }
 
     @GetMapping("/api/meetings/{meetingId}/speakers")
-    public ResponseEntity<ApiResponse<List<MeetingSpeakerDTO>>> list(
+    public ResponseEntity<ApiResponse<MeetingSpeakerListData>> list(
         @PathVariable String meetingId,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId
     ) {
-        var items = service.list(TenantContextHolder.currentTenantId(), meetingId);
-        return ResponseEntity.ok(ApiResponse.ok(items, requestId, traceId));
+        var speakers = service.list(TenantContextHolder.currentTenantId(), meetingId).stream()
+            .map(MeetingSpeakerResponse::from)
+            .toList();
+        return ResponseEntity.ok(ApiResponse.ok(new MeetingSpeakerListData(meetingId, speakers), requestId, traceId));
     }
 
     @PostMapping("/api/meetings/{meetingId}/speakers/{speakerLabel}/confirm")
@@ -40,12 +43,25 @@ public class MeetingSpeakerController {
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("confirm request is required");
+        }
+        if (!hasText(body.personId())) {
+            throw new IllegalArgumentException("personId is required");
+        }
+        if (!hasText(body.speakerProfileId())) {
+            throw new IllegalArgumentException("speakerProfileId is required");
+        }
+        if (body.expectedTranscriptVersion() == null) {
+            throw new IllegalArgumentException("expectedTranscriptVersion is required");
+        }
         service.confirm(
             TenantContextHolder.currentTenantId(),
             meetingId,
             speakerLabel,
             body.personId(),
             body.speakerProfileId(),
+            body.expectedTranscriptVersion(),
             userId
         );
         return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));
@@ -55,14 +71,48 @@ public class MeetingSpeakerController {
     public ResponseEntity<ApiResponse<Void>> reject(
         @PathVariable String meetingId,
         @PathVariable String speakerLabel,
+        @RequestBody RejectRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
-        service.reject(TenantContextHolder.currentTenantId(), meetingId, speakerLabel, userId);
+        if (body == null || !hasText(body.reason())) {
+            throw new IllegalArgumentException("reason is required");
+        }
+        service.reject(TenantContextHolder.currentTenantId(), meetingId, speakerLabel, body.reason(), userId);
         return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));
     }
 
     public record ConfirmRequest(String personId, String speakerProfileId, Integer expectedTranscriptVersion) {
+    }
+
+    public record RejectRequest(String reason, String candidatePersonId, String candidateSpeakerProfileId) {
+    }
+
+    public record MeetingSpeakerListData(String meetingId, List<MeetingSpeakerResponse> speakers) {
+    }
+
+    public record MeetingSpeakerResponse(
+        String speakerLabel,
+        String displayName,
+        String personId,
+        String speakerProfileId,
+        String confirmationStatus,
+        List<MeetingSpeakerCandidateDTO> candidates
+    ) {
+        private static MeetingSpeakerResponse from(MeetingSpeakerDTO dto) {
+            return new MeetingSpeakerResponse(
+                dto.speakerLabel(),
+                dto.displayName(),
+                dto.personId(),
+                dto.speakerProfileId(),
+                dto.confirmationStatus(),
+                dto.candidates() == null ? List.of() : dto.candidates()
+            );
+        }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

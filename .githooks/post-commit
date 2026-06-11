@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Refresh AI-facing repository context after every successful commit.
+# This hook must not stage, amend, or create commits.
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+script="$repo_root/.claude/scripts/update_repo_context.py"
+
+if [ ! -f "$script" ]; then
+  echo "new-repo-init post-commit: $script not found; skipping context refresh" >&2
+  exit 0
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$script" --quiet || echo "new-repo-init post-commit: context refresh failed" >&2
+elif command -v python >/dev/null 2>&1; then
+  python "$script" --quiet || echo "new-repo-init post-commit: context refresh failed" >&2
+else
+  echo "new-repo-init post-commit: Python not found; skipping context refresh" >&2
+fi
+
+exit 0

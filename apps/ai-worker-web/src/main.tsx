@@ -32,9 +32,7 @@ async function loadRuntimeConfig(): Promise<void> {
   } catch {
     // Network / parse failure — leave undefined so shared/auth/store.ts
     // falls through to build-time config or the local workstation login page.
-    // We log to console
-    // so an operator can spot misconfigured ingresses without breaking UX.
-    // eslint-disable-next-line no-console
+    // We log to console so an operator can spot misconfigured ingresses without breaking UX.
     console.warn("workstation runtime-config.json unreachable; using SPA defaults");
   }
 }

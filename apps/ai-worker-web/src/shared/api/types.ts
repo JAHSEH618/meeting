@@ -1,7 +1,7 @@
 /**
  * Hand-written admin BFF DTO surfaces. The OpenAPI codegen target is
  * `npm run codegen` (points at the public-api spec); this file covers the
- * worker BFF responses + a few public-API shapes the wizard needs.
+ * worker BFF responses + a few public-API shapes the workstation needs.
  */
 
 export type DocumentRole = "REFERENCE" | "ATTACHMENT";
@@ -10,11 +10,31 @@ export type ProcessingTaskPhase = "WORKER_DAG_RUNNING" | "WORKER_DAG_DONE" | "JA
 export type ProcessingTaskStatus =
   | "PENDING" | "QUEUED" | "RUNNING" | "ORPHANED" | "PARTIAL_SUCCEEDED"
   | "SUCCEEDED" | "FAILED" | "CANCEL_PENDING" | "CANCELLED";
+export type StepStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+export type DocumentType = "PDF" | "DOCX" | "PPTX" | "TXT" | "MD" | "OTHER";
 
 export interface PersonDTO {
-  id: string;
+  personId: string;
+  displayName: string;
+  email: string | null;
+  externalId: string | null;
+  createdAt: string;
+  /** Legacy BFF shape kept optional while older fixtures still return id. */
+  id?: string;
+}
+
+export interface CreatePersonRequest {
   displayName: string;
   email?: string;
+  externalId?: string;
+  forceCreate?: boolean;
+}
+
+export interface PersonDuplicateError {
+  code: "PERSON_DUPLICATE";
+  message: string;
+  retryable: false;
+  details: { matches: PersonDTO[] };
 }
 
 export interface EnrollmentSessionDTO {
@@ -24,29 +44,57 @@ export interface EnrollmentSessionDTO {
   qualityScore?: number;
   durationMs?: number;
   sizeBytes?: number;
+  profileId?: string | null;
+  fileId?: string | null;
 }
 
-export interface VoiceprintDTO {
-  enrollmentId: string;
+export interface SpeakerProfileDTO {
+  speakerProfileId: string;
   personId: string;
-  qualityScore: number;
-  createdAt: string;
+  displayName: string;
+  status?: string;
+  enrollmentCount?: number | null;
+  lastEnrolledAt?: string | null;
+  consentStatus?: string;
   revokedAt: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MeetingSummaryDTO {
   meetingId: string;
   title: string;
+  scheduledStartAt?: string | null;
   status: string;
   securityLevel: SecurityLevel;
   language: string;
+  transcriptVersion?: number;
+  minutesVersion?: number;
+  participants?: MeetingParticipantDTO[];
   createdAt: string;
+}
+
+export interface MeetingParticipantDTO {
+  personId: string;
+  displayName: string;
+  role: string;
 }
 
 export interface DocumentSummaryDTO {
   documentId: string;
   title: string;
   securityLevel: SecurityLevel;
+  documentType?: DocumentType | string;
+  contentHash?: string | null;
+  createdAt?: string;
+}
+
+export interface CreateDocumentRequest {
+  title: string;
+  fileId: string;
+  documentType: DocumentType | string;
+  securityLevel: SecurityLevel;
+  contentHash: string;
 }
 
 export interface MeetingDocumentItemDTO {
@@ -73,15 +121,25 @@ export interface MeetingGlossaryDTO {
 
 export interface SpeakerCandidateDTO {
   personId: string;
+  speakerProfileId: string;
   displayName: string;
   confidence: number;
 }
 
 export interface MeetingSpeakerDTO {
-  label: string;
-  displayName: string;
-  verificationStatus: "CANDIDATE" | "CONFIRMED" | "REJECTED" | "MANUAL";
+  speakerLabel: string;
+  displayName: string | null;
+  personId: string | null;
+  speakerProfileId: string | null;
+  confirmationStatus: "UNCONFIRMED" | "CANDIDATE" | "AUTO_CONFIRMED" | "MANUALLY_CONFIRMED" | "CONFIRMED" | "REJECTED" | string;
+  label?: string;
+  verificationStatus?: "CANDIDATE" | "CONFIRMED" | "REJECTED" | "MANUAL" | string;
   candidates: SpeakerCandidateDTO[];
+}
+
+export interface MeetingSpeakerListDTO {
+  meetingId: string;
+  speakers: MeetingSpeakerDTO[];
 }
 
 export interface TranscriptSegmentDTO {
@@ -93,6 +151,14 @@ export interface TranscriptSegmentDTO {
   text: string;
 }
 
+export interface ProcessingTaskStepDTO {
+  stepName: string;
+  status: StepStatus | string;
+  progress: number;
+  retryable?: boolean | null;
+  errorCode?: string | null;
+}
+
 export interface ProcessingTaskDTO {
   taskId: string;
   meetingId: string | null;
@@ -102,13 +168,14 @@ export interface ProcessingTaskDTO {
   currentStep: string | null;
   lastErrorCode: string | null;
   retryable: boolean;
+  steps?: ProcessingTaskStepDTO[];
 }
 
 export interface MeetingAggregateDTO {
-  meeting: { success: boolean; data: MeetingSummaryDTO } | null;
-  latestTask: { success: boolean; data: ProcessingTaskDTO } | null;
-  speakers: { success: boolean; data: MeetingSpeakerDTO[] } | null;
-  minutes: { success: boolean; data: { title: string; markdown: string; minutesVersion: number } } | null;
+  meeting: MeetingSummaryDTO | null;
+  latestTask: ProcessingTaskDTO | null;
+  speakers: MeetingSpeakerListDTO | null;
+  minutes: { title?: string; markdown: string; minutesVersion?: number; meetingId?: string } | null;
 }
 
 export interface ExportJobDTO {
@@ -117,4 +184,72 @@ export interface ExportJobDTO {
   format: "MARKDOWN" | "DOCX" | "PDF";
   downloadUrl?: string | null;
   downloadExpiresAt?: string | null;
+}
+
+export interface FileUploadPartDTO {
+  partNumber: number;
+  partSha256?: string;
+  sizeBytes?: number;
+  etag?: string | null;
+  uploadUrl?: string;
+  presignedUrl?: string;
+  expiresAt: string;
+  headers?: Record<string, string>;
+}
+
+export interface FileUploadSessionDTO {
+  uploadId: string;
+  expiresAt?: string;
+  partSizeBytes?: number;
+  maxPartCount?: number;
+  objectKey?: string | null;
+  bucket?: string | null;
+  contentType?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  fileSha256?: string;
+  fileId?: string | null;
+  parts: FileUploadPartDTO[];
+}
+
+export interface FileUploadCompleteResponseDTO {
+  fileId: string;
+  sha256: string;
+  sizeBytes: number;
+  contentType: string;
+}
+
+export interface AudioUploadSessionDTO {
+  uploadId: string;
+  meetingId?: string;
+  uploadStatus?: string;
+  status?: string;
+  expiresAt?: string;
+  partSizeBytes?: number;
+  maxPartCount?: number;
+  objectKey?: string;
+  bucket?: string;
+  contentType?: string;
+  fileName?: string;
+  fileSizeBytes?: number;
+  fileSha256?: string;
+  fileId?: string | null;
+  parts: FileUploadPartDTO[];
+}
+
+export interface TaskEventDTO {
+  eventId?: string;
+  sequenceNo?: number;
+  eventType?: string;
+  taskId: string;
+  meetingId?: string | null;
+  stepName?: string | null;
+  status?: string;
+  phase?: ProcessingTaskPhase;
+  progress?: number | null;
+  retryable?: boolean | null;
+  errorCode?: string | null;
+  attemptNo?: number | null;
+  completedSteps?: string[];
+  steps?: ProcessingTaskStepDTO[];
 }

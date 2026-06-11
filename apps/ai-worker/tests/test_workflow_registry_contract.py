@@ -16,6 +16,15 @@ PROCESSING_TASK_MESSAGE_SCHEMA = (
     / "rabbitmq"
     / "processing-task-message.schema.json"
 )
+AI_WORKER_PROCESSING_TASK_MESSAGE_SCHEMA = (
+    REPO_ROOT
+    / "apps"
+    / "ai-worker"
+    / "ai_worker"
+    / "schemas"
+    / "rabbitmq"
+    / "processing-task-message.schema.json"
+)
 
 
 def _schema_pipeline_steps() -> set[str]:
@@ -38,6 +47,13 @@ def test_registry_steps_are_allowed_by_task_message_schema() -> None:
 
 def test_registry_task_types_match_schema() -> None:
     assert set(WORKFLOW_STEPS_BY_TASK_TYPE.keys()) == _schema_task_types()
+
+
+def test_ai_worker_task_schema_matches_contract_source() -> None:
+    contract_schema = json.loads(PROCESSING_TASK_MESSAGE_SCHEMA.read_text())
+    worker_schema = json.loads(AI_WORKER_PROCESSING_TASK_MESSAGE_SCHEMA.read_text())
+
+    assert worker_schema == contract_schema
 
 
 def test_java_owned_steps_are_not_worker_owned() -> None:

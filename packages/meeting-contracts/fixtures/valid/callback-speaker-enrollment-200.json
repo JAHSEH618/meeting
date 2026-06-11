@@ -1,0 +1,49 @@
+{
+  "description": "POST /internal/processing-tasks/{taskId}/speaker-enrollment 200 - speaker enrollment embedding accepted",
+  "status": 200,
+  "headers": {
+    "X-Worker-Id": "worker_fixture_01",
+    "X-Attempt-No": 1,
+    "X-Lease-Owner": "worker_fixture_01:task_enroll_01:1",
+    "X-Timestamp": "2026-06-02T10:30:00Z",
+    "X-Nonce": "nonce_fixture_speaker_enrollment_01",
+    "X-Signature": "hmac-sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "X-Trace-Id": "trace_speaker_enrollment_01",
+    "X-Request-Id": "req_speaker_enrollment_01",
+    "Idempotency-Key": "task_enroll_01:speaker-enrollment:1:se_01HZ8XJK5STU:v1"
+  },
+  "pathParams": {
+    "taskId": "task_enroll_01"
+  },
+  "request": {
+    "tenantId": "tenant_fixture_01",
+    "taskId": "task_enroll_01",
+    "attemptNo": 1,
+    "speakerProfileId": "sp_01HZ8XJK5PQR",
+    "speakerEnrollmentId": "se_01HZ8XJK5STU",
+    "audioFileId": "file_01HZ8XJK5ENR",
+    "embedding": {
+      "format": "FLOAT32_ARRAY",
+      "dimension": 3,
+      "values": [0.12, -0.03, 0.99],
+      "checksum": "sha256:fixture",
+      "modelVersion": "speaker-embedding-fixture-v1",
+      "qualityScore": 0.93,
+      "plaintextTransport": "INTERNAL_TLS_HMAC_CALLBACK",
+      "persistedBy": "MEETING_API_KMS_ENVELOPE_ENCRYPTION"
+    }
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "accepted": true,
+      "taskId": "task_enroll_01",
+      "callback": "SPEAKER_ENROLLMENT",
+      "speakerEnrollmentId": "se_01HZ8XJK5STU",
+      "replayed": false
+    },
+    "error": null,
+    "requestId": "req_speaker_enrollment_01",
+    "traceId": "trace_speaker_enrollment_01"
+  }
+}

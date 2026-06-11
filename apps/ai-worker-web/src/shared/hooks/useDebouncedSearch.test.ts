@@ -22,7 +22,6 @@ import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 // (await fetcher → setResults → finally → setLoading).
 async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 5; i++) {
-    // eslint-disable-next-line no-await-in-loop
     await Promise.resolve();
   }
 }

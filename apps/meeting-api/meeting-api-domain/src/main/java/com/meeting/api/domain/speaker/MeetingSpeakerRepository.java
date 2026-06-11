@@ -22,9 +22,16 @@ public interface MeetingSpeakerRepository {
                          List<String> candidatePersonIds, Double autoMatchScore, String matchSource,
                          OffsetDateTime now);
 
+    /** Upsert per (tenant, meeting, speakerLabel) with full candidate profile metadata. */
+    default void saveCandidates(String tenantId, String meetingId, String speakerLabel,
+                         List<String> candidatePersonIds, List<SpeakerCandidate> candidates,
+                         Double autoMatchScore, String matchSource, OffsetDateTime now) {
+        saveCandidates(tenantId, meetingId, speakerLabel, candidatePersonIds, autoMatchScore, matchSource, now);
+    }
+
     /** Persist the user's confirmation decision. */
     void confirm(String tenantId, String meetingId, String speakerLabel,
-                  String confirmedPersonId, String confirmedBy, OffsetDateTime now);
+                  String confirmedPersonId, String confirmedSpeakerProfileId, String confirmedBy, OffsetDateTime now);
 
     void reject(String tenantId, String meetingId, String speakerLabel,
                  String rejectedBy, OffsetDateTime now);
@@ -36,14 +43,59 @@ public interface MeetingSpeakerRepository {
         String speakerLabel,
         String globalSpeakerLabel,
         List<String> candidatePersonIds,
+        List<SpeakerCandidate> candidates,
         Double autoMatchScore,
         String matchSource,
         String verificationStatus,
         String confirmedPersonId,
+        String confirmedSpeakerProfileId,
         String confirmedBy,
         OffsetDateTime confirmedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
+    ) {
+        public MeetingSpeakerRecord(
+            String id,
+            String tenantId,
+            String meetingId,
+            String speakerLabel,
+            String globalSpeakerLabel,
+            List<String> candidatePersonIds,
+            Double autoMatchScore,
+            String matchSource,
+            String verificationStatus,
+            String confirmedPersonId,
+            String confirmedSpeakerProfileId,
+            String confirmedBy,
+            OffsetDateTime confirmedAt,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt
+        ) {
+            this(
+                id,
+                tenantId,
+                meetingId,
+                speakerLabel,
+                globalSpeakerLabel,
+                candidatePersonIds,
+                List.of(),
+                autoMatchScore,
+                matchSource,
+                verificationStatus,
+                confirmedPersonId,
+                confirmedSpeakerProfileId,
+                confirmedBy,
+                confirmedAt,
+                createdAt,
+                updatedAt
+            );
+        }
+    }
+
+    record SpeakerCandidate(
+        String personId,
+        String speakerProfileId,
+        Double confidence
     ) {
     }
 }

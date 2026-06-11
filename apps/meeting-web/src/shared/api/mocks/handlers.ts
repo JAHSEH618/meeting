@@ -563,23 +563,21 @@ export const handlers = [
   }),
 
   http.get("/api/speaker-profiles", () => {
-    return HttpResponse.json<ApiResponse<unknown[]>>({
+    return HttpResponse.json<ApiResponse<unknown>>({
       success: true,
-      data: [
-        {
-          speakerProfileId: "spk_alice",
-          tenantId: "tenant_01",
-          personId: "alice",
-          displayName: "Alice 张",
-          consentStatus: "ACTIVE",
-          consentSource: "MEETING_INVITE",
-          consentVersion: "v1",
-          revokedAt: null,
-          deletedAt: null,
-          createdAt: "2026-05-11T09:00:00Z",
-          updatedAt: "2026-05-11T09:00:00Z",
-        },
-      ],
+      data: {
+        items: [
+          {
+            speakerProfileId: "spk_alice",
+            personId: "alice",
+            displayName: "Alice 张",
+            status: "ACTIVE",
+            enrollmentCount: 1,
+            lastEnrolledAt: null,
+          },
+        ],
+        page: { cursor: null, hasMore: false, limit: 1 },
+      },
       error: null,
       requestId: "r",
       traceId: "t",
@@ -587,20 +585,28 @@ export const handlers = [
   }),
 
   http.get("/api/meetings/:meetingId/speakers", () => {
-    return HttpResponse.json<ApiResponse<unknown[]>>({
+    return HttpResponse.json<ApiResponse<unknown>>({
       success: true,
-      data: [
-        {
-          speakerLabel: "SPEAKER_00",
-          displayName: null,
-          personId: null,
-          speakerProfileId: null,
-          confirmationStatus: "CANDIDATE",
-          autoMatchScore: 0.78,
-          confirmedAt: null,
-          candidatePersonIds: ["alice"],
-        },
-      ],
+      data: {
+        meetingId: "mtg_01",
+        speakers: [
+          {
+            speakerLabel: "SPEAKER_00",
+            displayName: null,
+            personId: null,
+            speakerProfileId: null,
+            confirmationStatus: "CANDIDATE",
+            candidates: [
+              {
+                personId: "alice",
+                speakerProfileId: "spk_alice",
+                displayName: "Alice 张",
+                confidence: 0.78,
+              },
+            ],
+          },
+        ],
+      },
       error: null,
       requestId: "r",
       traceId: "t",
@@ -926,7 +932,7 @@ export const handlers = [
     return HttpResponse.json<ApiResponse>({ success: true, data: found, error: null, requestId: "r", traceId: "t" });
   }),
 
-  http.put("/api/legal-holds/:legalHoldId/release", async ({ params, request }) => {
+  http.delete("/api/legal-holds/:legalHoldId", async ({ params, request }) => {
     const id = String(params.legalHoldId);
     const body = (await request.json()) as { reason: string };
     const idx = legalHolds.findIndex((h) => h.legalHoldId === id);

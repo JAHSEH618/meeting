@@ -12,6 +12,7 @@ import com.meeting.api.client.meeting.CreateMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingCommand;
 import com.meeting.api.client.meeting.DeleteMeetingResult;
 import com.meeting.api.client.meeting.MeetingDTO;
+import com.meeting.api.client.meeting.UpdateMeetingCommand;
 import com.meeting.api.domain.audit.AuditEventLogger;
 import com.meeting.api.domain.compliance.LegalHoldCheckPort;
 import com.meeting.api.domain.meeting.Meeting;
@@ -52,6 +53,7 @@ class MeetingApplicationServiceTest {
         assertThat(saved.id()).startsWith("m_");
         assertThat(saved.tenantId()).isEqualTo("tenant_01");
         assertThat(saved.title()).isEqualTo("Sprint Review");
+        assertThat(saved.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-01T10:00:00Z"));
         assertThat(saved.status()).isEqualTo(MeetingStatus.CREATED);
         assertThat(saved.securityLevel()).isEqualTo(SecurityLevel.INTERNAL);
         assertThat(saved.language()).isEqualTo("zh");
@@ -59,8 +61,12 @@ class MeetingApplicationServiceTest {
 
         assertThat(dto.meetingId()).isEqualTo(saved.id());
         assertThat(dto.tenantId()).isEqualTo(saved.tenantId());
+        assertThat(dto.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-01T10:00:00Z"));
         assertThat(dto.transcriptVersion()).isZero();
         assertThat(dto.minutesVersion()).isZero();
+        assertThat(dto.participants())
+            .extracting(MeetingDTO.ParticipantDTO::personId)
+            .containsExactly("person_01");
     }
 
     @Test
@@ -82,6 +88,197 @@ class MeetingApplicationServiceTest {
         assertThat(service.get("tenant_02", "m_01")).isEmpty();
         assertThat(service.list("tenant_01")).extracting(MeetingDTO::meetingId).containsExactly("m_01");
         assertThat(service.list("tenant_02")).isEmpty();
+    }
+
+    @Test
+    void updateReplacesParticipantsAndReturnsLatestDto() {
+        CapturingMeetingRepository repository = new CapturingMeetingRepository();
+        repository.save(new Meeting.Builder()
+            .id("m_01").tenantId("tenant_01").title("Planning")
+            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .language("zh").transcriptVersion(3).minutesVersion(1)
+            .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
+            .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
+            .createdBy("user_01")
+            .participants(List.of(new Meeting.Participant("p_old", "旧参会人", "PARTICIPANT")))
+            .build());
+        MeetingApplicationService service = newService(repository);
+
+        MeetingDTO dto = service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_01",
+            "Updated Planning",
+            OffsetDateTime.parse("2026-01-03T11:30:00Z"),
+            List.of(
+                new CreateMeetingCommand.ParticipantCommand("p_01", "李四", "PARTICIPANT"),
+                new CreateMeetingCommand.ParticipantCommand("p_02", "王五", "OBSERVER")
+            ),
+            3,
+            "user_01",
+            "req_01"
+        ));
+
+        assertThat(dto.title()).isEqualTo("Updated Planning");
+        assertThat(dto.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-03T11:30:00Z"));
+        assertThat(dto.participants())
+            .extracting(
+                MeetingDTO.ParticipantDTO::personId,
+                MeetingDTO.ParticipantDTO::displayName,
+                MeetingDTO.ParticipantDTO::role
+            )
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("p_01", "李四", "PARTICIPANT"),
+                org.assertj.core.groups.Tuple.tuple("p_02", "王五", "OBSERVER")
+            );
+        Meeting saved = repository.findById("tenant_01", "m_01").orElseThrow();
+        assertThat(saved.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-03T11:30:00Z"));
+        assertThat(saved.participants())
+            .extracting(Meeting.Participant::personId)
+            .containsExactly("p_01", "p_02");
+    }
+
+    @Test
+    void updateKeepsScheduledStartWhenFieldIsNotProvided() {
+        CapturingMeetingRepository repository = new CapturingMeetingRepository();
+        repository.save(new Meeting.Builder()
+            .id("m_01").tenantId("tenant_01").title("Planning")
+            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .language("zh").transcriptVersion(3).minutesVersion(1)
+            .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
+            .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
+            .createdBy("user_01").participants(List.of())
+            .build());
+        MeetingApplicationService service = newService(repository);
+
+        MeetingDTO dto = service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_01",
+            "Renamed",
+            null,
+            false,
+            null,
+            3,
+            "user_01",
+            "req_01"
+        ));
+
+        assertThat(dto.title()).isEqualTo("Renamed");
+        assertThat(dto.scheduledStartAt()).isEqualTo(OffsetDateTime.parse("2026-01-02T10:00:00Z"));
+    }
+
+    @Test
+    void updateClearsScheduledStartWhenFieldIsProvidedAsNull() {
+        CapturingMeetingRepository repository = new CapturingMeetingRepository();
+        repository.save(new Meeting.Builder()
+            .id("m_01").tenantId("tenant_01").title("Planning")
+            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .language("zh").transcriptVersion(3).minutesVersion(1)
+            .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
+            .scheduledStartAt(OffsetDateTime.parse("2026-01-02T10:00:00Z"))
+            .createdBy("user_01").participants(List.of())
+            .build());
+        MeetingApplicationService service = newService(repository);
+
+        MeetingDTO dto = service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_01",
+            null,
+            null,
+            true,
+            null,
+            3,
+            "user_01",
+            "req_01"
+        ));
+
+        assertThat(dto.scheduledStartAt()).isNull();
+        assertThat(repository.findById("tenant_01", "m_01").orElseThrow().scheduledStartAt()).isNull();
+    }
+
+    @Test
+    void updateRejectsStaleExpectedVersion() {
+        CapturingMeetingRepository repository = new CapturingMeetingRepository();
+        repository.save(new Meeting.Builder()
+            .id("m_01").tenantId("tenant_01").title("Planning")
+            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .language("zh").transcriptVersion(3).minutesVersion(1)
+            .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
+            .createdBy("user_01").participants(List.of())
+            .build());
+        MeetingApplicationService service = newService(repository);
+
+        assertThatThrownBy(() -> service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_01",
+            null,
+            null,
+            List.of(new CreateMeetingCommand.ParticipantCommand("p_01", "李四", "PARTICIPANT")),
+            2,
+            "user_01",
+            "req_01"
+        )))
+            .isInstanceOf(ApplicationException.class)
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.VERSION_CONFLICT);
+                assertThat(ae.httpStatus()).isEqualTo(409);
+            });
+        assertThat(repository.findById("tenant_01", "m_01").orElseThrow().participants()).isEmpty();
+    }
+
+    @Test
+    void updateRejectsDuplicateParticipants() {
+        CapturingMeetingRepository repository = new CapturingMeetingRepository();
+        repository.save(new Meeting.Builder()
+            .id("m_01").tenantId("tenant_01").title("Planning")
+            .securityLevel(SecurityLevel.INTERNAL).status(MeetingStatus.CREATED)
+            .language("zh").transcriptVersion(3).minutesVersion(1)
+            .createdAt(OffsetDateTime.parse("2026-01-01T00:00:00Z"))
+            .createdBy("user_01").participants(List.of())
+            .build());
+        MeetingApplicationService service = newService(repository);
+
+        assertThatThrownBy(() -> service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_01",
+            null,
+            null,
+            List.of(
+                new CreateMeetingCommand.ParticipantCommand("p_01", "李四", "PARTICIPANT"),
+                new CreateMeetingCommand.ParticipantCommand("p_01", "李四重复", "PARTICIPANT")
+            ),
+            3,
+            "user_01",
+            "req_01"
+        )))
+            .isInstanceOf(ApplicationException.class)
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+                assertThat(ae.httpStatus()).isEqualTo(422);
+            });
+    }
+
+    @Test
+    void updateFailsWhenMeetingNotFound() {
+        MeetingApplicationService service = newService(new CapturingMeetingRepository());
+
+        assertThatThrownBy(() -> service.update(new UpdateMeetingCommand(
+            "tenant_01",
+            "m_missing",
+            null,
+            null,
+            List.of(new CreateMeetingCommand.ParticipantCommand("p_01", "李四", "PARTICIPANT")),
+            0,
+            "user_01",
+            "req_01"
+        )))
+            .isInstanceOf(ApplicationException.class)
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.MEETING_NOT_FOUND);
+                assertThat(ae.httpStatus()).isEqualTo(404);
+            });
     }
 
     @Test

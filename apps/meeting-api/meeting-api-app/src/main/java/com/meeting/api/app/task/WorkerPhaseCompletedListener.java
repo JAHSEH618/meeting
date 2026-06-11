@@ -1,5 +1,6 @@
 package com.meeting.api.app.task;
 
+import com.meeting.api.app.speaker.SpeakerAutoConfirmService;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
@@ -36,23 +37,34 @@ public class WorkerPhaseCompletedListener {
     private final TaskStepProgressService taskStepProgressService;
     private final ProcessingTaskRepository taskRepository;
     private final JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator;
+    private final SpeakerAutoConfirmService speakerAutoConfirmService;
 
     public WorkerPhaseCompletedListener(
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository
     ) {
-        this(taskStepProgressService, taskRepository, null);
+        this(taskStepProgressService, taskRepository, null, null);
+    }
+
+    public WorkerPhaseCompletedListener(
+        TaskStepProgressService taskStepProgressService,
+        ProcessingTaskRepository taskRepository,
+        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator
+    ) {
+        this(taskStepProgressService, taskRepository, javaLlmPhaseOrchestrator, null);
     }
 
     @Autowired
     public WorkerPhaseCompletedListener(
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository,
-        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator
+        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator,
+        SpeakerAutoConfirmService speakerAutoConfirmService
     ) {
         this.taskStepProgressService = taskStepProgressService;
         this.taskRepository = taskRepository;
         this.javaLlmPhaseOrchestrator = javaLlmPhaseOrchestrator;
+        this.speakerAutoConfirmService = speakerAutoConfirmService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -67,6 +79,7 @@ public class WorkerPhaseCompletedListener {
                     );
                     return;
                 }
+                autoConfirmSpeakers(event);
                 if (javaLlmPhaseOrchestrator != null) {
                     javaLlmPhaseOrchestrator.run(event.tenantId(), event.taskId());
                 } else {
@@ -80,6 +93,20 @@ public class WorkerPhaseCompletedListener {
             log.info("worker_phase_completed_terminal_no_llm task={} tenant={} status={}", event.taskId(), event.tenantId(), terminal);
         } catch (RuntimeException ex) {
             log.warn("worker_phase_completed_listener_failed task={} tenant={} reason={}", event.taskId(), event.tenantId(), ex.getMessage(), ex);
+        }
+    }
+
+    private void autoConfirmSpeakers(WorkerPhaseCompletedEvent event) {
+        if (speakerAutoConfirmService == null) {
+            return;
+        }
+        try {
+            speakerAutoConfirmService.autoConfirmAboveThreshold(event.tenantId(), event.taskId());
+        } catch (RuntimeException ex) {
+            log.warn(
+                "speaker_auto_confirm_listener_failed task={} tenant={} reason={}",
+                event.taskId(), event.tenantId(), ex.getMessage(), ex
+            );
         }
     }
 }

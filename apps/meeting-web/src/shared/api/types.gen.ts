@@ -127,6 +127,91 @@ export interface paths {
         patch: operations["updateMeeting"];
         trace?: never;
     };
+    "/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Initialize a tenant-scoped multipart upload for reference documents. Audio files must use the meeting-scoped audio upload endpoints. */
+        post: operations["createFileUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retrieve a tenant-scoped multipart upload session. */
+        get: operations["getFileUpload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{uploadId}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Request a presigned URL for one tenant-scoped file upload part. */
+        post: operations["createFileUploadPart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{uploadId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Mark all uploaded parts complete and return the durable file ID. */
+        post: operations["completeFileUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{uploadId}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Discard a partially-uploaded tenant-scoped file upload session. */
+        post: operations["abortFileUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/meetings/{meetingId}/files/audio/uploads": {
         parameters: {
             query?: never;
@@ -392,6 +477,41 @@ export interface paths {
         put?: never;
         /** @description Regenerate downstream artefacts affected by transcript edits. */
         post: operations["regenerateTranscriptDependents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/persons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search persons by display name or email for speaker enrollment and meeting setup. */
+        get: operations["searchPersons"];
+        put?: never;
+        /** @description Create a new person. Same-name persons return PERSON_DUPLICATE unless forceCreate is true. */
+        post: operations["createPerson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/persons/{personId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retrieve a person by ID in the current tenant. */
+        get: operations["getPerson"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1121,6 +1241,56 @@ export interface components {
             roles: string[];
             permissions: string[];
         };
+        CreatePersonRequest: {
+            displayName: string;
+            /** Format: email */
+            email?: string | null;
+            externalId?: string | null;
+            /**
+             * @description Skip duplicate displayName short-circuit when true.
+             * @default false
+             */
+            forceCreate: boolean;
+        };
+        Person: {
+            personId: string;
+            displayName: string;
+            email?: string | null;
+            externalId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PersonResponse: {
+            success: boolean;
+            data: components["schemas"]["Person"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        PersonListResponse: {
+            success: boolean;
+            data: components["schemas"]["Person"][];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        PersonDuplicateResponse: {
+            /** @enum {boolean} */
+            success: false;
+            data: null;
+            error: {
+                /** @enum {string} */
+                code: "PERSON_DUPLICATE";
+                message: string;
+                /** @enum {boolean} */
+                retryable: false;
+                details: {
+                    matches: components["schemas"]["Person"][];
+                };
+            };
+            requestId: string;
+            traceId: string;
+        };
         CreateMeetingRequest: {
             title: string;
             /** Format: date-time */
@@ -1173,6 +1343,11 @@ export interface components {
             language: string;
             transcriptVersion: number;
             minutesVersion: number;
+            participants?: {
+                personId: string;
+                displayName: string;
+                role: string;
+            }[];
             /** Format: date-time */
             createdAt: string;
         };
@@ -1180,6 +1355,88 @@ export interface components {
             cursor?: string;
             hasMore?: boolean;
             limit?: number;
+        };
+        CreateFileUploadRequest: {
+            fileName: string;
+            /** @enum {string} */
+            contentType: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "text/plain" | "text/markdown" | "audio/wav" | "audio/mpeg" | "audio/x-m4a" | "audio/flac";
+            /** Format: int64 */
+            fileSizeBytes: number;
+            fileSha256: string;
+            /** Format: int32 */
+            partSizeBytes?: number | null;
+        };
+        CreateFileUploadPartRequest: {
+            partNumber: number;
+            /** Format: int64 */
+            sizeBytes: number;
+            partSha256: string;
+        };
+        CompleteFileUploadRequest: {
+            fileSha256: string;
+            parts: components["schemas"]["FileUploadCompletePart"][];
+        };
+        FileUploadCompletePart: {
+            partNumber: number;
+            partSha256: string;
+            etag: string;
+        };
+        FileUploadSessionResponse: {
+            success: boolean;
+            data: components["schemas"]["FileUploadSession"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        FileUploadSession: {
+            uploadId: string;
+            /** Format: date-time */
+            expiresAt: string;
+            partSizeBytes: number;
+            /** @default 10000 */
+            maxPartCount: number;
+            objectKey?: string | null;
+            bucket?: string | null;
+            contentType: string;
+            fileName: string;
+            /** Format: int64 */
+            fileSizeBytes: number;
+            fileSha256: string;
+            fileId?: string | null;
+            parts: components["schemas"]["FileUploadPart"][];
+        };
+        FileUploadPartResponse: {
+            success: boolean;
+            data: components["schemas"]["FileUploadPart"];
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
+        FileUploadPart: {
+            partNumber: number;
+            partSha256: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            etag?: string | null;
+            uploadUrl: string;
+            /** Format: date-time */
+            expiresAt: string;
+            headers: {
+                [key: string]: string;
+            };
+        };
+        FileUploadCompleteResponse: {
+            success: boolean;
+            data: {
+                fileId: string;
+                sha256: string;
+                /** Format: int64 */
+                sizeBytes: number;
+                contentType: string;
+            };
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
         };
         CreateAudioUploadRequest: {
             fileName: string;
@@ -1910,6 +2167,7 @@ export interface components {
     parameters: {
         UserId: string;
         MeetingId: string;
+        PersonId: string;
         UploadId: string;
         TaskId: string;
         XRequestId: string;
@@ -2204,6 +2462,173 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Ok"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createFileUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Upload session created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadSessionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            /** @description MIME type not allowed */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse"];
+                };
+            };
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getFileUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upload session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createFileUploadPart: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileUploadPartRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed upload URL for one part */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadPartResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    completeFileUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteFileUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description File ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadCompleteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    abortFileUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                uploadId: components["parameters"]["UploadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["OkEmpty"];
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -2649,9 +3074,108 @@ export interface operations {
             200: components["responses"]["Ok"];
         };
     };
-    listSpeakerProfiles: {
+    searchPersons: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Person list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPerson: {
         parameters: {
             query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePersonRequest"];
+            };
+        };
+        responses: {
+            /** @description Person created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Same displayName already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDuplicateResponse"];
+                };
+            };
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getPerson: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+            };
+            path: {
+                personId: components["parameters"]["PersonId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Person found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSpeakerProfiles: {
+        parameters: {
+            query?: {
+                /** @description Filter speaker profiles by Java-owned person id. */
+                personId?: string;
+            };
             header: {
                 "X-Request-Id": components["parameters"]["XRequestId"];
                 "X-Trace-Id": components["parameters"]["XTraceId"];

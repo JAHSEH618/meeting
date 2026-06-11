@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   approveBreakGlassRequest,
   createBreakGlassRequest,
@@ -43,6 +43,12 @@ export function BreakGlassPage() {
   const [reason, setReason] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<BreakGlassRequestT | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<BreakGlassRequestT | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [actionPendingId, setActionPendingId] = useState<string | null>(null);
+  const rejectReasonRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -93,28 +99,60 @@ export function BreakGlassPage() {
     }
   }, [scopeType, scopeId, reason]);
 
-  const handleApprove = useCallback(async (req: BreakGlassRequestT) => {
-    if (!window.confirm(`批准 ${req.breakGlassRequestId} 的紧急访问申请？默认窗口 4 小时。`)) return;
+  const closeApproveDialog = useCallback(() => {
+    if (approveTarget && actionPendingId === approveTarget.breakGlassRequestId) return;
+    setApproveTarget(null);
+  }, [actionPendingId, approveTarget]);
+
+  const openRejectDialog = useCallback((req: BreakGlassRequestT) => {
+    setRejectTarget(req);
+    setRejectReason("");
+    setRejectError(null);
+  }, []);
+
+  const closeRejectDialog = useCallback(() => {
+    if (rejectTarget && actionPendingId === rejectTarget.breakGlassRequestId) return;
+    setRejectTarget(null);
+    setRejectReason("");
+    setRejectError(null);
+  }, [actionPendingId, rejectTarget]);
+
+  const handleApproveConfirm = useCallback(async () => {
+    if (!approveTarget) return;
+    setActionPendingId(approveTarget.breakGlassRequestId);
     try {
-      await approveBreakGlassRequest(req.breakGlassRequestId);
+      await approveBreakGlassRequest(approveTarget.breakGlassRequestId);
       await loadAll();
+      setApproveTarget(null);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "审批失败");
+    } finally {
+      setActionPendingId(null);
     }
-  }, [loadAll]);
+  }, [approveTarget, loadAll]);
 
-  const handleReject = useCallback(async (req: BreakGlassRequestT) => {
-    const rejectReason = window.prompt(`拒绝 ${req.breakGlassRequestId} 的原因：`, "");
-    if (!rejectReason || !rejectReason.trim()) return;
+  const handleRejectConfirm = useCallback(async () => {
+    if (!rejectTarget) return;
+    if (!rejectReason.trim()) {
+      setRejectError("请填写拒绝原因");
+      rejectReasonRef.current?.focus();
+      return;
+    }
+    setRejectError(null);
+    setActionPendingId(rejectTarget.breakGlassRequestId);
     try {
-      await rejectBreakGlassRequest(req.breakGlassRequestId, rejectReason.trim());
+      await rejectBreakGlassRequest(rejectTarget.breakGlassRequestId, rejectReason.trim());
       await loadAll();
+      setRejectTarget(null);
+      setRejectReason("");
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "拒绝失败");
+    } finally {
+      setActionPendingId(null);
     }
-  }, [loadAll]);
+  }, [loadAll, rejectReason, rejectTarget]);
 
   return (
     <main className="page">
@@ -243,14 +281,16 @@ export function BreakGlassPage() {
                       <>
                         <button
                           className="button primary"
-                          onClick={() => void handleApprove(req)}
+                          onClick={() => setApproveTarget(req)}
+                          disabled={actionPendingId === req.breakGlassRequestId}
                           data-testid={`bg-approve-${req.breakGlassRequestId}`}
                         >
                           批准
                         </button>
                         <button
                           className="button danger"
-                          onClick={() => void handleReject(req)}
+                          onClick={() => openRejectDialog(req)}
+                          disabled={actionPendingId === req.breakGlassRequestId}
                           data-testid={`bg-reject-${req.breakGlassRequestId}`}
                         >
                           拒绝
@@ -267,6 +307,123 @@ export function BreakGlassPage() {
           </table>
         )}
       </section>
+
+      {approveTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bg-approve-title"
+            aria-describedby="bg-approve-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="bg-approve-title" className="card-title">批准紧急访问</h2>
+                <p id="bg-approve-description" className="muted">
+                  {approveTarget.scopeType} {approveTarget.scopeId} · {approveTarget.breakGlassRequestId}
+                </p>
+              </div>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={closeApproveDialog}
+                disabled={actionPendingId === approveTarget.breakGlassRequestId}
+              >
+                取消
+              </button>
+            </div>
+            <p className="muted">
+              批准后将授予临时高密级访问权限，默认窗口为 4 小时。
+            </p>
+            <div className="modal-actions" aria-live="polite">
+              <button
+                className="button"
+                type="button"
+                onClick={closeApproveDialog}
+                disabled={actionPendingId === approveTarget.breakGlassRequestId}
+              >
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => void handleApproveConfirm()}
+                disabled={actionPendingId === approveTarget.breakGlassRequestId}
+              >
+                {actionPendingId === approveTarget.breakGlassRequestId ? "批准中..." : "确认批准"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {rejectTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bg-reject-title"
+            aria-describedby="bg-reject-description"
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="bg-reject-title" className="card-title">拒绝紧急访问</h2>
+                <p id="bg-reject-description" className="muted">
+                  {rejectTarget.scopeType} {rejectTarget.scopeId} · {rejectTarget.breakGlassRequestId}
+                </p>
+              </div>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={closeRejectDialog}
+                disabled={actionPendingId === rejectTarget.breakGlassRequestId}
+              >
+                取消
+              </button>
+            </div>
+            <label className="field">
+              <span className="field__label">拒绝原因</span>
+              <textarea
+                className="field__input"
+                ref={rejectReasonRef}
+                name="rejectReason"
+                autoComplete="off"
+                value={rejectReason}
+                onChange={(event) => setRejectReason(event.target.value)}
+                aria-invalid={rejectError ? "true" : "false"}
+                aria-describedby={rejectError ? "bg-reject-error" : undefined}
+                rows={4}
+                data-testid="bg-reject-reason"
+              />
+            </label>
+            {rejectError ? (
+              <p className="field__error" id="bg-reject-error" role="alert">
+                {rejectError}
+              </p>
+            ) : null}
+            <div className="modal-actions" aria-live="polite">
+              <button
+                className="button"
+                type="button"
+                onClick={closeRejectDialog}
+                disabled={actionPendingId === rejectTarget.breakGlassRequestId}
+              >
+                取消
+              </button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => void handleRejectConfirm()}
+                disabled={actionPendingId === rejectTarget.breakGlassRequestId}
+              >
+                {actionPendingId === rejectTarget.breakGlassRequestId ? "拒绝中..." : "确认拒绝"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

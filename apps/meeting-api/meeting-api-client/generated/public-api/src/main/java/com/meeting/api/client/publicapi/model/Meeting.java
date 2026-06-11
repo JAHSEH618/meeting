@@ -19,11 +19,14 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.meeting.api.client.publicapi.model.CreateMeetingRequestParticipantsInner;
 import com.meeting.api.client.publicapi.model.MeetingStatus;
 import com.meeting.api.client.publicapi.model.SecurityLevel;
 import java.io.IOException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -97,6 +100,11 @@ public class Meeting {
   @SerializedName(SERIALIZED_NAME_MINUTES_VERSION)
   @javax.annotation.Nonnull
   private Integer minutesVersion;
+
+  public static final String SERIALIZED_NAME_PARTICIPANTS = "participants";
+  @SerializedName(SERIALIZED_NAME_PARTICIPANTS)
+  @javax.annotation.Nullable
+  private List<CreateMeetingRequestParticipantsInner> participants = new ArrayList<>();
 
   public static final String SERIALIZED_NAME_CREATED_AT = "createdAt";
   @SerializedName(SERIALIZED_NAME_CREATED_AT)
@@ -279,6 +287,33 @@ public class Meeting {
   }
 
 
+  public Meeting participants(@javax.annotation.Nullable List<CreateMeetingRequestParticipantsInner> participants) {
+    this.participants = participants;
+    return this;
+  }
+
+  public Meeting addParticipantsItem(CreateMeetingRequestParticipantsInner participantsItem) {
+    if (this.participants == null) {
+      this.participants = new ArrayList<>();
+    }
+    this.participants.add(participantsItem);
+    return this;
+  }
+
+  /**
+   * Get participants
+   * @return participants
+   */
+  @javax.annotation.Nullable
+  public List<CreateMeetingRequestParticipantsInner> getParticipants() {
+    return participants;
+  }
+
+  public void setParticipants(@javax.annotation.Nullable List<CreateMeetingRequestParticipantsInner> participants) {
+    this.participants = participants;
+  }
+
+
   public Meeting createdAt(@javax.annotation.Nonnull OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -317,12 +352,13 @@ public class Meeting {
         Objects.equals(this.language, meeting.language) &&
         Objects.equals(this.transcriptVersion, meeting.transcriptVersion) &&
         Objects.equals(this.minutesVersion, meeting.minutesVersion) &&
+        Objects.equals(this.participants, meeting.participants) &&
         Objects.equals(this.createdAt, meeting.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(meetingId, tenantId, title, scheduledStartAt, securityLevel, status, language, transcriptVersion, minutesVersion, createdAt);
+    return Objects.hash(meetingId, tenantId, title, scheduledStartAt, securityLevel, status, language, transcriptVersion, minutesVersion, participants, createdAt);
   }
 
   @Override
@@ -338,6 +374,7 @@ public class Meeting {
     sb.append("    language: ").append(toIndentedString(language)).append("\n");
     sb.append("    transcriptVersion: ").append(toIndentedString(transcriptVersion)).append("\n");
     sb.append("    minutesVersion: ").append(toIndentedString(minutesVersion)).append("\n");
+    sb.append("    participants: ").append(toIndentedString(participants)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();
@@ -357,7 +394,7 @@ public class Meeting {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "scheduledStartAt", "securityLevel", "status", "language", "transcriptVersion", "minutesVersion", "createdAt"));
+    openapiFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "scheduledStartAt", "securityLevel", "status", "language", "transcriptVersion", "minutesVersion", "participants", "createdAt"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("meetingId", "tenantId", "title", "securityLevel", "status", "language", "transcriptVersion", "minutesVersion", "createdAt"));
@@ -406,6 +443,20 @@ public class Meeting {
       MeetingStatus.validateJsonElement(jsonObj.get("status"));
       if (!jsonObj.get("language").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `language` to be a primitive type in the JSON string but got `%s`", jsonObj.get("language").toString()));
+      }
+      if (jsonObj.get("participants") != null && !jsonObj.get("participants").isJsonNull()) {
+        JsonArray jsonArrayparticipants = jsonObj.getAsJsonArray("participants");
+        if (jsonArrayparticipants != null) {
+          // ensure the json data is an array
+          if (!jsonObj.get("participants").isJsonArray()) {
+            throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `participants` to be an array in the JSON string but got `%s`", jsonObj.get("participants").toString()));
+          }
+
+          // validate the optional field `participants` (array)
+          for (int i = 0; i < jsonArrayparticipants.size(); i++) {
+            CreateMeetingRequestParticipantsInner.validateJsonElement(jsonArrayparticipants.get(i));
+          };
+        }
       }
   }
 

@@ -7,6 +7,7 @@ import com.meeting.api.client.speaker.CreateSpeakerProfileCommand;
 import com.meeting.api.client.speaker.SpeakerEnrollmentDTO;
 import com.meeting.api.client.speaker.SpeakerProfileDTO;
 import com.meeting.api.client.speaker.SpeakerProfileFacade;
+import com.meeting.api.client.speaker.SpeakerProfileListDTO;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,12 +28,13 @@ public class SpeakerProfileController {
     }
 
     @GetMapping("/api/speaker-profiles")
-    public ResponseEntity<ApiResponse<List<SpeakerProfileDTO>>> list(
+    public ResponseEntity<ApiResponse<SpeakerProfileListDTO>> list(
+        @RequestParam(value = "personId", required = false) String personId,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId
     ) {
-        var items = facade.list(TenantContextHolder.currentTenantId());
-        return ResponseEntity.ok(ApiResponse.ok(items, requestId, traceId));
+        var page = facade.list(TenantContextHolder.currentTenantId(), personId);
+        return ResponseEntity.ok(ApiResponse.ok(page, requestId, traceId));
     }
 
     @GetMapping("/api/speaker-profiles/{profileId}")
@@ -53,12 +56,16 @@ public class SpeakerProfileController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("request body is required");
+        }
+        body.validate();
         SpeakerProfileDTO result = facade.create(new CreateSpeakerProfileCommand(
             TenantContextHolder.currentTenantId(),
             body.personId(),
             body.displayName(),
-            body.consentSource(),
-            body.consentVersion(),
+            body.resolvedConsentSource(),
+            body.resolvedConsentVersion(),
             userId,
             requestId,
             traceId,
@@ -99,10 +106,14 @@ public class SpeakerProfileController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
+        if (body == null) {
+            throw new IllegalArgumentException("request body is required");
+        }
+        body.validate();
         SpeakerEnrollmentDTO result = facade.addEnrollment(new CreateSpeakerEnrollmentCommand(
             TenantContextHolder.currentTenantId(),
             profileId,
-            body.sourceAudioFileId(),
+            body.audioFileId(),
             userId,
             requestId,
             traceId,
@@ -124,14 +135,52 @@ public class SpeakerProfileController {
     public record CreateProfileRequest(
         String personId,
         String displayName,
+        String consentReference,
         String consentSource,
         String consentVersion
     ) {
+        void validate() {
+            if (personId == null || personId.isBlank()) {
+                throw new IllegalArgumentException("personId is required");
+            }
+            if (displayName == null || displayName.isBlank()) {
+                throw new IllegalArgumentException("displayName is required");
+            }
+            if (consentReference == null || consentReference.isBlank()) {
+                throw new IllegalArgumentException("consentReference is required");
+            }
+        }
+
+        String resolvedConsentSource() {
+            if (consentReference == null || consentReference.isBlank()) {
+                return consentSource;
+            }
+            int separator = consentReference.indexOf(':');
+            return separator < 0 ? consentReference : consentReference.substring(0, separator);
+        }
+
+        String resolvedConsentVersion() {
+            if (consentReference == null || consentReference.isBlank()) {
+                return consentVersion;
+            }
+            int separator = consentReference.indexOf(':');
+            return separator < 0 || separator == consentReference.length() - 1
+                ? null
+                : consentReference.substring(separator + 1);
+        }
     }
 
     public record RevokeRequest(String reason) {
     }
 
-    public record CreateEnrollmentRequest(String sourceAudioFileId) {
+    public record CreateEnrollmentRequest(String audioFileId, String sourceAudioFileId, String consentReference, String language) {
+        void validate() {
+            if (audioFileId == null || audioFileId.isBlank()) {
+                throw new IllegalArgumentException("audioFileId is required");
+            }
+            if (consentReference == null || consentReference.isBlank()) {
+                throw new IllegalArgumentException("consentReference is required");
+            }
+        }
     }
 }

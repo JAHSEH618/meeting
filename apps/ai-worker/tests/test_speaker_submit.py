@@ -10,6 +10,7 @@ from ai_worker.pipeline.speaker.matcher import SpeakerMatchCandidate, SpeakerMat
 from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
 from ai_worker.pipeline.speaker.submit import (
     SpeakerCandidateSubmission,
+    submit_and_clear_speaker_enrollment_embedding,
     submit_and_clear_speaker_candidates,
 )
 
@@ -33,6 +34,30 @@ class CapturingClient:
         # Snapshot the plaintext as observed at call time so we can verify the wire
         # payload was non-zero.
         self.last_payload = [_deep_copy(d) for d in speaker_candidates]
+        if self.raise_on_call is not None:
+            raise self.raise_on_call
+        return self.next_response or CallbackResponse(http_status=200, accepted=True)
+
+
+@dataclass
+class CapturingEnrollmentClient:
+    last_payload: dict | None = None
+    raise_on_call: Exception | None = None
+    next_response: CallbackResponse | None = None
+
+    async def submit_speaker_enrollment_embedding(
+        self,
+        *,
+        task_id: str,
+        tenant_id: str,
+        attempt_no: int,
+        speaker_profile_id: str,
+        speaker_enrollment_id: str,
+        audio_file_id: str,
+        embedding: dict,
+        trace_id: str = "",
+    ) -> CallbackResponse:
+        self.last_payload = _deep_copy(embedding)
         if self.raise_on_call is not None:
             raise self.raise_on_call
         return self.next_response or CallbackResponse(http_status=200, accepted=True)
@@ -142,3 +167,68 @@ async def test_multiple_submissions_all_cleared() -> None:
 
     assert a.values == [0.0, 0.0]
     assert b.values == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_enrollment_callback_succeeds_and_clears_plaintext() -> None:
+    embedding = _embedding([0.1, 0.2, 0.3])
+    client = CapturingEnrollmentClient()
+
+    response = await submit_and_clear_speaker_enrollment_embedding(
+        client,  # type: ignore[arg-type]
+        task_id="task_01",
+        tenant_id="tenant_01",
+        attempt_no=1,
+        speaker_profile_id="sp_01",
+        speaker_enrollment_id="se_01",
+        audio_file_id="audio_01",
+        embedding=embedding,
+    )
+
+    assert response.accepted is True
+    assert client.last_payload is not None
+    assert client.last_payload["values"] == [0.1, 0.2, 0.3]
+    assert client.last_payload["qualityScore"] == 0.7
+    assert embedding.values == [0.0, 0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_enrollment_callback_failure_response_still_clears_plaintext() -> None:
+    embedding = _embedding([0.4, 0.5])
+    client = CapturingEnrollmentClient(
+        next_response=CallbackResponse(http_status=503, accepted=False, error_code="WRITEBACK_FAILED")
+    )
+
+    response = await submit_and_clear_speaker_enrollment_embedding(
+        client,  # type: ignore[arg-type]
+        task_id="task_01",
+        tenant_id="tenant_01",
+        attempt_no=1,
+        speaker_profile_id="sp_01",
+        speaker_enrollment_id="se_01",
+        audio_file_id="audio_01",
+        embedding=embedding,
+    )
+
+    assert response.accepted is False
+    assert embedding.values == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_enrollment_callback_exception_still_clears_plaintext() -> None:
+    embedding = _embedding([0.6, 0.7])
+    client = CapturingEnrollmentClient(raise_on_call=RuntimeError("boom"))
+
+    with pytest.raises(RuntimeError):
+        await submit_and_clear_speaker_enrollment_embedding(
+            client,  # type: ignore[arg-type]
+            task_id="task_01",
+            tenant_id="tenant_01",
+            attempt_no=1,
+            speaker_profile_id="sp_01",
+            speaker_enrollment_id="se_01",
+            audio_file_id="audio_01",
+            embedding=embedding,
+        )
+
+    assert embedding.values == [0.0, 0.0]

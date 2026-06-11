@@ -98,9 +98,14 @@ describe("sanitizeForLogging", () => {
       personId: null,
       speakerProfileId: null,
       confirmationStatus: "CANDIDATE",
-      autoMatchScore: 0.8,
-      confirmedAt: null,
-      candidatePersonIds: ["alice"],
+      candidates: [
+        {
+          personId: "alice",
+          speakerProfileId: "spk_alice",
+          displayName: "Alice",
+          confidence: 0.8,
+        },
+      ],
     };
     for (const key of Object.keys(sample)) {
       expect(isForbiddenKey(key)).toBe(false);

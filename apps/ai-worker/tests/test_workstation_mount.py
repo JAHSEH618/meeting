@@ -261,3 +261,193 @@ def test_python_hosted_workstation_proxies_login_to_java(
         "X-Request-Id": "r",
         "X-Trace-Id": "t",
     }
+
+
+def test_python_hosted_workstation_proxies_processing_task_detail_to_java(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_worker.interfaces.api import main as main_module
+
+    seen: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            seen["base_url"] = base_url
+            seen["timeout"] = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(
+            self,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> httpx.Response:
+            seen["path"] = path
+            seen["headers"] = headers
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {"taskId": "task 1", "status": "RUNNING"},
+                    "error": None,
+                    "requestId": "java-r",
+                    "traceId": "java-t",
+                },
+                headers={"Content-Type": "application/json"},
+            )
+
+    monkeypatch.setattr(settings, "java_api_base_url", "http://meeting-api:8080")
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = TestClient(main_module.create_app())
+    response = client.get(
+        "/api/processing-tasks/task%201",
+        headers={
+            "Authorization": "Bearer admin.jwt",
+            "X-Request-Id": "r",
+            "X-Trace-Id": "t",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["taskId"] == "task 1"
+    assert seen["base_url"] == "http://meeting-api:8080"
+    assert seen["path"] == "/api/processing-tasks/task%201"
+    assert seen["headers"] == {
+        "Accept": "application/json",
+        "Authorization": "Bearer admin.jwt",
+        "X-Request-Id": "r",
+        "X-Trace-Id": "t",
+    }
+
+
+def test_python_hosted_workstation_streams_processing_task_sse_from_java(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_worker.interfaces.api import main as main_module
+
+    seen: dict[str, object] = {}
+
+    class FakeStreamResponse:
+        status_code = 200
+        headers = {"content-type": "text/event-stream"}
+
+        async def __aenter__(self) -> "FakeStreamResponse":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            yield b'event: TASK_SNAPSHOT\n'
+            yield b'data: {"taskId":"task-1"}\n\n'
+
+    class FakeAsyncClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            seen["base_url"] = base_url
+            seen["timeout"] = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def aclose(self) -> None:
+            return None
+
+        def stream(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> FakeStreamResponse:
+            seen["method"] = method
+            seen["path"] = path
+            seen["headers"] = headers
+            return FakeStreamResponse()
+
+    monkeypatch.setattr(settings, "java_api_base_url", "http://meeting-api:8080")
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = TestClient(main_module.create_app())
+    with client.stream(
+        "GET",
+        "/api/processing-tasks/task-1/events",
+        headers={
+            "Authorization": "Bearer admin.jwt",
+            "X-Request-Id": "r",
+            "X-Trace-Id": "t",
+            "Last-Event-Id": "task-1:1",
+        },
+    ) as response:
+        body = response.read()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert b'data: {"taskId":"task-1"}' in body
+    assert seen["base_url"] == "http://meeting-api:8080"
+    assert seen["method"] == "GET"
+    assert seen["path"] == "/api/processing-tasks/task-1/events"
+    assert seen["headers"] == {
+        "Accept": "text/event-stream",
+        "Authorization": "Bearer admin.jwt",
+        "X-Request-Id": "r",
+        "X-Trace-Id": "t",
+        "Last-Event-Id": "task-1:1",
+    }
+
+
+def test_python_hosted_workstation_sse_proxy_preserves_upstream_error_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_worker.interfaces.api import main as main_module
+
+    class FakeStreamResponse:
+        status_code = 401
+        headers = {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+        }
+
+        async def __aenter__(self) -> "FakeStreamResponse":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"success":false,"error":{"code":"AUTH_REQUIRED"}}'
+
+    class FakeAsyncClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def aclose(self) -> None:
+            return None
+
+        def stream(self, *_args: object, **_kwargs: object) -> FakeStreamResponse:
+            return FakeStreamResponse()
+
+    monkeypatch.setattr(settings, "java_api_base_url", "http://meeting-api:8080")
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    client = TestClient(main_module.create_app())
+    with client.stream("GET", "/api/processing-tasks/task-1/events") as response:
+        body = response.read()
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/json")
+    assert body == b'{"success":false,"error":{"code":"AUTH_REQUIRED"}}'

@@ -9,7 +9,16 @@ def test_validate_valid_meeting_full_pipeline() -> None:
         "meetingId": "mtg_01",
         "securityLevel": "INTERNAL",
         "attemptNo": 1,
-        "pipelineSteps": ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "RAG_INDEXING"],
+        "pipelineSteps": [
+            "AUDIO_PREPROCESS",
+            "ASR",
+            "ALIGNMENT",
+            "DIARIZATION",
+            "SPEAKER_EMBEDDING",
+            "SPEAKER_MATCHING",
+            "TRANSCRIPT_MERGE",
+            "RAG_INDEXING",
+        ],
         "expectedInputVersion": {"chunkStrategyVersion": "v1"},
         "language": "zh",
         "channelMap": {"channelCount": 2, "layout": "stereo"},
@@ -51,9 +60,37 @@ def test_validate_pipeline_steps_accepts_valid() -> None:
     assert result.valid, f"Expected valid, got errors: {result.errors}"
 
 
-def test_validate_pipeline_steps_accepts_phase2_worker_subset() -> None:
+def test_validate_pipeline_steps_rejects_missing_required_worker_steps() -> None:
     result = validate_pipeline_steps(
         "MEETING_FULL_PIPELINE",
         ["AUDIO_PREPROCESS", "ASR", "DIARIZATION", "TRANSCRIPT_MERGE"],
     )
+    assert not result.valid
+    assert any("exact ordered steps" in e for e in result.errors)
+
+
+def test_validate_pipeline_steps_rejects_reordered_required_worker_steps() -> None:
+    result = validate_pipeline_steps(
+        "MEETING_FULL_PIPELINE",
+        ["ASR", "AUDIO_PREPROCESS", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
+    )
+    assert not result.valid
+    assert any("exact ordered steps" in e for e in result.errors)
+
+
+def test_validate_pipeline_steps_accepts_exact_speaker_enrollment_steps() -> None:
+    result = validate_pipeline_steps("SPEAKER_ENROLLMENT", ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING"])
     assert result.valid, f"Expected valid, got errors: {result.errors}"
+
+
+def test_validate_pipeline_steps_rejects_incomplete_speaker_enrollment_steps() -> None:
+    result = validate_pipeline_steps("SPEAKER_ENROLLMENT", ["SPEAKER_EMBEDDING"])
+    assert not result.valid
+    assert any("exact ordered steps" in e for e in result.errors)
+
+
+def test_validate_pipeline_steps_rejects_extra_speaker_enrollment_steps() -> None:
+    result = validate_pipeline_steps("SPEAKER_ENROLLMENT", ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "RAG_INDEXING"])
+    assert not result.valid
+    assert any("unexpected steps" in e for e in result.errors)
+    assert any("exact ordered steps" in e for e in result.errors)

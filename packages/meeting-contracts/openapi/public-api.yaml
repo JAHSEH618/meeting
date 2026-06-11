@@ -22,10 +22,12 @@ tags:
     description: Authentication and authorization
   - name: Users
     description: User management
+  - name: Persons
+    description: People referenced by speakers and meetings
   - name: Meetings
     description: Meeting resources
   - name: Files
-    description: Audio file upload management
+    description: Audio and reference file upload management
   - name: Tasks
     description: Processing task lifecycle
   - name: Transcript
@@ -318,6 +320,169 @@ paths:
           $ref: '#/components/responses/Conflict'
         '423':
           $ref: '#/components/responses/Locked'
+
+  # ── Generic File Uploads ────────────────────────────────────
+  /files:
+    post:
+      operationId: createFileUpload
+      description: Initialize a tenant-scoped multipart upload for reference documents. Audio files must use the meeting-scoped audio upload endpoints.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFileUploadRequest'
+      responses:
+        '200':
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          description: MIME type not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /files/{uploadId}:
+    get:
+      operationId: getFileUpload
+      description: Retrieve a tenant-scoped multipart upload session.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Upload session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{uploadId}/parts:
+    post:
+      operationId: createFileUploadPart
+      description: Request a presigned URL for one tenant-scoped file upload part.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFileUploadPartRequest'
+      responses:
+        '200':
+          description: Signed upload URL for one part
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadPartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /files/{uploadId}/complete:
+    post:
+      operationId: completeFileUpload
+      description: Mark all uploaded parts complete and return the durable file ID.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteFileUploadRequest'
+      responses:
+        '200':
+          description: File ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadCompleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /files/{uploadId}/abort:
+    post:
+      operationId: abortFileUpload
+      description: Discard a partially-uploaded tenant-scoped file upload session.
+      tags: [Files]
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkEmpty'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # ── Audio Upload ────────────────────────────────────────────
   /meetings/{meetingId}/files/audio/uploads:
@@ -757,6 +922,89 @@ paths:
         '200':
           $ref: '#/components/responses/Ok'
 
+  # ── Persons ─────────────────────────────────────────────────
+  /persons:
+    get:
+      operationId: searchPersons
+      description: Search persons by display name or email for speaker enrollment and meeting setup.
+      tags: [Persons]
+      parameters:
+        - in: query
+          name: q
+          required: false
+          schema: {type: string}
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Person list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createPerson
+      description: Create a new person. Same-name persons return PERSON_DUPLICATE unless forceCreate is true.
+      tags: [Persons]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePersonRequest'
+      responses:
+        '200':
+          description: Person created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Same displayName already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonDuplicateResponse'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /persons/{personId}:
+    get:
+      operationId: getPerson
+      description: Retrieve a person by ID in the current tenant.
+      tags: [Persons]
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+      responses:
+        '200':
+          description: Person found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ── Speaker Profiles ────────────────────────────────────────
   /speaker-profiles:
     get:
@@ -764,6 +1012,11 @@ paths:
       description: List speaker profiles in the current tenant.
       tags: [Speakers]
       parameters:
+        - name: personId
+          in: query
+          required: false
+          schema: {type: string}
+          description: Filter speaker profiles by Java-owned person id.
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/XTraceId'
       responses:
@@ -1683,6 +1936,11 @@ components:
       in: path
       required: true
       schema: {type: string}
+    PersonId:
+      name: personId
+      in: path
+      required: true
+      schema: {type: string}
     UploadId:
       name: uploadId
       in: path
@@ -1949,6 +2207,86 @@ components:
           type: array
           items: {type: string}
 
+    # ── Person ─────────────────────────────────────────────────
+    CreatePersonRequest:
+      type: object
+      required: [displayName]
+      additionalProperties: false
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 128}
+        email: {type: [string, 'null'], format: email, maxLength: 254}
+        externalId: {type: [string, 'null'], maxLength: 128}
+        forceCreate:
+          type: boolean
+          default: false
+          description: Skip duplicate displayName short-circuit when true.
+
+    Person:
+      type: object
+      required: [personId, displayName, createdAt]
+      additionalProperties: false
+      properties:
+        personId: {type: string}
+        displayName: {type: string, maxLength: 128}
+        email: {type: [string, 'null'], maxLength: 254}
+        externalId: {type: [string, 'null'], maxLength: 128}
+        createdAt: {type: string, format: date-time}
+
+    PersonResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/Person'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    PersonListResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    PersonDuplicateResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean, enum: [false]}
+        data:
+          type: 'null'
+        error:
+          type: object
+          required: [code, message, retryable, details]
+          properties:
+            code: {type: string, enum: [PERSON_DUPLICATE]}
+            message: {type: string}
+            retryable: {type: boolean, enum: [false]}
+            details:
+              type: object
+              required: [matches]
+              properties:
+                matches:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Person'
+        requestId: {type: string}
+        traceId: {type: string}
+
     # ── Meeting ────────────────────────────────────────────────
     CreateMeetingRequest:
       type: object
@@ -2038,6 +2376,15 @@ components:
         language: {type: string}
         transcriptVersion: {type: integer, minimum: 0}
         minutesVersion: {type: integer, minimum: 0}
+        participants:
+          type: array
+          items:
+            type: object
+            required: [personId, displayName, role]
+            properties:
+              personId: {type: string}
+              displayName: {type: string}
+              role: {type: string}
         createdAt: {type: string, format: date-time}
 
     PageInfo:
@@ -2046,6 +2393,159 @@ components:
         cursor: {type: string}
         hasMore: {type: boolean}
         limit: {type: integer}
+
+    # ── Generic File Upload ───────────────────────────────────
+    CreateFileUploadRequest:
+      type: object
+      required: [fileName, contentType, fileSizeBytes, fileSha256]
+      additionalProperties: false
+      properties:
+        fileName: {type: string, minLength: 1, maxLength: 255}
+        contentType:
+          type: string
+          enum:
+            - application/pdf
+            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+            - application/vnd.openxmlformats-officedocument.presentationml.presentation
+            - text/plain
+            - text/markdown
+            - audio/wav
+            - audio/mpeg
+            - audio/x-m4a
+            - audio/flac
+        fileSizeBytes: {type: integer, format: int64, minimum: 1, maximum: 524288000}
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        partSizeBytes: {type: [integer, 'null'], format: int32, minimum: 1048576}
+
+    CreateFileUploadPartRequest:
+      type: object
+      required: [partNumber, sizeBytes, partSha256]
+      additionalProperties: false
+      properties:
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        partSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+
+    CompleteFileUploadRequest:
+      type: object
+      required: [fileSha256, parts]
+      additionalProperties: false
+      properties:
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/FileUploadCompletePart'
+
+    FileUploadCompletePart:
+      type: object
+      required: [partNumber, partSha256, etag]
+      additionalProperties: false
+      properties:
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        partSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        etag: {type: string, minLength: 1}
+
+    FileUploadSessionResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/FileUploadSession'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    FileUploadSession:
+      type: object
+      required: [uploadId, expiresAt, partSizeBytes, maxPartCount, contentType, fileName, fileSizeBytes, fileSha256, parts]
+      additionalProperties: false
+      properties:
+        uploadId: {type: string}
+        expiresAt: {type: string, format: date-time}
+        partSizeBytes: {type: integer, minimum: 1048576}
+        maxPartCount: {type: integer, minimum: 1, maximum: 10000, default: 10000}
+        objectKey: {type: [string, 'null']}
+        bucket: {type: [string, 'null']}
+        contentType: {type: string}
+        fileName: {type: string}
+        fileSizeBytes: {type: integer, format: int64, minimum: 1}
+        fileSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        fileId: {type: [string, 'null']}
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileUploadPart'
+
+    FileUploadPartResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          $ref: '#/components/schemas/FileUploadPart'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    FileUploadPart:
+      type: object
+      required: [partNumber, partSha256, sizeBytes, uploadUrl, expiresAt, headers]
+      additionalProperties: false
+      properties:
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        partSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        etag: {type: [string, 'null']}
+        uploadUrl: {type: string}
+        expiresAt: {type: string, format: date-time}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+
+    FileUploadCompleteResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [fileId, sha256, sizeBytes, contentType]
+          additionalProperties: false
+          properties:
+            fileId: {type: string}
+            sha256:
+              type: string
+              pattern: '^[0-9a-f]{64}$'
+            sizeBytes: {type: integer, format: int64}
+            contentType: {type: string}
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
 
     # ── Audio Upload ──────────────────────────────────────────
     CreateAudioUploadRequest:

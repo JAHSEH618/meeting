@@ -10,5 +10,7 @@ public interface MeetingFacade {
 
     List<MeetingDTO> list(String tenantId);
 
+    MeetingDTO update(UpdateMeetingCommand command);
+
     DeleteMeetingResult delete(DeleteMeetingCommand command);
 }

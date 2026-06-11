@@ -25,6 +25,7 @@ from typing import Mapping
 import httpx
 
 from ai_worker.common.config import settings
+from ai_worker.pipeline.speaker.matcher import ReferenceEmbedding
 
 _log = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class SpeakerReferenceUnavailable(Exception):
 @dataclass
 class _CacheEntry:
     expires_at: float
-    by_person: dict[str, list[float]]
+    by_person: dict[str, ReferenceEmbedding]
 
 
 class JavaSpeakerReferenceClient:
@@ -85,26 +86,29 @@ class JavaSpeakerReferenceClient:
         tenant_id: str,
         participant_id: str,
         dimension: int,
-    ) -> list[float]:
+    ) -> ReferenceEmbedding:
         """ReferenceEmbeddingSupplier protocol — single-id convenience wrapper."""
         result = await self.batch(tenant_id, [participant_id])
-        vector = result.get(participant_id)
-        if vector is None:
+        reference = result.get(participant_id)
+        if reference is None:
             raise SpeakerReferenceUnavailable(f"no centroid for participant {participant_id}")
-        if dimension and len(vector) != dimension:
+        if dimension and len(reference.values) != dimension:
             raise SpeakerReferenceUnavailable(
-                f"dimension mismatch: expected {dimension} got {len(vector)}"
+                f"dimension mismatch: expected {dimension} got {len(reference.values)}"
             )
-        return vector
+        return reference
 
-    async def batch(self, tenant_id: str, person_ids: list[str]) -> dict[str, list[float]]:
+    async def batch(self, tenant_id: str, person_ids: list[str]) -> dict[str, ReferenceEmbedding]:
         if not person_ids:
             return {}
         key = (tenant_id, tuple(sorted(set(person_ids))))
         cached = self._cache.get(key)
         if cached and cached.expires_at > time.time():
-            # cache hit — return a *copy* to keep callers from mutating the cached vector
-            return {pid: list(v) for pid, v in cached.by_person.items() if pid in person_ids}
+            return {
+                pid: _copy_reference(ref)
+                for pid, ref in cached.by_person.items()
+                if pid in person_ids
+            }
 
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
@@ -114,7 +118,11 @@ class JavaSpeakerReferenceClient:
                     expires_at=time.time() + self._ttl_seconds,
                     by_person=payload,
                 )
-                return {pid: list(v) for pid, v in payload.items() if pid in person_ids}
+                return {
+                    pid: _copy_reference(ref)
+                    for pid, ref in payload.items()
+                    if pid in person_ids
+                }
             except _Retryable as exc:
                 last_exc = exc
                 wait = _BASE_BACKOFF_SECONDS * (2 ** attempt)
@@ -131,7 +139,7 @@ class JavaSpeakerReferenceClient:
 
     async def _call(
         self, tenant_id: str, person_ids: list[str]
-    ) -> dict[str, list[float]]:
+    ) -> dict[str, ReferenceEmbedding]:
         import json
         body_dict = {"tenantId": tenant_id, "personIds": person_ids}
         body_bytes = json.dumps(body_dict, separators=(",", ":")).encode("utf-8")
@@ -164,12 +172,25 @@ class JavaSpeakerReferenceClient:
             err = (envelope.get("error") or {}).get("code", "UNKNOWN")
             raise SpeakerReferenceUnavailable(f"Java envelope error: {err}")
         items = (envelope.get("data") or {}).get("items") or []
-        by_person: dict[str, list[float]] = {}
+        by_person: dict[str, ReferenceEmbedding] = {}
         for item in items:
             person_id = item.get("personId")
+            speaker_profile_id = item.get("speakerProfileId")
             values = item.get("values")
-            if isinstance(person_id, str) and isinstance(values, list):
-                by_person[person_id] = [float(x) for x in values]
+            if (
+                isinstance(person_id, str)
+                and isinstance(speaker_profile_id, str)
+                and isinstance(values, list)
+            ):
+                by_person[person_id] = ReferenceEmbedding(
+                    person_id=person_id,
+                    speaker_profile_id=speaker_profile_id,
+                    values=[float(x) for x in values],
+                )
+            elif isinstance(person_id, str):
+                raise SpeakerReferenceUnavailable(
+                    f"Java reference item missing speakerProfileId for participant {person_id}"
+                )
         # Hash for debug logs without leaking plaintext.
         person_hash = hashlib.sha256(",".join(sorted(by_person.keys())).encode()).hexdigest()[:12]
         _log.info(
@@ -193,6 +214,14 @@ def _sign(secret: str, method: str, path: str, body: bytes, timestamp: str, nonc
 def _utc_iso_now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _copy_reference(reference: ReferenceEmbedding) -> ReferenceEmbedding:
+    return ReferenceEmbedding(
+        person_id=reference.person_id,
+        speaker_profile_id=reference.speaker_profile_id,
+        values=list(reference.values),
+    )
 
 
 def build_default_client() -> JavaSpeakerReferenceClient:
