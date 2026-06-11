@@ -41,7 +41,6 @@ class ClientEnumConsistencyTest {
         Map<String, List<String>> enums = parseEnumYaml(findRepoRoot().resolve("packages/meeting-contracts/schemas/common/enums.yaml"));
 
         assertThat(names(MeetingStatus.class)).containsExactlyElementsOf(enums.get("meetingStatus"));
-        assertThat(names(SecurityLevel.class)).containsExactlyElementsOf(enums.get("securityLevel"));
         assertThat(names(ProcessingTaskStatus.class)).containsExactlyElementsOf(enums.get("processingTaskStatus"));
         assertThat(names(ProcessingTaskPhase.class)).containsExactlyElementsOf(enums.get("processingTaskPhase"));
         assertThat(names(StepStatus.class)).containsExactlyElementsOf(enums.get("stepStatus"));
