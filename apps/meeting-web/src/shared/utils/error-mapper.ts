@@ -37,7 +37,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   LLM_SCHEMA_INVALID: "LLM 输出格式不符合要求",
   LLM_EVIDENCE_INVALID: "LLM 输出依据校验失败",
   LLM_RATE_LIMIT: "LLM 服务限流",
-  SECURITY_LEVEL_BLOCKED: "一期不支持该安全等级的自动 LLM 处理",
   LLM_DATA_BOUNDARY_BLOCKED: "数据边界策略阻断",
   RAG_INDEX_FAILED: "RAG 入库失败",
   VECTOR_SEARCH_FAILED: "向量检索失败",

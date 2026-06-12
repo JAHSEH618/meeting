@@ -3,8 +3,6 @@
 Playwright covers the Phase 8.7 golden path:
 
 * Login → create meeting → transcript / exports pages render.
-* CONFIDENTIAL meetings surface a fixed `SECURITY_LEVEL_BLOCKED` copy
-  on the minutes page (no LLM call goes out).
 
 ## Run locally
 

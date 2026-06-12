@@ -9,7 +9,7 @@ export function useMinutesQuery(meetingId: string) {
     enabled: !!meetingId,
     retry: (count, err) => {
       const apiErr = err as ApiClientError;
-      return apiErr?.status !== 404 && apiErr?.code !== "SECURITY_LEVEL_BLOCKED" && count < 2;
+      return apiErr?.status !== 404 && count < 2;
     },
   });
 }

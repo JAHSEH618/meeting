@@ -124,7 +124,9 @@ describe("ExportsPage", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "撤销下载链接" });
     expect(within(dialog).getByText(/不可恢复/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getAllByRole("button", { name: "取消" })[0]);
+    const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
+    if (!cancelButton) throw new Error("cancel button not found in dialog");
+    fireEvent.click(cancelButton);
 
     expect(screen.queryByRole("dialog", { name: "撤销下载链接" })).not.toBeInTheDocument();
     expect(revokeCalls).toEqual([]);

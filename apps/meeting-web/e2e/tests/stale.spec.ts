@@ -41,7 +41,6 @@ test("transcript edit surfaces STALE banner on minutes", async ({ page }) => {
 
   await page.getByRole("link", { name: /新建会议|create/i }).click();
   await page.getByLabel(/标题|title/i).fill(`E2E stale ${Date.now()}`);
-  await page.getByLabel(/安全等级|security/i).selectOption("INTERNAL");
   await page.getByRole("button", { name: /创建|submit/i }).click();
   await expect(page).toHaveURL(/\/meetings\/mtg_[a-z0-9]+/);
   const meetingUrl = page.url();

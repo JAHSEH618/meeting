@@ -67,7 +67,9 @@ describe("DeletionJobsPage", () => {
     const dialog = screen.getByRole("dialog", { name: "确认删除任务" });
     expect(within(dialog).getByText(/mtg_dj_abort_01/)).toBeInTheDocument();
     expect(within(dialog).getByText(/regulator/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getAllByRole("button", { name: "取消" })[0]);
+    const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
+    if (!cancelButton) throw new Error("cancel button not found in dialog");
+    fireEvent.click(cancelButton);
 
     expect(screen.queryByRole("dialog", { name: "确认删除任务" })).not.toBeInTheDocument();
     expect(createCalls).toEqual([]);

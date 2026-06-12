@@ -14,8 +14,8 @@ describe("DocumentsPage", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Roadmap.pdf")).toBeInTheDocument());
-    expect(screen.getByText("INTERNAL")).toBeInTheDocument();
     expect(screen.getByText("PDF")).toBeInTheDocument();
+    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新索引" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
   });
@@ -87,7 +87,9 @@ describe("DocumentsPage", () => {
     expect(dialog).toBeInTheDocument();
     expect(within(dialog).getByText(/Roadmap\.pdf/)).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getAllByRole("button", { name: "取消" })[0]);
+    const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
+    if (!cancelButton) throw new Error("cancel button not found in dialog");
+    fireEvent.click(cancelButton);
     expect(screen.queryByRole("dialog", { name: "删除文档" })).not.toBeInTheDocument();
     expect(deletedDocumentIds).toEqual([]);
     expect(screen.getByText("Roadmap.pdf")).toBeInTheDocument();

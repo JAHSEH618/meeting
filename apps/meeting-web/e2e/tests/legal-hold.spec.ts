@@ -62,7 +62,6 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
     data: {
       title: `E2E legal-hold ${stamp}`,
       language: "zh",
-      securityLevel: "INTERNAL",
     },
   });
   expect(createResp.ok()).toBeTruthy();

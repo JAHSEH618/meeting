@@ -91,7 +91,9 @@ describe("BreakGlassPage", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "批准紧急访问" });
     expect(within(dialog).getByText(/mtg_bg_approve_cancel/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getAllByRole("button", { name: "取消" })[0]);
+    const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
+    if (!cancelButton) throw new Error("cancel button not found in dialog");
+    fireEvent.click(cancelButton);
 
     expect(screen.queryByRole("dialog", { name: "批准紧急访问" })).not.toBeInTheDocument();
     expect(approveCalls).toEqual([]);

@@ -13,6 +13,5 @@ describe("MeetingListPage", () => {
 
     await waitFor(() => expect(screen.getByText("产品周会")).toBeInTheDocument());
     expect(screen.getByText("CREATED")).toBeInTheDocument();
-    expect(screen.getAllByText("INTERNAL").length).toBeGreaterThan(0);
   });
 });

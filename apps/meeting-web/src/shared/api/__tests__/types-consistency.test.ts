@@ -43,9 +43,9 @@ describe("types consistency with contracts enums.yaml", () => {
     expect(["WORKER_DAG_RUNNING", "WORKER_DAG_DONE", "JAVA_LLM_RUNNING", "TERMINAL"]).toEqual(expected);
   });
 
-  it("securityLevel must match contracts", () => {
-    const expected = enumFromYaml("securityLevel");
-    expect(["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]).toEqual(expected);
+  it("securityLevel must be removed from contracts (Phase K)", () => {
+    expect(enumsYaml).not.toHaveProperty("securityLevel");
+    expect(publicApiYaml?.components?.schemas?.SecurityLevel).toBeUndefined();
   });
 
   it("ragAnswerCoverage must match contracts", () => {
@@ -111,7 +111,7 @@ describe("DTO shape consistency with public-api.yaml", () => {
     expect(schema.properties.meetingId).toBeDefined();
     expect(schema.properties.tenantId).toBeDefined();
     expect(schema.properties.title?.type).toBe("string");
-    expect(schema.properties.securityLevel?.$ref).toBe("#/components/schemas/SecurityLevel");
+    expect(schema.properties.securityLevel).toBeUndefined();
     expect(schema.properties.status?.$ref).toBe("#/components/schemas/MeetingStatus");
     expect(schema.properties.transcriptVersion?.type).toBe("integer");
     expect(schema.properties.minutesVersion?.type).toBe("integer");

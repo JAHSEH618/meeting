@@ -41,13 +41,11 @@ async function login(page: import("@playwright/test").Page): Promise<void> {
 
 async function createMeeting(
   page: import("@playwright/test").Page,
-  title: string,
-  securityLevel: "INTERNAL" | "CONFIDENTIAL" = "INTERNAL"
+  title: string
 ): Promise<string> {
   await page.getByRole("link", { name: /新建会议|create/i }).click();
   await page.getByLabel(/标题|title/i).fill(title);
   await page.getByLabel(/语言|language/i).selectOption("zh");
-  await page.getByLabel(/安全等级|security/i).selectOption(securityLevel);
   await page.getByRole("button", { name: /创建|submit/i }).click();
   await expect(page).toHaveURL(/\/meetings\/mtg_[a-z0-9]+/);
   return page.url();
@@ -66,18 +64,6 @@ test("login → create meeting → transcript / exports pages render", async ({ 
 
   await page.goto(meetingUrl + "/exports");
   await expect(page.getByRole("heading", { name: /导出|export/i })).toBeVisible();
-});
-
-test("security-level CONFIDENTIAL automatic LLM is fail-closed", async ({ page }) => {
-  await login(page);
-  await createMeeting(page, `E2E confidential ${Date.now()}`, "CONFIDENTIAL");
-
-  // The minutes regeneration endpoint should hand back the stable
-  // SECURITY_LEVEL_BLOCKED copy — the frontend renders it verbatim.
-  const minutesUrl = page.url() + "/minutes";
-  await page.goto(minutesUrl);
-  await expect(page.getByText(/不支持该安全等级|SECURITY_LEVEL_BLOCKED/i))
-    .toBeVisible({ timeout: 30_000 });
 });
 
 test("upload → SSE → transcript → RAG → PDF export", async ({ page }) => {
