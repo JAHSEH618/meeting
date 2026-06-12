@@ -17,7 +17,7 @@ public interface MeetingDocumentRepository {
 
     /**
      * Returns active (non-deleted) links for the given meeting, joined with the
-     * underlying document's title + security level so callers don't need a
+     * underlying document's title so callers don't need a
      * second round-trip per row.
      */
     List<MeetingDocumentJoinRow> listByMeeting(String tenantId, String meetingId);

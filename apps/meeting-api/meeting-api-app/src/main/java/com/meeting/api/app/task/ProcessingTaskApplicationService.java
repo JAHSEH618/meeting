@@ -363,7 +363,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("taskType", task.taskType());
         payload.put("tenantId", task.tenantId());
         payload.put("meetingId", task.meetingId());
-        payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
         payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
         payload.put("expectedInputVersion", expectedInputVersionForMeeting(command.expectedInputVersion(), meeting));
@@ -420,7 +419,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("taskType", task.taskType());
         payload.put("tenantId", task.tenantId());
         payload.put("meetingId", task.meetingId());
-        payload.put("securityLevel", "INTERNAL");
         payload.put("attemptNo", task.attemptNo());
         payload.put("pipelineSteps", MEETING_WORKER_STEPS.stream().map(Enum::name).toList());
         payload.put("expectedInputVersion", expectedInputVersionForMeeting(null, meeting));
@@ -461,7 +459,6 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             Map.entry("taskId", task.taskId()),
             Map.entry("taskType", task.taskType()),
             Map.entry("tenantId", task.tenantId()),
-            Map.entry("securityLevel", "INTERNAL"),
             Map.entry("attemptNo", task.attemptNo()),
             Map.entry("pipelineSteps", SPEAKER_ENROLLMENT_STEPS.stream().map(Enum::name).toList()),
             // expectedInputVersion.chunkStrategyVersion is required by

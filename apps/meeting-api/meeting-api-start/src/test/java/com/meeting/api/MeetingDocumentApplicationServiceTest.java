@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Workstation D1 — MeetingDocumentApplicationService unit tests.
  *
- * <p>Covers todo-final.md B5.1 (attach / detach / list, permission rejected, max-security level).
+ * <p>Covers todo-final.md B5.1 (attach / detach / list, permission rejected).
  */
 class MeetingDocumentApplicationServiceTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-19T03:30:00Z");

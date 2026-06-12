@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  * <pre>
  *   # 标题
  *
- *   - 安全等级 / 语言 / 时长 ...
+ *   - 语言 / 时长 ...
  *
  *   ## 与会人
  *   - 张三 (已确认)

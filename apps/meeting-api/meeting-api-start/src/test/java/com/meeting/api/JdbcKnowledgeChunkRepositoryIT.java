@@ -62,15 +62,15 @@ class JdbcKnowledgeChunkRepositoryIT {
         try (var conn = ds.getConnection(); Statement stmt = conn.createStatement()) {
             stmt.execute("SET app.tenant_id = '" + TENANT + "'");
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT + "', 'KC IT Tenant') ON CONFLICT DO NOTHING");
-            stmt.execute("INSERT INTO meetings (id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) "
-                + "VALUES ('" + MEETING + "', '" + TENANT + "', 'Test', 'INTERNAL', 'CREATED', 'zh', 1, 0) "
+            stmt.execute("INSERT INTO meetings (id, tenant_id, title, status, language, transcript_version, minutes_version) "
+                + "VALUES ('" + MEETING + "', '" + TENANT + "', 'Test', 'CREATED', 'zh', 1, 0) "
                 + "ON CONFLICT DO NOTHING");
             stmt.execute("INSERT INTO meeting_files (id, tenant_id, file_type, file_purpose, bucket, object_key, uri, upload_status) "
                 + "VALUES ('file_kc_it', '" + TENANT + "', 'DOCUMENT', 'KNOWLEDGE', 'documents', 'kc-it.pdf', 'tos://documents/kc-it.pdf', 'COMPLETED') "
                 + "ON CONFLICT DO NOTHING");
-            stmt.execute("INSERT INTO documents (id, tenant_id, title, file_id, document_type, status, security_level, "
+            stmt.execute("INSERT INTO documents (id, tenant_id, title, file_id, document_type, status, "
                 + "text_extraction_status, content_hash, created_by, created_at, updated_at) "
-                + "VALUES ('" + DOCUMENT + "', '" + TENANT + "', 'Doc', 'file_kc_it', 'PDF', 'UPLOADED', 'CONFIDENTIAL', "
+                + "VALUES ('" + DOCUMENT + "', '" + TENANT + "', 'Doc', 'file_kc_it', 'PDF', 'UPLOADED', "
                 + "'EXTRACTED', 'sha256:doc', NULL, now(), now()) ON CONFLICT DO NOTHING");
         }
     }

@@ -284,8 +284,8 @@ class JdbcExportJobRepositoryIT {
     private static void seedMeeting(Statement stmt, String tenant, String meeting) throws Exception {
         stmt.execute("SET app.tenant_id = '" + tenant + "'");
         stmt.execute(
-            "INSERT INTO meetings (id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) "
-                + "VALUES ('" + meeting + "', '" + tenant + "', 'IT meeting', 'INTERNAL', 'CREATED', 'zh', 1, 0) "
+            "INSERT INTO meetings (id, tenant_id, title, status, language, transcript_version, minutes_version) "
+                + "VALUES ('" + meeting + "', '" + tenant + "', 'IT meeting', 'CREATED', 'zh', 1, 0) "
                 + "ON CONFLICT DO NOTHING");
     }
 

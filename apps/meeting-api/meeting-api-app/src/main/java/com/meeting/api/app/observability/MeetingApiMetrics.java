@@ -21,7 +21,6 @@ public class MeetingApiMetrics {
     private static final String LEGAL_HOLD_BLOCKS = "meeting.api.legal_hold.blocks";
     private static final String AUDIT_EVENTS = "meeting.api.audit.events";
     private static final String KMS_FAILURES = "meeting.api.kms.encrypt_failures";
-    private static final String LLM_BLOCKED = "meeting.api.llm.blocked_security_level";
     private static final String TENANT_CONTEXT_MISSING = "meeting.api.tenant_context.missing";
     private static final String RAG_PHASE_DURATION = "rag.query.phase.duration";
     private static final String RAG_RATE_LIMIT_BLOCKS = "meeting.api.rag.rate_limit_blocks";
@@ -162,16 +161,6 @@ public class MeetingApiMetrics {
     public Counter kmsEncryptFailuresCounter(String operation) {
         return Counter.builder(KMS_FAILURES)
             .tag("operation", operation == null ? "unknown" : operation)
-            .register(registry);
-    }
-
-    /**
-     * Counts LLM calls fail-closed by security level. The
-     * {@code SecurityLevelBlockedException} writes here before throwing.
-     */
-    public Counter llmBlockedBySecurityLevelCounter(String securityLevel) {
-        return Counter.builder(LLM_BLOCKED)
-            .tag("level", securityLevel == null ? "unknown" : securityLevel)
             .register(registry);
     }
 

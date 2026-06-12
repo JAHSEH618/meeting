@@ -124,8 +124,8 @@ class MeetingFinalizeFlowIT {
             stmt.execute("DELETE FROM meetings WHERE tenant_id = '" + TENANT + "'");
             stmt.execute("INSERT INTO tenants (id, name) VALUES ('" + TENANT + "', 'Finalize IT') ON CONFLICT DO NOTHING");
             stmt.execute(
-                "INSERT INTO meetings (id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) "
-                    + "VALUES ('" + MEETING + "', '" + TENANT + "', 'Finalize flow', 'INTERNAL', 'PROCESSING', 'zh', 1, 0)"
+                "INSERT INTO meetings (id, tenant_id, title, status, language, transcript_version, minutes_version) "
+                    + "VALUES ('" + MEETING + "', '" + TENANT + "', 'Finalize flow', 'PROCESSING', 'zh', 1, 0)"
             );
         }
         seedTranscript();

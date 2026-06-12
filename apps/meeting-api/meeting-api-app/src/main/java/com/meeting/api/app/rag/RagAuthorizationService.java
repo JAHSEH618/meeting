@@ -120,8 +120,8 @@ public class RagAuthorizationService {
         }
         if (out.size() < cleared.size()) {
             log.info(
-                "rag_chunks_filtered tenant={} user={} retrieved={} clearedBySecurity={} authorized={}",
-                tenantId, userId, candidates.size(), cleared.size(), out.size()
+                "rag_chunks_filtered tenant={} user={} retrieved={} authorized={}",
+                tenantId, userId, candidates.size(), out.size()
             );
         }
         return out;

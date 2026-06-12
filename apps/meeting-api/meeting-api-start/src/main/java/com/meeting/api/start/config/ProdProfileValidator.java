@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 /**
  * 8.1.3 — fail-fast on prod boot when required secrets / configs are
  * missing, still set to dev demo values, or in obviously unsafe states
- * (e.g. LLM allowed on CONFIDENTIAL, Flyway baseline-on-migrate true).
+ * (e.g. Flyway baseline-on-migrate true).
  *
  * <p>Activates only with the {@code prod} Spring profile. Throws a
  * {@link BeanCreationException} listing every violation so ops see all
@@ -33,7 +33,6 @@ public class ProdProfileValidator {
     private final String aiWorkerBaseUrl;
     private final String chunkStrategyVersion;
     private final String kmsMasterKeyId;
-    private final boolean llmAllowConfidential;
     private final boolean flywayBaselineOnMigrate;
     private final String authMode;
     private final String tenantsActive;
@@ -44,7 +43,6 @@ public class ProdProfileValidator {
         @Value("${meeting.security.ai-worker.base-url:}") String aiWorkerBaseUrl,
         @Value("${meeting.chunk.strategy-version:}") String chunkStrategyVersion,
         @Value("${meeting.kms.master-key-id:}") String kmsMasterKeyId,
-        @Value("${meeting.llm.allow-confidential:false}") boolean llmAllowConfidential,
         @Value("${spring.flyway.baseline-on-migrate:false}") boolean flywayBaselineOnMigrate,
         @Value("${meeting.auth.mode:in-memory}") String authMode,
         @Value("${meeting.tenants.active:}") String tenantsActive
@@ -54,7 +52,6 @@ public class ProdProfileValidator {
         this.aiWorkerBaseUrl = aiWorkerBaseUrl;
         this.chunkStrategyVersion = chunkStrategyVersion;
         this.kmsMasterKeyId = kmsMasterKeyId;
-        this.llmAllowConfidential = llmAllowConfidential;
         this.flywayBaselineOnMigrate = flywayBaselineOnMigrate;
         this.authMode = authMode;
         this.tenantsActive = tenantsActive;
@@ -109,11 +106,6 @@ public class ProdProfileValidator {
             failures.add(
                 "meeting.kms.master-key-id must be set to a non-demo KMS key id (was '"
                     + mask(kmsMasterKeyId) + "')"
-            );
-        }
-        if (llmAllowConfidential) {
-            failures.add(
-                "meeting.llm.allow-confidential must be false — CONFIDENTIAL/SECRET meetings must remain fail-closed"
             );
         }
         if (flywayBaselineOnMigrate) {

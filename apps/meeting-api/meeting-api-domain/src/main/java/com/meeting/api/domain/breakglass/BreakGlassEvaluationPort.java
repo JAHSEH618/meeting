@@ -6,8 +6,7 @@ import java.time.OffsetDateTime;
  * Read-side port that answers "is there an active break-glass grant
  * for this user against the given scope right now?".
  *
- * <p>Called from the permission-check layer for resources protected
- * by CONFIDENTIAL / SECRET security levels. When the standard
+ * <p>Called from the permission-check layer. When the standard
  * permission check denies access, the layer falls back to this port
  * — a {@code true} result lets the request through and must be
  * accompanied by an audit row

@@ -82,12 +82,12 @@ class PostgreSqlBaselineIT {
     void requiredEnumsShouldExist() throws Exception {
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(
-                 "SELECT typname FROM pg_type WHERE typname IN ('security_level', 'task_status', 'task_phase', 'step_status')")) {
+                 "SELECT typname FROM pg_type WHERE typname IN ('task_status', 'task_phase', 'step_status')")) {
             int count = 0;
             while (rs.next()) {
                 count++;
             }
-            assertThat(count).isEqualTo(4);
+            assertThat(count).isEqualTo(3);
         }
     }
 
@@ -155,8 +155,8 @@ class PostgreSqlBaselineIT {
             stmt.execute("SET app.tenant_id = 'tenant_isolation_a'");
 
             // Create a test meeting for tenant A — PK column is "id" not "meeting_id"
-            stmt.execute("INSERT INTO meetings (id, tenant_id, title, security_level, status, language, transcript_version, minutes_version) " +
-                "VALUES ('mtg_rls_test_a', 'tenant_isolation_a', 'RLS Test A', 'INTERNAL', 'CREATED', 'zh', 0, 0) " +
+            stmt.execute("INSERT INTO meetings (id, tenant_id, title, status, language, transcript_version, minutes_version) " +
+                "VALUES ('mtg_rls_test_a', 'tenant_isolation_a', 'RLS Test A', 'CREATED', 'zh', 0, 0) " +
                 "ON CONFLICT DO NOTHING");
         }
 

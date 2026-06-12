@@ -60,14 +60,12 @@ import org.springframework.stereotype.Service;
  *   <li>RRF-fuse the two channels into a single ranked list.</li>
  *   <li>Second-pass filter with
  *       {@link RagAuthorizationService#filterAuthorized} (drops chunks
- *       above clearance or whose owner became unreadable since indexing).</li>
+ *       whose owner became unreadable since indexing).</li>
  *   <li>Rerank up to {@code rerankCandidatePoolSize} survivors via
  *       {@link RerankGateway}. If ai-worker is unavailable we degrade
  *       to RRF order and log a metric — contract failures still throw.</li>
  *   <li>Build a numbered context block out of the top-N reranked chunks
- *       and call the LLM through {@link LlmGateway} under the most
- *       restrictive security level among the cited chunks — the gateway
- *       fails closed on {@code CONFIDENTIAL}/{@code SECRET}.</li>
+ *       and call the LLM through {@link LlmGateway}.</li>
  *   <li>Parse the LLM's JSON output, map cited indices back to chunk
  *       citations, and stamp the response with the audit id from
  *       {@code llm_call_logs}.</li>

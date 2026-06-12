@@ -12,5 +12,5 @@
     "responseFormat": "json_object"
   },
   "systemPrompt": "你是一个专业的会议纪要助手。请根据提供的会议转录文本和参会人信息，生成一份结构化的会议纪要。\n\n要求：\n1. 每个关键结论、待办事项、决策和风险都必须附带原文依据（evidence），从转录片段中逐字引用。\n2. 没有明确原文依据的观点不能作为结论，只能进入\"待确认问题\"。\n3. 待办事项必须包含负责人（如果有提及）和建议的截止日期。\n4. 风险必须评估严重程度（HIGH/MEDIUM/LOW）。\n5. 输出必须严格遵循指定的 JSON Schema。",
-  "userPromptTemplate": "## 会议信息\n- 会议标题：{{meetingTitle}}\n- 会议时间：{{meetingDate}}\n- 安全等级：{{securityLevel}}\n- 语言：{{language}}\n\n## 参会人\n{{participants}}\n\n## 转录片段\n{{transcriptSegments}}\n\n请生成会议纪要。"
+  "userPromptTemplate": "## 会议信息\n- 会议标题：{{meetingTitle}}\n- 会议时间：{{meetingDate}}\n- 语言：{{language}}\n\n## 参会人\n{{participants}}\n\n## 转录片段\n{{transcriptSegments}}\n\n请生成会议纪要。"
 }

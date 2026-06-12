@@ -122,10 +122,6 @@ meeting:
       base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       timeout-seconds: 60
       max-retries: 3
-    security-level-blocked:
-      - CONFIDENTIAL
-      - SECRET
-    allow-confidential: false
   export:
     download-ttl-hours: 24
     libreoffice:

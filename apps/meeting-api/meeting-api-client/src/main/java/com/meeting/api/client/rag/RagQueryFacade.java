@@ -10,14 +10,12 @@ package com.meeting.api.client.rag;
  *       the user cannot read).</li>
  *   <li>Embed the question and run vector + keyword retrieval against
  *       {@code knowledge_chunks}, fused by RRF.</li>
- *   <li>Second-pass authorize the surviving candidates (security level
- *       + owner readability), since pgvector is a candidate retriever
+ *   <li>Second-pass authorize the surviving candidates (owner
+ *       readability), since pgvector is a candidate retriever
  *       only.</li>
  *   <li>Rerank with ai-worker, take top-N, build a numbered context
  *       block.</li>
- *   <li>Call the LLM under the meeting / document security level — any
- *       {@code CONFIDENTIAL} / {@code SECRET} chunk fails closed inside
- *       the gateway.</li>
+ *   <li>Call the LLM with the assembled context.</li>
  *   <li>Map LLM-cited indices back to chunk citations and return the
  *       audited DTO.</li>
  * </ol>

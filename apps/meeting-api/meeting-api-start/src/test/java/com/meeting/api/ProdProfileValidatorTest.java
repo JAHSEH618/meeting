@@ -15,7 +15,6 @@ class ProdProfileValidatorTest {
             "https://ai-worker.internal.svc:8090",
             "v1.2.0",
             "kms/aws/arn:..::abcd",
-            /* llmAllowConfidential */ false,
             /* flywayBaselineOnMigrate */ false,
             /* authMode */ "jwt",
             /* tenantsActive */ "tenant_acme,tenant_emea"
@@ -29,7 +28,7 @@ class ProdProfileValidatorTest {
             "change-me-callback-fallback-secret",
             "real-aiworker-secret",
             "https://ai-worker.internal",
-            "v1", "kms-real", false, false, "jwt", "tenant_acme"
+            "v1", "kms-real", false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("callback.hmac-secret"));
@@ -40,7 +39,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false, "jwt", "tenant_acme"
+            false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("ai-worker.hmac-secret"));
@@ -51,7 +50,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "same-secret", "same-secret",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false, "jwt", "tenant_acme"
+            false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("must not be identical"));
@@ -62,7 +61,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "http://localhost:8090", "v1", "kms-real",
-            false, false, "jwt", "tenant_acme"
+            false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("ai-worker.base-url"));
@@ -73,21 +72,10 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "dev-kms-master-key",
-            false, false, "jwt", "tenant_acme"
+            false, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("kms.master-key-id"));
-    }
-
-    @Test
-    void flagsLlmAllowConfidential() {
-        ProdProfileValidator v = new ProdProfileValidator(
-            "real-callback", "real-aiworker",
-            "https://ai-worker.internal", "v1", "kms-real",
-            /* allow confidential */ true, false, "jwt", "tenant_acme"
-        );
-        assertThat(v.validateInternal())
-            .anySatisfy(s -> assertThat(s).contains("allow-confidential"));
     }
 
     @Test
@@ -95,7 +83,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, /* baseline-on-migrate */ true, "jwt", "tenant_acme"
+            /* baseline-on-migrate */ true, "jwt", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("baseline-on-migrate"));
@@ -106,7 +94,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false, "in-memory", "tenant_acme"
+            false, "in-memory", "tenant_acme"
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("meeting.auth.mode"));
@@ -117,7 +105,7 @@ class ProdProfileValidatorTest {
         ProdProfileValidator v = new ProdProfileValidator(
             "real-callback", "real-aiworker",
             "https://ai-worker.internal", "v1", "kms-real",
-            false, false, "jwt", ""
+            false, "jwt", ""
         );
         assertThat(v.validateInternal())
             .anySatisfy(s -> assertThat(s).contains("meeting.tenants.active"));
@@ -133,7 +121,7 @@ class ProdProfileValidatorTest {
             ProdProfileValidator v = new ProdProfileValidator(
                 "real-callback", "real-aiworker",
                 "https://ai-worker.internal", "v1", "kms-real",
-                false, false, "jwt", raw
+                false, "jwt", raw
             );
             assertThat(v.validateInternal())
                 .as("raw value %s should be rejected", raw)
@@ -145,7 +133,7 @@ class ProdProfileValidatorTest {
     void aggregatesAllFailures() {
         ProdProfileValidator v = new ProdProfileValidator(
             "", "", "http://127.0.0.1:8090", "", "",
-            true, true, "in-memory", ""
+            true, "in-memory", ""
         );
         assertThat(v.validateInternal())
             .hasSizeGreaterThanOrEqualTo(8);

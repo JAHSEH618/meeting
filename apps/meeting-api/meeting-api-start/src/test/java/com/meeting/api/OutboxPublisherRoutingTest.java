@@ -129,7 +129,7 @@ class OutboxPublisherRoutingTest {
     @Test
     void publishPendingMarksMalformedProcessingTaskAsFailed() {
         // ProcessingTaskCreatedEvent payloads missing required fields
-        // (taskId / tenantId / securityLevel / etc) must be caught by
+        // (taskId / tenantId / etc) must be caught by
         // the preflight validator and marked FAILED rather than
         // shipped to RabbitMQ where ai-worker would have to reject
         // them — by which time a malformed callback could already be
@@ -176,7 +176,7 @@ class OutboxPublisherRoutingTest {
         FakeStore store = new FakeStore(List.of(
             record("ProcessingTaskCreatedEvent", "evt_proc",
                 "{\"taskId\":\"task_x\",\"taskType\":\"TEXT_EMBEDDING\","
-                    + "\"tenantId\":\"tenant_01\",\"securityLevel\":\"INTERNAL\","
+                    + "\"tenantId\":\"tenant_01\","
                     + "\"attemptNo\":1,\"pipelineSteps\":[\"RAG_INDEXING\"],"
                     + "\"expectedInputVersion\":{\"chunkStrategyVersion\":\"v1\"},"
                     + "\"options\":{},\"traceId\":\"trace_x\"}"),
