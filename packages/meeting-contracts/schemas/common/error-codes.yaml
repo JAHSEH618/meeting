@@ -72,6 +72,12 @@ errorCodes:
     userMessage: Worker 租约已过期
     i18nKey: errors.WORKER_LEASE_EXPIRED
     opsTags: [task, lease]
+  - code: TASK_RETRY_EXHAUSTED
+    step: TASK
+    retryable: false
+    userMessage: 任务重试次数已耗尽
+    i18nKey: errors.TASK_RETRY_EXHAUSTED
+    opsTags: [task, retry, exhausted]
   - code: INVALID_TASK_MESSAGE
     step: TASK
     retryable: false
