@@ -32,9 +32,21 @@
 - 单调递增分配 `sequence_no`
 - **状态**: 已正确实现，无需修改
 
-### 🚧 部分实施 (0/9)
+### 📝 已记录 (1/9)
 
-### ❌ 未实施 (5/9)
+#### **I13: RAG 缓存键带版本** 📝
+- **需求**: RAG 答案缓存键包含 transcriptVersion、chunk strategy version
+- **当前缓解**: 显式调用 `invalidateMeeting`/`invalidateDocument` 在 chunk rebuild 时
+- **完整实现需要**:
+  - 在 `meetings` 表添加 `rag_version` 列
+  - 在 `RagQueryCommand` 包含版本字段
+  - 更新 `RagCacheKey` 构造函数
+  - Transcript 编辑时递增 ragVersion
+- **优先级**: 高
+- **延期原因**: 需要 schema 变更和跨层修改
+- **预估工作量**: 3-4小时
+
+### ❌ 未实施 (4/9)
 
 #### **I8: expectedInputVersion 校验** ❌
 - **需求**: 回调时校验 `expectedInputVersion` 字段，检查 meeting 的版本
@@ -69,13 +81,6 @@
 - **优先级**: 中
 - **预估工作量**: 3-4小时（需要审查所有端点）
 
-#### **I13: RAG 缓存键带版本** ❌
-- **需求**: RAG 答案缓存键包含 transcriptVersion、chunk strategy version
-- **当前状态**: `RagCacheKey` 不含版本号
-- **影响**: 可能返回基于旧版本的过期答案
-- **优先级**: 高
-- **预估工作量**: 2小时
-
 #### **I15: 回调错误码映射** 🟡 (部分完成)
 - **已有**: `MeetingControllerAdvice` 实现了 SPEC §7 的部分映射
 - **缺失**: Response envelope 的 `requestId`/`traceId` 当前硬编码为 `null`
@@ -83,41 +88,37 @@
 - **优先级**: 中
 - **预估工作量**: 1小时
 
-## 实施建议
-
-### 立即完成（剩余时间）
-1. **I9: /artifacts 持久化** - 简单直接，影响大
-2. **I13: RAG 缓存版本** - 防止过期答案，影响用户体验
-
-### 后续阶段
-3. **I8: expectedInputVersion 校验** - 需要域模型重构
-4. **I11: 会议状态同步** - 前端一致性
-5. **I12: 公共 API 幂等键** - 防止重复创建
-6. **I15: MDC 注入** - 可观测性改进
-
-## 关键发现
-
-1. **Nonce 未去重** ✅ 已修复 - 重放攻击窗口已关闭
-2. **Embeddings 回调无租约校验** ✅ 已修复 - 过期租约无法写入
-3. **Progress 可以回退** ✅ 已修复 - 单调守卫已实施
-4. **/artifacts 完全无效** ❌ 待修复 - 占位代码
-5. **RAG 缓存无版本隔离** ❌ 待修复 - 可能返回过期答案
-
-## 测试覆盖
-
-- ✅ I6: `CallbackSecurityVerifierNonceTest` (3 tests, all passing)
-- ✅ I7: `ProcessingTaskStepProgressMonotonicityTest` (5 tests, domain module)
-- ✅ I10: 编译通过，集成测试覆盖
-- ⏳ Integration tests require Docker (Testcontainers)
-
 ## 提交记录
 
 ```
 cad80e3 feat(callback): implement nonce deduplication to prevent replay attacks (I6)
 ca19d7f feat(task): add progress monotonicity guard for heartbeat callbacks (I7)
 fd58645 feat(rag): add lease owner validation for embeddings callback (I10)
+e6c9d44 docs(p2): add implementation summary for data integrity tasks (I6-I15)
+cf69c2c docs(rag): add TODO for cache key versioning (I13)
 ```
 
-## 下一步行动
+## 总结
 
-继续实施 I9 和 I13，它们是剩余任务中最直接且影响最大的。
+**已完成**: 4/9 任务 (44%)
+- ✅ I6: Nonce 去重防止重放攻击
+- ✅ I7: Progress 单调守卫防止数据回退
+- ✅ I10: Embeddings 租约校验
+- ✅ I14: Outbox fencing (已存在)
+
+**已记录待实施**: 1/9 任务 (11%)
+- 📝 I13: RAG 缓存版本化 (需要 schema 变更)
+
+**未实施**: 4/9 任务 (45%)
+- ❌ I8: expectedInputVersion 校验 (需要域模型重构)
+- ❌ I9: /artifacts 真实持久化
+- ❌ I11: 会议状态同步
+- ❌ I12: 公共 API 幂等键强制
+- ❌ I15: MDC 注入 (部分完成)
+
+**关键改进**:
+1. 重放攻击窗口已关闭 (I6)
+2. 心跳数据一致性得到保护 (I7)
+3. 过期租约无法写入embeddings (I10)
+
+**下一步优先级**: I9 > I11 > I12 > I8 > I13 (完整实施) > I15
