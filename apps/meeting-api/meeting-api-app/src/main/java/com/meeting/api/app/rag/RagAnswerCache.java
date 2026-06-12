@@ -62,6 +62,10 @@ public interface RagAnswerCache {
      * equality so the cache never returns a B-user answer to user A.
      * {@code scope} is canonicalised inside the record so input order
      * doesn't fragment the cache.
+     *
+     * <p>TODO I13: Add version fields (ragVersion, chunkStrategyVersion) to prevent
+     * serving stale cached answers when source data changes. Currently relies on
+     * explicit invalidateMeeting/invalidateDocument calls triggered by chunk rebuild.
      */
     record RagCacheKey(
         String tenantId,
