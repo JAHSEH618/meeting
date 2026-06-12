@@ -231,7 +231,7 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
             meetingSpeakerRepository,
             new NoopEnvelopeGateway(),
             TenantScopedTransaction.immediate(),
-            new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+            new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
             CLOCK
         );
     }

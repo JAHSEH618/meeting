@@ -469,7 +469,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             callbacks,
             publisher,
             TenantScopedTransaction.immediate(),
-            new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
+            new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC), new InMemoryCallbackNonceRepository()),
             transcripts,
             event -> {},
             enrollments,

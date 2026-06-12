@@ -60,7 +60,13 @@ public class EmbeddingsCallbackApplicationService {
     }
 
     public EmbeddingsResult writeEmbeddings(EmbeddingsCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "RAG_EMBEDDINGS"
+        );
         return tenantScopedTransaction.execute(
             command.tenantId(),
             null,

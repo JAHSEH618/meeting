@@ -166,7 +166,7 @@ class EmbeddingsCallbackApplicationServiceTest {
                 callbacks,
                 chunks,
                 TenantScopedTransaction.immediate(),
-                new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+                new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
                 CLOCK
             );
         }

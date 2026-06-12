@@ -86,7 +86,13 @@ public class ProcessingTaskCallbackApplicationService {
         this.clock = clock;
     }
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            command.stepName().name()
+        );
         if (command.status() == StepStatus.RUNNING && command.progress() != null && command.progress() > 0) {
             return heartbeat(new StepProgressHeartbeatCommand(
                 command.metadata(),
@@ -131,7 +137,13 @@ public class ProcessingTaskCallbackApplicationService {
         });
     }
     public ProcessingTaskDTO heartbeat(StepProgressHeartbeatCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            command.stepName().name()
+        );
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
@@ -147,7 +159,13 @@ public class ProcessingTaskCallbackApplicationService {
         });
     }
     public ProcessingTaskDTO completeWorkerPhase(CompleteWorkerPhaseCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "COMPLETE_WORKER_PHASE"
+        );
         if (!"WORKER_DAG".equals(command.phase())) {
             throw new IllegalArgumentException("complete phase must be WORKER_DAG");
         }
@@ -223,7 +241,13 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     public ProcessingTaskDTO fail(FailTaskCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "FAIL_TASK"
+        );
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
@@ -270,7 +294,13 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     public ProcessingTaskDTO writeTranscript(TranscriptCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "TRANSCRIPT"
+        );
         if (command.meetingId() == null || command.meetingId().isBlank()) {
             throw new IllegalArgumentException("meetingId is required for transcript callback");
         }

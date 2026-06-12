@@ -202,7 +202,7 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
                 embeddings,
                 envelope,
                 TenantScopedTransaction.immediate(),
-                new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+                new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
                 CLOCK
             );
         }
