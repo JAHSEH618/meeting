@@ -1,5 +1,6 @@
 """WorkerRuntime port and local phase 2 runtime implementation."""
 
+import asyncio
 import logging
 import uuid
 from typing import Any, Protocol, runtime_checkable
@@ -29,6 +30,12 @@ from ai_worker.pipeline.speaker.submit import (
 )
 
 logger = logging.getLogger(__name__)
+
+# D1 locked decision: heartbeat every 20s per running step; progress is
+# monotonically non-decreasing with a floor of 1 (the worker has no
+# intra-step progress source). TTL stays 120s on the Java side.
+HEARTBEAT_INTERVAL_SECONDS = 20.0
+HEARTBEAT_MIN_PROGRESS = 1
 
 
 @runtime_checkable
@@ -73,9 +80,15 @@ class MvpWorkerRuntime:
         workflow_engine: Any | None = None,
         embedding_workflow: TextEmbeddingWorkflow | None = None,
         state_store: InMemoryWorkflowStateStore = workflow_state_store,
+        heartbeat_interval_seconds: float | None = None,
     ) -> None:
         self.callback_client = callback_client or JavaCallbackClient()
         self.state_store = state_store
+        self.heartbeat_interval_seconds = (
+            heartbeat_interval_seconds
+            if heartbeat_interval_seconds is not None
+            else HEARTBEAT_INTERVAL_SECONDS
+        )
         # Phase J / final-check A1 — when caller doesn't override the engine,
         # construct LocalAudioPipelineEngine with the registry-resolved ASR
         # and diarization runtimes so AI_WORKER_USE_FAKE_ASR_RUNTIME=false
@@ -228,6 +241,7 @@ class MvpWorkerRuntime:
                 await self._fail_for_writeback(task, step_name, "step start callback failed")
                 return task
 
+            heartbeat_task = asyncio.create_task(self._heartbeat_loop(task, step_name))
             try:
                 await self.embedding_workflow.run_step(context, step_name)
             except WorkerPipelineError as exc:
@@ -244,6 +258,12 @@ class MvpWorkerRuntime:
                     ),
                 )
                 return task
+            finally:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
 
             succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
             if not succeeded.accepted:
@@ -303,9 +323,7 @@ class MvpWorkerRuntime:
         if not started.accepted:
             return self._writeback_failed(step_name, "step start callback failed")
 
-        if await self._heartbeat(task, step_name, 50) is False:
-            return self._writeback_failed(step_name, "step heartbeat callback failed")
-
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(task, step_name))
         try:
             if context is not None and hasattr(self.workflow_engine, "run_step"):
                 await self.workflow_engine.run_step(context, step_name)
@@ -319,12 +337,53 @@ class MvpWorkerRuntime:
                 error_message=str(exc),
                 retryable=exc.retryable,
             )
+        finally:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
         if not succeeded.accepted:
             return self._writeback_failed(step_name, "step success callback failed")
 
         return StepResult(step_name=step_name, status="SUCCEEDED", progress=100)
+
+    async def _heartbeat_loop(self, task: TaskMessage, step_name: str) -> None:
+        """Send RUNNING(progress>=1) heartbeats forever until cancelled.
+
+        Heartbeat failures are logged and swallowed — they must never fail
+        the step (D1). The stable idempotency key in JavaCallbackClient makes
+        these latest-wins updates on the Java side (no callback_events rows).
+        """
+        progress = HEARTBEAT_MIN_PROGRESS
+        while True:
+            await asyncio.sleep(self.heartbeat_interval_seconds)
+            try:
+                response = await self.callback_client.update_step(
+                    task_id=task.task_id,
+                    tenant_id=task.tenant_id,
+                    step_name=step_name,
+                    attempt_no=task.attempt_no,
+                    status="RUNNING",
+                    progress=progress,
+                    trace_id=task.trace_id,
+                    meeting_id=task.meeting_id,
+                )
+                if response.accepted:
+                    self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
+                else:
+                    logger.warning(
+                        "heartbeat rejected: task_id=%s step=%s http=%s error=%s",
+                        task.task_id, step_name, response.http_status, response.error_code,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — heartbeat must never break the step
+                logger.warning(
+                    "heartbeat failed: task_id=%s step=%s", task.task_id, step_name, exc_info=True
+                )
 
     async def _update_step(
         self,
@@ -346,21 +405,6 @@ class MvpWorkerRuntime:
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, status, progress)
         return response
-
-    async def _heartbeat(self, task: TaskMessage, step_name: str, progress: int) -> bool:
-        response = await self.callback_client.update_step(
-            task_id=task.task_id,
-            tenant_id=task.tenant_id,
-            step_name=step_name,
-            attempt_no=task.attempt_no,
-            status="RUNNING",
-            progress=progress,
-            trace_id=task.trace_id,
-            meeting_id=task.meeting_id,
-        )
-        if response.accepted:
-            self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
-        return response.accepted
 
     async def _fail_for_writeback(self, task: TaskMessage, failed_step: str, message: str) -> None:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)

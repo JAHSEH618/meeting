@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 from unittest.mock import AsyncMock
 
@@ -7,7 +8,7 @@ import pytest
 
 from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
-from ai_worker.domain.task import PipelineArtifact
+from ai_worker.domain.task import PipelineArtifact, TaskMessage
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
 from ai_worker.pipeline.speaker.matcher import SpeakerMatchCandidate, SpeakerMatchResult
 from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
@@ -203,7 +204,9 @@ async def test_consume_message_submits_java_transcript_version_and_records_workf
     assert snapshot.status == "SUCCEEDED"
     assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
     assert engine.ran_steps == _valid_message()["pipelineSteps"]
-    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
+    # RUNNING(0) + SUCCEEDED(100) per step; periodic heartbeats don't fire for
+    # sub-20s fake steps.
+    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 2
     assert callback_client.update_step.await_args_list[0].kwargs["meeting_id"] == "mtg_01"
     callback_client.submit_transcript.assert_awaited_once()
     assert callback_client.submit_transcript.await_args.kwargs["transcript_version"] == 7
@@ -407,3 +410,98 @@ async def test_degradable_steps_are_skipped_without_step_callbacks(callback_clie
         {"stepName": "ALIGNMENT", "reason": "ALIGNMENT_DISABLED_DEFAULT_OFF"},
         {"stepName": "RAG_INDEXING", "reason": "RAG_INDEXING_REQUIRES_JAVA_CHUNKING"},
     ]
+
+
+def _step_test_task() -> TaskMessage:
+    return TaskMessage(
+        task_id="task_hb_01",
+        task_type="MEETING_FULL_PIPELINE",
+        tenant_id="tenant_01",
+        attempt_no=1,
+        pipeline_steps=("ASR",),
+        trace_id="trace_hb_01",
+        meeting_id="mtg_01",
+    )
+
+
+class SlowStepEngine(StubWorkflowEngine):
+    def __init__(self, state_store: InMemoryWorkflowStateStore, delay: float) -> None:
+        super().__init__(state_store)
+        self.delay = delay
+
+    async def run_step(self, context, step_name: str) -> None:
+        await asyncio.sleep(self.delay)
+        await super().run_step(context, step_name)
+
+
+@pytest.mark.asyncio
+async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = SlowStepEngine(state_store, delay=0.12)
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=engine,
+        state_store=state_store,
+        heartbeat_interval_seconds=0.02,
+    )
+    task = _step_test_task()
+    context = engine.start_pipeline(task)
+
+    result = await runtime.execute_step(task, "ASR", context)
+
+    assert result.status == "SUCCEEDED"
+    calls = callback_client.update_step.await_args_list
+    assert calls[0].kwargs["status"] == "RUNNING" and calls[0].kwargs["progress"] == 0
+    heartbeats = [
+        c for c in calls
+        if c.kwargs["status"] == "RUNNING" and c.kwargs["progress"] >= 1
+    ]
+    assert len(heartbeats) >= 2
+    running_progress = [c.kwargs["progress"] for c in calls if c.kwargs["status"] == "RUNNING"]
+    assert running_progress == sorted(running_progress)  # monotonically non-decreasing
+    assert calls[-1].kwargs["status"] == "SUCCEEDED" and calls[-1].kwargs["progress"] == 100
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_failure_never_fails_the_step(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = SlowStepEngine(state_store, delay=0.08)
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=engine,
+        state_store=state_store,
+        heartbeat_interval_seconds=0.02,
+    )
+
+    def respond(**kwargs):
+        if kwargs["status"] == "RUNNING" and kwargs["progress"] > 0:
+            return CallbackResponse(http_status=503, accepted=False, error_code="WRITEBACK_FAILED")
+        return CallbackResponse(http_status=200, accepted=True)
+
+    callback_client.update_step.side_effect = respond
+    task = _step_test_task()
+    context = engine.start_pipeline(task)
+
+    result = await runtime.execute_step(task, "ASR", context)
+
+    assert result.status == "SUCCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_task_is_cancelled_after_step_completes(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = SlowStepEngine(state_store, delay=0.05)
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=engine,
+        state_store=state_store,
+        heartbeat_interval_seconds=0.02,
+    )
+    task = _step_test_task()
+    context = engine.start_pipeline(task)
+
+    await runtime.execute_step(task, "ASR", context)
+    calls_after_step = callback_client.update_step.await_count
+    await asyncio.sleep(0.08)
+
+    assert callback_client.update_step.await_count == calls_after_step
