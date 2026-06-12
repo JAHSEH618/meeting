@@ -13,6 +13,7 @@ Cache + redaction:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -130,7 +131,7 @@ class JavaSpeakerReferenceClient:
                     "speaker_reference_retry attempt=%d wait=%.2f reason=%s",
                     attempt + 1, wait, exc,
                 )
-                time.sleep(wait)
+                await asyncio.sleep(wait)
             except SpeakerReferenceUnavailable:
                 raise
         raise SpeakerReferenceUnavailable(

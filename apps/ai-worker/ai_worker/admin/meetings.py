@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from ai_worker.admin.envelopes import ok, passthrough
+from ai_worker.admin.envelopes import ok, passthrough, parse_json_body
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 
@@ -49,7 +49,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST", "/api/documents",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -85,7 +85,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST", "/api/meetings",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -102,7 +102,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "PATCH", f"/api/meetings/{meeting_id}",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -155,7 +155,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST", f"/api/meetings/{meeting_id}/documents",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -173,7 +173,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "PATCH", f"/api/meetings/{meeting_id}/glossary",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -191,7 +191,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             f"/api/meetings/{meeting_id}/files/audio/uploads",
@@ -213,7 +213,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             f"/api/meetings/{meeting_id}/files/audio/uploads/{upload_id}/parts",
@@ -235,7 +235,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             f"/api/meetings/{meeting_id}/files/audio/uploads/{upload_id}/complete",
@@ -277,7 +277,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json() if (await request.body()) else {}
+        body = await parse_json_body(request, default={})
         response = await java_client.request(
             "POST", f"/api/meetings/{meeting_id}/speakers/{label}/confirm",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -295,7 +295,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json() if (await request.body()) else {"reason": "user_rejected"}
+        body = await parse_json_body(request, default={"reason": "user_rejected"})
         response = await java_client.request(
             "POST", f"/api/meetings/{meeting_id}/speakers/{label}/reject",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
@@ -313,7 +313,7 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json() if (await request.body()) else {"format": "DOCX"}
+        body = await parse_json_body(request, default={"format": "DOCX"})
         response = await java_client.request(
             "POST", f"/api/meetings/{meeting_id}/exports",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,

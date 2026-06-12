@@ -2,9 +2,32 @@
 
 from __future__ import annotations
 
+import json as _json
 from typing import Any
 
+from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+
+class MalformedJsonBodyError(ValueError):
+    """Request body is missing or not valid JSON — rendered as a 400 envelope."""
+
+
+_NO_DEFAULT = object()
+
+
+async def parse_json_body(request: Request, default: object = _NO_DEFAULT) -> object:
+    """Read and parse the JSON body. Empty body returns ``default`` when given,
+    otherwise raises MalformedJsonBodyError; invalid JSON always raises."""
+    body = await request.body()
+    if not body:
+        if default is not _NO_DEFAULT:
+            return default
+        raise MalformedJsonBodyError("request body must be JSON")
+    try:
+        return _json.loads(body)
+    except Exception as exc:
+        raise MalformedJsonBodyError("request body must be valid JSON") from exc
 
 
 def ok(data: Any, request_id: str | None, trace_id: str | None, status_code: int = 200) -> JSONResponse:

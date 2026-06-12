@@ -299,8 +299,10 @@ def _mount_admin_router(app: FastAPI) -> None:
     if not settings.java_api_base_url:
         return
     from ai_worker.admin import build_admin_router
+    from ai_worker.admin.router import register_admin_exception_handlers
 
     app.include_router(build_admin_router())
+    register_admin_exception_handlers(app)
 
 
 def _mount_auth_login_proxy(app: FastAPI) -> None:

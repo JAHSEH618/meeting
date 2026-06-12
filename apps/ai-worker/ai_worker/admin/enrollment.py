@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 
-from ai_worker.admin.envelopes import error, ok, passthrough
+from ai_worker.admin.envelopes import error, ok, passthrough, parse_json_body
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 from ai_worker.admin.session_store import EnrollmentSession, EnrollmentSessionStore, enrollment_session_store
@@ -68,7 +68,7 @@ def build_enrollment_router(
         x_request_id: str | None = Header(None, alias="X-Request-Id"),
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
     ):
-        body = await request.json() if (await request.body()) else {}
+        body = await parse_json_body(request, default={})
         person_id = body.get("personId") if isinstance(body, dict) else None
         session = await session_store.create(claims.tenant_id, person_id)
         return ok({"sessionId": session.session_id, "personId": person_id, "state": session.state}, x_request_id, x_trace_id)
@@ -367,8 +367,7 @@ def build_voiceprint_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        raw_body = await request.body()
-        body = await request.json() if raw_body else None
+        body = await parse_json_body(request, default=None)
         response = await java_client.request(
             "POST", f"/api/speaker-profiles/{profile_id}/revoke",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from ai_worker.admin.envelopes import error, passthrough
+from ai_worker.admin.envelopes import error, passthrough, parse_json_body
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 
@@ -29,7 +29,7 @@ def build_files_router(*, java_client: JavaPublicClient) -> APIRouter:
                 request_id=x_request_id,
                 trace_id=x_trace_id,
             )
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             "/api/files",
@@ -50,7 +50,7 @@ def build_files_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             f"/api/files/{upload_id}/parts",
@@ -71,7 +71,7 @@ def build_files_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             f"/api/files/{upload_id}/complete",

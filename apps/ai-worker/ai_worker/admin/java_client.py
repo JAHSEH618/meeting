@@ -16,6 +16,10 @@ from ai_worker.admin.jwt_middleware import AdminClaims
 from ai_worker.common.config import settings
 
 
+class UpstreamUnavailableError(RuntimeError):
+    """meeting-api is unreachable / timed out — rendered as a 502 envelope."""
+
+
 class JavaPublicClient:
     """Thin wrapper around :class:`httpx.AsyncClient` for /api/* calls.
 
@@ -74,14 +78,17 @@ class JavaPublicClient:
         headers = self._headers(claims, request_id, trace_id, idempotency_key)
         if extra_headers:
             headers.update(dict(extra_headers))
-        return await self._client.request(
-            method,
-            path,
-            headers=headers,
-            json=json,
-            params=params,
-            content=content,
-        )
+        try:
+            return await self._client.request(
+                method,
+                path,
+                headers=headers,
+                json=json,
+                params=params,
+                content=content,
+            )
+        except httpx.RequestError as exc:
+            raise UpstreamUnavailableError(f"meeting-api unavailable: {exc}") from exc
 
     async def close(self) -> None:
         await self._client.aclose()

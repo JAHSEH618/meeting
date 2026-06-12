@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from ai_worker.admin.envelopes import passthrough
+from ai_worker.admin.envelopes import passthrough, parse_json_body
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 
@@ -37,7 +37,7 @@ def build_persons_router(*, java_client: JavaPublicClient) -> APIRouter:
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
-        body = await request.json()
+        body = await parse_json_body(request)
         response = await java_client.request(
             "POST",
             "/api/persons",
