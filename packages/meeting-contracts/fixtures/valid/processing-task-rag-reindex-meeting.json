@@ -3,7 +3,6 @@
   "taskType": "RAG_REINDEX",
   "tenantId": "tenant_01",
   "meetingId": "mtg_01HZ8YDA0MTG0001",
-  "securityLevel": "INTERNAL",
   "attemptNo": 2,
   "pipelineSteps": ["RAG_INDEXING"],
   "expectedInputVersion": {

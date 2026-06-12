@@ -3,7 +3,6 @@
   "taskType": "MEETING_FULL_PIPELINE",
   "tenantId": "tenant_01",
   "meetingId": "mtg_01HZ8XJK5GHIJKL",
-  "securityLevel": "INTERNAL",
   "attemptNo": 1,
   "pipelineSteps": ["AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING"],
   "expectedInputVersion": {

@@ -4,7 +4,6 @@
   "tenantId": "tenant_01",
   "meetingId": null,
   "documentId": null,
-  "securityLevel": "PUBLIC",
   "attemptNo": 1,
   "pipelineSteps": ["RAG_INDEXING"],
   "expectedInputVersion": {

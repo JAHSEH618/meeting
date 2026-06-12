@@ -17,13 +17,6 @@ class TaskType(Enum):
     RAG_REINDEX = 'RAG_REINDEX'
 
 
-class SecurityLevel(Enum):
-    PUBLIC = 'PUBLIC'
-    INTERNAL = 'INTERNAL'
-    CONFIDENTIAL = 'CONFIDENTIAL'
-    SECRET = 'SECRET'
-
-
 class PipelineStep(Enum):
     AUDIO_PREPROCESS = 'AUDIO_PREPROCESS'
     ASR = 'ASR'
@@ -114,7 +107,6 @@ class ProcessingTaskMessage(BaseModel):
     speakerEnrollmentId: Optional[str] = None
     audioFileId: Optional[str] = None
     audioUri: Optional[constr(regex=r'^(tos://.+)?$')] = None
-    securityLevel: SecurityLevel
     attemptNo: conint(ge=1)
     pipelineSteps: List[PipelineStep] = Field(..., min_items=1, unique_items=True)
     expectedInputVersion: ExpectedInputVersion

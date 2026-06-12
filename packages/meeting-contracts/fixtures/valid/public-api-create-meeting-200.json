@@ -12,7 +12,6 @@
   "request": {
     "title": "MVP-0 planning meeting",
     "scheduledStartAt": "2026-05-13T02:00:00Z",
-    "securityLevel": "INTERNAL",
     "language": "zh",
     "participants": [
       {
@@ -29,7 +28,6 @@
       "tenantId": "tenant_fixture_01",
       "title": "MVP-0 planning meeting",
       "scheduledStartAt": "2026-05-13T02:00:00Z",
-      "securityLevel": "INTERNAL",
       "status": "CREATED",
       "language": "zh",
       "transcriptVersion": 0,

@@ -7,7 +7,6 @@
   "audioFileId": "file_01HZ8XJK5ENR",
   "audioUri": "tos://meeting-audio-auska/file_01HZ8XJK5ENR.wav",
   "language": "zh",
-  "securityLevel": "PUBLIC",
   "attemptNo": 1,
   "pipelineSteps": ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING"],
   "expectedInputVersion": {

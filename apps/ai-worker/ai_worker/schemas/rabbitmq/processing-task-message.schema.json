@@ -7,7 +7,6 @@
     "taskId",
     "taskType",
     "tenantId",
-    "securityLevel",
     "attemptNo",
     "pipelineSteps",
     "expectedInputVersion",
@@ -32,10 +31,6 @@
     "speakerEnrollmentId": {"type": ["string", "null"]},
     "audioFileId": {"type": ["string", "null"]},
     "audioUri": {"type": ["string", "null"], "pattern": "^(tos://.+)?$"},
-    "securityLevel": {
-      "type": "string",
-      "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]
-    },
     "attemptNo": {"type": "integer", "minimum": 1},
     "pipelineSteps": {
       "type": "array",

@@ -3,7 +3,6 @@
   "taskType": "TEXT_EMBEDDING",
   "tenantId": "tenant_01",
   "documentId": "doc_01HZ8YDA0DOC0001",
-  "securityLevel": "INTERNAL",
   "attemptNo": 1,
   "pipelineSteps": ["RAG_INDEXING"],
   "expectedInputVersion": {

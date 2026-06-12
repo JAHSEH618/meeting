@@ -8,7 +8,6 @@
   },
   "request": {
     "title": "Q3 Planning Meeting",
-    "securityLevel": "INTERNAL",
     "scheduledStartAt": "2026-06-15T09:00:00Z",
     "participants": [
       {"personId": "person_01", "displayName": "Alice", "role": "ORGANIZER"}

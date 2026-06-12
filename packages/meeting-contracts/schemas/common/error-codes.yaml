@@ -272,12 +272,6 @@ errorCodes:
     userMessage: LLM 服务限流
     i18nKey: errors.LLM_RATE_LIMIT
     opsTags: [llm, rate_limit]
-  - code: SECURITY_LEVEL_BLOCKED
-    step: LLM
-    retryable: false
-    userMessage: 一期不支持该安全等级的自动 LLM 处理
-    i18nKey: errors.SECURITY_LEVEL_BLOCKED
-    opsTags: [llm, security]
   - code: LLM_DATA_BOUNDARY_BLOCKED
     step: LLM
     retryable: false
