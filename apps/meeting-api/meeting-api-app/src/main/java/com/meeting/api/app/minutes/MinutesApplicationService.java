@@ -160,75 +160,89 @@ public class MinutesApplicationService implements MinutesFacade {
             expectedTranscriptVersion,
             null
         );
-        return tenantScopedTransaction.execute(tenantId, null, null,
-            () -> doRegenerate(command, taskId));
+        return doRegenerate(command, taskId);
     }
 
     private MinutesDTO doRegenerate(RegenerateMinutesCommand command, String taskId) {
-        Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
-            .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + command.meetingId()));
+        // Short TX #1: load meeting + transcript, validate versions
+        GenerationContext context = tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+            Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
+                .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + command.meetingId()));
 
-        int currentTranscriptVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId());
-        if (command.expectedTranscriptVersion() != null && command.expectedTranscriptVersion() != currentTranscriptVersion) {
-            throw new VersionConflictException(
-                "transcript version mismatch: expected=" + command.expectedTranscriptVersion() + " actual=" + currentTranscriptVersion
+            int currentTranscriptVersion = transcriptRepository.currentTranscriptVersion(command.tenantId(), command.meetingId());
+            if (command.expectedTranscriptVersion() != null && command.expectedTranscriptVersion() != currentTranscriptVersion) {
+                throw new VersionConflictException(
+                    "transcript version mismatch: expected=" + command.expectedTranscriptVersion() + " actual=" + currentTranscriptVersion
+                );
+            }
+            int currentMinutesVersion = minutesRepository.currentMinutesVersion(command.tenantId(), command.meetingId());
+            if (command.expectedMinutesVersion() != null && command.expectedMinutesVersion() != currentMinutesVersion) {
+                throw new VersionConflictException(
+                    "minutes version mismatch: expected=" + command.expectedMinutesVersion() + " actual=" + currentMinutesVersion
+                );
+            }
+
+            List<TranscriptRepository.TranscriptSegmentRecord> segments = transcriptRepository.findByMeeting(
+                command.tenantId(),
+                command.meetingId(),
+                currentTranscriptVersion
             );
+            Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById = new HashMap<>();
+            for (var seg : segments) {
+                segmentById.put(seg.segmentId(), seg);
+            }
+
+            return new GenerationContext(meeting, segments, segmentById, currentTranscriptVersion, currentMinutesVersion);
+        });
+
+        // No TX: call LLM gateway
+        LlmGateway.LlmResponse response;
+        try {
+            response = llmGateway.complete(new LlmGateway.LlmRequest(
+                command.tenantId(),
+                command.meetingId(),
+                taskId,
+                CAPABILITY,
+                TASK_NAME,
+                buildLlmContext(context.meeting, command, context.segments),
+                (String) null,
+                (String) null
+            ));
+        } catch (RuntimeException ex) {
+            log.warn("minutes_llm_failed tenant={} meeting={} error={}", command.tenantId(), command.meetingId(), ex.getMessage());
+            throw ex;
         }
-        int currentMinutesVersion = minutesRepository.currentMinutesVersion(command.tenantId(), command.meetingId());
-        if (command.expectedMinutesVersion() != null && command.expectedMinutesVersion() != currentMinutesVersion) {
-            throw new VersionConflictException(
-                "minutes version mismatch: expected=" + command.expectedMinutesVersion() + " actual=" + currentMinutesVersion
+
+        // Short TX #2: parse, enrich, persist minutes + outbox event
+        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+            ParsedMinutes parsed = parse(response.structuredJson() != null ? response.structuredJson() : response.content());
+            List<MinutesRepository.SectionRecord> sectionRecords = enrichEvidence(parsed.sections, context.segmentById);
+
+            int newMinutesVersion = context.currentMinutesVersion + 1;
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            String minutesId = "min_" + UUID.randomUUID().toString().replace("-", "");
+            MinutesRepository.MinutesRecord record = new MinutesRepository.MinutesRecord(
+                minutesId,
+                command.tenantId(),
+                command.meetingId(),
+                newMinutesVersion,
+                context.currentTranscriptVersion,
+                parsed.title,
+                parsed.markdown,
+                sectionRecords,
+                "PUBLISHED",
+                StaleStatus.ACTIVE,
+                response.artifactManifestId(),
+                command.requestedBy(),
+                now,
+                now
             );
-        }
-
-        List<TranscriptRepository.TranscriptSegmentRecord> segments = transcriptRepository.findByMeeting(
-            command.tenantId(),
-            command.meetingId(),
-            currentTranscriptVersion
-        );
-        Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById = new HashMap<>();
-        for (var seg : segments) {
-            segmentById.put(seg.segmentId(), seg);
-        }
-
-        LlmGateway.LlmResponse response = llmGateway.complete(new LlmGateway.LlmRequest(
-            command.tenantId(),
-            command.meetingId(),
-            taskId,
-            CAPABILITY,
-            TASK_NAME,
-            buildLlmContext(meeting, command, segments),
-            null,
-            null
-        ));
-
-        ParsedMinutes parsed = parse(response.structuredJson() != null ? response.structuredJson() : response.content());
-        List<MinutesRepository.SectionRecord> sectionRecords = enrichEvidence(parsed.sections, segmentById);
-
-        int newMinutesVersion = currentMinutesVersion + 1;
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        String minutesId = "min_" + UUID.randomUUID().toString().replace("-", "");
-        MinutesRepository.MinutesRecord record = new MinutesRepository.MinutesRecord(
-            minutesId,
-            command.tenantId(),
-            command.meetingId(),
-            newMinutesVersion,
-            currentTranscriptVersion,
-            parsed.title,
-            parsed.markdown,
-            sectionRecords,
-            "PUBLISHED",
-            StaleStatus.ACTIVE,
-            response.artifactManifestId(),
-            command.requestedBy(),
-            now,
-            now
-        );
-        minutesRepository.save(record);
-        minutesRepository.incrementMeetingMinutesVersion(command.tenantId(), command.meetingId(), newMinutesVersion);
-        log.info("minutes_regenerated tenant={} meeting={} minutesVersion={}", command.tenantId(), command.meetingId(), newMinutesVersion);
-        publishMinutesGenerated(command.tenantId(), command.meetingId(), minutesId, newMinutesVersion, currentTranscriptVersion, now);
-        return toDto(record);
+            minutesRepository.save(record);
+            minutesRepository.incrementMeetingMinutesVersion(command.tenantId(), command.meetingId(), newMinutesVersion);
+            log.info("minutes_regenerated tenant={} meeting={} minutesVersion={}", command.tenantId(), command.meetingId(), newMinutesVersion);
+            publishMinutesGenerated(command.tenantId(), command.meetingId(), minutesId, newMinutesVersion, context.currentTranscriptVersion, now);
+            return toDto(record);
+        });
     }
 
     private void publishMinutesGenerated(
@@ -449,6 +463,16 @@ public class MinutesApplicationService implements MinutesFacade {
 
     private record ParsedMinutes(String title, String markdown, List<MinutesRepository.SectionRecord> sections) {
     }
+
+    private record GenerationContext(
+        Meeting meeting,
+        List<TranscriptRepository.TranscriptSegmentRecord> segments,
+        Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById,
+        int currentTranscriptVersion,
+        int currentMinutesVersion
+    ) {
+    }
+
     public static final class VersionConflictException extends RuntimeException {
         public VersionConflictException(String message) {
             super(message);
