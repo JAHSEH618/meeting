@@ -64,6 +64,14 @@ def _error_response(
     )
 
 
+def _signed_path_with_query(request: Request) -> str:
+    """URL_PATH_WITH_QUERY per the internal-API HMAC contract: the raw path
+    plus '?query' when a query string is present."""
+    path = request.url.path
+    query = request.url.query
+    return f"{path}?{query}" if query else path
+
+
 def _models_dir_for(runtime: RuntimeLike) -> str | None:
     if isinstance(runtime, BgeM3Runtime):
         return settings.bge_m3_models_dir
@@ -671,7 +679,7 @@ def create_app() -> FastAPI:
         body = await request.body()
         if not verify_hmac_signature(
             method=request.method,
-            path=str(request.url.path),
+            path=_signed_path_with_query(request),
             body=body,
             timestamp=x_timestamp,
             nonce=x_nonce,
@@ -710,7 +718,7 @@ def create_app() -> FastAPI:
         body = await request.body()
         if not verify_hmac_signature(
             method=request.method,
-            path=str(request.url.path),
+            path=_signed_path_with_query(request),
             body=body,
             timestamp=x_timestamp,
             nonce=x_nonce,
@@ -785,7 +793,7 @@ def create_app() -> FastAPI:
         body = await request.body()
         if not verify_hmac_signature(
             method=request.method,
-            path=str(request.url.path),
+            path=_signed_path_with_query(request),
             body=body,
             timestamp=x_timestamp,
             nonce=x_nonce,
@@ -871,7 +879,7 @@ def create_app() -> FastAPI:
 
         if not verify_hmac_signature(
             method=request.method,
-            path=str(request.url.path),
+            path=_signed_path_with_query(request),
             body=body,
             timestamp=x_timestamp,
             nonce=x_nonce,
