@@ -126,6 +126,15 @@ public final class ProcessingTaskStep {
                 startedAt = heartbeatAt;
             }
         }
+        // I7: Progress 单调守卫 - 拒绝回退的 progress，但仍然续期租约
+        if (progress < this.progress) {
+            // 记录警告但不抛异常，仍然续期租约
+            // progress 保持不变，只更新租约相关字段
+            this.attemptNo = attemptNo;
+            this.leaseOwner = leaseOwner;
+            this.heartbeatAt = heartbeatAt;
+            return;
+        }
         this.progress = progress;
         this.attemptNo = attemptNo;
         this.leaseOwner = leaseOwner;
