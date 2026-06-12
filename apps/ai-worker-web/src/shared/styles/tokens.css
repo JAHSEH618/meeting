@@ -1,43 +1,45 @@
 :root {
-  --surface-base: #f7f9fb;
+  --surface-base: #f5f5f7;
   --surface-raised: #ffffff;
-  --surface-sunken: #eef2f6;
+  --surface-sunken: #f2f2f7;
 
-  --ink-1: #0f172a;
-  --ink-2: #475569;
-  --ink-3: #64748b;
-  --ink-4: #94a3b8;
+  --ink-1: #1d1d1f;
+  --ink-2: #424245;
+  --ink-3: #6e6e73;
+  --ink-4: #aeaeb2;
 
-  --line-1: #dde3eb;
-  --line-2: #edf1f5;
-  --line-3: #f1f5f9;
+  --line-1: rgba(0, 0, 0, 0.12);
+  --line-2: rgba(0, 0, 0, 0.07);
+  --line-3: rgba(0, 0, 0, 0.045);
 
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
-  --accent-active: #1e3a8a;
-  --accent-soft: #dbeafe;
-  --accent-ink: #1e3a8a;
+  --accent: #0071e3;
+  --accent-hover: #0064d0;
+  --accent-active: #005bbd;
+  --accent-soft: #e8f1fd;
+  --accent-ink: #0058b0;
 
-  --success: #0e7490;
-  --success-soft: #ecfeff;
-  --success-ink: #155e75;
+  --success: #1f8f3a;
+  --success-soft: #e9f8ee;
+  --success-ink: #166f2c;
 
-  --warn: #b45309;
-  --warn-soft: #fef3c7;
-  --warn-ink: #92400e;
+  --warn: #d97c00;
+  --warn-soft: #fff4e5;
+  --warn-ink: #9a5700;
 
-  --danger: #be123c;
-  --danger-soft: #fee2e2;
-  --danger-ink: #9f1239;
+  --danger: #d70015;
+  --danger-soft: #ffebe9;
+  --danger-ink: #b3000c;
 
-  --focus: #1d4ed8;
-  --focus-ring: #1d4ed8;
+  --focus: #0071e3;
+  --focus-ring: #0071e3;
   --focus-ring-offset: #ffffff;
-  --border: #dde3eb;
+  --border: rgba(0, 0, 0, 0.12);
 
-  --radius-s: 4px;
-  --radius-m: 6px;
-  --radius-l: 8px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 980px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -48,7 +50,15 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  --font-sans: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.02);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  --chrome-bg: rgba(255, 255, 255, 0.72);
+  --chrome-blur: saturate(180%) blur(20px);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+               "PingFang SC", "Microsoft YaHei", sans-serif;
 
   color-scheme: light;
 }
@@ -65,6 +75,8 @@ body {
   -webkit-font-smoothing: antialiased;
   touch-action: manipulation;
 }
+
+h1, h2 { letter-spacing: -0.015em; text-wrap: balance; }
 
 * { box-sizing: border-box; }
 
