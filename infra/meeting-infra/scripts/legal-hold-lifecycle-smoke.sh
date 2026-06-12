@@ -63,7 +63,7 @@ CREATE_RESP=$(curl -fsSL -X POST "$API/api/meetings" \
     -H "X-Request-Id: lh_smoke_create_$NOW" \
     -H "X-Trace-Id: lh_smoke_$NOW" \
     -H "Idempotency-Key: lh_smoke_create_$NOW" \
-    -d '{"title":"legal-hold smoke","language":"zh","securityLevel":"INTERNAL"}')
+    -d '{"title":"legal-hold smoke","language":"zh"}')
 MEETING_ID=$(echo "$CREATE_RESP" | jq -er '.data.meetingId // empty' \
     || die "create response missing meetingId")
 ok "meeting created: $MEETING_ID"

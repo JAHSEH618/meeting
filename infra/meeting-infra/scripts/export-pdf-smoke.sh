@@ -51,7 +51,7 @@ MEETING=$(curl_json -X POST "$API/api/meetings" \
     -H "X-Request-Id: $RID-create" \
     -H "X-Trace-Id: $RID" \
     -H "Idempotency-Key: $RID-create" \
-    -d "{\"title\":\"PDF export smoke $RID\",\"language\":\"zh\",\"securityLevel\":\"INTERNAL\"}")
+    -d "{\"title\":\"PDF export smoke $RID\",\"language\":\"zh\"}")
 MEETING_ID=$(echo "$MEETING" | jq -r '.data.id // empty')
 [ -n "$MEETING_ID" ] || die "meeting create failed: $MEETING"
 ok "meeting $MEETING_ID"

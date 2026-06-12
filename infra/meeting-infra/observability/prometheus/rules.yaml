@@ -130,16 +130,6 @@ groups:
           summary: "Tenant context missing on a request"
           description: "Indicates a missing auth/tenant filter — RLS may be silently bypassed. Treat as P1."
 
-      - alert: LlmBlockedBySecurityLevelSurge
-        expr: |
-          sum(increase(meeting_api_llm_blocked_security_level_total{level=~"PUBLIC|INTERNAL"}[15m])) > 0
-        labels:
-          severity: warning
-          team: meeting-api
-        annotations:
-          summary: "PUBLIC/INTERNAL LLM call was blocked"
-          description: "Unexpected — these levels should not fail-closed in phase 1. Inspect data-boundary policy version."
-
   - name: ai-worker.gpu
     interval: 60s
     rules:
