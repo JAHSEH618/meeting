@@ -70,4 +70,5 @@ class PipelineArtifact:
     transcript_segments: list[dict[str, Any]] = field(default_factory=list)
     speaker_candidates: list[dict[str, Any]] = field(default_factory=list)
     artifact_manifest_id: str | None = None
+    artifact_manifest_uri: str | None = None
     terminal_status: str = "SUCCEEDED"

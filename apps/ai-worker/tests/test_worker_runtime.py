@@ -76,6 +76,7 @@ def callback_client():
     client.update_step.return_value = CallbackResponse(http_status=200, accepted=True)
     client.submit_transcript.return_value = CallbackResponse(http_status=200, accepted=True)
     client.submit_speaker_candidates.return_value = CallbackResponse(http_status=200, accepted=True)
+    client.submit_artifacts.return_value = CallbackResponse(http_status=200, accepted=True)
     client.complete_worker_phase.return_value = CallbackResponse(http_status=200, accepted=True)
     client.fail_task.return_value = CallbackResponse(http_status=200, accepted=True)
     return client
@@ -173,6 +174,31 @@ class StubEnrollmentWorkflowEngine(StubWorkflowEngine):
         if step_name == "SPEAKER_MATCHING":
             raise AssertionError("SPEAKER_ENROLLMENT must not run speaker matching")
         await super().run_step(context, step_name)
+
+
+class ArtifactReportingEngine(StubWorkflowEngine):
+    def start_pipeline(self, task):
+        context = super().start_pipeline(task)
+        context["artifacts"] = [
+            {
+                "artifactType": "TRANSCRIPT_MERGE",
+                "artifactUri": "tos://meeting-artifacts/transcript-merge.json",
+                "sha256": "a" * 64,
+                "sizeBytes": 123,
+            },
+        ]
+        return context
+
+    async def complete_pipeline(self, context):
+        base = await super().complete_pipeline(context)
+        return PipelineArtifact(
+            task_id=base.task_id,
+            transcript_segments=base.transcript_segments,
+            speaker_candidates=base.speaker_candidates,
+            artifact_manifest_id="artifact_manifest_task_runtime_01_1",
+            artifact_manifest_uri="tos://meeting-artifacts/manifest.json",
+            terminal_status="SUCCEEDED",
+        )
 
 
 class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
@@ -557,3 +583,38 @@ async def test_unexpected_completion_exception_sends_fail_with_worker_internal_e
     assert fail_kwargs["retryable"] is True
     # No step was executing — attribute to the last pipeline step.
     assert fail_kwargs["failed_step"] == "RAG_INDEXING"
+
+
+@pytest.mark.asyncio
+async def test_artifacts_callback_is_sent_and_transcript_carries_manifest_id(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = ArtifactReportingEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.submit_artifacts.assert_awaited_once()
+    artifacts_kwargs = callback_client.submit_artifacts.await_args.kwargs
+    assert artifacts_kwargs["artifact_manifest_id"] == "artifact_manifest_task_runtime_01_1"
+    assert artifacts_kwargs["artifacts"][0]["artifactType"] == "TRANSCRIPT_MERGE"
+    assert artifacts_kwargs["artifacts"][0]["artifactUri"].startswith("tos://")
+
+    transcript_kwargs = callback_client.submit_transcript.await_args.kwargs
+    assert transcript_kwargs["artifact_manifest_id"] == "artifact_manifest_task_runtime_01_1"
+    assert "artifactManifestUri" not in transcript_kwargs["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_artifacts_callback_failure_records_writeback_failed(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = ArtifactReportingEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    callback_client.submit_artifacts.return_value = CallbackResponse(
+        http_status=503, accepted=False, error_code="WRITEBACK_FAILED"
+    )
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_awaited_once()
+    assert callback_client.fail_task.await_args.kwargs["error_code"] == "WRITEBACK_FAILED"
+    callback_client.complete_worker_phase.assert_not_awaited()

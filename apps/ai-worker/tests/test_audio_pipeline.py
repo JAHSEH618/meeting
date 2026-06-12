@@ -86,11 +86,13 @@ async def test_local_audio_pipeline_writes_artifacts_and_transcript(tmp_path: Pa
     artifact = await engine.run_pipeline(_task("tos://meeting-audio-auska/meeting-audio-auska/tenant_01/meeting_01/upl_01/raw"))
 
     assert artifact.terminal_status == "SUCCEEDED"
-    assert artifact.artifact_manifest_id is not None
+    assert artifact.artifact_manifest_id == "artifact_manifest_task_audio_01_1"
+    assert artifact.artifact_manifest_uri is not None
     assert artifact.transcript_segments[0]["text"] == "测试转录文本"
-    manifest = await store.download_json(artifact.artifact_manifest_id)
+    manifest = await store.download_json(artifact.artifact_manifest_uri)
     assert manifest["pipelineVersion"] == "phase2-local-v1"
-    assert [item["category"] for item in manifest["artifacts"]] == [
+    assert manifest["artifactManifestId"] == "artifact_manifest_task_audio_01_1"
+    assert [item["artifactType"] for item in manifest["artifacts"]] == [
         "QUALITY_REPORT",
         "ASR_RAW",
         "DIARIZATION_TURNS",

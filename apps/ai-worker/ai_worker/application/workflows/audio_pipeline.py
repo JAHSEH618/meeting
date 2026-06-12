@@ -139,7 +139,11 @@ class LocalAudioPipelineEngine:
             )
 
     async def complete_pipeline(self, context: "_PipelineContext") -> PipelineArtifact:
-        manifest_ref = await self._write_manifest(context)
+        manifest_id = f"artifact_manifest_{context.task.task_id}_{context.task.attempt_no}"
+        manifest_ref = await self._write_manifest(context, manifest_id)
+        context.artifacts.append(
+            _artifact_dict("ARTIFACT_MANIFEST", manifest_ref.uri, manifest_ref.sha256, manifest_ref.size_bytes)
+        )
         degraded = any(
             s.get("stepName") in DEGRADED_SKIP_STEPS for s in context.skipped_steps
         )
@@ -147,7 +151,8 @@ class LocalAudioPipelineEngine:
             task_id=context.task.task_id,
             transcript_segments=context.transcript_segments,
             speaker_candidates=context.speaker_candidates,
-            artifact_manifest_id=manifest_ref.uri,
+            artifact_manifest_id=manifest_id,
+            artifact_manifest_uri=manifest_ref.uri,
             terminal_status="PARTIAL_SUCCEEDED" if degraded else "SUCCEEDED",
         )
 
@@ -302,10 +307,10 @@ class LocalAudioPipelineEngine:
         )
         context.artifacts.append(_artifact_dict("TRANSCRIPT_MERGE", ref.uri, ref.sha256, ref.size_bytes))
 
-    async def _write_manifest(self, context: "_PipelineContext") -> Any:
+    async def _write_manifest(self, context: "_PipelineContext", manifest_id: str) -> Any:
         task = context.task
         manifest = {
-            "artifactManifestId": f"artifact_manifest_{task.task_id}_{task.attempt_no}",
+            "artifactManifestId": manifest_id,
             "taskId": task.task_id,
             "tenantId": task.tenant_id,
             "meetingId": task.meeting_id,
@@ -408,9 +413,10 @@ def _speaker_candidate_summary(match: SpeakerMatchResult) -> dict[str, Any]:
     }
 
 
-def _artifact_dict(category: str, uri: str, sha256: str, size_bytes: int | None) -> dict[str, Any]:
+def _artifact_dict(artifact_type: str, uri: str, sha256: str, size_bytes: int | None) -> dict[str, Any]:
+    # Key names match ArtifactCallbackRequest in internal-callback-api.yaml.
     return {
-        "category": category,
+        "artifactType": artifact_type,
         "artifactUri": uri,
         "sha256": sha256,
         "sizeBytes": size_bytes,

@@ -179,6 +179,20 @@ class MvpWorkerRuntime:
 
         artifact = await self.workflow_engine.complete_pipeline(context)
 
+        artifacts_payload = _artifacts_from_context(context)
+        if artifacts_payload:
+            artifacts_response = await self.callback_client.submit_artifacts(
+                task_id=task.task_id,
+                tenant_id=task.tenant_id,
+                attempt_no=task.attempt_no,
+                artifacts=artifacts_payload,
+                artifact_manifest_id=artifact.artifact_manifest_id,
+                trace_id=task.trace_id,
+            )
+            if not artifacts_response.accepted:
+                await self._fail_for_writeback(task, task.pipeline_steps[-1], "artifacts callback failed")
+                return task
+
         if task.task_type == "SPEAKER_ENROLLMENT":
             response = await self._submit_speaker_enrollment_embedding(task, context)
             if not response.accepted:
@@ -211,9 +225,8 @@ class MvpWorkerRuntime:
                 metadata={
                     "workflowId": f"wf_{task.task_id}_{task.attempt_no}",
                     "mode": "phase2-local",
-                    "artifactManifestUri": artifact.artifact_manifest_id,
                 },
-                artifact_manifest_id=None,
+                artifact_manifest_id=artifact.artifact_manifest_id,
                 trace_id=task.trace_id,
             )
             if not transcript_response.accepted:
@@ -568,3 +581,13 @@ def _skipped_steps_from_context(context: Any) -> list[dict[str, str]]:
 def _completed_steps_for_worker_phase(task: TaskMessage, context: Any) -> list[str]:
     skipped = {s.get("stepName") for s in _skipped_steps_from_context(context)}
     return [step for step in task.pipeline_steps if step not in skipped]
+
+
+def _artifacts_from_context(context: Any) -> list[dict[str, Any]]:
+    if isinstance(context, dict):
+        artifacts = context.get("artifacts", [])
+    else:
+        artifacts = getattr(context, "artifacts", [])
+    if not isinstance(artifacts, list):
+        return []
+    return [a for a in artifacts if isinstance(a, dict)]
