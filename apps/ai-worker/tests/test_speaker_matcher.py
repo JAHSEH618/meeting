@@ -32,7 +32,6 @@ def _task(known_participants: list[str], speaker_profile_id: str | None = None) 
         "task_id": "task_01",
         "task_type": "MEETING_FULL_PIPELINE",
         "tenant_id": "tenant_01",
-        "security_level": "INTERNAL",
         "attempt_no": 1,
         "pipeline_steps": ("SPEAKER_EMBEDDING", "SPEAKER_MATCHING"),
         "known_participants": list(known_participants),

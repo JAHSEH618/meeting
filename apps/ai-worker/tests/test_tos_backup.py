@@ -56,6 +56,11 @@ async def test_upload_triggers_backup_task(tmp_path, mock_settings):
     with patch("ai_worker.infrastructure.artifact_store.asyncio.create_task") as mock_create_task:
         await store.upload("bucket", "key", b"data", "text/plain")
         mock_create_task.assert_called_once()
+        # The mocked create_task captured the coroutine without scheduling it;
+        # close it so GC doesn't emit "coroutine was never awaited".
+        (coro,) = mock_create_task.call_args.args
+        assert coro.__name__ == "_backup_to_tos_async"
+        coro.close()
 
 
 @pytest.mark.asyncio

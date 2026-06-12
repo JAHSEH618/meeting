@@ -7,7 +7,6 @@ def test_validate_valid_meeting_full_pipeline() -> None:
         "taskType": "MEETING_FULL_PIPELINE",
         "tenantId": "tenant_01",
         "meetingId": "mtg_01",
-        "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": [
             "AUDIO_PREPROCESS",

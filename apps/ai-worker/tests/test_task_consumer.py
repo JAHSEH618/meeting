@@ -132,7 +132,6 @@ class TestConsumeAndValidate:
             task_id="task_03",
             task_type="MEETING_FULL_PIPELINE",
             tenant_id="tenant_03",
-            security_level="INTERNAL",
             attempt_no=1,
             pipeline_steps=("AUDIO_PREPROCESS", "ASR"),
             trace_id="trace_03",

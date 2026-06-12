@@ -32,7 +32,6 @@ def _embed_task(*, task_id: str = "task_emb_01", chunks: list[dict] | None = Non
         task_id=task_id,
         task_type="TEXT_EMBEDDING",
         tenant_id="tenant_01",
-        security_level="INTERNAL",
         attempt_no=1,
         pipeline_steps=("RAG_INDEXING",),
         expected_input_version={
@@ -105,7 +104,6 @@ async def test_workflow_skips_unknown_step(state_store, fake_runtime) -> None:
         task_id="task_unknown",
         task_type="TEXT_EMBEDDING",
         tenant_id="tenant_01",
-        security_level="INTERNAL",
         attempt_no=1,
         pipeline_steps=("RAG_INDEXING", "UNKNOWN_STEP"),
         expected_input_version={"chunkStrategyVersion": "default-zh-v1"},
@@ -145,7 +143,7 @@ def test_is_embedding_task_recognises_both_task_types() -> None:
     rag_task = _embed_task(meeting_id="m")
     rag_task = TaskMessage(
         task_id=rag_task.task_id, task_type="RAG_REINDEX",
-        tenant_id=rag_task.tenant_id, security_level=rag_task.security_level,
+        tenant_id=rag_task.tenant_id,
         attempt_no=rag_task.attempt_no, pipeline_steps=rag_task.pipeline_steps,
         expected_input_version=rag_task.expected_input_version,
         meeting_id=rag_task.meeting_id, options=rag_task.options,
@@ -154,7 +152,7 @@ def test_is_embedding_task_recognises_both_task_types() -> None:
 
     audio_task = TaskMessage(
         task_id="t", task_type="MEETING_FULL_PIPELINE",
-        tenant_id="x", security_level="INTERNAL", attempt_no=1,
+        tenant_id="x", attempt_no=1,
         pipeline_steps=("AUDIO_PREPROCESS",),
         expected_input_version={"chunkStrategyVersion": "v1"},
     )
@@ -214,7 +212,6 @@ async def test_runtime_routes_text_embedding_task_through_embed_workflow(state_s
         "taskType": "TEXT_EMBEDDING",
         "tenantId": "tenant_01",
         "documentId": "doc_01",
-        "securityLevel": "CONFIDENTIAL",
         "attemptNo": 1,
         "pipelineSteps": ["RAG_INDEXING"],
         "expectedInputVersion": {
@@ -264,7 +261,6 @@ async def test_runtime_fails_task_when_embeddings_callback_rejects(state_store, 
         "taskType": "TEXT_EMBEDDING",
         "tenantId": "tenant_01",
         "meetingId": "mtg_01",
-        "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": ["RAG_INDEXING"],
         "expectedInputVersion": {
@@ -300,7 +296,6 @@ async def test_runtime_fails_task_when_chunks_missing(state_store, fake_runtime)
         "taskType": "TEXT_EMBEDDING",
         "tenantId": "tenant_01",
         "documentId": "doc_01",
-        "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": ["RAG_INDEXING"],
         "expectedInputVersion": {

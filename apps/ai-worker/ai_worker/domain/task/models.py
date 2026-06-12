@@ -20,7 +20,6 @@ class TaskMessage:
     task_id: str
     task_type: str
     tenant_id: str
-    security_level: str
     attempt_no: int
     pipeline_steps: tuple[str, ...]
     expected_input_version: dict[str, Any] = field(default_factory=dict)

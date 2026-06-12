@@ -23,7 +23,6 @@ def _valid_message() -> dict:
         "meetingId": "mtg_01",
         "audioFileId": "audio_01",
         "audioUri": "tos://meeting-audio-auska/audio_01.wav",
-        "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": [
             "AUDIO_PREPROCESS",
@@ -62,7 +61,6 @@ def _speaker_enrollment_message() -> dict:
         "audioFileId": "audio_enroll_01",
         "audioUri": "tos://meeting-audio-auska/enroll.wav",
         "language": "zh",
-        "securityLevel": "INTERNAL",
         "attemptNo": 1,
         "pipelineSteps": ["SPEAKER_EMBEDDING", "SPEAKER_MATCHING"],
         "expectedInputVersion": {"chunkStrategyVersion": "v1"},

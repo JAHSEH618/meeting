@@ -47,7 +47,6 @@ def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | No
         task_id=raw_message["taskId"],
         task_type=raw_message["taskType"],
         tenant_id=raw_message["tenantId"],
-        security_level=raw_message.get("securityLevel", "INTERNAL"),
         attempt_no=raw_message.get("attemptNo", 1),
         pipeline_steps=pipeline_steps,
         expected_input_version=raw_message.get("expectedInputVersion", {}),

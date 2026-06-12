@@ -57,8 +57,7 @@ class _StubJavaClient(JavaPublicClient):
             return httpx.Response(200, json={
                 "success": True,
                 "data": [
-                    {"meetingId": "m_01", "title": "测试会议",
-                     "securityLevel": "INTERNAL", "status": "READY",
+                    {"meetingId": "m_01", "title": "测试会议", "status": "READY",
                      "language": "zh", "createdAt": "2026-05-27T10:00:00Z"},
                 ],
                 "error": None,
@@ -70,7 +69,6 @@ class _StubJavaClient(JavaPublicClient):
                 "data": {
                     "meetingId": "m_01",
                     "title": "测试会议",
-                    "securityLevel": "INTERNAL",
                     "status": "READY",
                     "language": "zh",
                     "createdAt": "2026-05-27T10:00:00Z",
@@ -265,7 +263,6 @@ async def test_create_document_passthrough(app: FastAPI, auth_headers: dict[str,
                 "title": "ref.pdf",
                 "fileId": "file_01",
                 "documentType": "PDF",
-                "securityLevel": "INTERNAL",
                 "contentHash": "a" * 64,
             },
             headers=auth_headers,
@@ -278,7 +275,6 @@ async def test_create_document_passthrough(app: FastAPI, auth_headers: dict[str,
         "title": "ref.pdf",
         "fileId": "file_01",
         "documentType": "PDF",
-        "securityLevel": "INTERNAL",
         "contentHash": "a" * 64,
     }
     assert create["idempotency"] == "idem_t1"
@@ -349,7 +345,6 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
             json={
                 "title": "季度评审",
                 "scheduledStartAt": "2026-06-03T09:30:00Z",
-                "securityLevel": "INTERNAL",
                 "language": "zh",
                 "participants": [
                     {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},
@@ -365,7 +360,6 @@ async def test_create_meeting_forwards_participants_to_java(app: FastAPI, auth_h
     assert create["body"] == {
         "title": "季度评审",
         "scheduledStartAt": "2026-06-03T09:30:00Z",
-        "securityLevel": "INTERNAL",
         "language": "zh",
         "participants": [
             {"personId": "p_01", "displayName": "李四", "role": "PARTICIPANT"},

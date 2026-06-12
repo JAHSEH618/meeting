@@ -104,7 +104,7 @@ class CamPlusPlusRuntime:
 
         # Lazy import to avoid torch dependency in fake mode
         try:
-            from modelscope.pipelines import pipeline as ms_pipeline
+            from modelscope.pipelines import pipeline as ms_pipeline  # type: ignore[import-not-found]
         except ImportError as exc:
             raise CamPlusPlusRuntimeError(
                 "SPEAKER_EMBEDDING_FAILED",
@@ -151,7 +151,7 @@ class CamPlusPlusRuntime:
             # Extract segment audio and compute embedding
             result = self._model(
                 audio_in=str(audio_path),
-                audio_fs=metadata.sample_rate,
+                audio_fs=metadata.sample_rate_hz,
             )
 
             embedding_values = result["embs"][0].tolist()
