@@ -102,9 +102,15 @@ class FfprobeAudioPreprocessor:
 
 def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
     audio_stream = next(
-        stream for stream in payload.get("streams", [])
-        if stream.get("codec_type") == "audio"
+        (
+            stream
+            for stream in payload.get("streams", [])
+            if stream.get("codec_type") == "audio"
+        ),
+        None,
     )
+    if audio_stream is None:
+        raise AudioPreprocessError("AUDIO_CORRUPTED", "no audio stream found in container")
     format_info = payload.get("format", {})
     duration_seconds = float(audio_stream.get("duration") or format_info.get("duration") or 0)
     bit_rate_raw = audio_stream.get("bit_rate") or format_info.get("bit_rate")

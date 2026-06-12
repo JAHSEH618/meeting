@@ -119,9 +119,45 @@ class MvpWorkerRuntime:
         if task is None:
             return None
 
-        if is_embedding_task(task):
-            return await self._consume_embedding_message(task)
+        try:
+            if is_embedding_task(task):
+                return await self._consume_embedding_message(task)
+            return await self._consume_audio_message(task)
+        except WorkerPipelineError as exc:
+            # Raised outside execute_step (start_pipeline / complete_pipeline /
+            # submit helpers) — same handling as a failed step result.
+            await self._fail_for_pipeline_result(
+                task,
+                StepResult(
+                    step_name=exc.step_name,
+                    status="FAILED",
+                    progress=100,
+                    error_code=exc.error_code,
+                    error_message=str(exc),
+                    retryable=exc.retryable,
+                ),
+            )
+            return task
+        except Exception as exc:  # noqa: BLE001 — D4: Java must learn about every crash before ack/reject
+            logger.exception("WORKER_INTERNAL_ERROR: task_id=%s", task.task_id)
+            self.state_store.fail(task.task_id, "WORKER_INTERNAL_ERROR", str(exc))
+            kwargs: dict[str, Any] = {
+                "task_id": task.task_id,
+                "tenant_id": task.tenant_id,
+                "attempt_no": task.attempt_no,
+                "failed_step": task.pipeline_steps[-1] if task.pipeline_steps else "AUDIO_PREPROCESS",
+                "error_code": "WORKER_INTERNAL_ERROR",
+                "error_message": f"{type(exc).__name__}: {exc}",
+                "retryable": True,
+                "trace_id": task.trace_id,
+                "meeting_id": task.meeting_id,
+            }
+            if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+                kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+            await self.callback_client.fail_task(**kwargs)
+            return task
 
+    async def _consume_audio_message(self, task: TaskMessage) -> TaskMessage:
         context = self.workflow_engine.start_pipeline(task)
         for step_name in task.pipeline_steps:
             if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
@@ -336,6 +372,19 @@ class MvpWorkerRuntime:
                 error_code=exc.error_code,
                 error_message=str(exc),
                 retryable=exc.retryable,
+            )
+        except Exception as exc:  # noqa: BLE001 — D4: attribute unexpected step crashes precisely
+            logger.exception(
+                "WORKER_INTERNAL_ERROR in step: task_id=%s step=%s", task.task_id, step_name
+            )
+            self.state_store.update_step(task.task_id, step_name, "FAILED", 100, "WORKER_INTERNAL_ERROR")
+            return StepResult(
+                step_name=step_name,
+                status="FAILED",
+                progress=100,
+                error_code="WORKER_INTERNAL_ERROR",
+                error_message=f"{type(exc).__name__}: {exc}",
+                retryable=True,
             )
         finally:
             heartbeat_task.cancel()

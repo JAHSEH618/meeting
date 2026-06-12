@@ -185,6 +185,18 @@ class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
         )
 
 
+class CrashingStepEngine(StubWorkflowEngine):
+    async def run_step(self, context, step_name: str) -> None:
+        if step_name == "DIARIZATION":
+            raise ValueError("unexpected I/O explosion")
+        await super().run_step(context, step_name)
+
+
+class CrashingCompleteEngine(StubWorkflowEngine):
+    async def complete_pipeline(self, context):
+        raise OSError("disk full while writing manifest")
+
+
 @pytest.mark.asyncio
 async def test_consume_message_submits_java_transcript_version_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
@@ -505,3 +517,43 @@ async def test_heartbeat_task_is_cancelled_after_step_completes(callback_client)
     await asyncio.sleep(0.08)
 
     assert callback_client.update_step.await_count == calls_after_step
+
+
+@pytest.mark.asyncio
+async def test_unexpected_step_exception_sends_fail_with_worker_internal_error(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=CrashingStepEngine(state_store),
+        state_store=state_store,
+    )
+
+    task = await runtime.consume_message(_valid_message())
+
+    assert task is not None  # consume_message must not raise
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["failed_step"] == "DIARIZATION"
+    assert fail_kwargs["error_code"] == "WORKER_INTERNAL_ERROR"
+    assert fail_kwargs["retryable"] is True
+    callback_client.complete_worker_phase.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unexpected_completion_exception_sends_fail_with_worker_internal_error(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=CrashingCompleteEngine(state_store),
+        state_store=state_store,
+    )
+
+    task = await runtime.consume_message(_valid_message())
+
+    assert task is not None
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["error_code"] == "WORKER_INTERNAL_ERROR"
+    assert fail_kwargs["retryable"] is True
+    # No step was executing — attribute to the last pipeline step.
+    assert fail_kwargs["failed_step"] == "RAG_INDEXING"
