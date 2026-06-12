@@ -94,7 +94,7 @@ public class ProcessingTaskCallbackApplicationService {
             command.stepName().name()
         );
         if (command.status() == StepStatus.RUNNING && command.progress() != null && command.progress() > 0) {
-            return heartbeat(new StepProgressHeartbeatCommand(
+            return heartbeatInternal(new StepProgressHeartbeatCommand(
                 command.metadata(),
                 command.tenantId(),
                 command.meetingId(),
@@ -144,6 +144,10 @@ public class ProcessingTaskCallbackApplicationService {
             command.taskId(),
             command.stepName().name()
         );
+        return heartbeatInternal(command);
+    }
+
+    private ProcessingTaskDTO heartbeatInternal(StepProgressHeartbeatCommand command) {
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
