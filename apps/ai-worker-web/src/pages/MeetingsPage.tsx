@@ -3,13 +3,6 @@ import { useAdminMeetingsQuery } from "@/features/meetings/queries";
 import { formatDate } from "@/shared/utils/formatters";
 import { ApiError } from "@/shared/api/client";
 
-const SECURITY_TONE: Record<string, string> = {
-  PUBLIC: "pill--neutral",
-  INTERNAL: "pill--info",
-  CONFIDENTIAL: "pill--warn",
-  SECRET: "pill--danger",
-};
-
 export function MeetingsPage() {
   const { data, isPending, error } = useAdminMeetingsQuery();
   const meetings = data ?? [];
@@ -71,7 +64,6 @@ export function MeetingsPage() {
               <tr>
                 <th>标题</th>
                 <th>状态</th>
-                <th>安全等级</th>
                 <th>语言</th>
                 <th>创建时间</th>
               </tr>
@@ -83,11 +75,6 @@ export function MeetingsPage() {
                     <Link to={`/meetings/${m.meetingId}`}>{m.title}</Link>
                   </td>
                   <td><span className="pill pill--info">{m.status}</span></td>
-                  <td>
-                    <span className={`pill ${SECURITY_TONE[m.securityLevel] ?? "pill--neutral"}`}>
-                      {m.securityLevel}
-                    </span>
-                  </td>
                   <td>{m.language}</td>
                   <td>{formatDate(m.createdAt)}</td>
                 </tr>

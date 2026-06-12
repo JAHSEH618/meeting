@@ -38,7 +38,6 @@ vi.mock("@/shared/api/endpoints", () => ({
     meetingId: "m1",
     title: "季度评审",
     status: "RUNNING",
-    securityLevel: "INTERNAL",
     language: "zh",
     transcriptVersion: 3,
     participants: [
@@ -309,7 +308,6 @@ function defaultAggregate(overrides: Partial<MeetingAggregateDTO> & { speakers?:
       meetingId: "m1",
       title: "季度评审",
       status: "RUNNING",
-      securityLevel: "INTERNAL",
       language: "zh",
       transcriptVersion: 3,
       participants: [{ personId: "p1", displayName: "李四", role: "PARTICIPANT" }],

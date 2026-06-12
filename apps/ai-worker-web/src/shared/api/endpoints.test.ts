@@ -98,7 +98,6 @@ describe("admin endpoint helpers", () => {
       title: "ref.pdf",
       fileId: "f1",
       documentType: "PDF",
-      securityLevel: "INTERNAL",
       contentHash: "a",
     });
 
@@ -133,7 +132,6 @@ describe("admin endpoint helpers", () => {
       meetingId: "m1",
       title: "季度评审",
       status: "RUNNING",
-      securityLevel: "INTERNAL",
       language: "zh",
       transcriptVersion: 3,
       participants: [

@@ -4,7 +4,7 @@ test("new meeting one-shot happy path", async ({ page }) => {
   await page.route("**/admin/documents?**", (route) => json(route, []));
   await page.route("**/admin/documents", async (route) => {
     if (route.request().method() === "POST") {
-      return json(route, { documentId: "doc-new", title: "ref.pdf", securityLevel: "INTERNAL" });
+      return json(route, { documentId: "doc-new", title: "ref.pdf" });
     }
     return json(route, []);
   });
@@ -25,7 +25,6 @@ test("new meeting one-shot happy path", async ({ page }) => {
         meetingId: "m-new",
         title: "季度评审",
         status: "RUNNING",
-        securityLevel: "INTERNAL",
         language: "zh",
         createdAt: "2026-05-27T00:00:00Z",
       });
@@ -34,7 +33,7 @@ test("new meeting one-shot happy path", async ({ page }) => {
   });
   await page.route("**/admin/meetings/m-new/glossary", (route) => json(route, { meetingId: "m-new", terms: [{ term: "LLM", aliases: [] }] }));
   await page.route("**/admin/meetings/m-new/documents:attach", (route) =>
-    json(route, { id: "link1", documentId: "doc-new", title: "ref.pdf", role: "REFERENCE", securityLevel: "INTERNAL", attachedBy: null, attachedAt: "" }),
+    json(route, { id: "link1", documentId: "doc-new", title: "ref.pdf", role: "REFERENCE", attachedBy: null, attachedAt: "" }),
   );
   await page.route("**/admin/meetings/m-new/files/audio/uploads", (route) =>
     json(route, { uploadId: "audio-up", parts: [{ partNumber: 1, uploadUrl: "https://presign.test/audio/1", expiresAt: "", headers: {} }] }),
@@ -51,7 +50,7 @@ test("new meeting one-shot happy path", async ({ page }) => {
   );
   await page.route("**/admin/meetings/m-new", (route) =>
     json(route, {
-      meeting: { meetingId: "m-new", title: "季度评审", status: "RUNNING", securityLevel: "INTERNAL", language: "zh", createdAt: "" },
+      meeting: { meetingId: "m-new", title: "季度评审", status: "RUNNING", language: "zh", createdAt: "" },
       latestTask: { taskId: "task-1", meetingId: "m-new", status: "SUCCEEDED", phase: "TERMINAL", attemptNo: 1, currentStep: "EXTRACTION", lastErrorCode: null, retryable: false, steps: [
         { stepName: "ASR", status: "SUCCEEDED", progress: 100 },
         { stepName: "SUMMARY", status: "SUCCEEDED", progress: 100 },

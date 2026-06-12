@@ -5,7 +5,6 @@
  */
 
 export type DocumentRole = "REFERENCE" | "ATTACHMENT";
-export type SecurityLevel = "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "SECRET";
 export type ProcessingTaskPhase = "WORKER_DAG_RUNNING" | "WORKER_DAG_DONE" | "JAVA_LLM_RUNNING" | "TERMINAL";
 export type ProcessingTaskStatus =
   | "PENDING" | "QUEUED" | "RUNNING" | "ORPHANED" | "PARTIAL_SUCCEEDED"
@@ -66,7 +65,6 @@ export interface MeetingSummaryDTO {
   title: string;
   scheduledStartAt?: string | null;
   status: string;
-  securityLevel: SecurityLevel;
   language: string;
   transcriptVersion?: number;
   minutesVersion?: number;
@@ -83,7 +81,6 @@ export interface MeetingParticipantDTO {
 export interface DocumentSummaryDTO {
   documentId: string;
   title: string;
-  securityLevel: SecurityLevel;
   documentType?: DocumentType | string;
   contentHash?: string | null;
   createdAt?: string;
@@ -93,7 +90,6 @@ export interface CreateDocumentRequest {
   title: string;
   fileId: string;
   documentType: DocumentType | string;
-  securityLevel: SecurityLevel;
   contentHash: string;
 }
 
@@ -102,7 +98,6 @@ export interface MeetingDocumentItemDTO {
   documentId: string;
   title: string | null;
   role: DocumentRole;
-  securityLevel: SecurityLevel;
   attachedBy: string | null;
   attachedAt: string;
 }

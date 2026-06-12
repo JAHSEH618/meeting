@@ -23,7 +23,7 @@ vi.mock("@/shared/api/endpoints", () => ({
     externalId: null,
     createdAt: "2026-06-02T00:00:00Z",
   })),
-  createMeeting: vi.fn(async () => ({ meetingId: "m1", title: "季度评审", securityLevel: "INTERNAL", language: "zh", status: "CREATED", createdAt: "" })),
+  createMeeting: vi.fn(async () => ({ meetingId: "m1", title: "季度评审", language: "zh", status: "CREATED", createdAt: "" })),
   updateMeetingGlossary: vi.fn(async () => undefined),
   attachMeetingDocument: vi.fn(async () => undefined),
   initFileUpload: vi.fn(async () => ({ uploadId: "doc-up", parts: [{ partNumber: 1, uploadUrl: "https://upload/doc", expiresAt: "", headers: {} }] })),
@@ -59,7 +59,6 @@ describe("NewMeetingPage", () => {
 
     expect(screen.getByLabelText(/标题/)).toHaveAttribute("name", "title");
     expect(screen.getByLabelText(/标题/)).toHaveAttribute("autocomplete", "off");
-    expect(screen.getByLabelText(/安全级别/)).toHaveAttribute("name", "securityLevel");
     expect(screen.getByLabelText(/语言/)).toHaveAttribute("name", "language");
     expect(screen.getByRole("textbox", { name: "术语" })).toHaveAttribute("name", "glossaryTerm");
     expect(screen.getByRole("textbox", { name: "术语" })).toHaveAttribute("autocomplete", "off");

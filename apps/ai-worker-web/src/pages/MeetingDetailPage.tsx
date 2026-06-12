@@ -97,9 +97,6 @@ export function MeetingDetailPage() {
     };
   }, [meetingId]);
 
-  const securityBlocked = task?.lastErrorCode === "SECURITY_LEVEL_BLOCKED" ||
-    Object.values(steps).some((step) => step.errorCode === "SECURITY_LEVEL_BLOCKED");
-
   const sortedSteps = useMemo(
     () => STEPS.map((stepName) => steps[stepName] ?? { stepName, status: "PENDING", progress: 0 }),
     [steps],
@@ -234,7 +231,7 @@ export function MeetingDetailPage() {
         <div>
           <h1 className="page-title">{meeting?.title ?? `会议 ${meetingId}`}</h1>
           <p className="page-subtitle">
-            {meeting?.securityLevel ?? "INTERNAL"} · {meeting?.language ?? "zh"} · {meetingId}
+            {meeting?.language ?? "zh"} · {meetingId}
           </p>
         </div>
         {task ? (
@@ -245,12 +242,6 @@ export function MeetingDetailPage() {
         ) : null}
       </header>
 
-      {securityBlocked ? (
-        <div className="banner banner--danger" role="alert">
-          <strong className="banner__title">SECURITY_LEVEL_BLOCKED</strong>
-          <span className="banner__body">当前安全级别阻断了 LLM 处理。</span>
-        </div>
-      ) : null}
       {error ? <div className="banner banner--danger" role="alert">{error}</div> : null}
 
       <section className="card stack" aria-labelledby="meeting-participants">

@@ -23,7 +23,6 @@ import type {
   FileUploadCompleteResponseDTO,
   GlossaryTermDTO,
   PersonDTO,
-  SecurityLevel,
 } from "@/shared/api/types";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
@@ -57,7 +56,6 @@ interface SelectedParticipant {
 export function NewMeetingPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
-  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>("INTERNAL");
   const [language, setLanguage] = useState("zh");
   const [terms, setTerms] = useState<GlossaryTermDTO[]>([]);
   const [termDraft, setTermDraft] = useState("");
@@ -134,7 +132,6 @@ export function NewMeetingPage() {
         title: file.name,
         fileId: completed.fileId,
         documentType: deriveDocumentType(file.name, file.type),
-        securityLevel,
         contentHash: completed.sha256,
       });
       setUploadingDocuments((current) =>
@@ -163,7 +160,6 @@ export function NewMeetingPage() {
     try {
       const meeting = await createMeeting({
         title: title.trim(),
-        securityLevel,
         language,
         participants: selectedParticipants.map((participant) => ({
           personId: participant.personId,
@@ -222,21 +218,6 @@ export function NewMeetingPage() {
               onChange={(event) => setTitle(event.target.value)}
               autoComplete="off"
             />
-          </div>
-          <div className="field">
-            <label className="field__label" htmlFor="meeting-security">安全级别</label>
-            <select
-              id="meeting-security"
-              name="securityLevel"
-              className="select"
-              value={securityLevel}
-              onChange={(event) => setSecurityLevel(event.target.value as SecurityLevel)}
-            >
-              <option value="PUBLIC">PUBLIC</option>
-              <option value="INTERNAL">INTERNAL</option>
-              <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-              <option value="SECRET">SECRET</option>
-            </select>
           </div>
           <div className="field">
             <label className="field__label" htmlFor="meeting-language">语言</label>

@@ -16,7 +16,6 @@ import type {
   MeetingSpeakerDTO,
   PersonDTO,
   ProcessingTaskDTO,
-  SecurityLevel,
   SpeakerProfileDTO,
 } from "@/shared/api/types";
 import { apiCall, apiUpload } from "@/shared/api/client";
@@ -72,7 +71,6 @@ export const revokeSpeakerProfile = (profileId: string, reason = "operator_reque
 export const createMeeting = (body: {
   title: string;
   scheduledStartAt?: string | null;
-  securityLevel: string;
   language: string;
   participants: Array<{ personId: string; displayName: string; role: string }>;
 }) => apiCall<MeetingSummaryDTO>(`${API}/meetings`, { method: "POST", body });
@@ -218,8 +216,6 @@ export const abortAudioUpload = (meetingId: string, uploadId: string) =>
     `${API}/meetings/${encodeURIComponent(meetingId)}/files/audio/uploads/${encodeURIComponent(uploadId)}/abort`,
     { method: "POST" },
   );
-
-export type { SecurityLevel };
 
 function normalizePerson(person: PersonDTO): PersonDTO {
   const personId = person.personId ?? person.id ?? "";
