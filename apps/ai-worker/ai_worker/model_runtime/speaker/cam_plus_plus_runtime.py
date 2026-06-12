@@ -177,7 +177,16 @@ class CamPlusPlusRuntime:
                 checksum=checksum,
                 quality_score=float(speaker_turn.confidence),
             )
+        except CamPlusPlusRuntimeError:
+            raise
         except Exception as exc:
+            from ai_worker.observability.gpu_metrics import is_cuda_oom
+
+            if is_cuda_oom(exc):
+                raise CamPlusPlusRuntimeError(
+                    "SPEAKER_EMBEDDING_GPU_OOM",
+                    f"CAM++ CUDA OOM: {exc}",
+                ) from exc
             raise CamPlusPlusRuntimeError(
                 "SPEAKER_EMBEDDING_FAILED",
                 f"CAM++ inference failed: {exc}",

@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 20.0
 HEARTBEAT_MIN_PROGRESS = 1
 
+OOM_ERROR_CODES = frozenset({"ASR_GPU_OOM", "DIARIZATION_GPU_OOM", "SPEAKER_EMBEDDING_GPU_OOM"})
+
 
 @runtime_checkable
 class WorkerRuntime(Protocol):
@@ -107,6 +109,7 @@ class MvpWorkerRuntime:
             state_store, get_bge_m3()
         )
         self._running = False
+        self.oom_exit_requested = False
 
     async def start(self) -> None:
         self._running = True
@@ -512,6 +515,10 @@ class MvpWorkerRuntime:
         if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
             kwargs["speaker_enrollment_id"] = speaker_enrollment_id
         await self.callback_client.fail_task(**kwargs)
+        if error_code in OOM_ERROR_CODES:
+            # D10 / SPEC §8: never keep consuming on an unknown VRAM state.
+            # The consumer schedules report_oom_and_exit() after settling the delivery.
+            self.oom_exit_requested = True
 
     @staticmethod
     def _writeback_failed(step_name: str, message: str) -> StepResult:

@@ -176,6 +176,13 @@ class PyannoteDiarizationRuntime:
         try:
             annotation = self._pipeline(str(audio_path), **kwargs)
         except Exception as exc:
+            from ai_worker.observability.gpu_metrics import is_cuda_oom
+
+            if is_cuda_oom(exc):
+                raise PyannoteDiarizationRuntimeError(
+                    "DIARIZATION_GPU_OOM",
+                    f"pyannote CUDA OOM: {exc}",
+                ) from exc
             raise PyannoteDiarizationRuntimeError(
                 "DIARIZATION_FAILED",
                 f"pyannote inference failed: {exc}",

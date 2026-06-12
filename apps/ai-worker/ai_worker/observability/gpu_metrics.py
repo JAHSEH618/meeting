@@ -163,6 +163,16 @@ def record_step_failure(step: str, error_code: str) -> None:
     STEP_FAILURES.labels(step=step, error_code=error_code).inc()
 
 
+def is_cuda_oom(exc: BaseException) -> bool:
+    """True when ``exc`` is torch.cuda.OutOfMemoryError (or the torch>=2.5
+    alias torch.OutOfMemoryError) — detected structurally so fake-mode
+    processes never import torch and tests can synthesize the class."""
+    for klass in type(exc).__mro__:
+        if klass.__name__ == "OutOfMemoryError" and klass.__module__.split(".")[0] == "torch":
+            return True
+    return False
+
+
 def report_oom_and_exit() -> None:
     """Record the OOM exit counter and terminate the process.
 

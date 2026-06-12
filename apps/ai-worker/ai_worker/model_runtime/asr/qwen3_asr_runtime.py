@@ -218,6 +218,13 @@ class Qwen3AsrRuntime:
                 use_timestamp=True,
             )
         except Exception as exc:
+            from ai_worker.observability.gpu_metrics import is_cuda_oom
+
+            if is_cuda_oom(exc):
+                raise Qwen3AsrRuntimeError(
+                    "ASR_GPU_OOM",
+                    f"qwen3-asr CUDA OOM: {exc}",
+                ) from exc
             raise Qwen3AsrRuntimeError(
                 "ASR_RUNTIME_ERROR",
                 f"qwen3-asr inference failed: {exc}",

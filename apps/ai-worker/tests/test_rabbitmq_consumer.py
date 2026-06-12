@@ -117,3 +117,23 @@ def test_on_message_does_not_block_the_connection_thread() -> None:
     consumer._in_flight.join(timeout=2.0)
     connection.drain()
     assert channel.acked == ["delivery_01"]
+
+
+def test_consumer_schedules_oom_exit_after_ack(monkeypatch) -> None:
+    exits: list[bool] = []
+    monkeypatch.setattr(
+        "ai_worker.infrastructure.mq.rabbitmq_consumer.report_oom_and_exit",
+        lambda: exits.append(True),
+    )
+    runtime = _runtime_mock()
+    runtime.oom_exit_requested = True
+    consumer = RabbitMqTaskConsumer(runtime)
+    connection = _FakeConnection()
+    consumer._connection = connection
+    channel = _Channel()
+
+    consumer._process_message(channel, "delivery_01", json.dumps({"taskId": "task_01"}).encode())
+    connection.drain()
+
+    assert channel.acked == ["delivery_01"]
+    assert exits == [True]
