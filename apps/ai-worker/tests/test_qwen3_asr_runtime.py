@@ -46,10 +46,10 @@ async def test_real_mode_raises_when_weights_missing(tmp_path):
     assert runtime.status == "NOT_LOADED"
     with pytest.raises(Qwen3AsrRuntimeError) as ex:
         await runtime.ensure_loaded()
-    assert ex.value.error_code == "ASR_MODEL_TIMEOUT"
+    assert ex.value.error_code == "ASR_MODEL_LOAD_FAILED"
     assert runtime.status == "ERROR"
     assert runtime.last_error is not None
-    assert "weights not found" in runtime.last_error or "ASR_MODEL_TIMEOUT" in runtime.last_error or "FileNotFoundError" in runtime.last_error
+    assert "weights not found" in runtime.last_error or "FileNotFoundError" in runtime.last_error
 
 
 @pytest.mark.asyncio
@@ -82,3 +82,15 @@ def test_model_version_flips_with_use_fake():
     assert fake.model_version == Qwen3AsrRuntime.FAKE_MODEL_VERSION
     assert real.model_version == Qwen3AsrRuntime.REAL_MODEL_VERSION
     assert real.status == "NOT_LOADED"
+
+
+@pytest.mark.asyncio
+async def test_real_mode_load_failure_maps_to_asr_model_load_failed(tmp_path):
+    runtime = Qwen3AsrRuntime(
+        use_fake=False,
+        models_dir=tmp_path / "does-not-exist",
+        device="cpu",
+    )
+    with pytest.raises(Qwen3AsrRuntimeError) as ex:
+        await runtime.ensure_loaded()
+    assert ex.value.error_code == "ASR_MODEL_LOAD_FAILED"

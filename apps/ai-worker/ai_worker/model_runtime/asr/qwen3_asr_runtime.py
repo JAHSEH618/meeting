@@ -42,7 +42,7 @@ class Qwen3AsrRuntimeError(AsrRuntimeError):
     """Raised when the real Qwen3-ASR runtime cannot service a request.
 
     Inherits ``error_code`` from :class:`AsrRuntimeError` so the
-    callback layer maps it to ``ASR_MODEL_TIMEOUT`` / ``ASR_RUNTIME_ERROR``
+    callback layer maps it to ``ASR_MODEL_LOAD_FAILED`` / ``ASR_RUNTIME_ERROR``
     consistently with the deterministic fallback.
     """
 
@@ -136,7 +136,7 @@ class Qwen3AsrRuntime:
                     self._status = "ERROR"
                     self._last_error = f"{type(exc).__name__}: {exc}"
                     raise Qwen3AsrRuntimeError(
-                        "ASR_MODEL_TIMEOUT",
+                        "ASR_MODEL_LOAD_FAILED",
                         f"failed to load qwen3-asr: {exc}",
                     ) from exc
 

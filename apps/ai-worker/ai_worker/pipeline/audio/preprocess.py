@@ -97,7 +97,7 @@ class FfprobeAudioPreprocessor:
         if metadata.sample_rate_hz < 16000:
             raise AudioPreprocessError("AUDIO_SAMPLE_RATE_TOO_LOW", "audio sample rate is below 16kHz")
         if metadata.codec.lower() in {"unknown", ""}:
-            raise AudioPreprocessError("AUDIO_FORMAT_UNSUPPORTED", "audio codec is unsupported")
+            raise AudioPreprocessError("AUDIO_UNSUPPORTED_FORMAT", "audio codec is unsupported")
 
 
 def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
