@@ -187,6 +187,6 @@ flowchart LR
 6. LLM 调用统一经过 `llm-gateway`，集中处理模型路由、数据边界策略、Prompt 版本、结构化输出、fallback 和审计；一期转写文本发送第三方 LLM 前不做脱敏。
 7. 生产实现建议通过 Prefect / Temporal 把串行 Pipeline 改成 DAG，并按 CPU、ASR、分人、声纹、embedding、LLM 拆 Celery / Dramatiq 队列做资源隔离；Forced Alignment 和 Rerank 一期在 `ai-worker` 进程内按需执行或 lazy-load。
 8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列；不创建 `gpu-align-queue` 和 `rerank-queue`。
-9. 一期预留但默认不启用：LocalLLM 用于后续 CONFIDENTIAL / SECRET 自动 LLM，Qdrant / Milvus 用于后续外置向量库，`gpu-align-queue` 用于后续 Forced Alignment 独立扩容，`rerank-queue` 用于后续独立 Rerank 扩容。
+9. 一期预留但默认不启用：LocalLLM 用于后续高敏或私有化场景，Qdrant / Milvus 用于后续外置向量库，`gpu-align-queue` 用于后续 Forced Alignment 独立扩容，`rerank-queue` 用于后续独立 Rerank 扩容。（会议安全分级与 LLM 阻断门已在 Phase K 移除，会议不分级。）
 10. 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，通过 LibreOffice headless 或等价组件生成 Markdown / DOCX / PDF；不进入 Python `WorkerRunner`。独立 export worker 仅作为后续资源隔离扩展。
 11. 数据流向约束：所有 PostgreSQL 业务写操作都源自 `meeting-api`；`ai-worker` 不持有业务库凭证，不直接写 `knowledge_chunks`、`transcript_segments` 或任何声纹表，只能通过 internal callback API 回写结构化结果或 artifact URI。

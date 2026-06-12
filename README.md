@@ -1,7 +1,7 @@
 # 本地会议智能系统 · Meeting Intelligence
 
-> **状态（2026-05-19）：v1 代码已完成，剩 Phase J 的预发布验收。**
-> 收尾清单看 [`final-check.md`](final-check.md)；还有 9 项验收任务，做法见
+> **状态（2026-06-12）：v1.1.0 已发布（TOS 存储迁移 + Phase K 移除会议安全分级），生产就绪。**
+> 变更详情见 [`RELEASE-NOTES-v1.1.0.md`](RELEASE-NOTES-v1.1.0.md)；Phase J 验收 runbook 在
 > [`docs/runbooks/phase-j-acceptance.md`](docs/runbooks/phase-j-acceptance.md)。
 >
 > 把会议录音处理成结构化资料：上传 → 转写 → 分人 → 声纹识别 → 纪要 → 知识库 → RAG 问答 → 导出。
@@ -68,7 +68,7 @@ flowchart TB
     Infra --> PG
     Infra --> TOS
     Infra --> Vault
-    Infra -. "受安全等级控制" .-> LLM
+    Infra -. "经 llm-gateway 审计" .-> LLM
     Infra ==>|"① 发布 RabbitMQ 任务 (HMAC)"| MQ
     MQ ==>|"② consume"| Workflow
     Workflow -.->|"③ 回写 artifact URI"| TOS
@@ -184,7 +184,7 @@ sequenceDiagram
     Note over J: WORKER_PHASE_COMPLETED outbox 事件<br/>触发 SUMMARY · EXTRACTION（Java 拥有）
 
     J->>J: phase = JAVA_LLM_RUNNING
-    J->>J: 调用 DashScope（经 llm-gateway / 安全等级控制）
+    J->>J: 调用 DashScope（经 llm-gateway 审计）
     J->>J: phase = TERMINAL · status = SUCCEEDED
 
     Note over J,W: RAG 同步 rerank（独立信道）
@@ -356,7 +356,7 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 1. **Java 管业务，Python 管计算**：ai-worker 不持业务库凭证、不判权限、不调第三方 LLM。
 2. **AI 产物 ≠ 业务事实**：纪要 / 待办 / 决策 / 风险默认是建议；重生成时给出 diff，不会静默覆盖用户已确认的字段。
-3. **安全等级控制 LLM 出网**：`PUBLIC` / `INTERNAL` 可调 DashScope；`CONFIDENTIAL` / `SECRET` 一期 fail-closed → `SECURITY_LEVEL_BLOCKED`。音频、声纹音频、声纹 embedding、原始声纹模型输出一律不出网。
+3. **数据出网边界**：纪要 / 抽取 / RAG 问答统一经 llm-gateway 调 DashScope（一期不做脱敏）。会议**不做安全分级**——SecurityLevel 枚举与 LLM 阻断门已在 Phase K 移除，勿回加。音频、声纹音频、声纹 embedding、原始声纹模型输出一律不出网。
 4. **声纹 embedding 一律 KMS 信封加密**：ai-worker 用 internal-TLS + HMAC 上送明文 `embedding.values`，Java 落库前过一次 KMS 信封加密。明文不进 TOS、不进日志、不进任何 Public DTO；回调拿到 ack 之后 ai-worker 清掉进程内引用。
 5. **RAG 权限 Java 实时算**：pgvector 只是候选召回；检索结果再过一次 PG 权限过滤；只有 `status=ACTIVE AND stale_status=ACTIVE` 的 chunk 进入 rerank。
 6. **STALE 与业务 status 分离**：编辑转录会级联把下游的纪要 / 事项 / RAG chunk 标 STALE；缓存键里带版本号区分。
@@ -386,7 +386,7 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 **必做**：内置账号 + 租户 + RLS · 会议创建 + 4h 音频分片上传 · 本地 AI Pipeline 全链路 · 声纹注册 / 授权 / 候选确认 · DashScope 纪要 + 抽取 · 文档知识库（PDF/DOCX/TXT/MD）· RAG 问答（pgvector + 权限 + citation）· Markdown/DOCX/PDF 异步导出 · 任务 SSE / 失败重试 / 幂等回调 · 删除 / legal hold / break-glass 审计。
 
-**不做**：实时字幕 · 在线协同编辑 · 飞书 / 企微 / Jira 集成 · OCR · 全公司声纹搜索 · `CONFIDENTIAL` / `SECRET` 自动 LLM · 本地大模型。
+**不做**：实时字幕 · 在线协同编辑 · 飞书 / 企微 / Jira 集成 · OCR · 全公司声纹搜索 · 会议安全分级（Phase K 移除）· 本地大模型。
 
 详见 [`docs/spec.md`](docs/spec.md)。
 

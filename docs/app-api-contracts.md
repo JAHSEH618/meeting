@@ -30,7 +30,7 @@ packages/meeting-contracts/schemas/common/error-codes.yaml
 2. `ai-worker` 不直接写 PostgreSQL 业务库，只能通过 internal callback API 回写结果。
 3. `meeting-web` 不直接访问 Python、RabbitMQ、数据库或 DashScope。
 4. DashScope 调用统一经 `meeting-api` 的 `llm-gateway` 审计；音频、声纹参考音频和声纹 embedding 不得发送给 DashScope。
-5. TOS 中的大 JSON 中间产物通过 `oss://...` URI 引用，业务库只保存文件元信息、hash、版本和摘要 metadata。
+5. TOS 中的大 JSON 中间产物通过 `tos://...` URI 引用，业务库只保存文件元信息、hash、版本和摘要 metadata。
 
 ## 2. 通用 JSON 约定
 
@@ -118,11 +118,10 @@ X-Signature    = "hmac-sha256=" + hex(signature)
   "success": false,
   "data": null,
   "error": {
-    "code": "SECURITY_LEVEL_BLOCKED",
-    "message": "一期不支持该安全等级的自动 LLM 处理",
+    "code": "LLM_DATA_BOUNDARY_BLOCKED",
+    "message": "数据边界策略阻断",
     "retryable": false,
     "details": {
-      "securityLevel": "SECRET",
       "blockedCapability": "LLM_SUMMARY"
     }
   },
@@ -158,12 +157,6 @@ X-Signature    = "hmac-sha256=" + hex(signature)
 ## 3. 枚举约定
 
 事实来源：完整枚举清单以 `packages/meeting-contracts/schemas/common/enums.yaml` 为准。下列枚举只列一期主要值，代码生成、前端 dictionary、Java enum 和 Python enum 必须从事实来源校验一致性。
-
-安全等级：
-
-```json
-["PUBLIC", "INTERNAL", "CONFIDENTIAL", "SECRET"]
-```
 
 任务状态：
 
@@ -298,7 +291,6 @@ POST /api/meetings
 {
   "title": "方案评审会",
   "scheduledStartAt": "2026-05-11T07:00:00Z",
-  "securityLevel": "INTERNAL",
   "language": "zh",
   "participants": [
     {
@@ -324,7 +316,6 @@ POST /api/meetings
     "meetingId": "m_001",
     "tenantId": "t_001",
     "title": "方案评审会",
-    "securityLevel": "INTERNAL",
     "status": "CREATED",
     "transcriptVersion": 0,
     "minutesVersion": 0,
@@ -433,7 +424,7 @@ POST /api/meetings/{meetingId}/files/audio/uploads/{uploadId}/complete
   "success": true,
   "data": {
     "fileId": "file_001",
-    "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file_001.wav",
+    "audioUri": "tos://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file_001.wav",
     "status": "UPLOADED"
   },
   "error": null,
@@ -1072,8 +1063,7 @@ RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-messag
   "tenantId": "t_001",
   "meetingId": "m_001",
   "audioFileId": "file_001",
-  "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
-  "securityLevel": "INTERNAL",
+  "audioUri": "tos://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
   "attemptNo": 1,
   "expectedInputVersion": {
     "transcriptVersion": 1,
@@ -1112,7 +1102,7 @@ RabbitMQ 消息必须是 JSON，消息体必须能通过 `processing-task-messag
 
 1. `ai-worker` 必须以 `taskId + attemptNo + stepName` 做幂等处理。
 2. `tenantId`、`meetingId`、`taskId` 与 callback body 必须一致。
-3. `securityLevel` 为 `CONFIDENTIAL` / `SECRET` 时，任何 LLM 相关 step 必须 fail closed。
+3. 任务消息不携带安全分级字段（SecurityLevel 已在 Phase K 移除）；LLM 相关 step 全部由 Java 侧执行并审计。
 4. `audioUri` 只允许读取授权 TOS 前缀，不允许任意路径读取。
 5. 消费失败可重试；重试耗尽后进入 DLQ，并保留 `taskId`、`tenantId`、`stepName`、`errorCode`、`workerId`、`artifactManifestId`。
 
@@ -1198,7 +1188,7 @@ POST /internal/processing-tasks/{taskId}/artifacts
   "stepName": "ASR",
   "attemptNo": 1,
   "artifactType": "RAW_ASR_JSON",
-  "artifactUri": "oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
+  "artifactUri": "tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
   "contentType": "application/json",
   "sha256": "artifact_hash_001",
   "sizeBytes": 1048576,
@@ -1380,7 +1370,7 @@ POST /internal/processing-tasks/{taskId}/embeddings
         "format": "FLOAT32_ARRAY",
         "dimension": 1024,
         "valuesPreview": [0.011, -0.022, 0.033],
-        "artifactUri": "oss://meeting-artifacts/tenant/t_001/task/task_001/embedding/emb_batch_001.json",
+        "artifactUri": "tos://meeting-artifacts/tenant/t_001/task/task_001/embedding/emb_batch_001.json",
         "sha256": "sha256:embedding_batch_hash_001"
       }
     }
@@ -1524,7 +1514,7 @@ POST /internal/processing-tasks/{taskId}/fail
     "retryable": true,
     "details": {
       "timeoutMs": 120000,
-      "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav"
+      "audioUri": "tos://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav"
     }
   },
   "artifactManifestId": "artifact_manifest_error_001",
@@ -1729,17 +1719,17 @@ GET /internal/workflows/{taskId}
 TOS URI 统一格式：
 
 ```text
-oss://{bucket}/tenant/{tenantId}/meeting/{meetingId}/{category}/{objectName}
+tos://{bucket}/tenant/{tenantId}/meeting/{meetingId}/{category}/{objectName}
 ```
 
 常用路径：
 
 ```text
-oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav
-oss://meeting-audio-auska/tenant/t_001/meeting/m_001/normalized/task_001.wav
-oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json
-oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/diarization/task_001.json
-oss://meeting-exports/tenant/t_001/meeting/m_001/exports/export_001.pdf
+tos://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav
+tos://meeting-audio-auska/tenant/t_001/meeting/m_001/normalized/task_001.wav
+tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json
+tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/diarization/task_001.json
+tos://meeting-exports/tenant/t_001/meeting/m_001/exports/export_001.pdf
 ```
 
 Artifact manifest JSON：
@@ -1752,14 +1742,14 @@ Artifact manifest JSON：
   "taskId": "task_001",
   "input": {
     "audioFileId": "file_001",
-    "audioUri": "oss://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
+    "audioUri": "tos://meeting-audio-auska/tenant/t_001/meeting/m_001/raw/file.wav",
     "audioSha256": "audio_hash_001",
     "transcriptVersion": 1
   },
   "outputs": [
     {
       "artifactType": "RAW_ASR_JSON",
-      "artifactUri": "oss://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
+      "artifactUri": "tos://meeting-artifacts/tenant/t_001/meeting/m_001/artifacts/asr/task_001.json",
       "sha256": "artifact_hash_001",
       "sizeBytes": 1048576
     }
@@ -1800,7 +1790,6 @@ LLM 调用日志 JSON：
   "actualModelVersion": "qwen-plus-2026-05-01",
   "promptTemplateId": "meeting_minutes_zh",
   "promptTemplateVersion": "2026.05.1",
-  "securityLevel": "INTERNAL",
   "textRedactionBeforeThirdPartyLlm": false,
   "dataBoundaryPolicyVersion": "data-boundary-2026.05.1",
   "artifactManifestId": "artifact_manifest_minutes_001",
@@ -1913,8 +1902,8 @@ callback `Idempotency-Key` 精确定义：
 
 ## 11. 安全与数据边界
 
-1. `PUBLIC` / `INTERNAL` 会议可调用 DashScope，必须记录安全等级、调用审计和输入 / 输出 hash。
-2. `CONFIDENTIAL` / `SECRET` 会议的一期自动 LLM step 必须返回 `SECURITY_LEVEL_BLOCKED`。
+1. 会议调用 DashScope 统一经 llm-gateway，必须记录调用审计和输入 / 输出 hash。
+2. 会议不做安全分级——SecurityLevel 与 `SECURITY_LEVEL_BLOCKED` 阻断门已在 Phase K 移除，勿回加。
 3. 原始音频、标准化音频、声纹参考音频、声纹 embedding、声纹模型原始输出不得发送给 DashScope。
 4. 声纹 embedding 必须应用层信封加密存储；数据库不存明文 float 数组，不建立明文 pgvector 索引。
 5. internal API 与 public API 必须使用独立路由前缀、独立鉴权 filter 和独立审计日志。
