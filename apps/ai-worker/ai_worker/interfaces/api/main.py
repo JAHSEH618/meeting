@@ -9,6 +9,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from ai_worker.application.workflows.state import workflow_state_store
 from ai_worker.common.config import settings
+from ai_worker.common.secret_guard import assert_secrets_configured, check_secrets
 from ai_worker.infrastructure.internal_api.auth import (
     EmbedRequest,
     EmbedResponse,
@@ -574,6 +575,9 @@ def _mount_admin_ui(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
+    # Phase J I7 — fail closed on dev-default secrets outside dev
+    assert_secrets_configured(settings)
+
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False)
@@ -611,7 +615,7 @@ def create_app() -> FastAPI:
 
     @app.get("/internal/ready")
     def ready() -> JSONResponse:
-        """Phase J — readiness probe with model checksum guard.
+        """Phase J — readiness probe with model checksum guard + secret guard.
 
         A model contributes ``ready=false`` only when ``_model_info`` flags
         it ``status=ERROR`` (checksum mismatch is the only failure mode the
@@ -620,10 +624,14 @@ def create_app() -> FastAPI:
         LOADING / READY) are treated as healthy from the probe's POV — we
         don't want a cold runtime to block kubelet from routing traffic
         that will trigger the first lazy load.
+
+        Phase J I7: also checks secret configuration. Dev-default secrets
+        used outside dev → ready=false with violations listed.
         """
         models = _all_model_infos()
         failed = [m for m in models if m["status"] == "ERROR"]
-        ok = not failed
+        secret_violations = check_secrets(settings)
+        ok = not failed and not secret_violations
         body = {
             "ready": ok,
             "models": [
@@ -635,6 +643,8 @@ def create_app() -> FastAPI:
                 for m in models
             ],
         }
+        if secret_violations:
+            body["secretViolations"] = secret_violations
         return JSONResponse(status_code=200 if ok else 503, content=body)
 
     @app.get("/internal/hardware")

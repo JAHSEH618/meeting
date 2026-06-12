@@ -10,26 +10,6 @@ from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.meetings import build_meetings_router
 from ai_worker.admin.persons import build_persons_router
 from ai_worker.admin.session_store import EnrollmentSessionStore, enrollment_session_store
-from ai_worker.common.config import settings
-
-
-class AdminStartupConfigError(RuntimeError):
-    """Raised at boot when required configuration for the admin BFF is missing."""
-
-
-def ensure_admin_config() -> None:
-    """Fail-fast guard — called from main.create_app when AI_WORKER_ENABLE_ADMIN is set."""
-    missing: list[str] = []
-    if not settings.java_api_base_url:
-        missing.append("AI_WORKER_JAVA_API_BASE_URL")
-    if not settings.internal_api_hmac_secret or settings.internal_api_hmac_secret == "dev-internal-secret":
-        # We only warn — admin BFF itself does not use HMAC, but the worker as a whole does.
-        # Hard-fail only on the values strictly required to mint upstream calls.
-        pass
-    if missing:
-        raise AdminStartupConfigError(
-            "Admin BFF cannot start; missing env: " + ", ".join(missing)
-        )
 
 
 def build_admin_router(
