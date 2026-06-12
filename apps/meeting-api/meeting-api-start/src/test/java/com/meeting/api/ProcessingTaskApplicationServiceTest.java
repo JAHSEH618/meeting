@@ -55,7 +55,7 @@ class ProcessingTaskApplicationServiceTest {
         ));
 
         assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
-        assertThat(dto.currentStep()).isEqualTo("AUDIO_PREPROCESS");
+        assertThat(dto.currentStep()).isEqualTo("AUDIO_UPLOAD");
         assertThat(dto.steps())
             .filteredOn(step -> step.stepName() == ProcessingStep.AUDIO_UPLOAD)
             .singleElement()
