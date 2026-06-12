@@ -226,6 +226,72 @@ errorCodes:
     userMessage: 转录合并失败
     i18nKey: errors.TRANSCRIPT_MERGE_FAILED
     opsTags: [transcript]
+  - code: AUDIO_OBJECT_NOT_FOUND
+    step: AUDIO_PREPROCESS
+    retryable: true
+    userMessage: 音频对象不存在或暂不可读
+    i18nKey: errors.AUDIO_OBJECT_NOT_FOUND
+    opsTags: [audio, storage]
+  - code: AUDIO_SOURCE_MISSING
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 任务缺少音频地址
+    i18nKey: errors.AUDIO_SOURCE_MISSING
+    opsTags: [audio, task, validation]
+  - code: AUDIO_PREPROCESS_MISSING
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频预处理结果缺失
+    i18nKey: errors.AUDIO_PREPROCESS_MISSING
+    opsTags: [audio, pipeline]
+  - code: AUDIO_PREPROCESS_RUNTIME_MISSING
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频预处理依赖缺失（ffprobe）
+    i18nKey: errors.AUDIO_PREPROCESS_RUNTIME_MISSING
+    opsTags: [audio, ffmpeg, env]
+  - code: AUDIO_SAMPLE_RATE_TOO_LOW
+    step: AUDIO_PREPROCESS
+    retryable: false
+    userMessage: 音频采样率低于 16kHz
+    i18nKey: errors.AUDIO_SAMPLE_RATE_TOO_LOW
+    opsTags: [audio, validation]
+  - code: ASR_EMPTY_RESULT
+    step: ASR
+    retryable: true
+    userMessage: ASR 未产出任何转录内容
+    i18nKey: errors.ASR_EMPTY_RESULT
+    opsTags: [asr]
+  - code: ASR_MODEL_LOAD_FAILED
+    step: ASR
+    retryable: true
+    userMessage: ASR 模型加载失败
+    i18nKey: errors.ASR_MODEL_LOAD_FAILED
+    opsTags: [asr, model]
+  - code: DIARIZATION_EMPTY_TURNS
+    step: DIARIZATION
+    retryable: true
+    userMessage: 说话人分离未产出任何片段
+    i18nKey: errors.DIARIZATION_EMPTY_TURNS
+    opsTags: [diarization]
+  - code: DIARIZATION_GPU_OOM
+    step: DIARIZATION
+    retryable: true
+    userMessage: 说话人分离 GPU 显存不足
+    i18nKey: errors.DIARIZATION_GPU_OOM
+    opsTags: [diarization, gpu, oom]
+  - code: SPEAKER_EMBEDDING_GPU_OOM
+    step: SPEAKER_EMBEDDING
+    retryable: true
+    userMessage: 声纹特征提取 GPU 显存不足
+    i18nKey: errors.SPEAKER_EMBEDDING_GPU_OOM
+    opsTags: [speaker, gpu, oom]
+  - code: TRANSCRIPT_MERGE_EMPTY
+    step: TRANSCRIPT_MERGE
+    retryable: true
+    userMessage: 转录合并结果为空
+    i18nKey: errors.TRANSCRIPT_MERGE_EMPTY
+    opsTags: [transcript]
 
   # ── Callback ──────────────────────────────────────────────────
   - code: CALLBACK_AUTH_FAILED
@@ -310,6 +376,36 @@ errorCodes:
     userMessage: 请求过于频繁，请稍后再试
     i18nKey: errors.RAG_RATE_LIMITED
     opsTags: [rag, rate_limit]
+  - code: TEXT_EMBEDDING_NO_CHUNKS
+    step: RAG_INDEXING
+    retryable: false
+    userMessage: 嵌入任务缺少待处理分块
+    i18nKey: errors.TEXT_EMBEDDING_NO_CHUNKS
+    opsTags: [rag, embedding, task]
+  - code: EMBEDDING_MODEL_LOAD_FAILED
+    step: RAG_INDEXING
+    retryable: true
+    userMessage: 向量模型加载失败
+    i18nKey: errors.EMBEDDING_MODEL_LOAD_FAILED
+    opsTags: [rag, embedding, model]
+  - code: EMBEDDING_FAILED
+    step: RAG_INDEXING
+    retryable: true
+    userMessage: 向量化推理失败
+    i18nKey: errors.EMBEDDING_FAILED
+    opsTags: [rag, embedding]
+  - code: EMBEDDING_DIMENSION_MISMATCH
+    step: RAG_INDEXING
+    retryable: false
+    userMessage: 向量维度不符合预期
+    i18nKey: errors.EMBEDDING_DIMENSION_MISMATCH
+    opsTags: [rag, embedding, contract]
+  - code: EMBEDDING_EMPTY_VECTOR
+    step: RAG_INDEXING
+    retryable: true
+    userMessage: 向量化返回空向量
+    i18nKey: errors.EMBEDDING_EMPTY_VECTOR
+    opsTags: [rag, embedding]
 
   # ── Export ────────────────────────────────────────────────────
   - code: EXPORT_FAILED
@@ -448,6 +544,26 @@ errorCodes:
     userMessage: 文档类型不支持
     i18nKey: errors.DOCUMENT_TYPE_UNSUPPORTED
     opsTags: [document, validation]
+
+  # ── Worker runtime (ai-worker emitted) ────────────────────────
+  - code: WORKER_INTERNAL_ERROR
+    step: TASK
+    retryable: true
+    userMessage: Worker 内部错误
+    i18nKey: errors.WORKER_INTERNAL_ERROR
+    opsTags: [worker, internal]
+  - code: WORKER_STEP_NOT_IMPLEMENTED
+    step: TASK
+    retryable: false
+    userMessage: Worker 不支持该处理步骤
+    i18nKey: errors.WORKER_STEP_NOT_IMPLEMENTED
+    opsTags: [worker, pipeline]
+  - code: PIPELINE_STEP_FAILED
+    step: TASK
+    retryable: true
+    userMessage: 处理步骤失败
+    i18nKey: errors.PIPELINE_STEP_FAILED
+    opsTags: [worker, pipeline]
 
   # ── Infra ─────────────────────────────────────────────────────
   - code: DEPENDENCY_UNAVAILABLE
