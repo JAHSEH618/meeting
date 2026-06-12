@@ -115,6 +115,11 @@ class MvpWorkerRuntime:
                 self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, "NOT_REQUIRED_FOR_ENROLLMENT")
                 _add_skipped_step(context, step_name, "NOT_REQUIRED_FOR_ENROLLMENT")
                 continue
+            skip_reason = self._step_skip_reason(task, step_name)
+            if skip_reason is not None:
+                self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, skip_reason)
+                _add_skipped_step(context, step_name, skip_reason)
+                continue
             result = await self.execute_step(task, step_name, context)
             if result.status == "FAILED":
                 if result.error_code == "WRITEBACK_FAILED":
@@ -204,6 +209,12 @@ class MvpWorkerRuntime:
             embedding=embedding,
             trace_id=task.trace_id,
         )
+
+    def _step_skip_reason(self, task: TaskMessage, step_name: str) -> str | None:
+        hook = getattr(self.workflow_engine, "step_skip_reason", None)
+        if hook is None:
+            return None
+        return hook(task, step_name)
 
     async def _consume_embedding_message(self, task: TaskMessage) -> TaskMessage:
         """Run the TEXT_EMBEDDING / RAG_REINDEX path: embed inline chunks

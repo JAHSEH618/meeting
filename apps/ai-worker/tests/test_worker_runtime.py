@@ -121,6 +121,18 @@ class StubWorkflowEngine:
         )
 
 
+class SkippingWorkflowEngine(StubWorkflowEngine):
+    """Engine that declares ALIGNMENT / RAG_INDEXING as degradable skips,
+    mirroring LocalAudioPipelineEngine.step_skip_reason."""
+
+    def step_skip_reason(self, task, step_name: str) -> str | None:
+        if step_name == "ALIGNMENT":
+            return "ALIGNMENT_DISABLED_DEFAULT_OFF"
+        if step_name == "RAG_INDEXING":
+            return "RAG_INDEXING_REQUIRES_JAVA_CHUNKING"
+        return None
+
+
 class StubSpeakerWorkflowEngine(StubWorkflowEngine):
     def start_pipeline(self, task):
         context = super().start_pipeline(task)
@@ -368,3 +380,30 @@ def test_default_workflow_engine_uses_registry_runtimes() -> None:
     # internal, but a regression here is exactly what we want to catch.
     assert isinstance(engine._asr_runtime, Qwen3AsrRuntime)
     assert isinstance(engine._diarization_runtime, PyannoteDiarizationRuntime)
+
+
+@pytest.mark.asyncio
+async def test_degradable_steps_are_skipped_without_step_callbacks(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = SkippingWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_not_awaited()
+    assert engine.ran_steps == [
+        "AUDIO_PREPROCESS", "ASR", "DIARIZATION",
+        "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE",
+    ]
+    step_callback_names = {c.kwargs["step_name"] for c in callback_client.update_step.await_args_list}
+    assert "ALIGNMENT" not in step_callback_names
+    assert "RAG_INDEXING" not in step_callback_names
+    complete_kwargs = callback_client.complete_worker_phase.await_args.kwargs
+    assert complete_kwargs["completed_steps"] == [
+        "AUDIO_PREPROCESS", "ASR", "DIARIZATION",
+        "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE",
+    ]
+    assert complete_kwargs["skipped_steps"] == [
+        {"stepName": "ALIGNMENT", "reason": "ALIGNMENT_DISABLED_DEFAULT_OFF"},
+        {"stepName": "RAG_INDEXING", "reason": "RAG_INDEXING_REQUIRES_JAVA_CHUNKING"},
+    ]

@@ -264,13 +264,55 @@ async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_audio_pipeline_fails_required_steps_that_are_not_implemented() -> None:
+async def test_run_step_fails_closed_for_unknown_required_step() -> None:
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
-    context = engine.start_pipeline(_task_with_steps("tos://meeting-audio-auska/raw.wav", ("ALIGNMENT",)))
+    context = engine.start_pipeline(
+        _task_with_steps("tos://meeting-audio-auska/raw.wav", ("DIARIZATION",))
+    )
 
     with pytest.raises(WorkerPipelineError) as exc_info:
-        await engine.run_step(context, "ALIGNMENT")
+        await engine.run_step(context, "SOME_FUTURE_STEP")
 
-    assert exc_info.value.step_name == "ALIGNMENT"
     assert exc_info.value.error_code == "WORKER_STEP_NOT_IMPLEMENTED"
     assert not exc_info.value.retryable
+
+
+def test_step_skip_reason_for_degradable_steps() -> None:
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
+    task_default = _task("tos://meeting-audio-auska/raw.wav")  # options have no enableAlignment
+    assert engine.step_skip_reason(task_default, "ALIGNMENT") == "ALIGNMENT_DISABLED_DEFAULT_OFF"
+    assert engine.step_skip_reason(task_default, "RAG_INDEXING") == "RAG_INDEXING_REQUIRES_JAVA_CHUNKING"
+    assert engine.step_skip_reason(task_default, "ASR") is None
+
+    task_enabled = _task_with_steps("tos://meeting-audio-auska/raw.wav", ("ALIGNMENT",))
+    task_enabled.options["enableAlignment"] = True
+    # Java's phase2 payload sends enableAlignment=true today — must still skip, never fail.
+    assert engine.step_skip_reason(task_enabled, "ALIGNMENT") == "ALIGNMENT_NOT_IMPLEMENTED"
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_degrades_alignment_and_rag_indexing(tmp_path: Path) -> None:
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe is required for audio preprocess smoke")
+    audio_root = tmp_path / "objects"
+    audio_path = audio_root / "meeting-audio-auska" / "raw.wav"
+    audio_path.parent.mkdir(parents=True)
+    _write_wav(audio_path)
+    audio_path.with_suffix(audio_path.suffix + ".txt").write_text("降级测试", encoding="utf-8")
+
+    engine = LocalAudioPipelineEngine(
+        InMemoryWorkflowStateStore(),
+        artifact_store=LocalArtifactStore(audio_root),
+    )
+    task = _task_with_steps(
+        "tos://meeting-audio-auska/raw.wav",
+        (
+            "AUDIO_PREPROCESS", "ASR", "ALIGNMENT", "DIARIZATION",
+            "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE", "RAG_INDEXING",
+        ),
+    )
+
+    artifact = await engine.run_pipeline(task)
+
+    assert artifact.terminal_status == "PARTIAL_SUCCEEDED"
+    assert artifact.transcript_segments[0]["text"] == "降级测试"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,15 @@ from ai_worker.pipeline.speaker.runtime import (
     SpeakerEmbeddingRuntimeError,
 )
 from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
+
+logger = logging.getLogger(__name__)
+
+# SPEC §6.3 / §10: ALIGNMENT and RAG_INDEXING are degradable inside
+# MEETING_FULL_PIPELINE — they are reported via /complete skippedSteps +
+# status=PARTIAL_SUCCEEDED instead of failing the task. RAG_INDEXING for
+# meetings is performed Java-side (chunking + TEXT_EMBEDDING dispatch);
+# the worker cannot mint chunkIds Java recognizes (D3 investigation).
+DEGRADED_SKIP_STEPS = frozenset({"ALIGNMENT", "RAG_INDEXING"})
 
 
 class WorkerPipelineError(Exception):
@@ -79,7 +89,35 @@ class LocalAudioPipelineEngine:
         )
         return _PipelineContext(task=task)
 
+    def step_skip_reason(self, task: TaskMessage, step_name: str) -> str | None:
+        """Return a skippedSteps reason when this engine degrades the step.
+
+        None means the step must execute (or fail closed in run_step).
+        """
+        if step_name == "ALIGNMENT":
+            options = task.options if isinstance(task.options, dict) else {}
+            if options.get("enableAlignment"):
+                logger.warning(
+                    "ALIGNMENT requested via options.enableAlignment but not implemented; "
+                    "skipping (degraded): task_id=%s",
+                    task.task_id,
+                )
+                return "ALIGNMENT_NOT_IMPLEMENTED"
+            return "ALIGNMENT_DISABLED_DEFAULT_OFF"
+        if step_name == "RAG_INDEXING":
+            logger.info(
+                "RAG_INDEXING in MEETING_FULL_PIPELINE is deferred to Java-side chunking "
+                "+ TEXT_EMBEDDING dispatch; skipping (degraded): task_id=%s",
+                task.task_id,
+            )
+            return "RAG_INDEXING_REQUIRES_JAVA_CHUNKING"
+        return None
+
     async def run_step(self, context: "_PipelineContext", step_name: str) -> None:
+        skip_reason = self.step_skip_reason(context.task, step_name)
+        if skip_reason is not None:
+            _record_skip(context, step_name, skip_reason)
+            return
         if step_name == "AUDIO_PREPROCESS":
             await self._run_audio_preprocess(context)
         elif step_name == "ASR":
@@ -102,12 +140,15 @@ class LocalAudioPipelineEngine:
 
     async def complete_pipeline(self, context: "_PipelineContext") -> PipelineArtifact:
         manifest_ref = await self._write_manifest(context)
+        degraded = any(
+            s.get("stepName") in DEGRADED_SKIP_STEPS for s in context.skipped_steps
+        )
         return PipelineArtifact(
             task_id=context.task.task_id,
             transcript_segments=context.transcript_segments,
             speaker_candidates=context.speaker_candidates,
             artifact_manifest_id=manifest_ref.uri,
-            terminal_status="SUCCEEDED",
+            terminal_status="PARTIAL_SUCCEEDED" if degraded else "SUCCEEDED",
         )
 
     async def _run_audio_preprocess(self, context: "_PipelineContext") -> None:
@@ -374,3 +415,9 @@ def _artifact_dict(category: str, uri: str, sha256: str, size_bytes: int | None)
         "sha256": sha256,
         "sizeBytes": size_bytes,
     }
+
+
+def _record_skip(context: "_PipelineContext", step_name: str, reason: str) -> None:
+    if any(s.get("stepName") == step_name for s in context.skipped_steps):
+        return
+    context.skipped_steps.append({"stepName": step_name, "reason": reason})
