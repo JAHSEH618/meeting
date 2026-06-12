@@ -8,6 +8,18 @@ errorCodes:
     userMessage: 请先登录
     i18nKey: errors.AUTH_REQUIRED
     opsTags: [auth]
+  - code: REFRESH_TOKEN_INVALID
+    step: AUTH
+    retryable: false
+    userMessage: 刷新令牌无效或已过期
+    i18nKey: errors.REFRESH_TOKEN_INVALID
+    opsTags: [auth, refresh]
+  - code: CSRF_TOKEN_INVALID
+    step: AUTH
+    retryable: false
+    userMessage: CSRF令牌验证失败
+    i18nKey: errors.CSRF_TOKEN_INVALID
+    opsTags: [auth, csrf]
   - code: PERMISSION_DENIED
     step: AUTH
     retryable: false
