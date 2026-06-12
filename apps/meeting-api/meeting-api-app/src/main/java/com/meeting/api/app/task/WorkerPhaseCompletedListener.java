@@ -1,5 +1,6 @@
 package com.meeting.api.app.task;
 
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.speaker.SpeakerAutoConfirmService;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.domain.task.ProcessingTask;
@@ -9,6 +10,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -27,6 +29,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * Worker callback responses are not blocked by this listener: it fires after the callback transaction commits.
  * Failures here do not roll back the callback; they are logged and surface via task state lag indicators.
+ *
+ * <p>All database operations are wrapped in {@link TenantScopedTransaction} to ensure proper RLS context.</p>
  */
 @Component
 public class WorkerPhaseCompletedListener {
@@ -38,20 +42,23 @@ public class WorkerPhaseCompletedListener {
     private final ProcessingTaskRepository taskRepository;
     private final JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator;
     private final SpeakerAutoConfirmService speakerAutoConfirmService;
+    private final TenantScopedTransaction tenantScopedTransaction;
 
     public WorkerPhaseCompletedListener(
         TaskStepProgressService taskStepProgressService,
-        ProcessingTaskRepository taskRepository
+        ProcessingTaskRepository taskRepository,
+        TenantScopedTransaction tenantScopedTransaction
     ) {
-        this(taskStepProgressService, taskRepository, null, null);
+        this(taskStepProgressService, taskRepository, null, null, tenantScopedTransaction);
     }
 
     public WorkerPhaseCompletedListener(
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository,
-        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator
+        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator,
+        TenantScopedTransaction tenantScopedTransaction
     ) {
-        this(taskStepProgressService, taskRepository, javaLlmPhaseOrchestrator, null);
+        this(taskStepProgressService, taskRepository, javaLlmPhaseOrchestrator, null, tenantScopedTransaction);
     }
 
     @Autowired
@@ -59,20 +66,29 @@ public class WorkerPhaseCompletedListener {
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository,
         JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator,
-        SpeakerAutoConfirmService speakerAutoConfirmService
+        SpeakerAutoConfirmService speakerAutoConfirmService,
+        TenantScopedTransaction tenantScopedTransaction
     ) {
         this.taskStepProgressService = taskStepProgressService;
         this.taskRepository = taskRepository;
         this.javaLlmPhaseOrchestrator = javaLlmPhaseOrchestrator;
         this.speakerAutoConfirmService = speakerAutoConfirmService;
+        this.tenantScopedTransaction = tenantScopedTransaction;
     }
 
+    @Async("workerPhaseCompletedExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onWorkerPhaseCompleted(WorkerPhaseCompletedEvent event) {
         try {
             if (MEETING_FULL_PIPELINE.equals(event.taskType())) {
-                Optional<ProcessingTask> taskOpt = taskRepository.findById(event.tenantId(), event.taskId());
-                if (taskOpt.isPresent() && taskOpt.get().holdAtWorkerPhase()) {
+                boolean shouldHold = tenantScopedTransaction.execute(
+                    event.tenantId(), null, null,
+                    () -> {
+                        Optional<ProcessingTask> taskOpt = taskRepository.findById(event.tenantId(), event.taskId());
+                        return taskOpt.isPresent() && taskOpt.get().holdAtWorkerPhase();
+                    }
+                );
+                if (shouldHold) {
                     log.info(
                         "worker_phase_completed_held task={} tenant={} waiting_for_resume",
                         event.taskId(), event.tenantId()
@@ -101,7 +117,10 @@ public class WorkerPhaseCompletedListener {
             return;
         }
         try {
-            speakerAutoConfirmService.autoConfirmAboveThreshold(event.tenantId(), event.taskId());
+            tenantScopedTransaction.executeWithoutResult(
+                event.tenantId(), null, null,
+                () -> speakerAutoConfirmService.autoConfirmAboveThreshold(event.tenantId(), event.taskId())
+            );
         } catch (RuntimeException ex) {
             log.warn(
                 "speaker_auto_confirm_listener_failed task={} tenant={} reason={}",
