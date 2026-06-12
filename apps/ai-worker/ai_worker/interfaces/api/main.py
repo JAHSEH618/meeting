@@ -915,9 +915,9 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        truncated = list(rerank_req.candidates[: rerank_req.topN])
+        candidates = list(rerank_req.candidates)
         try:
-            scores = await runtime.arank(rerank_req.query, [c.text for c in truncated])
+            scores = await runtime.arank(rerank_req.query, [c.text for c in candidates])
         except BgeRerankerRuntimeError as exc:
             return _error_response(
                 status_code=503,
@@ -928,18 +928,20 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        # Sort by score desc, breaking ties by original input order so the
-        # fake-mode (already-descending) path is a no-op and the real-mode
-        # path produces deterministic ranks when two candidates tie.
-        indexed = list(enumerate(zip(truncated, scores)))
+        # D6: score ALL candidates (request cap is 50), sort by score desc
+        # with input-index tie-break, then slice topN. Truncating first
+        # silently dropped better candidates outside the head of the RRF
+        # ordering.
+        indexed = list(enumerate(zip(candidates, scores)))
         indexed.sort(key=lambda item: (-item[1][1], item[0]))
+        top = indexed[: rerank_req.topN]
         ranked = [
             RerankResultItem(
                 chunkId=cand.chunkId,
                 rank=rank + 1,
                 rerankScore=round(float(score), 4),
             )
-            for rank, (_, (cand, score)) in enumerate(indexed)
+            for rank, (_, (cand, score)) in enumerate(top)
         ]
 
         return JSONResponse(

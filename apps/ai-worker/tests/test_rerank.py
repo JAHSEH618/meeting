@@ -156,3 +156,48 @@ def test_rerank_endpoint_truncates_to_top_n() -> None:
     assert response.status_code == 200
     data = response.json()
     assert len(data["data"]["items"]) == 3
+
+
+class _ScriptedRerankRuntime:
+    """Real-mode style runtime returning non-monotonic scores (D6)."""
+
+    model_version = "scripted-rerank-v1"
+    status = "READY"
+    last_error = None
+    device = "fake"
+    use_fake = True
+
+    async def ensure_loaded(self) -> None:
+        return None
+
+    async def arank(self, query: str, texts: list[str]) -> list[float]:
+        scores = {"low text": 0.1, "high text": 0.9, "mid text": 0.5}
+        return [scores[t] for t in texts]
+
+
+def test_rerank_scores_all_candidates_before_topn_slice(monkeypatch) -> None:
+    from ai_worker.interfaces.api import main as api_main
+
+    monkeypatch.setattr(api_main, "get_bge_reranker", lambda: _ScriptedRerankRuntime())
+    client = TestClient(api_main.create_app())
+    body = json.dumps({
+        "tenantId": "tenant_01",
+        "query": "ordering",
+        "candidates": [
+            {"chunkId": "chunk_01", "sourceType": "DOCUMENT", "text": "low text", "rrfScore": 0.9},
+            {"chunkId": "chunk_02", "sourceType": "PRIMARY_TRANSCRIPT", "text": "high text", "rrfScore": 0.7},
+            {"chunkId": "chunk_03", "sourceType": "AI_SUMMARY", "text": "mid text", "rrfScore": 0.5},
+        ],
+        "topN": 2,
+        "modelVersion": "test-v0",
+    }).encode()
+    headers = _auth_headers("POST", "/internal/rerank", body)
+    headers["Content-Type"] = "application/json"
+
+    response = client.post("/internal/rerank", content=body, headers=headers)
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    # chunk_03 (0.5) must beat chunk_01 (0.1) — pre-truncation would have
+    # dropped chunk_03 entirely.
+    assert [(i["chunkId"], i["rank"]) for i in items] == [("chunk_02", 1), ("chunk_03", 2)]
