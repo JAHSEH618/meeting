@@ -76,7 +76,7 @@ All `uv run …` commands below run from `apps/ai-worker/`. Contracts commands r
 
 ## Task 0: Branch setup
 
-- [ ] **Step 1: Create the remediation branch**
+- [x] **Step 1: Create the remediation branch**
 
 ```bash
 cd /Users/friedhelmliu/CodeSpace/meeting
@@ -93,7 +93,7 @@ git checkout -b fix/review-remediation-p1-ai-worker
 
 Grep-verified worker-emitted codes missing from the registry (sources: `audio_pipeline.py`, `preprocess.py`, `text_embedding.py`, `worker_runtime.py`, `qwen3_asr_runtime.py`, `pyannote_runtime.py`, `cam_plus_plus_runtime.py`, `task_consumer.py`): `WORKER_INTERNAL_ERROR` (new, D4), `WORKER_STEP_NOT_IMPLEMENTED`, `PIPELINE_STEP_FAILED`, `AUDIO_OBJECT_NOT_FOUND`, `AUDIO_SOURCE_MISSING`, `AUDIO_PREPROCESS_MISSING`, `AUDIO_PREPROCESS_RUNTIME_MISSING`, `AUDIO_SAMPLE_RATE_TOO_LOW`, `ASR_EMPTY_RESULT`, `ASR_MODEL_LOAD_FAILED` (new, I10), `DIARIZATION_EMPTY_TURNS`, `DIARIZATION_GPU_OOM` (new, D10), `SPEAKER_EMBEDDING_GPU_OOM` (new, D10), `TRANSCRIPT_MERGE_EMPTY`, `TEXT_EMBEDDING_NO_CHUNKS`, `EMBEDDING_MODEL_LOAD_FAILED`, `EMBEDDING_FAILED`, `EMBEDDING_DIMENSION_MISMATCH`, `EMBEDDING_EMPTY_VECTOR`. Already registered (no action): `INVALID_TASK_MESSAGE`, `WRITEBACK_FAILED`, `AUDIO_CORRUPTED`, `AUDIO_TOO_LONG`, `AUDIO_UNSUPPORTED_FORMAT`, `ASR_RUNTIME_ERROR`, `ASR_MODEL_TIMEOUT`, `ASR_GPU_OOM`, `DIARIZATION_FAILED`, `SPEAKER_EMBEDDING_FAILED`, `SPEAKER_MATCH_FAILED`, `SPEAKER_REFERENCE_UNAVAILABLE`, `TRANSCRIPT_MERGE_FAILED`.
 
-- [ ] **Step 1: Append the audio-pipeline codes** — in `error-codes.yaml`, inside the `# ── Audio Pipeline ──` section, after the `TRANSCRIPT_MERGE_FAILED` entry, add:
+- [x] **Step 1: Append the audio-pipeline codes** — in `error-codes.yaml`, inside the `# ── Audio Pipeline ──` section, after the `TRANSCRIPT_MERGE_FAILED` entry, add:
 
 ```yaml
   - code: AUDIO_OBJECT_NOT_FOUND
@@ -164,7 +164,7 @@ Grep-verified worker-emitted codes missing from the registry (sources: `audio_pi
     opsTags: [transcript]
 ```
 
-- [ ] **Step 2: Append the RAG-indexing codes** — in the `# ── RAG ──` section, after `RAG_RATE_LIMITED`, add:
+- [x] **Step 2: Append the RAG-indexing codes** — in the `# ── RAG ──` section, after `RAG_RATE_LIMITED`, add:
 
 ```yaml
   - code: TEXT_EMBEDDING_NO_CHUNKS
@@ -199,7 +199,7 @@ Grep-verified worker-emitted codes missing from the registry (sources: `audio_pi
     opsTags: [rag, embedding]
 ```
 
-- [ ] **Step 3: Add a new worker-runtime section** — before the `# ── Infra ──` section, add:
+- [x] **Step 3: Add a new worker-runtime section** — before the `# ── Infra ──` section, add:
 
 ```yaml
   # ── Worker runtime (ai-worker emitted) ────────────────────────
@@ -223,7 +223,7 @@ Grep-verified worker-emitted codes missing from the registry (sources: `audio_pi
     opsTags: [worker, pipeline]
 ```
 
-- [ ] **Step 4: Run the contracts CI gate**
+- [x] **Step 4: Run the contracts CI gate**
 
 ```bash
 cd packages/meeting-contracts
@@ -232,7 +232,7 @@ npm run check
 
 Expected: all checks pass; the error-codes count line reflects 19 new entries.
 
-- [ ] **Step 5: Regenerate codegen targets and verify zero drift**
+- [x] **Step 5: Regenerate codegen targets and verify zero drift**
 
 ```bash
 npm run codegen
@@ -241,7 +241,7 @@ git status --short
 
 Expected: error codes are not a codegen input, so `git status` shows only `schemas/common/error-codes.yaml` modified (no generated-file drift). If any generated file changes, commit it together.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/meeting-contracts/schemas/common/error-codes.yaml
@@ -259,7 +259,7 @@ git commit -m "fix(contracts): register ai-worker emitted error codes (review P1
 - Create: `tests/test_preprocess.py`
 - Create: `tests/test_error_code_contract.py`
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_preprocess.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_preprocess.py`:
 
 ```python
 from __future__ import annotations
@@ -386,7 +386,7 @@ async def test_real_mode_load_failure_maps_to_asr_model_load_failed(tmp_path):
     assert ex.value.error_code == "ASR_MODEL_LOAD_FAILED"
 ```
 
-- [ ] **Step 2: Run the new tests, expect failures**
+- [x] **Step 2: Run the new tests, expect failures**
 
 ```bash
 uv run pytest tests/test_preprocess.py::test_validate_maps_unknown_codec_to_canonical_code tests/test_error_code_contract.py tests/test_qwen3_asr_runtime.py::test_real_mode_load_failure_maps_to_asr_model_load_failed -v
@@ -394,14 +394,14 @@ uv run pytest tests/test_preprocess.py::test_validate_maps_unknown_codec_to_cano
 
 Expected: `test_validate_maps_unknown_codec_to_canonical_code` fails (`AUDIO_FORMAT_UNSUPPORTED != AUDIO_UNSUPPORTED_FORMAT`), `test_drifted_audio_format_code_is_gone_from_source` fails, ASR load test fails (`ASR_MODEL_TIMEOUT != ASR_MODEL_LOAD_FAILED`). `test_worker_emitted_error_codes_are_registered` passes (Task 1 added the codes).
 
-- [ ] **Step 3: Fix `preprocess.py:100`** — in `FfprobeAudioPreprocessor._validate`:
+- [x] **Step 3: Fix `preprocess.py:100`** — in `FfprobeAudioPreprocessor._validate`:
 
 ```python
         if metadata.codec.lower() in {"unknown", ""}:
             raise AudioPreprocessError("AUDIO_UNSUPPORTED_FORMAT", "audio codec is unsupported")
 ```
 
-- [ ] **Step 4: Fix the ASR load-failure code.** In `qwen3_asr_runtime.py:138-141`, replace:
+- [x] **Step 4: Fix the ASR load-failure code.** In `qwen3_asr_runtime.py:138-141`, replace:
 
 ```python
                     raise Qwen3AsrRuntimeError(
@@ -428,13 +428,13 @@ Also update the class docstring line 45 (`callback layer maps it to ASR_MODEL_TI
     assert "weights not found" in runtime.last_error or "FileNotFoundError" in runtime.last_error
 ```
 
-- [ ] **Step 5: Run again, expect pass**
+- [x] **Step 5: Run again, expect pass**
 
 ```bash
 uv run pytest tests/test_preprocess.py tests/test_error_code_contract.py tests/test_qwen3_asr_runtime.py -v
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/pipeline/audio/preprocess.py apps/ai-worker/ai_worker/model_runtime/asr/qwen3_asr_runtime.py apps/ai-worker/tests/test_preprocess.py apps/ai-worker/tests/test_error_code_contract.py apps/ai-worker/tests/test_qwen3_asr_runtime.py
@@ -455,7 +455,7 @@ Design: `LocalAudioPipelineEngine` gains `step_skip_reason(task, step_name) -> s
 - Modify: `tests/test_audio_pipeline.py`
 - Modify: `tests/test_worker_runtime.py`
 
-- [ ] **Step 1: Write failing engine tests.** In `tests/test_audio_pipeline.py`, REPLACE `test_audio_pipeline_fails_required_steps_that_are_not_implemented` (lines 266-277) with:
+- [x] **Step 1: Write failing engine tests.** In `tests/test_audio_pipeline.py`, REPLACE `test_audio_pipeline_fails_required_steps_that_are_not_implemented` (lines 266-277) with:
 
 ```python
 @pytest.mark.asyncio
@@ -513,7 +513,7 @@ async def test_full_pipeline_degrades_alignment_and_rag_indexing(tmp_path: Path)
     assert artifact.transcript_segments[0]["text"] == "降级测试"
 ```
 
-- [ ] **Step 2: Run, expect failures**
+- [x] **Step 2: Run, expect failures**
 
 ```bash
 uv run pytest tests/test_audio_pipeline.py -v
@@ -521,7 +521,7 @@ uv run pytest tests/test_audio_pipeline.py -v
 
 Expected: `test_step_skip_reason_for_degradable_steps` fails with `AttributeError: ... no attribute 'step_skip_reason'`; `test_full_pipeline_degrades_alignment_and_rag_indexing` fails with `WorkerPipelineError: WORKER_STEP_NOT_IMPLEMENTED`.
 
-- [ ] **Step 3: Implement the engine changes.** In `ai_worker/application/workflows/audio_pipeline.py`:
+- [x] **Step 3: Implement the engine changes.** In `ai_worker/application/workflows/audio_pipeline.py`:
 
 Add near the top (after the imports):
 
@@ -621,13 +621,13 @@ def _record_skip(context: "_PipelineContext", step_name: str, reason: str) -> No
     context.skipped_steps.append({"stepName": step_name, "reason": reason})
 ```
 
-- [ ] **Step 4: Run the engine tests, expect pass**
+- [x] **Step 4: Run the engine tests, expect pass**
 
 ```bash
 uv run pytest tests/test_audio_pipeline.py -v
 ```
 
-- [ ] **Step 5: Write the failing runtime test.** In `tests/test_worker_runtime.py`, add:
+- [x] **Step 5: Write the failing runtime test.** In `tests/test_worker_runtime.py`, add:
 
 ```python
 class SkippingWorkflowEngine(StubWorkflowEngine):
@@ -669,7 +669,7 @@ async def test_degradable_steps_are_skipped_without_step_callbacks(callback_clie
     ]
 ```
 
-- [ ] **Step 6: Run, expect failure**
+- [x] **Step 6: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py::test_degradable_steps_are_skipped_without_step_callbacks -v
@@ -677,7 +677,7 @@ uv run pytest tests/test_worker_runtime.py::test_degradable_steps_are_skipped_wi
 
 Expected failure: `ran_steps` contains ALIGNMENT/RAG_INDEXING (runtime executed them via the stub) and step callbacks were sent for them.
 
-- [ ] **Step 7: Implement the runtime consult.** In `ai_worker/infrastructure/worker_runtime.py`, change the step loop in `consume_message` to:
+- [x] **Step 7: Implement the runtime consult.** In `ai_worker/infrastructure/worker_runtime.py`, change the step loop in `consume_message` to:
 
 ```python
         context = self.workflow_engine.start_pipeline(task)
@@ -712,7 +712,7 @@ and add the helper method:
 
 Note: `_add_skipped_step` already dedupes nothing, but the runtime path and the engine-internal path are mutually exclusive (the runtime never calls `run_step` for a skipped step), so no double entries occur.
 
-- [ ] **Step 8: Run the full worker-runtime and audio-pipeline suites, expect pass**
+- [x] **Step 8: Run the full worker-runtime and audio-pipeline suites, expect pass**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py tests/test_audio_pipeline.py -v
@@ -720,7 +720,7 @@ uv run pytest tests/test_worker_runtime.py tests/test_audio_pipeline.py -v
 
 Existing tests keep passing because `StubWorkflowEngine` has no `step_skip_reason` attribute (no skips) and 4-/6-step engine tests record no skips (status stays SUCCEEDED).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/application/workflows/audio_pipeline.py apps/ai-worker/ai_worker/infrastructure/worker_runtime.py apps/ai-worker/tests/test_audio_pipeline.py apps/ai-worker/tests/test_worker_runtime.py
@@ -737,7 +737,7 @@ Replace the single pre-work fake heartbeat (`worker_runtime.py:295-296`, progres
 - Modify: `ai_worker/infrastructure/worker_runtime.py`
 - Modify: `tests/test_worker_runtime.py`
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`, add imports at the top:
+- [x] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`, add imports at the top:
 
 ```python
 import asyncio
@@ -843,7 +843,7 @@ async def test_heartbeat_task_is_cancelled_after_step_completes(callback_client)
     assert callback_client.update_step.await_count == calls_after_step
 ```
 
-- [ ] **Step 2: Run, expect failure**
+- [x] **Step 2: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py::test_execute_step_sends_periodic_heartbeats_while_step_runs tests/test_worker_runtime.py::test_heartbeat_failure_never_fails_the_step tests/test_worker_runtime.py::test_heartbeat_task_is_cancelled_after_step_completes -v
@@ -851,7 +851,7 @@ uv run pytest tests/test_worker_runtime.py::test_execute_step_sends_periodic_hea
 
 Expected: `TypeError: MvpWorkerRuntime.__init__() got an unexpected keyword argument 'heartbeat_interval_seconds'`.
 
-- [ ] **Step 3: Implement.** In `ai_worker/infrastructure/worker_runtime.py`:
+- [x] **Step 3: Implement.** In `ai_worker/infrastructure/worker_runtime.py`:
 
 Add `import asyncio` to the imports. Add module constants after `logger = …`:
 
@@ -981,7 +981,7 @@ with:
 
 (keep the existing `except WorkerPipelineError` body exactly as it is; only add the `heartbeat_task` creation above the `try` and the `finally` block.)
 
-- [ ] **Step 4: Update the stale count assertion.** In `tests/test_worker_runtime.py::test_consume_message_submits_java_transcript_version_and_records_workflow` (line 194), change:
+- [x] **Step 4: Update the stale count assertion.** In `tests/test_worker_runtime.py::test_consume_message_submits_java_transcript_version_and_records_workflow` (line 194), change:
 
 ```python
     assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
@@ -995,13 +995,13 @@ to:
     assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 2
 ```
 
-- [ ] **Step 5: Run the full runtime suite, expect pass**
+- [x] **Step 5: Run the full runtime suite, expect pass**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py -v
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/infrastructure/worker_runtime.py apps/ai-worker/tests/test_worker_runtime.py
@@ -1024,7 +1024,7 @@ Unexpected exceptions currently destroy the message with no callback: `execute_s
 - Modify: `tests/test_worker_runtime.py`
 - Modify: `tests/test_preprocess.py`
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`, add:
+- [x] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`, add:
 
 ```python
 class CrashingStepEngine(StubWorkflowEngine):
@@ -1095,7 +1095,7 @@ def test_metadata_from_ffprobe_maps_missing_audio_stream_to_audio_corrupted() ->
     assert exc_info.value.error_code == "AUDIO_CORRUPTED"
 ```
 
-- [ ] **Step 2: Run, expect failures**
+- [x] **Step 2: Run, expect failures**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py::test_unexpected_step_exception_sends_fail_with_worker_internal_error tests/test_worker_runtime.py::test_unexpected_completion_exception_sends_fail_with_worker_internal_error tests/test_preprocess.py::test_metadata_from_ffprobe_maps_missing_audio_stream_to_audio_corrupted -v
@@ -1103,7 +1103,7 @@ uv run pytest tests/test_worker_runtime.py::test_unexpected_step_exception_sends
 
 Expected: the first two raise `ValueError`/`OSError` straight out of `consume_message`; the third raises `StopIteration` instead of `AudioPreprocessError`.
 
-- [ ] **Step 3: Implement the preprocess fix.** In `ai_worker/pipeline/audio/preprocess.py`, replace `_metadata_from_ffprobe` lines 104-107:
+- [x] **Step 3: Implement the preprocess fix.** In `ai_worker/pipeline/audio/preprocess.py`, replace `_metadata_from_ffprobe` lines 104-107:
 
 ```python
 def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
@@ -1121,7 +1121,7 @@ def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
     # … rest unchanged …
 ```
 
-- [ ] **Step 4: Implement the runtime guards.** In `ai_worker/infrastructure/worker_runtime.py`:
+- [x] **Step 4: Implement the runtime guards.** In `ai_worker/infrastructure/worker_runtime.py`:
 
 (a) Add a generic except to `execute_step` (between the `WorkerPipelineError` handler and `finally` from Task 4):
 
@@ -1231,13 +1231,13 @@ def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
 
 Note: `JavaCallbackClient.fail_task` never raises (all transport errors are swallowed into `CallbackResponse`), so the guard cannot recurse.
 
-- [ ] **Step 5: Run, expect pass; verify no regressions**
+- [x] **Step 5: Run, expect pass; verify no regressions**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py tests/test_preprocess.py tests/test_audio_pipeline.py -v
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/infrastructure/worker_runtime.py apps/ai-worker/ai_worker/pipeline/audio/preprocess.py apps/ai-worker/tests/test_worker_runtime.py apps/ai-worker/tests/test_preprocess.py
@@ -1255,7 +1255,7 @@ git commit -m "fix(worker): top-level exception guard sends /fail WORKER_INTERNA
 - Modify: `tests/test_rabbitmq_consumer.py`
 - Modify: `apps/ai-worker/SPEC.md`
 
-- [ ] **Step 1: Rewrite the consumer tests (they currently pin the blocking behavior).** Replace the body of `tests/test_rabbitmq_consumer.py` with:
+- [x] **Step 1: Rewrite the consumer tests (they currently pin the blocking behavior).** Replace the body of `tests/test_rabbitmq_consumer.py` with:
 
 ```python
 from __future__ import annotations
@@ -1379,7 +1379,7 @@ def test_on_message_does_not_block_the_connection_thread() -> None:
     assert channel.acked == ["delivery_01"]
 ```
 
-- [ ] **Step 2: Run, expect failure**
+- [x] **Step 2: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_rabbitmq_consumer.py -v
@@ -1387,7 +1387,7 @@ uv run pytest tests/test_rabbitmq_consumer.py -v
 
 Expected: `AttributeError: 'RabbitMqTaskConsumer' object has no attribute '_process_message'` / `_in_flight`.
 
-- [ ] **Step 3: Implement.** Replace `RabbitMqTaskConsumer` in `ai_worker/infrastructure/mq/rabbitmq_consumer.py`:
+- [x] **Step 3: Implement.** Replace `RabbitMqTaskConsumer` in `ai_worker/infrastructure/mq/rabbitmq_consumer.py`:
 
 ```python
 from __future__ import annotations
@@ -1520,13 +1520,13 @@ class RabbitMqTaskConsumer:
             fn()
 ```
 
-- [ ] **Step 4: Run, expect pass**
+- [x] **Step 4: Run, expect pass**
 
 ```bash
 uv run pytest tests/test_rabbitmq_consumer.py -v
 ```
 
-- [ ] **Step 5: Amend SPEC.md (D2 doc note).** In `apps/ai-worker/SPEC.md`, immediately after the `Prefect 3.x WorkflowEngine` line in §2 (技术栈), insert:
+- [x] **Step 5: Amend SPEC.md (D2 doc note).** In `apps/ai-worker/SPEC.md`, immediately after the `Prefect 3.x WorkflowEngine` line in §2 (技术栈), insert:
 
 ```markdown
 > **Remediation note (2026-06-12, review P1):** Dramatiq WorkerRuntime 与 Prefect
@@ -1537,7 +1537,7 @@ uv run pytest tests/test_rabbitmq_consumer.py -v
 > Phase J 验收后再评估；不要将 §2 / §8.1 的 actor 拓扑当作已实现。
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py apps/ai-worker/tests/test_rabbitmq_consumer.py apps/ai-worker/SPEC.md
@@ -1562,7 +1562,7 @@ Changes:
 - Modify: `tests/test_audio_pipeline.py`
 - Modify: `tests/test_worker_runtime.py`
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`: first add `client.submit_artifacts.return_value = CallbackResponse(http_status=200, accepted=True)` to the `callback_client` fixture, then add:
+- [x] **Step 1: Write the failing tests.** In `tests/test_worker_runtime.py`: first add `client.submit_artifacts.return_value = CallbackResponse(http_status=200, accepted=True)` to the `callback_client` fixture, then add:
 
 ```python
 class ArtifactReportingEngine(StubWorkflowEngine):
@@ -1642,13 +1642,13 @@ In `tests/test_audio_pipeline.py::test_local_audio_pipeline_writes_artifacts_and
     ]
 ```
 
-- [ ] **Step 2: Run, expect failures**
+- [x] **Step 2: Run, expect failures**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py::test_artifacts_callback_is_sent_and_transcript_carries_manifest_id tests/test_worker_runtime.py::test_artifacts_callback_failure_records_writeback_failed tests/test_audio_pipeline.py::test_local_audio_pipeline_writes_artifacts_and_transcript -v
 ```
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
 
 (a) `ai_worker/domain/task/models.py` — extend `PipelineArtifact`:
 
@@ -1760,7 +1760,7 @@ def _artifacts_from_context(context: Any) -> list[dict[str, Any]]:
     return [a for a in artifacts if isinstance(a, dict)]
 ```
 
-- [ ] **Step 4: Run, expect pass**
+- [x] **Step 4: Run, expect pass**
 
 ```bash
 uv run pytest tests/test_worker_runtime.py tests/test_audio_pipeline.py -v
@@ -1768,7 +1768,7 @@ uv run pytest tests/test_worker_runtime.py tests/test_audio_pipeline.py -v
 
 Note: `StubWorkflowEngine`'s dict context has no `artifacts` key, so existing tests skip the artifacts callback; enrollment tasks now also report their manifest entry (harmless — contract allows it).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/domain/task/models.py apps/ai-worker/ai_worker/application/workflows/audio_pipeline.py apps/ai-worker/ai_worker/infrastructure/worker_runtime.py apps/ai-worker/tests/test_audio_pipeline.py apps/ai-worker/tests/test_worker_runtime.py
@@ -1790,7 +1790,7 @@ git commit -m "fix(worker): send /artifacts callback and real artifactManifestId
 - Create: `tests/test_gpu_oom.py`
 - Modify: `tests/test_rabbitmq_consumer.py`
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_gpu_oom.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_gpu_oom.py`:
 
 ```python
 from __future__ import annotations
@@ -1894,7 +1894,7 @@ def test_consumer_schedules_oom_exit_after_ack(monkeypatch) -> None:
     assert exits == [True]
 ```
 
-- [ ] **Step 2: Run, expect failures**
+- [x] **Step 2: Run, expect failures**
 
 ```bash
 uv run pytest tests/test_gpu_oom.py tests/test_rabbitmq_consumer.py::test_consumer_schedules_oom_exit_after_ack -v
@@ -1902,7 +1902,7 @@ uv run pytest tests/test_gpu_oom.py tests/test_rabbitmq_consumer.py::test_consum
 
 Expected: `ImportError: cannot import name 'is_cuda_oom'`; `oom_exit_requested` AttributeError.
 
-- [ ] **Step 3: Implement the OOM detector.** In `ai_worker/observability/gpu_metrics.py`, add after `record_step_failure`:
+- [x] **Step 3: Implement the OOM detector.** In `ai_worker/observability/gpu_metrics.py`, add after `record_step_failure`:
 
 ```python
 def is_cuda_oom(exc: BaseException) -> bool:
@@ -1915,7 +1915,7 @@ def is_cuda_oom(exc: BaseException) -> bool:
     return False
 ```
 
-- [ ] **Step 4: Map OOM in the three blocking inference paths.**
+- [x] **Step 4: Map OOM in the three blocking inference paths.**
 
 (a) `qwen3_asr_runtime.py` `_transcribe_blocking` — replace the except block (lines 220-224):
 
@@ -1970,7 +1970,7 @@ def is_cuda_oom(exc: BaseException) -> bool:
             ) from exc
 ```
 
-- [ ] **Step 5: Set the exit flag in the runtime.** In `ai_worker/infrastructure/worker_runtime.py`:
+- [x] **Step 5: Set the exit flag in the runtime.** In `ai_worker/infrastructure/worker_runtime.py`:
 
 Add a module constant after `HEARTBEAT_MIN_PROGRESS`:
 
@@ -1989,13 +1989,13 @@ In `__init__`, add `self.oom_exit_requested = False`. At the end of `_fail_for_p
 
 (The consumer-side check `if getattr(self.runtime, "oom_exit_requested", False) is True` was already added in Task 6.)
 
-- [ ] **Step 6: Run, expect pass**
+- [x] **Step 6: Run, expect pass**
 
 ```bash
 uv run pytest tests/test_gpu_oom.py tests/test_rabbitmq_consumer.py tests/test_worker_runtime.py -v
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/observability/gpu_metrics.py apps/ai-worker/ai_worker/model_runtime/asr/qwen3_asr_runtime.py apps/ai-worker/ai_worker/model_runtime/diarization/pyannote_runtime.py apps/ai-worker/ai_worker/model_runtime/speaker/cam_plus_plus_runtime.py apps/ai-worker/ai_worker/infrastructure/worker_runtime.py apps/ai-worker/tests/test_gpu_oom.py apps/ai-worker/tests/test_rabbitmq_consumer.py
@@ -2012,7 +2012,7 @@ git commit -m "fix(worker): map CUDA OOM to registered *_GPU_OOM codes, /fail th
 - Modify: `ai_worker/interfaces/api/main.py` (rerank handler)
 - Modify: `tests/test_rerank.py`
 
-- [ ] **Step 1: Write the failing test.** Add to `tests/test_rerank.py`:
+- [x] **Step 1: Write the failing test.** Add to `tests/test_rerank.py`:
 
 ```python
 class _ScriptedRerankRuntime:
@@ -2060,7 +2060,7 @@ def test_rerank_scores_all_candidates_before_topn_slice(monkeypatch) -> None:
     assert [(i["chunkId"], i["rank"]) for i in items] == [("chunk_02", 1), ("chunk_03", 2)]
 ```
 
-- [ ] **Step 2: Run, expect failure**
+- [x] **Step 2: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_rerank.py::test_rerank_scores_all_candidates_before_topn_slice -v
@@ -2068,7 +2068,7 @@ uv run pytest tests/test_rerank.py::test_rerank_scores_all_candidates_before_top
 
 Expected: items are `[("chunk_02", 1), ("chunk_01", 2)]` because chunk_03 was truncated before scoring.
 
-- [ ] **Step 3: Implement.** In `ai_worker/interfaces/api/main.py`, replace lines 918-943 (`truncated = …` through the `ranked = […]` block):
+- [x] **Step 3: Implement.** In `ai_worker/interfaces/api/main.py`, replace lines 918-943 (`truncated = …` through the `ranked = […]` block):
 
 ```python
         candidates = list(rerank_req.candidates)
@@ -2101,13 +2101,13 @@ Expected: items are `[("chunk_02", 1), ("chunk_01", 2)]` because chunk_03 was tr
         ]
 ```
 
-- [ ] **Step 4: Run the full rerank suite, expect pass**
+- [x] **Step 4: Run the full rerank suite, expect pass**
 
 ```bash
 uv run pytest tests/test_rerank.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/interfaces/api/main.py apps/ai-worker/tests/test_rerank.py
@@ -2124,7 +2124,7 @@ All four protected endpoints (`/internal/models` GET at main.py:674, `/internal/
 - Modify: `ai_worker/interfaces/api/main.py`
 - Create: `tests/test_hmac_path_query.py`
 
-- [ ] **Step 1: Write the failing test.** Create `tests/test_hmac_path_query.py`:
+- [x] **Step 1: Write the failing test.** Create `tests/test_hmac_path_query.py`:
 
 ```python
 import hashlib
@@ -2183,7 +2183,7 @@ def test_warmup_rejects_signature_that_omits_the_query_string() -> None:
     assert response.json()["error"]["code"] == "MODELS_AUTH_FAILED"
 ```
 
-- [ ] **Step 2: Run, expect failure**
+- [x] **Step 2: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_hmac_path_query.py -v
@@ -2191,7 +2191,7 @@ uv run pytest tests/test_hmac_path_query.py -v
 
 Expected: `test_warmup_accepts_signature_over_path_with_query` fails (server verified bare path, signature mismatch → 401) — and the second test "passes" for the wrong reason until the fix flips the verified string; both must pass after Step 3 for the right reason.
 
-- [ ] **Step 3: Implement.** In `ai_worker/interfaces/api/main.py`, add a helper near `_error_response`:
+- [x] **Step 3: Implement.** In `ai_worker/interfaces/api/main.py`, add a helper near `_error_response`:
 
 ```python
 def _signed_path_with_query(request: Request) -> str:
@@ -2204,13 +2204,13 @@ def _signed_path_with_query(request: Request) -> str:
 
 Then replace `path=str(request.url.path)` with `path=_signed_path_with_query(request)` in all four `verify_hmac_signature(...)` calls (`models`, `warmup`, `embed`, `rerank`).
 
-- [ ] **Step 4: Run all HTTP-surface tests, expect pass** (existing tests sign query-less paths, which are unaffected)
+- [x] **Step 4: Run all HTTP-surface tests, expect pass** (existing tests sign query-less paths, which are unaffected)
 
 ```bash
 uv run pytest tests/test_hmac_path_query.py tests/test_rerank.py tests/test_embed_endpoint.py tests/test_models_endpoint.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/interfaces/api/main.py apps/ai-worker/tests/test_hmac_path_query.py
@@ -2231,7 +2231,7 @@ git commit -m "fix(worker): verify HMAC over URL_PATH_WITH_QUERY on all protecte
 - Modify: `ai_worker/admin/router.py`
 - Create: `tests/test_secret_guard.py`
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_secret_guard.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_secret_guard.py`:
 
 ```python
 from __future__ import annotations
@@ -2290,7 +2290,7 @@ def test_ready_endpoint_fails_when_default_secrets_in_prod(monkeypatch) -> None:
     assert "AI_WORKER_CALLBACK_HMAC_SECRET" in body["insecureSecrets"]
 ```
 
-- [ ] **Step 2: Run, expect failure**
+- [x] **Step 2: Run, expect failure**
 
 ```bash
 uv run pytest tests/test_secret_guard.py -v
@@ -2298,7 +2298,7 @@ uv run pytest tests/test_secret_guard.py -v
 
 Expected: `ModuleNotFoundError: No module named 'ai_worker.common.secret_guard'`.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
 
 (a) `ai_worker/common/config.py` — add as the first field of `Settings`:
 
@@ -2412,13 +2412,13 @@ def run() -> None:
 
 (e) `ai_worker/admin/router.py` — delete the dead `ensure_admin_config()` function and the `AdminStartupConfigError` class (zero call sites; superseded by the secret guard).
 
-- [ ] **Step 4: Run, expect pass; ensure existing app tests still build the app under dev**
+- [x] **Step 4: Run, expect pass; ensure existing app tests still build the app under dev**
 
 ```bash
 uv run pytest tests/test_secret_guard.py tests/test_health.py tests/test_lifespan.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/common/config.py apps/ai-worker/ai_worker/common/secret_guard.py apps/ai-worker/ai_worker/interfaces/api/main.py apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py apps/ai-worker/ai_worker/admin/router.py apps/ai-worker/tests/test_secret_guard.py
@@ -2441,7 +2441,7 @@ Three compact fixes: (1) `JavaPublicClient.request` (java_client.py:60-84) lets 
 - Create: `tests/admin/test_upstream_errors.py`
 - Create: `tests/test_speaker_reference_client_retry.py`
 
-- [ ] **Step 1: Implement the upstream error type.** In `ai_worker/admin/java_client.py`:
+- [x] **Step 1: Implement the upstream error type.** In `ai_worker/admin/java_client.py`:
 
 ```python
 class UpstreamUnavailableError(RuntimeError):
@@ -2467,7 +2467,7 @@ and wrap the transport call inside `request(...)`:
             raise UpstreamUnavailableError(f"meeting-api unavailable: {exc}") from exc
 ```
 
-- [ ] **Step 2: Implement the JSON-body guard.** In `ai_worker/admin/envelopes.py`, add:
+- [x] **Step 2: Implement the JSON-body guard.** In `ai_worker/admin/envelopes.py`, add:
 
 ```python
 import json as _json
@@ -2496,7 +2496,7 @@ async def parse_json_body(request: Request, default: object = _NO_DEFAULT) -> ob
         raise MalformedJsonBodyError("request body must be valid JSON") from exc
 ```
 
-- [ ] **Step 3: Register exception handlers.** In `ai_worker/admin/router.py`, add:
+- [x] **Step 3: Register exception handlers.** In `ai_worker/admin/router.py`, add:
 
 ```python
 from fastapi import FastAPI, Request
@@ -2540,7 +2540,7 @@ and in `ai_worker/interfaces/api/main.py::_mount_admin_router`, after `app.inclu
     register_admin_exception_handlers(app)
 ```
 
-- [ ] **Step 4: Replace the unguarded body parses.** In `ai_worker/admin/meetings.py`, `persons.py`, `files.py`, `enrollment.py`: import the helper (`from ai_worker.admin.envelopes import ok, passthrough, parse_json_body` — adjust per file's existing imports) and replace:
+- [x] **Step 4: Replace the unguarded body parses.** In `ai_worker/admin/meetings.py`, `persons.py`, `files.py`, `enrollment.py`: import the helper (`from ai_worker.admin.envelopes import ok, passthrough, parse_json_body` — adjust per file's existing imports) and replace:
 
 - every `body = await request.json()` with `body = await parse_json_body(request)`
 - `body = await request.json() if (await request.body()) else {}` with `body = await parse_json_body(request, default={})`
@@ -2550,7 +2550,7 @@ and in `ai_worker/interfaces/api/main.py::_mount_admin_router`, after `app.inclu
 
 Verify with `grep -n "await request.json()" ai_worker/admin/` → zero remaining hits.
 
-- [ ] **Step 5: Fix the event-loop block.** In `ai_worker/infrastructure/speaker/reference_client.py`: add `import asyncio` to the imports, and change line 133:
+- [x] **Step 5: Fix the event-loop block.** In `ai_worker/infrastructure/speaker/reference_client.py`: add `import asyncio` to the imports, and change line 133:
 
 ```python
                 await asyncio.sleep(wait)
@@ -2558,7 +2558,7 @@ Verify with `grep -n "await request.json()" ai_worker/admin/` → zero remaining
 
 (keep `import time` — it is still used for cache expiry timestamps.)
 
-- [ ] **Step 6: Write the tests.** Create `tests/admin/test_upstream_errors.py`:
+- [x] **Step 6: Write the tests.** Create `tests/admin/test_upstream_errors.py`:
 
 ```python
 from __future__ import annotations
@@ -2687,13 +2687,13 @@ async def test_batch_retries_5xx_with_async_sleep_then_recovers(monkeypatch) -> 
     await client.close()
 ```
 
-- [ ] **Step 7: Run, expect pass (and no admin regressions)**
+- [x] **Step 7: Run, expect pass (and no admin regressions)**
 
 ```bash
 uv run pytest tests/admin/ tests/test_speaker_reference_client_retry.py -v
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/ai-worker/ai_worker/admin/ apps/ai-worker/ai_worker/interfaces/api/main.py apps/ai-worker/ai_worker/infrastructure/speaker/reference_client.py apps/ai-worker/tests/admin/test_upstream_errors.py apps/ai-worker/tests/test_speaker_reference_client_retry.py
@@ -2709,7 +2709,7 @@ Feed the exact message Java's `ProcessingTaskApplicationService.phase2TaskMessag
 **Files:**
 - Create: `tests/test_meeting_full_pipeline_e2e.py`
 
-- [ ] **Step 1: Create the test.**
+- [x] **Step 1: Create the test.**
 
 ```python
 """E2E (review P1 final gate): the EXACT Java-produced 8-step
@@ -2906,7 +2906,7 @@ async def test_java_shaped_full_pipeline_message_completes_with_degraded_steps(
     assert snapshot.status == "PARTIAL_SUCCEEDED"
 ```
 
-- [ ] **Step 2: Run, expect pass**
+- [x] **Step 2: Run, expect pass**
 
 ```bash
 uv run pytest tests/test_meeting_full_pipeline_e2e.py -v
@@ -2914,7 +2914,7 @@ uv run pytest tests/test_meeting_full_pipeline_e2e.py -v
 
 If any assertion fails, the corresponding upstream task (3, 4, 5, or 7) is incomplete — fix there, not in the test.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/ai-worker/tests/test_meeting_full_pipeline_e2e.py
@@ -2925,7 +2925,7 @@ git commit -m "test(worker): e2e Java-shaped 8-step MEETING_FULL_PIPELINE throug
 
 ## Task 14: Full verification sweep
 
-- [ ] **Step 1: Full worker test suite**
+- [x] **Step 1: Full worker test suite**
 
 ```bash
 cd apps/ai-worker
@@ -2934,7 +2934,7 @@ uv run pytest tests/ -q
 
 Expected: all green.
 
-- [ ] **Step 2: Type check (CI gate)**
+- [x] **Step 2: Type check (CI gate)**
 
 ```bash
 uv run pyright ai_worker/
@@ -2942,7 +2942,7 @@ uv run pyright ai_worker/
 
 Expected: 0 errors.
 
-- [ ] **Step 3: Contracts gate + codegen drift**
+- [x] **Step 3: Contracts gate + codegen drift**
 
 ```bash
 cd ../../packages/meeting-contracts
@@ -2951,14 +2951,14 @@ npm run codegen
 git status --short   # must be clean
 ```
 
-- [ ] **Step 4: Import smoke (mirrors CI job 3)**
+- [x] **Step 4: Import smoke (mirrors CI job 3)**
 
 ```bash
 cd ../../apps/ai-worker
 uv run python -c "import ai_worker.interfaces.api.main, ai_worker.interfaces.workers.rabbitmq; print('ok')"
 ```
 
-- [ ] **Step 5: Final commit if anything was regenerated**
+- [x] **Step 5: Final commit if anything was regenerated**
 
 ```bash
 git add -A
