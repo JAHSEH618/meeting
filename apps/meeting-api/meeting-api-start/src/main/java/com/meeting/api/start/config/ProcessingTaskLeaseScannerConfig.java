@@ -3,6 +3,7 @@ package com.meeting.api.start.config;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.task.ProcessingTaskLeaseScanner;
+import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.util.List;
@@ -25,6 +26,7 @@ public class ProcessingTaskLeaseScannerConfig {
 
     public ProcessingTaskLeaseScannerConfig(
         ProcessingTaskRepository taskRepository,
+        MessagePublisher messagePublisher,
         TenantScopedTransaction tenantScopedTransaction,
         MeetingApiMetrics metrics,
         @Value("${meeting.lease-scanner.batch-size:50}") int batchSize,
@@ -33,6 +35,7 @@ public class ProcessingTaskLeaseScannerConfig {
     ) {
         this.scanner = new ProcessingTaskLeaseScanner(
             taskRepository,
+            messagePublisher,
             tenantScopedTransaction,
             Clock.systemUTC(),
             batchSize
@@ -56,7 +59,8 @@ public class ProcessingTaskLeaseScannerConfig {
                 metrics.leaseScannerOrphanedCounter().increment(report.orphaned());
             }
             if (report.scanned() > 0) {
-                LOG.info("lease_scanner_run scanned={} orphaned={}", report.scanned(), report.orphaned());
+                LOG.info("lease_scanner_run scanned={} orphaned={} requeued={} cancelled={} failed={}",
+                    report.scanned(), report.orphaned(), report.requeued(), report.cancelled(), report.failed());
             }
         } catch (RuntimeException cause) {
             LOG.warn("lease_scanner_failed", cause);

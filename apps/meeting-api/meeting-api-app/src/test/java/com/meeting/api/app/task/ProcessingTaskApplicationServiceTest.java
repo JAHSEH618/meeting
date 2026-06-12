@@ -82,7 +82,7 @@ class ProcessingTaskApplicationServiceTest {
             "trace_01"
         );
 
-        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
         ProcessingTaskCreatedEvent event = (ProcessingTaskCreatedEvent) publisher.events.get(0);
         @SuppressWarnings("unchecked")
         Map<String, Object> expectedInputVersion =
@@ -178,6 +178,11 @@ class ProcessingTaskApplicationServiceTest {
             return task != null && tenantId.equals(task.tenantId()) && taskId.equals(task.taskId())
                 ? Optional.of(task)
                 : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override

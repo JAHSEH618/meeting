@@ -9,6 +9,8 @@ public interface ProcessingTaskRepository {
 
     Optional<ProcessingTask> findById(String tenantId, String taskId);
 
+    Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId);
+
     Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId);
 
     List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit);

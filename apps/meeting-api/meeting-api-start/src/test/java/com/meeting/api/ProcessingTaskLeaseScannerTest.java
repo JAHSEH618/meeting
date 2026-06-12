@@ -6,6 +6,8 @@ import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
+import com.meeting.api.domain.common.DomainEvent;
+import com.meeting.api.domain.task.MessagePublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.ProcessingTaskStep;
@@ -33,6 +35,7 @@ class ProcessingTaskLeaseScannerTest {
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
+            event -> {},
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -42,9 +45,9 @@ class ProcessingTaskLeaseScannerTest {
 
         assertThat(report.scanned()).isEqualTo(1);
         assertThat(report.orphaned()).isEqualTo(1);
-        assertThat(tasks.byId("task_expired").status()).isEqualTo(ProcessingTaskStatus.ORPHANED);
-        assertThat(tasks.byId("task_expired").leaseOwner()).isNull();
-        assertThat(tasks.byId("task_expired").leaseExpiresAt()).isNull();
+        assertThat(report.requeued()).isEqualTo(1);
+        assertThat(tasks.byId("task_expired").status()).isEqualTo(ProcessingTaskStatus.QUEUED);
+        assertThat(tasks.byId("task_expired").attemptNo()).isEqualTo(2);
         assertThat(tasks.byId("task_fresh").status()).isEqualTo(ProcessingTaskStatus.RUNNING);
     }
 
@@ -60,6 +63,7 @@ class ProcessingTaskLeaseScannerTest {
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
+            event -> {},
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -78,6 +82,7 @@ class ProcessingTaskLeaseScannerTest {
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
+            event -> {},
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -170,6 +175,11 @@ class ProcessingTaskLeaseScannerTest {
         }
 
         @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
+        }
+
+        @Override
         public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return tasks.stream()
                 .filter(task -> task.tenantId().equals(tenantId) && meetingId.equals(task.meetingId()))
@@ -181,7 +191,7 @@ class ProcessingTaskLeaseScannerTest {
             return tasks.stream()
                 .filter(task -> task.tenantId().equals(tenantId))
                 .filter(task -> task.status() == ProcessingTaskStatus.RUNNING)
-                .filter(task -> task.phase() != ProcessingTaskPhase.TERMINAL)
+                .filter(task -> task.phase() == ProcessingTaskPhase.WORKER_DAG_RUNNING)
                 .filter(task -> task.leaseExpiresAt() != null && task.leaseExpiresAt().isBefore(now))
                 .limit(limit)
                 .map(task -> new ExpiredLease(task.tenantId(), task.taskId()))

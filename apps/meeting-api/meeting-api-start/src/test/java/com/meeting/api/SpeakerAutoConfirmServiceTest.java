@@ -525,6 +525,11 @@ class SpeakerAutoConfirmServiceTest {
         }
 
         @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
+        }
+
+        @Override
         public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return Optional.empty();
         }
