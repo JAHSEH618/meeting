@@ -12,6 +12,7 @@ import type { ApiResponse, ApiError, TaskEvent } from "@shared/api/types";
 const API_BASE = "/api";
 
 let authToken: string | null = null;
+let refreshPromise: Promise<{ accessToken: string; expiresAt: string }> | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -41,6 +42,49 @@ function normalizeSpeakerProfile(profile: SpeakerProfile): SpeakerProfile {
     consentStatus: profile.consentStatus ?? profile.status ?? "UNKNOWN",
     revokedAt: profile.revokedAt ?? null,
   };
+}
+
+async function handleUnauthorized<T>(
+  originalMethod: string,
+  originalPath: string,
+  originalBody?: unknown,
+  originalIdempotencyKey?: string,
+): Promise<T> {
+  // Single-flight pattern: if refresh already in-flight, await it
+  if (refreshPromise) {
+    try {
+      const result = await refreshPromise;
+      setAuthToken(result.accessToken);
+      // Retry original request with new token
+      return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
+    } catch {
+      // Refresh failed, clear state
+      refreshPromise = null;
+      setAuthToken(null);
+      const error = new Error("认证已过期，请重新登录") as ApiClientError;
+      error.code = "AUTH_REQUIRED";
+      error.retryable = false;
+      throw error;
+    }
+  }
+
+  // Start new refresh
+  refreshPromise = refresh();
+  try {
+    const result = await refreshPromise;
+    setAuthToken(result.accessToken);
+    refreshPromise = null;
+    // Retry original request with new token
+    return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
+  } catch {
+    // Refresh failed, clear state
+    refreshPromise = null;
+    setAuthToken(null);
+    const error = new Error("认证已过期，请重新登录") as ApiClientError;
+    error.code = "AUTH_REQUIRED";
+    error.retryable = false;
+    throw error;
+  }
 }
 
 async function request<T>(
@@ -85,6 +129,11 @@ async function request<T>(
     error.retryable = false;
     error.status = res.status;
     throw error;
+  }
+
+  // Intercept 401 for token refresh
+  if (res.status === 401 && authToken) {
+    return handleUnauthorized<T>(method, path, body, idempotencyKey);
   }
 
   const json = (await res.json()) as ApiResponse<unknown>;
