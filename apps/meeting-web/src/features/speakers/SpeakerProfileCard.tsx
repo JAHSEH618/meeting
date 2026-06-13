@@ -18,6 +18,9 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
   const enrollments = enrollmentsQuery.data?.items;
 
   const onRevoke = async () => {
+    if (!window.confirm("确定要撤销此声纹的授权吗？撤销后将无法继续使用。")) {
+      return;
+    }
     try {
       await revoke.mutateAsync(profile.speakerProfileId);
     } catch (e) {
@@ -26,6 +29,9 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
   };
 
   const onDelete = async () => {
+    if (!window.confirm("确定要删除此声纹吗？此操作不可恢复。")) {
+      return;
+    }
     try {
       await remove.mutateAsync(profile.speakerProfileId);
     } catch (e) {
