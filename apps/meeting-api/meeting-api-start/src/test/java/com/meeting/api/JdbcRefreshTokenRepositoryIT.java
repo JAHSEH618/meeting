@@ -28,18 +28,21 @@ class JdbcRefreshTokenRepositoryIT {
 
     @BeforeAll
     void startAndMigrate() throws Exception {
-        postgres = new PostgreSQLContainer<>(DockerImageName.parse("pgvector/pgvector:pg15"));
+        TestcontainersDockerPreflight.assumeDockerAvailable();
+
+        postgres = new PostgreSQLContainer<>(
+            DockerImageName.parse("pgvector/pgvector:pg15").asCompatibleSubstituteFor("postgres")
+        )
+            .withDatabaseName("meeting_test")
+            .withUsername("meeting")
+            .withPassword("meeting_test");
         postgres.start();
 
         ds = new SingleConnectionDataSource(
-            postgres.getJdbcUrl(),
-            postgres.getUsername(),
-            postgres.getPassword(),
-            true
-        );
+            postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword(), true);
 
         Flyway.configure()
-            .dataSource(ds)
+            .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
             .locations("classpath:db/migration")
             .load()
             .migrate();
