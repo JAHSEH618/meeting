@@ -30,6 +30,7 @@ export function AudioUploadPage() {
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
   const [fileSha256, setFileSha256] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const storageKey = `${SESSION_STORAGE_PREFIX}${meetingId}`;
 
   const completedCount = useMemo(
@@ -72,6 +73,8 @@ export function AudioUploadPage() {
     if (!file || !meetingId) return;
     dispatch({ type: "prepare" });
     setMessage(null);
+    const controller = new AbortController();
+    setAbortController(controller);
     try {
       validateFile(file);
       const sha256 = await sha256Hex(file);
@@ -86,23 +89,26 @@ export function AudioUploadPage() {
       window.localStorage.setItem(storageKey, session.uploadId);
       const parts = await buildParts(file, session.partSizeBytes, sha256);
       dispatch({ type: "session", session, parts });
-      await uploadParts(session.uploadId, parts);
+      await uploadParts(session.uploadId, parts, controller.signal);
       await finalize(session.uploadId, sha256, parts);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setMessage(apiError.message || String(cause));
       dispatch({ type: "failed", errorCode: apiError.code || "INTERNAL_ERROR" });
+    } finally {
+      setAbortController(null);
     }
   }
 
-  async function uploadParts(uploadId: string, parts: UploadPartState[]) {
+  async function uploadParts(uploadId: string, parts: UploadPartState[], signal: AbortSignal) {
     let nextIndex = 0;
     async function worker() {
       while (nextIndex < parts.length) {
+        if (signal.aborted) return;
         const part = parts[nextIndex];
         nextIndex += 1;
         if (!part) return;
-        await uploadOnePart(uploadId, part);
+        await uploadOnePart(uploadId, part, signal);
       }
     }
     await Promise.all(
@@ -110,19 +116,20 @@ export function AudioUploadPage() {
     );
   }
 
-  async function uploadOnePart(uploadId: string, part: UploadPartState) {
+  async function uploadOnePart(uploadId: string, part: UploadPartState, signal: AbortSignal) {
     if (!file) return;
     for (let attempt = 1; attempt <= MAX_PART_RETRIES; attempt += 1) {
+      if (signal.aborted) return;
       dispatch({ type: "part-start", partNumber: part.partNumber, attempts: attempt });
       try {
         const signed = await createAudioUploadPart(meetingId, uploadId, {
           partNumber: part.partNumber,
           sizeBytes: part.sizeBytes,
           partSha256: part.partSha256,
-        });
+        }, signal);
         const offset = (part.partNumber - 1) * (state.session?.partSizeBytes || 8 * 1024 * 1024);
         const blob = file.slice(offset, offset + part.sizeBytes);
-        const uploaded = await putAudioUploadPart(signed.uploadUrl, blob, signed.headers);
+        const uploaded = await putAudioUploadPart(signed.uploadUrl, blob, signed.headers, signal);
         const etag = uploaded.etag || signed.etag || `etag_${part.partNumber}`;
         part.etag = etag;
         part.status = "completed";
@@ -141,6 +148,9 @@ export function AudioUploadPage() {
   async function abort() {
     if (!meetingId || !state.session) return;
     try {
+      if (abortController) {
+        abortController.abort();
+      }
       await abortAudioUpload(meetingId, state.session.uploadId);
       window.localStorage.removeItem(storageKey);
       dispatch({ type: "aborted" });
@@ -154,6 +164,8 @@ export function AudioUploadPage() {
   async function resume() {
     if (!meetingId || !state.session || !file) return;
     setMessage(null);
+    const controller = new AbortController();
+    setAbortController(controller);
     try {
       validateFile(file);
       if (file.size !== state.session.fileSizeBytes) {
@@ -174,12 +186,14 @@ export function AudioUploadPage() {
       const parts = await buildParts(file, state.session.partSizeBytes, sha256);
       reconcilePartsWithSession(parts, state.session);
       dispatch({ type: "session", session: state.session, parts });
-      await uploadParts(state.session.uploadId, parts.filter((part) => part.status !== "completed"));
+      await uploadParts(state.session.uploadId, parts.filter((part) => part.status !== "completed"), controller.signal);
       await finalize(state.session.uploadId, sha256, parts);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setMessage(apiError.message || String(cause));
       dispatch({ type: "failed", errorCode: apiError.code || "INTERNAL_ERROR" });
+    } finally {
+      setAbortController(null);
     }
   }
 

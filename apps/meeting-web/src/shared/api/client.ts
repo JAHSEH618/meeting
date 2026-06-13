@@ -96,6 +96,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   idempotencyKey?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -118,6 +119,7 @@ async function request<T>(
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
   } catch (cause) {
     const error = new Error("网络连接失败") as ApiClientError;
@@ -159,6 +161,7 @@ async function uploadBinary(
   url: string,
   body: Blob,
   headers: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ etag: string }> {
   let res: Response;
   try {
@@ -166,6 +169,7 @@ async function uploadBinary(
       method: "PUT",
       headers,
       body,
+      signal,
     });
   } catch (cause) {
     const error = new Error("网络连接失败") as ApiClientError;
@@ -334,6 +338,7 @@ export async function createAudioUploadPart(
   meetingId: string,
   uploadId: string,
   data: import("@shared/api/types").CreateAudioUploadPartRequest,
+  signal?: AbortSignal,
 ) {
   return request<{
     uploadId: string;
@@ -348,11 +353,12 @@ export async function createAudioUploadPart(
     `/meetings/${meetingId}/files/audio/uploads/${uploadId}/parts`,
     data,
     generateId(`upload-part-${data.partNumber}`),
+    signal,
   );
 }
 
-export async function putAudioUploadPart(uploadUrl: string, part: Blob, headers: Record<string, string>) {
-  return uploadBinary(uploadUrl, part, headers);
+export async function putAudioUploadPart(uploadUrl: string, part: Blob, headers: Record<string, string>, signal?: AbortSignal) {
+  return uploadBinary(uploadUrl, part, headers, signal);
 }
 
 export async function completeAudioUpload(
