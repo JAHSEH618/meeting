@@ -125,16 +125,32 @@ def build_enrollment_router(
     @router.post("/sessions/{session_id}/commit", status_code=200)
     async def commit(
         session_id: str,
+        request: Request,
         claims: AdminClaims = Depends(admin_claims_dependency),
         x_request_id: str | None = Header(None, alias="X-Request-Id"),
         x_trace_id: str | None = Header(None, alias="X-Trace-Id"),
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ):
+        body = await request.json() if (await request.body()) else {}
+        request_person_id = body.get("personId") if isinstance(body, dict) else None
+
         session = await session_store.get(session_id)
         if session is None or session.tenant_id != claims.tenant_id:
             return error(status_code=404, code="ENROLLMENT_SESSION_NOT_FOUND",
                          message="session not found or expired", retryable=False,
                          request_id=x_request_id, trace_id=x_trace_id)
+
+        # Validate personId matches session
+        if request_person_id and session.person_id and request_person_id != session.person_id:
+            return error(
+                status_code=409,
+                code="ENROLLMENT_PERSON_MISMATCH",
+                message=f"request personId {request_person_id} does not match session personId {session.person_id}",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+
         if session.state != "PREVIEWED":
             return error(status_code=409, code="ENROLLMENT_NOT_PREVIEWED",
                          message=f"session must be PREVIEWED before commit (state={session.state})",
