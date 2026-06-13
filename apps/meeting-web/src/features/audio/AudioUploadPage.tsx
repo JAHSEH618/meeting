@@ -21,6 +21,7 @@ const DEFAULT_CONCURRENCY = 3;
 const MAX_PART_RETRIES = 3;
 const SESSION_STORAGE_PREFIX = "meeting.audioUpload.";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const PART_SIZE_BYTES = 8 * 1024 * 1024;
 
 export function AudioUploadPage() {
   const { meetingId = "" } = useParams();
@@ -84,7 +85,7 @@ export function AudioUploadPage() {
         contentType: file.type || "application/octet-stream",
         fileSizeBytes: file.size,
         fileSha256: sha256,
-        partSizeBytes: 8 * 1024 * 1024,
+        partSizeBytes: PART_SIZE_BYTES,
       });
       window.localStorage.setItem(storageKey, session.uploadId);
       const parts = await buildParts(file, session.partSizeBytes, sha256);
@@ -127,7 +128,7 @@ export function AudioUploadPage() {
           sizeBytes: part.sizeBytes,
           partSha256: part.partSha256,
         }, signal);
-        const offset = (part.partNumber - 1) * (state.session?.partSizeBytes || 8 * 1024 * 1024);
+        const offset = (part.partNumber - 1) * (state.session?.partSizeBytes || PART_SIZE_BYTES);
         const blob = file.slice(offset, offset + part.sizeBytes);
         const uploaded = await putAudioUploadPart(signed.uploadUrl, blob, signed.headers, signal);
         const etag = uploaded.etag || signed.etag || `etag_${part.partNumber}`;
