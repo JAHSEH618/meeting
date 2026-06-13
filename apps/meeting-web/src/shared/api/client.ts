@@ -136,15 +136,113 @@ async function uploadBinary(
 // ── Auth ───────────────────────────────────────────────────────────
 
 export async function login(username: string, password: string) {
-  return request<{ accessToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser }>(
-    "POST",
-    "/auth/login",
-    { username, password },
-  );
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ username, password }),
+    });
+  } catch (cause) {
+    const error = new Error("网络连接失败") as ApiClientError;
+    error.code = "DEPENDENCY_UNAVAILABLE";
+    error.retryable = true;
+    error.details = { cause: String(cause) };
+    throw error;
+  }
+
+  const json = (await res.json()) as ApiResponse<unknown>;
+
+  if (!json.success) {
+    const err = json.error as ApiError;
+    const error = new Error(err.message) as ApiClientError;
+    error.code = err.code;
+    error.retryable = err.retryable;
+    error.details = err.details;
+    error.status = res.status;
+    throw error;
+  }
+
+  return json.data as { accessToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser };
 }
 
 export async function logout() {
-  return request<void>("POST", "/auth/logout");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+  };
+
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+  });
+}
+
+export async function refresh() {
+  // Read CSRF token from cookie
+  const csrfToken = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("XSRF-TOKEN="))
+    ?.split("=")[1];
+
+  if (!csrfToken) {
+    const error = new Error("CSRF token not found") as ApiClientError;
+    error.code = "CSRF_TOKEN_INVALID";
+    error.retryable = false;
+    throw error;
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+    "X-CSRF-Token": csrfToken,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+    });
+  } catch (cause) {
+    const error = new Error("网络连接失败") as ApiClientError;
+    error.code = "DEPENDENCY_UNAVAILABLE";
+    error.retryable = true;
+    error.details = { cause: String(cause) };
+    throw error;
+  }
+
+  const json = (await res.json()) as ApiResponse<unknown>;
+
+  if (!json.success) {
+    const err = json.error as ApiError;
+    const error = new Error(err.message) as ApiClientError;
+    error.code = err.code;
+    error.retryable = err.retryable;
+    error.details = err.details;
+    error.status = res.status;
+    throw error;
+  }
+
+  return json.data as { accessToken: string; expiresAt: string };
 }
 
 export async function getCurrentUser() {
