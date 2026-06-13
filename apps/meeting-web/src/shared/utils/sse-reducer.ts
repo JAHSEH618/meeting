@@ -87,7 +87,7 @@ export function sseReducer(state: TaskSnapshot, event: TaskEvent): TaskSnapshot 
     case "TASK_COMPLETED":
       return {
         ...state,
-        status: "SUCCEEDED",
+        status: event.status || "SUCCEEDED",
         phase: "TERMINAL" as ProcessingTaskPhase,
       };
 

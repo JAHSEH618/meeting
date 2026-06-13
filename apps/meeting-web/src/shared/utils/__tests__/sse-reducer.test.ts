@@ -158,4 +158,44 @@ describe("sseReducer - bug fixes", () => {
     expect(result.steps[0].status).toBe("SUCCEEDED");
     expect(result.steps[0].progress).toBe(100);
   });
+
+  it('TASK_COMPLETED reads event.status for PARTIAL_SUCCEEDED', () => {
+    const initial: TaskSnapshot = {
+      ...createInitialSnapshot(),
+      taskId: 'task_1',
+      meetingId: 'meeting_1',
+      status: 'RUNNING',
+      phase: 'WORKER_DAG_RUNNING',
+    };
+
+    const event: TaskEvent = {
+      eventType: 'TASK_COMPLETED',
+      taskId: 'task_1',
+      status: 'PARTIAL_SUCCEEDED',  // Some steps failed
+    };
+
+    const result = sseReducer(initial, event);
+
+    expect(result.status).toBe('PARTIAL_SUCCEEDED');
+    expect(result.phase).toBe('TERMINAL');
+  });
+
+  it('TASK_COMPLETED defaults to SUCCEEDED if status missing', () => {
+    const initial: TaskSnapshot = {
+      ...createInitialSnapshot(),
+      taskId: 'task_1',
+      status: 'RUNNING',
+    };
+
+    const event: TaskEvent = {
+      eventType: 'TASK_COMPLETED',
+      taskId: 'task_1',
+      // No status field
+    };
+
+    const result = sseReducer(initial, event);
+
+    expect(result.status).toBe('SUCCEEDED');
+    expect(result.phase).toBe('TERMINAL');
+  });
 });
