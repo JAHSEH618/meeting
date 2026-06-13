@@ -200,19 +200,25 @@ export function AudioUploadPage() {
 
   async function finalize(uploadId: string, sha256: string, parts: UploadPartState[]) {
     dispatch({ type: "complete-start" });
-    const completed = await completeAudioUpload(meetingId, uploadId, {
-      fileSha256: sha256,
-      durationMs: null,
-      parts: parts.map((part) => ({
-        partNumber: part.partNumber,
-        partSha256: part.partSha256,
-        etag: part.etag || "",
-      })),
-    });
-    dispatch({ type: "completed", session: completed });
-    window.localStorage.removeItem(storageKey);
-    const task = await getLatestMeetingTask(meetingId);
-    navigate(`/meetings/${meetingId}/tasks/${task.taskId}`);
+    try {
+      const completed = await completeAudioUpload(meetingId, uploadId, {
+        fileSha256: sha256,
+        durationMs: null,
+        parts: parts.map((part) => ({
+          partNumber: part.partNumber,
+          partSha256: part.partSha256,
+          etag: part.etag || "",
+        })),
+      });
+      dispatch({ type: "completed", session: completed });
+      window.localStorage.removeItem(storageKey);
+      const task = await getLatestMeetingTask(meetingId);
+      navigate(`/meetings/${meetingId}/tasks/${task.taskId}`);
+    } catch (cause) {
+      const apiError = cause as ApiClientError;
+      setMessage(apiError.message || String(cause));
+      dispatch({ type: "failed", errorCode: apiError.code || "INTERNAL_ERROR" });
+    }
   }
 
   return (
