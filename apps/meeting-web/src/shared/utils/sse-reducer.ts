@@ -53,7 +53,6 @@ export function sseReducer(state: TaskSnapshot, event: TaskEvent): TaskSnapshot 
     case "TASK_STEP_UPDATED":
       return {
         ...state,
-        status: event.status,
         currentStep: event.stepName ?? state.currentStep,
         steps: state.steps.map((s) =>
           s.stepName === event.stepName

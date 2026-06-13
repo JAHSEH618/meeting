@@ -126,3 +126,36 @@ describe("sseReducer", () => {
     expect(next).toEqual(baseState);
   });
 });
+
+describe("sseReducer - bug fixes", () => {
+  it("TASK_STEP_UPDATED preserves task-level status", () => {
+    const initial: TaskSnapshot = {
+      ...createInitialSnapshot(),
+      taskId: "task_1",
+      meetingId: "meeting_1",
+      status: "RUNNING",
+      phase: "WORKER_DAG_RUNNING",
+      steps: [
+        { stepName: "ASR", status: "RUNNING", progress: 50, source: "AI_WORKER_CALLBACK" },
+        { stepName: "DIARIZATION", status: "PENDING", progress: 0, source: "AI_WORKER_CALLBACK" },
+      ],
+    };
+
+    const event: TaskEvent = {
+      eventType: "TASK_STEP_UPDATED",
+      taskId: "task_1",
+      stepName: "ASR",
+      status: "SUCCEEDED",
+      progress: 100,
+      completedSteps: ["ASR"],
+    };
+
+    const result = sseReducer(initial, event);
+
+    // Task status should remain RUNNING (not become SUCCEEDED)
+    expect(result.status).toBe("RUNNING");
+    // Step status should update
+    expect(result.steps[0].status).toBe("SUCCEEDED");
+    expect(result.steps[0].progress).toBe(100);
+  });
+});
