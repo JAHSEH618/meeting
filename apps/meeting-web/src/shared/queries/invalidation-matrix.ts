@@ -133,7 +133,7 @@ const INVALIDATION_MATRIX: Record<
 export function invalidateAfter(
   event: InvalidationEvent,
   queryClient: QueryClient,
-  context?: InvalidationContext,
+  _context?: InvalidationContext,
 ): void {
   const handler = INVALIDATION_MATRIX[event.type];
 
