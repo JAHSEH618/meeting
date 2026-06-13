@@ -5,6 +5,8 @@ package com.meeting.api.client.common;
  */
 public enum ErrorCode {
     AUTH_REQUIRED,
+    REFRESH_TOKEN_INVALID,
+    CSRF_TOKEN_INVALID,
     PERMISSION_DENIED,
     TENANT_CONTEXT_MISSING,
     VALIDATION_FAILED,

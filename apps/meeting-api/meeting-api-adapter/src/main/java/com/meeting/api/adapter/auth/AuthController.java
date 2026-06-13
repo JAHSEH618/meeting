@@ -4,8 +4,14 @@ import com.meeting.api.client.auth.AuthFacade;
 import com.meeting.api.client.auth.AuthUserDTO;
 import com.meeting.api.client.auth.LoginCommand;
 import com.meeting.api.client.auth.LoginResultDTO;
+import com.meeting.api.client.auth.RefreshResultDTO;
 import com.meeting.api.client.common.ApiResponse;
+import com.meeting.api.client.common.ErrorCode;
+import com.meeting.api.client.common.ErrorInfo;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,28 +29,106 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ApiResponse<LoginResultDTO> login(
+    public ResponseEntity<ApiResponse<LoginResultDTO>> login(
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
         @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
-        @RequestBody LoginRequest request
+        @RequestBody LoginRequest request,
+        HttpServletResponse response
     ) {
-        return ApiResponse.ok(
-            authFacade.login(new LoginCommand(request.username(), request.password(), requestId, traceId)),
-            requestId,
-            traceId
-        );
+        LoginResultDTO result = authFacade.login(new LoginCommand(request.username(), request.password(), requestId, traceId));
+
+        // Set HttpOnly refresh token cookie (30 days)
+        Cookie refreshCookie = new Cookie("REFRESH_TOKEN", result.refreshTokenId());
+        refreshCookie.setHttpOnly(true);
+        refreshCookie.setSecure(true);
+        refreshCookie.setPath("/api/auth");
+        refreshCookie.setMaxAge(30 * 24 * 60 * 60);
+        response.addCookie(refreshCookie);
+
+        // Set CSRF token cookie (accessible to JS for X-CSRF-Token header)
+        String csrfToken = java.util.UUID.randomUUID().toString();
+        Cookie csrfCookie = new Cookie("XSRF-TOKEN", csrfToken);
+        csrfCookie.setSecure(true);
+        csrfCookie.setPath("/api");
+        csrfCookie.setMaxAge(30 * 24 * 60 * 60);
+        response.addCookie(csrfCookie);
+
+        // Don't expose refreshTokenId in response body
+        return ResponseEntity.ok(ApiResponse.ok(
+            new LoginResultDTO(result.accessToken(), result.expiresAt(), result.user(), null),
+            requestId, traceId
+        ));
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(
+    public ResponseEntity<ApiResponse<Void>> logout(
         @RequestHeader(value = "Authorization", required = false) String authorization,
+        @CookieValue(value = "REFRESH_TOKEN", required = false) String refreshToken,
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-        @RequestHeader(value = "X-Trace-Id", required = false) String traceId
+        @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+        HttpServletResponse response
     ) {
         if (authorization != null && !authorization.isBlank()) {
             authFacade.logout(authorization);
         }
-        return ApiResponse.ok(null, requestId, traceId);
+
+        // Clear cookies
+        Cookie refreshCookie = new Cookie("REFRESH_TOKEN", null);
+        refreshCookie.setHttpOnly(true);
+        refreshCookie.setPath("/api/auth");
+        refreshCookie.setMaxAge(0);
+        response.addCookie(refreshCookie);
+
+        Cookie csrfCookie = new Cookie("XSRF-TOKEN", null);
+        csrfCookie.setPath("/api");
+        csrfCookie.setMaxAge(0);
+        response.addCookie(csrfCookie);
+
+        return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<RefreshResultDTO>> refresh(
+        @CookieValue(value = "REFRESH_TOKEN", required = false) String refreshToken,
+        @RequestHeader(value = "X-CSRF-Token", required = false) String csrfToken,
+        @CookieValue(value = "XSRF-TOKEN", required = false) String csrfCookie,
+        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
+        @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+        HttpServletResponse response
+    ) {
+        // Validate CSRF double-submit
+        if (csrfToken == null || csrfCookie == null || !csrfToken.equals(csrfCookie)) {
+            return ResponseEntity.status(401).body(ApiResponse.failed(
+                ErrorInfo.of(ErrorCode.CSRF_TOKEN_INVALID, "CSRF token validation failed", false),
+                requestId, traceId
+            ));
+        }
+
+        if (refreshToken == null) {
+            return ResponseEntity.status(401).body(ApiResponse.failed(
+                ErrorInfo.of(ErrorCode.REFRESH_TOKEN_INVALID, "refresh token required", false),
+                requestId, traceId
+            ));
+        }
+
+        try {
+            RefreshResultDTO result = authFacade.refresh(refreshToken, csrfToken);
+
+            // Rotate CSRF token
+            String newCsrfToken = java.util.UUID.randomUUID().toString();
+            Cookie newCsrfCookie = new Cookie("XSRF-TOKEN", newCsrfToken);
+            newCsrfCookie.setSecure(true);
+            newCsrfCookie.setPath("/api");
+            newCsrfCookie.setMaxAge(30 * 24 * 60 * 60);
+            response.addCookie(newCsrfCookie);
+
+            return ResponseEntity.ok(ApiResponse.ok(result, requestId, traceId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(401).body(ApiResponse.failed(
+                ErrorInfo.of(ErrorCode.REFRESH_TOKEN_INVALID, e.getMessage(), false),
+                requestId, traceId
+            ));
+        }
     }
 
     @GetMapping("/me")
