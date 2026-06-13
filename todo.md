@@ -504,7 +504,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] I4+I5+I6+I12：集中失效矩阵 `invalidateAfter(event, qc)`（转录编辑/说话人确认/纪要重生成/建会）。
 - [x] I7+I13：SSE 加固——lastEventId 走 getter、指数退避；导出页弃裸 EventSource 改 fetch-SSE。
 - [x] I8+I9+I10：上传 AbortController 贯穿 worker、终态不被 part-start 复活、partSizeBytes 显式传参、finalize 后查询包 try/catch。
-- [ ] I3+I14+I15：转录虚拟滚动（@tanstack/react-virtual）；声纹销毁类操作加确认弹窗；移除预填 admin/admin123。
+- [x] I3+I14+I15：转录虚拟滚动（@tanstack/react-virtual）；声纹销毁类操作加确认弹窗；移除预填 admin/admin123。
 
 ### P4 `apps/ai-worker-web`（计划 p4-worker-web）
 
