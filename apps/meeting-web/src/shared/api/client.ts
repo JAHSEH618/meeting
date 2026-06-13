@@ -300,8 +300,8 @@ export async function getCurrentUser() {
 
 // ── Meetings ───────────────────────────────────────────────────────
 
-export async function createMeeting(data: import("@shared/api/types").CreateMeetingRequest) {
-  return request<import("@shared/api/types").Meeting>("POST", "/meetings", data, generateId("create-meeting"));
+export async function createMeeting(data: import("@shared/api/types").CreateMeetingRequest, idempotencyKey?: string) {
+  return request<import("@shared/api/types").Meeting>("POST", "/meetings", data, idempotencyKey || generateId("create-meeting"));
 }
 
 export async function listMeetings() {
@@ -382,7 +382,7 @@ export async function getAudioUpload(meetingId: string, uploadId: string) {
 
 // ── Tasks ──────────────────────────────────────────────────────────
 
-export async function createProcessingTask(meetingId: string, audioFileId: string) {
+export async function createProcessingTask(meetingId: string, audioFileId: string, idempotencyKey?: string) {
   return request<import("@shared/api/types").ProcessingTask>(
     "POST",
     `/meetings/${meetingId}/processing-tasks`,
@@ -392,7 +392,7 @@ export async function createProcessingTask(meetingId: string, audioFileId: strin
       options: { enableAsr: true, enableDiarization: true, enableRagIndexing: true },
       expectedInputVersion: { chunkStrategyVersion: "v1" },
     },
-    generateId("create-task"),
+    idempotencyKey || generateId("create-task"),
   );
 }
 
