@@ -4,6 +4,7 @@ import { AuthGuard } from "./AuthGuard";
 import { SkipLink } from "@shared/components/SkipLink";
 import "./app.css";
 import { LoginPage } from "@features/auth/LoginPage";
+import { useAuth } from "@services/auth";
 import { MeetingListPage } from "@features/meetings/MeetingListPage";
 import { MeetingCreatePage } from "@features/meetings/MeetingCreatePage";
 import { MeetingDetailPage } from "@features/meetings/MeetingDetailPage";
@@ -137,6 +138,14 @@ export function App() {
 }
 
 function Shell() {
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('确定要退出登录吗？')) {
+      await logout();
+    }
+  };
+
   return (
     <div className="app-shell">
       <SkipLink />
@@ -199,6 +208,16 @@ function Shell() {
             审计
           </NavLink>
         </nav>
+
+        {user && (
+          <button
+            className="logout-btn"
+            onClick={handleLogout}
+            title="退出登录"
+          >
+            退出
+          </button>
+        )}
       </aside>
 
       <main id="main-content" className="shell__main">
