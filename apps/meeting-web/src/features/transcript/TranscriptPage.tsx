@@ -209,6 +209,7 @@ export function TranscriptPage() {
             <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
               {virtualizer.getVirtualItems().map((virtualRow) => {
                 const segment = sortedSegments[virtualRow.index];
+                if (!segment) return null;
                 return (
                   <article
                     key={segment.segmentId}
