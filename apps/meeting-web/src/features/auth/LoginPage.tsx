@@ -6,8 +6,8 @@ import type { ApiClientError } from "@shared/api/client";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
