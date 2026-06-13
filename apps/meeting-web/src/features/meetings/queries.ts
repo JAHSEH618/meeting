@@ -8,6 +8,7 @@ import {
 import { generateStableIdempotencyKey } from "@shared/utils/idempotency";
 import { useAuthStore } from "@shared/stores/auth";
 import type { Meeting, CreateMeetingRequest } from "@shared/api/types";
+import { invalidateAfter } from "@shared/queries/invalidation-matrix";
 
 export function useMeetingsQuery() {
   return useQuery<{ items: Meeting[]; total?: number }>({
@@ -33,7 +34,7 @@ export function useCreateMeeting() {
       const idempotencyKey = generateStableIdempotencyKey('create-meeting', userId);
       return apiCreateMeeting(body, idempotencyKey);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["meetings"] }),
+    onSuccess: (data) => invalidateAfter({ type: "meeting-created", meetingId: data.meetingId }, qc),
   });
 }
 

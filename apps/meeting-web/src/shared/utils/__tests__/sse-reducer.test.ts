@@ -142,8 +142,7 @@ describe("sseReducer - bug fixes", () => {
     };
 
     const event: TaskEvent = {
-      eventType: "TASK_STEP_UPDATED",
-      taskId: "task_1",
+      ...baseEvent("TASK_STEP_UPDATED", "task_1"),
       stepName: "ASR",
       status: "SUCCEEDED",
       progress: 100,
@@ -155,8 +154,8 @@ describe("sseReducer - bug fixes", () => {
     // Task status should remain RUNNING (not become SUCCEEDED)
     expect(result.status).toBe("RUNNING");
     // Step status should update
-    expect(result.steps[0].status).toBe("SUCCEEDED");
-    expect(result.steps[0].progress).toBe(100);
+    expect(result.steps[0]!.status).toBe("SUCCEEDED");
+    expect(result.steps[0]!.progress).toBe(100);
   });
 
   it('TASK_COMPLETED reads event.status for PARTIAL_SUCCEEDED', () => {
@@ -169,8 +168,7 @@ describe("sseReducer - bug fixes", () => {
     };
 
     const event: TaskEvent = {
-      eventType: 'TASK_COMPLETED',
-      taskId: 'task_1',
+      ...baseEvent('TASK_COMPLETED', 'task_1'),
       status: 'PARTIAL_SUCCEEDED',  // Some steps failed
     };
 
@@ -188,12 +186,14 @@ describe("sseReducer - bug fixes", () => {
     };
 
     const event: TaskEvent = {
-      eventType: 'TASK_COMPLETED',
-      taskId: 'task_1',
-      // No status field
+      ...baseEvent('TASK_COMPLETED', 'task_1'),
+      // Status will come from baseEvent as 'RUNNING', but the reducer should use event.status ?? 'SUCCEEDED'
+      // To test the fallback, we need to remove the status field
     };
+    // Remove status to test the default fallback
+    delete (event as Partial<TaskEvent>).status;
 
-    const result = sseReducer(initial, event);
+    const result = sseReducer(initial, event as TaskEvent);
 
     expect(result.status).toBe('SUCCEEDED');
     expect(result.phase).toBe('TERMINAL');
