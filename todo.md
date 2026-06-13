@@ -501,7 +501,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] C2：sse-reducer——`TASK_STEP_UPDATED` 只更新 step 不碰任务级 status；`TASK_COMPLETED` 取 `event.status`（支持 `PARTIAL_SUCCEEDED`）。
 - [x] C3：401 单飞 refresh（X-CSRF-Token）+ 失败清 token 回登录页 + Shell 登出按钮。
 - [x] I1+I2+I11：mutation wrapper——按用户动作生成幂等键并在重试间复用（启用 `idempotency.ts`），错误统一出口；补缺失幂等键的写接口。
-- [ ] I4+I5+I6+I12：集中失效矩阵 `invalidateAfter(event, qc)`（转录编辑/说话人确认/纪要重生成/建会）。
+- [x] I4+I5+I6+I12：集中失效矩阵 `invalidateAfter(event, qc)`（转录编辑/说话人确认/纪要重生成/建会）。
 - [ ] I7+I13：SSE 加固——lastEventId 走 getter、指数退避；导出页弃裸 EventSource 改 fetch-SSE。
 - [ ] I8+I9+I10：上传 AbortController 贯穿 worker、终态不被 part-start 复活、partSizeBytes 显式传参、finalize 后查询包 try/catch。
 - [ ] I3+I14+I15：转录虚拟滚动（@tanstack/react-virtual）；声纹销毁类操作加确认弹窗；移除预填 admin/admin123。
