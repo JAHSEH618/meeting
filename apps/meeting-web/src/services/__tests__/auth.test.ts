@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import type { ApiResponse, AuthUser } from "@shared/api/types";
-import { useAuth } from "../auth";
+import { useAuth, resetAuthForTests } from "../auth";
+import * as api from "@shared/api/client";
 
 const server = setupServer();
 
@@ -150,5 +151,63 @@ describe("useAuth", () => {
 
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.user).toBeNull();
+  });
+});
+
+describe('useAuth refresh flow', () => {
+  beforeEach(() => {
+    resetAuthForTests();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('redirects to login on AUTH_REQUIRED', async () => {
+    const mockReplace = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { href: '', replace: mockReplace },
+      writable: true,
+    });
+
+    vi.spyOn(api, 'getCurrentUser').mockRejectedValue({
+      code: 'AUTH_REQUIRED',
+      message: '会话已过期',
+    });
+
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    // Trigger error event
+    const errorEvent = new ErrorEvent('error', {
+      error: { code: 'AUTH_REQUIRED' },
+    });
+    window.dispatchEvent(errorEvent);
+
+    await waitFor(() => {
+      expect(window.location.href).toBe('/login');
+    });
+  });
+
+  it('clears token on logout', async () => {
+    vi.spyOn(api, 'logout').mockResolvedValue(undefined);
+    const setTokenSpy = vi.spyOn(api, 'setAuthToken');
+
+    const mockReplace = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { href: '', replace: mockReplace },
+      writable: true,
+    });
+
+    const { result } = renderHook(() => useAuth());
+
+    await result.current.logout();
+
+    expect(setTokenSpy).toHaveBeenCalledWith(null);
+    expect(window.location.href).toBe('/login');
   });
 });
