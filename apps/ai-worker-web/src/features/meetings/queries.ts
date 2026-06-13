@@ -40,5 +40,8 @@ export function usePreviewEnrollment() {
 }
 
 export function useCommitEnrollment() {
-  return useMutation({ mutationFn: (sessionId: string) => commitEnrollment(sessionId) });
+  return useMutation({
+    mutationFn: ({ sessionId, personId }: { sessionId: string; personId: string | null }) =>
+      commitEnrollment(sessionId, personId),
+  });
 }

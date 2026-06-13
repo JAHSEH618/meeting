@@ -70,7 +70,7 @@ export function EnrollmentPage() {
     setBusy(true);
     setError(null);
     try {
-      const committed = await commitEnrollment(session.sessionId);
+      const committed = await commitEnrollment(session.sessionId, personId);
       setSession(committed);
     } catch (e) {
       setError(formatError(e));
@@ -79,11 +79,20 @@ export function EnrollmentPage() {
     }
   };
 
+  const handleRestart = () => {
+    setSession(null);
+    setFile(null);
+    setError(null);
+    setPersonId(null);
+    setSelectedPerson(null);
+  };
+
   const qualityScore = session?.qualityScore;
   const qualityHigh = typeof qualityScore === "number" && qualityScore >= QUALITY_THRESHOLD;
   const canCommit = session?.state === "PREVIEWED" && qualityHigh && !busy;
   const committed = session?.state === "COMMITTED";
   const selectedPersonLabel = selectedPerson?.displayName ?? personId;
+  const sessionLocked = !!session;
 
   return (
     <div className="stack">
@@ -96,6 +105,14 @@ export function EnrollmentPage() {
 
       <section className="card stack" aria-labelledby="enroll-step-1">
         <h2 id="enroll-step-1">1 · 选择人员</h2>
+        {sessionLocked && (
+          <div className="banner banner--info" role="status">
+            <span className="banner__body">会话已创建，人员已锁定</span>
+            <button className="button button--secondary" type="button" onClick={handleRestart}>
+              重新开始
+            </button>
+          </div>
+        )}
         <div className="field">
           <label className="field__label" htmlFor="enroll-person-search">搜索人员</label>
           <input
@@ -105,6 +122,7 @@ export function EnrollmentPage() {
             placeholder="按姓名 / 邮箱搜索…"
             onChange={(e) => personSearch.search(e.target.value)}
             autoComplete="off"
+            disabled={sessionLocked}
           />
         </div>
         {personSearch.loading ? <p className="page-subtitle" aria-live="polite">搜索中…</p> : null}
@@ -122,6 +140,7 @@ export function EnrollmentPage() {
                       setPersonId(p.personId);
                       setSelectedPerson(p);
                     }}
+                    disabled={sessionLocked}
                   />
                   <span>{p.displayName}</span>
                   {p.email ? <span className="page-subtitle">{p.email}</span> : null}
@@ -131,7 +150,12 @@ export function EnrollmentPage() {
           </ul>
         ) : null}
         <div className="toolbar">
-          <button className="button button--secondary" type="button" onClick={() => setPersonModalOpen(true)}>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => setPersonModalOpen(true)}
+            disabled={sessionLocked}
+          >
             + 新建人员
           </button>
           {selectedPersonLabel ? (
@@ -255,6 +279,13 @@ export function EnrollmentPage() {
 
 function formatError(e: unknown): string {
   if (e instanceof ApiError) {
+    // Handle specific enrollment errors with user-friendly messages
+    if (e.error.code === "ENROLLMENT_SESSION_NOT_FOUND") {
+      return "声纹会话已失效，请重新开始";
+    }
+    if (e.error.code === "ENROLLMENT_PERSON_MISMATCH") {
+      return "声纹会话人员不匹配，请重新开始";
+    }
     return `${e.error.code}: ${e.error.message}`;
   }
   return e instanceof Error ? e.message : String(e);
