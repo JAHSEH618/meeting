@@ -41,12 +41,29 @@ export function useAuth(): AuthState {
     useAuthStore.setState({ user: result.user, ready: true });
   }, []);
 
+  // Global handler for auth expiry
+  useEffect(() => {
+    const handleAuthError = (event: ErrorEvent) => {
+      if (event.error?.code === 'AUTH_REQUIRED') {
+        api.setAuthToken(null);
+        useAuthStore.setState({ user: null, ready: true });
+        window.location.href = '/login';
+      }
+    };
+
+    window.addEventListener('error', handleAuthError);
+    return () => window.removeEventListener('error', handleAuthError);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
+    } catch {
+      // Ignore logout errors
     } finally {
       api.setAuthToken(null);
       useAuthStore.setState({ user: null, ready: true });
+      window.location.href = '/login';
     }
   }, []);
 
