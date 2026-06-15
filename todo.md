@@ -497,7 +497,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### P3 `apps/meeting-web`（计划 p3-meeting-web）
 
-- [ ] C1：声纹注册改走通用 `/api/files` + `POST /speaker-profiles/{id}/enrollments`（照 BFF 编排），删除"载体会议"逻辑；contracts `/files` 描述同步修正。
+- [x] C1：声纹注册改走通用 `/api/files` + `POST /speaker-profiles/{id}/enrollments`（照 BFF 编排），删除"载体会议"逻辑；contracts `/files` 描述同步修正。（完成于 2026-06-15）
 - [x] C2：sse-reducer——`TASK_STEP_UPDATED` 只更新 step 不碰任务级 status；`TASK_COMPLETED` 取 `event.status`（支持 `PARTIAL_SUCCEEDED`）。
 - [x] C3：401 单飞 refresh（X-CSRF-Token）+ 失败清 token 回登录页 + Shell 登出按钮。
 - [x] I1+I2+I11：mutation wrapper——按用户动作生成幂等键并在重试间复用（启用 `idempotency.ts`），错误统一出口；补缺失幂等键的写接口。
