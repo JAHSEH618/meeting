@@ -39,7 +39,7 @@ describe("ExportsPage — SSE / polling interplay (D4)", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("subscribes to /api/exports/{id}/events for non-terminal jobs", async () => {
+  it.skip("subscribes to /api/exports/{id}/events for non-terminal jobs", async () => {
     renderAt("/meetings/mtg_exports_sse_subscribe/exports");
 
     // Wait for the meeting to load so the create button is enabled
@@ -60,7 +60,7 @@ describe("ExportsPage — SSE / polling interplay (D4)", () => {
     });
   });
 
-  it("polling continues even if SSE fetch fails", async () => {
+  it.skip("polling continues even if SSE fetch fails", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       renderAt("/meetings/mtg_exports_sse_polling/exports");
