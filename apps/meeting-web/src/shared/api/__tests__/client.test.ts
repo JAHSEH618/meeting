@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
-import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker, releaseLegalHold, getCurrentUser, setAuthToken, createFileUpload, createFileUploadPart, completeFileUpload } from "../client";
+import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker, releaseLegalHold, getCurrentUser, setAuthToken, createFileUpload, completeFileUpload } from "../client";
 import { server } from "../mocks/server";
 import type { ApiResponse } from "../types";
 
