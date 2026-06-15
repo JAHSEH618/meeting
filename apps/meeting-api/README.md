@@ -21,14 +21,40 @@ meeting-api-infrastructure
 
 ## 本地命令
 
+### 构建与运行
+
 ```bash
-./mvnw clean package
+# 编译
 ./mvnw -pl meeting-api-start -am compile
-./mvnw -pl meeting-api-start -am install -DskipTests
+
+# 完整构建（跳过测试）
+./mvnw clean package -DskipTests
+
+# 运行（JDK 17 required）
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)  # macOS
 java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 ```
 
 默认端口：`8080`。
+
+### 测试与验证（每个阶段完成后必跑）
+
+```bash
+# 单元测试 + ArchUnit（无需 Docker）
+./mvnw test
+
+# 完整验证：单元 + 集成测试（需要 Docker daemon）
+./mvnw verify
+
+# 单模块测试
+./mvnw -pl meeting-api-app test
+./mvnw -pl meeting-api-domain test -Dtest=MeetingTest
+
+# 类型检查（Java 无需单独命令，编译即检查）
+./mvnw compile
+```
+
+**CI 门禁命令：** `./mvnw verify -q`
 
 已初始化的最小链路：
 

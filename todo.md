@@ -463,7 +463,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ## 持续性工程任务
 
-- [ ] 每个阶段完成后运行 contracts check、Java compile/test、Python pytest、Web type-check/test，并把命令写入对应工程 README。
+- [x] 每个阶段完成后运行 contracts check、Java compile/test、Python pytest、Web type-check/test，并把命令写入对应工程 README。（完成于 2026-06-15）
 - [ ] 每个新增业务域先创建符合 SPEC 的 package，再落 Controller / ApplicationService / Aggregate / RepositoryImpl / Gateway。
 - [ ] 每次修改字段、枚举、错误码、状态机或 API，先改事实源：Flyway migration、OpenAPI、JSON Schema、common enums / error-codes。
 - [ ] 保持 Java 管业务事实和权限、Python 只做 AI Pipeline、Web 只消费 Public API / SSE 的边界。
