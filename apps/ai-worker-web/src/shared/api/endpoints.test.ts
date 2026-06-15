@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   abortAudioUpload,
   abortFileUpload,
+  commitEnrollment,
   completeAudioUpload,
   completeFileUpload,
   confirmSpeaker,
@@ -224,6 +225,26 @@ describe("admin endpoint helpers", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/admin/voiceprints/sp1:revoke");
     const [, init] = fetchMock.mock.calls[1]!;
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({ reason: "operator_request" });
+  });
+
+  it("uses sessionId as idempotency key for commitEnrollment", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      sessionId: "session_001",
+      state: "COMMITTED",
+      personId: "person_001",
+      qualityScore: 0.85,
+    }));
+
+    await commitEnrollment("session_001", "person_001");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/admin/enrollment/sessions/session_001/commit");
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ personId: "person_001" });
+
+    // Critical: verify sessionId is used as idempotency key
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["Idempotency-Key"]).toBe("session_001");
   });
 });
 

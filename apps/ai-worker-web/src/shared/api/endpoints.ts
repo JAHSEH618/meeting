@@ -49,7 +49,7 @@ export const previewEnrollment = (sessionId: string) =>
 export const commitEnrollment = (sessionId: string, personId: string | null) =>
   apiCall<EnrollmentSessionDTO>(
     `${API}/enrollment/sessions/${encodeURIComponent(sessionId)}/commit`,
-    { method: "POST", body: { personId } },
+    { method: "POST", body: { personId }, idempotencyKey: sessionId },
   );
 
 export async function listSpeakerProfiles(personId?: string): Promise<SpeakerProfileDTO[]> {
