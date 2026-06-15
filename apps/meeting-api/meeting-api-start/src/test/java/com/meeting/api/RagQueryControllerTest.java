@@ -35,7 +35,7 @@ class RagQueryControllerTest {
         RagQueryController controller = newController(new StubFacade(), permissiveLimiter());
         assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("q", null, null, null),
-            "req_01", "trace_01", null, "user_01"
+            "req_01", "trace_01", null
         )).isInstanceOf(TenantContextMissingException.class);
     }
 
@@ -47,7 +47,7 @@ class RagQueryControllerTest {
 
         ResponseEntity<ApiResponse<RagAnswerDTO>> response = controller.query(
             new RagQueryRequest("How did we decide on roadmap?", null, null, null),
-            "req_01", "trace_01", "idem_01", "user_01"
+            "req_01", "trace_01", "idem_01"
         );
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
@@ -68,7 +68,7 @@ class RagQueryControllerTest {
     void queryParsesScopeHeader() {
         StubFacade facade = new StubFacade();
         RagQueryController controller = newController(facade, permissiveLimiter());
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", "user_42", "req_01");
 
         controller.query(
             new RagQueryRequest(
@@ -76,7 +76,7 @@ class RagQueryControllerTest {
                 new RagQueryRequest.Scope(List.of("mtg_1", "mtg_2"), List.of("doc_1")),
                 5, true
             ),
-            "req_02", "trace_02", "idem_02", "user_42"
+            "req_02", "trace_02", "idem_02"
         );
 
         assertThat(facade.lastCommand.userId()).isEqualTo("user_42");
@@ -87,17 +87,16 @@ class RagQueryControllerTest {
     }
 
     @Test
-    void queryDefaultsUserIdToAnonymousWhenHeaderAbsent() {
+    void queryRequiresUserContext() {
         StubFacade facade = new StubFacade();
         RagQueryController controller = newController(facade, permissiveLimiter());
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", null, "req_01");
 
-        controller.query(
+        assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("q", null, null, null),
-            "req_03", "trace_03", null, null
-        );
-
-        assertThat(facade.lastCommand.userId()).isEqualTo("anonymous");
+            "req_03", "trace_03", null
+        )).isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("User context is not set");
     }
 
     @Test
@@ -107,7 +106,7 @@ class RagQueryControllerTest {
 
         assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("   ", null, null, null),
-            "req_04", "trace_04", null, "user_01"
+            "req_04", "trace_04", null
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -122,14 +121,14 @@ class RagQueryControllerTest {
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
 
         controller.query(new RagQueryRequest("q", null, null, null),
-            "req_01", "trace_01", null, "user_01");
+            "req_01", "trace_01", null);
         controller.query(new RagQueryRequest("q", null, null, null),
-            "req_02", "trace_02", null, "user_01");
+            "req_02", "trace_02", null);
 
         // 3rd request inside the burst window exceeds capacity.
         assertThatThrownBy(() -> controller.query(
             new RagQueryRequest("q", null, null, null),
-            "req_03", "trace_03", null, "user_01"
+            "req_03", "trace_03", null
         ))
             .isInstanceOf(ApplicationException.class)
             .satisfies(ex -> {

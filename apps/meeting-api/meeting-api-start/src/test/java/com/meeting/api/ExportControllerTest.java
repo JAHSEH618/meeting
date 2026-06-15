@@ -44,7 +44,7 @@ class ExportControllerTest {
                 /* includeSpeakers */   null,
                 /* watermark */         null
             ),
-            "req_01", "trace_01", "idem_01", "user_01"
+            "req_01", "trace_01", "idem_01"
         );
 
         assertThat(response.getBody().success()).isTrue();
@@ -66,7 +66,7 @@ class ExportControllerTest {
     void createPassesExplicitRenderOptionsAndWatermark() {
         StubFacade facade = new StubFacade();
         ExportController controller = new ExportController(facade);
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", "user_99", "req_01");
 
         controller.create(
             "mtg_01",
@@ -74,7 +74,7 @@ class ExportControllerTest {
                 ExportFormat.MARKDOWN, 0, null,
                 true, false, true, false, "WM"
             ),
-            "req_02", "trace_02", "idem_02", "user_99"
+            "req_02", "trace_02", "idem_02"
         );
 
         CreateExportCommand cmd = facade.lastCreateCommand;
@@ -89,7 +89,7 @@ class ExportControllerTest {
         ExportController controller = new ExportController(new StubFacade());
         TenantContextHolder.set("tenant_01", "user_01", "req_01");
         assertThatThrownBy(() -> controller.create(
-            "mtg_01", null, "req_01", "trace_01", "idem_01", "user_01"
+            "mtg_01", null, "req_01", "trace_01", "idem_01"
         )).isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("request body");
     }
@@ -107,31 +107,32 @@ class ExportControllerTest {
     void cancelDelegatesWithUserId() {
         StubFacade facade = new StubFacade();
         ExportController controller = new ExportController(facade);
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", "user_42", "req_01");
 
-        controller.cancel("exp_01", "req_01", "trace_01", "idem_01", "user_42");
+        controller.cancel("exp_01", "req_01", "trace_01", "idem_01");
         assertThat(facade.cancelTenantId).isEqualTo("tenant_01");
         assertThat(facade.cancelExportId).isEqualTo("exp_01");
         assertThat(facade.cancelUserId).isEqualTo("user_42");
     }
 
     @Test
-    void cancelDefaultsAnonymousUserWhenHeaderAbsent() {
+    void cancelRequiresUserContext() {
         StubFacade facade = new StubFacade();
         ExportController controller = new ExportController(facade);
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", null, "req_01");
 
-        controller.cancel("exp_01", "req_01", "trace_01", null, null);
-        assertThat(facade.cancelUserId).isEqualTo("anonymous");
+        assertThatThrownBy(() -> controller.cancel("exp_01", "req_01", "trace_01", "idem_01"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("User context is not set");
     }
 
     @Test
     void revokeLinkDelegates() {
         StubFacade facade = new StubFacade();
         ExportController controller = new ExportController(facade);
-        TenantContextHolder.set("tenant_01", "user_01", "req_01");
+        TenantContextHolder.set("tenant_01", "user_42", "req_01");
 
-        controller.revokeLink("exp_01", "req_01", "trace_01", "idem_01", "user_42");
+        controller.revokeLink("exp_01", "req_01", "trace_01", "idem_01");
         assertThat(facade.revokeTenantId).isEqualTo("tenant_01");
         assertThat(facade.revokeExportId).isEqualTo("exp_01");
         assertThat(facade.revokeUserId).isEqualTo("user_42");
