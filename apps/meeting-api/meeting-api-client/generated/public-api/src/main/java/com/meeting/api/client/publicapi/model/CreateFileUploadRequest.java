@@ -71,13 +71,23 @@ public class CreateFileUploadRequest {
     
     TEXT_MARKDOWN("text/markdown"),
     
+    AUDIO_MPEG("audio/mpeg"),
+    
     AUDIO_WAV("audio/wav"),
     
-    AUDIO_MPEG("audio/mpeg"),
+    AUDIO_X_WAV("audio/x-wav"),
+    
+    AUDIO_MP4("audio/mp4"),
     
     AUDIO_X_M4A("audio/x-m4a"),
     
-    AUDIO_FLAC("audio/flac");
+    AUDIO_WEBM("audio/webm"),
+    
+    AUDIO_OGG("audio/ogg"),
+    
+    AUDIO_FLAC("audio/flac"),
+    
+    APPLICATION_OCTET_STREAM("application/octet-stream");
 
     private String value;
 

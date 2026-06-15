@@ -368,7 +368,7 @@ paths:
   /files:
     post:
       operationId: createFileUpload
-      description: Initialize a tenant-scoped multipart upload for reference documents. Audio files must use the meeting-scoped audio upload endpoints.
+      description: Initialize a tenant-scoped multipart upload for reference documents and speaker enrollment audio. Meeting-scoped audio uploads (for meeting transcripts) use /meetings/{meetingId}/audio-uploads.
       tags: [Files]
       parameters:
         - $ref: '#/components/parameters/XRequestId'
@@ -2461,15 +2461,22 @@ components:
         contentType:
           type: string
           enum:
+            # Documents
             - application/pdf
             - application/vnd.openxmlformats-officedocument.wordprocessingml.document
             - application/vnd.openxmlformats-officedocument.presentationml.presentation
             - text/plain
             - text/markdown
-            - audio/wav
+            # Audio (for speaker enrollment)
             - audio/mpeg
+            - audio/wav
+            - audio/x-wav
+            - audio/mp4
             - audio/x-m4a
+            - audio/webm
+            - audio/ogg
             - audio/flac
+            - application/octet-stream
         fileSizeBytes: {type: integer, format: int64, minimum: 1, maximum: 524288000}
         fileSha256:
           type: string

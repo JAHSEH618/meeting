@@ -153,7 +153,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Initialize a tenant-scoped multipart upload for reference documents. Audio files must use the meeting-scoped audio upload endpoints. */
+        /** @description Initialize a tenant-scoped multipart upload for reference documents and speaker enrollment audio. Meeting-scoped audio uploads (for meeting transcripts) use /meetings/{meetingId}/audio-uploads. */
         post: operations["createFileUpload"];
         delete?: never;
         options?: never;
@@ -1385,7 +1385,7 @@ export interface components {
         CreateFileUploadRequest: {
             fileName: string;
             /** @enum {string} */
-            contentType: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "text/plain" | "text/markdown" | "audio/wav" | "audio/mpeg" | "audio/x-m4a" | "audio/flac";
+            contentType: "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "text/plain" | "text/markdown" | "audio/mpeg" | "audio/wav" | "audio/x-wav" | "audio/mp4" | "audio/x-m4a" | "audio/webm" | "audio/ogg" | "audio/flac" | "application/octet-stream";
             /** Format: int64 */
             fileSizeBytes: number;
             fileSha256: string;
