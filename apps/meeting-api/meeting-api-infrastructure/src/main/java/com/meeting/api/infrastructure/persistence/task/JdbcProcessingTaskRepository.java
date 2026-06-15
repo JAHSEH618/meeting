@@ -92,6 +92,24 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
     }
 
     @Override
+    public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+        List<ProcessingTask> tasks = jdbcTemplate.query(
+            """
+            SELECT id, tenant_id, meeting_id, task_type, status, phase, current_step,
+                   attempt_count, lease_owner, lease_expires_at, heartbeat_at,
+                   last_error_code, created_at, updated_at, hold_at_worker_phase
+              FROM processing_tasks
+             WHERE tenant_id = ? AND id = ?
+               FOR UPDATE
+            """,
+            (rs, rowNum) -> mapTask(rs, findSteps(tenantId, rs.getString("id"))),
+            tenantId,
+            taskId
+        );
+        return tasks.stream().findFirst();
+    }
+
+    @Override
     public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
         List<ProcessingTask> tasks = jdbcTemplate.query(
             """
@@ -118,7 +136,7 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
               FROM processing_tasks
              WHERE tenant_id = ?
                AND status = 'RUNNING'
-               AND phase <> 'TERMINAL'
+               AND phase = 'WORKER_DAG_RUNNING'
                AND lease_expires_at IS NOT NULL
                AND lease_expires_at < ?
              ORDER BY lease_expires_at ASC

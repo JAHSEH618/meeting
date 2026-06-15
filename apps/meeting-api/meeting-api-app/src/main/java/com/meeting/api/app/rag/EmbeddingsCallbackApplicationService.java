@@ -60,7 +60,13 @@ public class EmbeddingsCallbackApplicationService {
     }
 
     public EmbeddingsResult writeEmbeddings(EmbeddingsCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "RAG_EMBEDDINGS"
+        );
         return tenantScopedTransaction.execute(
             command.tenantId(),
             null,
@@ -72,12 +78,23 @@ public class EmbeddingsCallbackApplicationService {
     private EmbeddingsResult writeInTransaction(EmbeddingsCallbackCommand command) {
         ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
             .orElseThrow(() -> new IllegalArgumentException("task not found: " + command.taskId()));
+
+        // I10: Validate attempt number
         if (task.attemptNo() != command.attemptNo()) {
             throw new IllegalStateException(
                 "callback attempt does not match current attempt: callback=" + command.attemptNo()
                     + " current=" + task.attemptNo()
             );
         }
+
+        // I10: Validate lease owner (防止过期租约写入)
+        if (task.leaseOwner() == null || !task.leaseOwner().equals(command.metadata().leaseOwner())) {
+            throw new IllegalStateException(
+                "callback lease owner does not match current lease: callback=" + command.metadata().leaseOwner()
+                    + " current=" + task.leaseOwner()
+            );
+        }
+
         if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata())) {
             // Idempotent replay — same body hash, ignore quietly.
             log.info("embeddings_callback_replay tenant={} task={} batch={}",

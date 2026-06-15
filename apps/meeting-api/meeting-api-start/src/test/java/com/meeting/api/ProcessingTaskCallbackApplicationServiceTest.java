@@ -43,9 +43,15 @@ import javax.crypto.spec.SecretKeySpec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.UUID;
+
 class ProcessingTaskCallbackApplicationServiceTest {
     private static final String SECRET = "callback-secret";
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-13T02:00:00Z");
+
+    private static String uniqueNonce() {
+        return "nonce_" + UUID.randomUUID().toString().substring(0, 8);
+    }
 
     @Test
     void heartbeatUpdatesTaskWithoutCallbackEvent() {
@@ -138,7 +144,8 @@ class ProcessingTaskCallbackApplicationServiceTest {
             ProcessingTaskStatus.SUCCEEDED,
             List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
             List.of(),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ));
 
@@ -164,7 +171,8 @@ class ProcessingTaskCallbackApplicationServiceTest {
             ProcessingTaskStatus.SUCCEEDED,
             List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
             List.of(),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ))).isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("callback meeting does not match task");
@@ -191,7 +199,8 @@ class ProcessingTaskCallbackApplicationServiceTest {
             ProcessingTaskStatus.SUCCEEDED,
             List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.SUMMARY),
             List.of(new CompleteWorkerPhaseCommand.SkippedStep(ProcessingStep.EXTRACTION, "not worker owned")),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ))).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("ai-worker callback");
@@ -264,7 +273,8 @@ class ProcessingTaskCallbackApplicationServiceTest {
             1,
             ProcessingStep.ASR,
             ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ));
 
@@ -278,20 +288,37 @@ class ProcessingTaskCallbackApplicationServiceTest {
         InMemoryTaskRepository tasks = runningTask();
         InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
         ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher());
-        FailTaskCommand command = new FailTaskCommand(
-            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+
+        // First call with nonce_01
+        FailTaskCommand firstCommand = new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}", "nonce_01"),
             "tenant_01",
             "meeting_01",
             "task_01",
             1,
             ProcessingStep.ASR,
             ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         );
 
-        var first = service.fail(command);
-        var second = service.fail(command);
+        // Second call with different nonce but same body/idempotency-key (replay scenario)
+        FailTaskCommand secondCommand = new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}", "nonce_02"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
+            NOW.plusMinutes(1)
+        );
+
+        var first = service.fail(firstCommand);
+        var second = service.fail(secondCommand);
 
         assertThat(first.status()).isEqualTo(ProcessingTaskStatus.FAILED);
         assertThat(second.status()).isEqualTo(ProcessingTaskStatus.FAILED);
@@ -314,7 +341,8 @@ class ProcessingTaskCallbackApplicationServiceTest {
             1,
             ProcessingStep.ASR,
             ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "failed", true),
-            null,
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ))).isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("callback meeting does not match task");
@@ -353,13 +381,13 @@ class ProcessingTaskCallbackApplicationServiceTest {
         service.fail(new FailTaskCommand(
             metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
             "tenant_01",
-            null,
+            null,  // meetingId (speaker enrollment task has no meeting)
             "task_01",
             1,
             ProcessingStep.SPEAKER_EMBEDDING,
             ErrorInfo.of(ErrorCode.SPEAKER_EMBEDDING_FAILED, "embedding failed", true),
-            "enroll_01",
-            null,
+            "enroll_01",  // speakerEnrollmentId
+            null,  // artifactManifestId
             NOW.plusMinutes(1)
         ));
 
@@ -430,10 +458,11 @@ class ProcessingTaskCallbackApplicationServiceTest {
         InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
         InMemoryTranscriptRepository transcripts = new InMemoryTranscriptRepository();
         ProcessingTaskCallbackApplicationService service = service(tasks, callbacks, new CapturingPublisher(), transcripts);
-        CallbackMetadata metadata = metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}");
 
-        service.writeTranscript(transcriptCommand(metadata));
-        service.writeTranscript(transcriptCommand(metadata));
+        // First call with nonce_01
+        service.writeTranscript(transcriptCommand(metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}", "nonce_01")));
+        // Replay with different nonce but same body/idempotency-key
+        service.writeTranscript(transcriptCommand(metadata("POST", "/internal/processing-tasks/task_01/transcript", "{}", "nonce_02")));
 
         assertThat(transcripts.version).isEqualTo(1);
         assertThat(transcripts.replaceCount).isEqualTo(1);
@@ -469,7 +498,7 @@ class ProcessingTaskCallbackApplicationServiceTest {
             callbacks,
             publisher,
             TenantScopedTransaction.immediate(),
-            new CallbackSecurityVerifier(SECRET, 300, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)),
+            new CallbackSecurityVerifier(SECRET, 300L, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC), new InMemoryCallbackNonceRepository()),
             transcripts,
             event -> {},
             enrollments,
@@ -513,9 +542,12 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     private static CallbackMetadata metadata(String method, String path, String body) {
+        return metadata(method, path, body, uniqueNonce());
+    }
+
+    private static CallbackMetadata metadata(String method, String path, String body, String nonce) {
         String bodyHash = sha256(body);
         OffsetDateTime timestamp = NOW;
-        String nonce = "nonce_01";
         String signingString = timestamp + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
         return new CallbackMetadata(
             "worker_01",
@@ -604,6 +636,11 @@ class ProcessingTaskCallbackApplicationServiceTest {
         @Override
         public Optional<ProcessingTask> findById(String tenantId, String taskId) {
             return tenantId.equals(task.tenantId()) && taskId.equals(task.taskId()) ? Optional.of(task) : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override

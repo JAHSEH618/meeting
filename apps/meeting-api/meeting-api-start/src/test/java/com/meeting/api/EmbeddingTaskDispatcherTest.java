@@ -257,6 +257,11 @@ class EmbeddingTaskDispatcherTest {
         }
 
         @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
+        }
+
+        @Override
         public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return saved.stream()
                 .filter(t -> tenantId.equals(t.tenantId()) && meetingId.equals(t.meetingId()))

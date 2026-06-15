@@ -29,7 +29,7 @@ class WorkerPhaseCompletedListenerTest {
     void meetingFullPipelineTransitionsToJavaLlmRunning() {
         InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
 
@@ -42,7 +42,7 @@ class WorkerPhaseCompletedListenerTest {
     void meetingFullPipelineStaysHeldWhenHoldFlagSet() {
         InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true, true);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
 
@@ -56,7 +56,7 @@ class WorkerPhaseCompletedListenerTest {
     void speakerEnrollmentTransitionsDirectlyToTerminalSucceeded() {
         InMemoryTaskRepository tasks = workerDagDoneTask("SPEAKER_ENROLLMENT", false);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("SPEAKER_ENROLLMENT", ProcessingTaskStatus.SUCCEEDED));
 
@@ -69,7 +69,7 @@ class WorkerPhaseCompletedListenerTest {
     void textEmbeddingTransitionsDirectlyToTerminalPartialSucceeded() {
         InMemoryTaskRepository tasks = workerDagDoneTask("TEXT_EMBEDDING", false);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("TEXT_EMBEDDING", ProcessingTaskStatus.PARTIAL_SUCCEEDED));
 
@@ -82,7 +82,7 @@ class WorkerPhaseCompletedListenerTest {
     void listenerSwallowsExceptionsFromService() {
         InMemoryTaskRepository tasks = workerDagDoneTask("MEETING_FULL_PIPELINE", true);
         TaskStepProgressService progress = service(tasks);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, TenantScopedTransaction.immediate());
 
         // Fire on an unknown task; service throws but listener must not propagate.
         listener.onWorkerPhaseCompleted(new WorkerPhaseCompletedEvent(
@@ -107,7 +107,7 @@ class WorkerPhaseCompletedListenerTest {
         List<String> calls = new java.util.ArrayList<>();
         SpeakerAutoConfirmService autoConfirm = new RecordingAutoConfirm(calls, false);
         JavaLlmPhaseOrchestrator orchestrator = new RecordingOrchestrator(calls);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
 
@@ -124,7 +124,7 @@ class WorkerPhaseCompletedListenerTest {
         List<String> calls = new java.util.ArrayList<>();
         SpeakerAutoConfirmService autoConfirm = new RecordingAutoConfirm(calls, true);
         JavaLlmPhaseOrchestrator orchestrator = new RecordingOrchestrator(calls);
-        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm);
+        WorkerPhaseCompletedListener listener = new WorkerPhaseCompletedListener(progress, tasks, orchestrator, autoConfirm, TenantScopedTransaction.immediate());
 
         listener.onWorkerPhaseCompleted(workerEvent("MEETING_FULL_PIPELINE", ProcessingTaskStatus.SUCCEEDED));
 
@@ -209,6 +209,11 @@ class WorkerPhaseCompletedListenerTest {
         @Override
         public Optional<ProcessingTask> findById(String tenantId, String taskId) {
             return tenantId.equals(task.tenantId()) && taskId.equals(task.taskId()) ? Optional.of(task) : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override

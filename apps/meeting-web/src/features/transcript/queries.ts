@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getLatestMeetingTask, getTranscript, updateSegment } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
+import { invalidateAfter } from "@shared/queries/invalidation-matrix";
 
 export function useTranscriptQuery(meetingId: string) {
   return useQuery({
@@ -25,9 +26,6 @@ export function useUpdateSegment(meetingId: string) {
   return useMutation({
     mutationFn: (input: { segmentId: string; text: string; version: number; reason: string | null }) =>
       updateSegment(meetingId, input.segmentId, input.text, input.version, input.reason),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transcript", meetingId] });
-      qc.invalidateQueries({ queryKey: ["minutes", meetingId] });
-    },
+    onSuccess: () => invalidateAfter({ type: "transcript-edited", meetingId }, qc),
   });
 }

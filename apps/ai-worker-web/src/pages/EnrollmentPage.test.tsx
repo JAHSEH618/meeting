@@ -97,7 +97,7 @@ describe("EnrollmentPage", () => {
     expect(await screen.findByText("质量分 0.72")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /确认录入/ }));
 
-    await waitFor(() => expect(endpoints.commitEnrollment).toHaveBeenCalledWith("s1"));
+    await waitFor(() => expect(endpoints.commitEnrollment).toHaveBeenCalledWith("s1", "p-new"));
     expect(await screen.findByText(/状态: COMMITTED/)).toBeInTheDocument();
     expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("声纹档案 sp_01");
     expect(screen.getByRole("status", { name: /录入已写入 Java 工作流/ })).toHaveTextContent("音频文件 file_01");

@@ -202,7 +202,7 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
                 embeddings,
                 envelope,
                 TenantScopedTransaction.immediate(),
-                new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+                new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
                 CLOCK
             );
         }
@@ -331,6 +331,11 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
             return task != null && tenantId.equals(task.tenantId()) && taskId.equals(task.taskId())
                 ? Optional.of(task)
                 : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {

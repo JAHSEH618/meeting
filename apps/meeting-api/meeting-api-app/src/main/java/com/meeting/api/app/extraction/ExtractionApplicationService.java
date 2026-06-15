@@ -95,42 +95,57 @@ public class ExtractionApplicationService {
         this.clock = clock;
     }
     public ExtractionSummary extractForTask(String tenantId, String meetingId, String taskId) {
-        return tenantScopedTransaction.execute(tenantId, null, null, () -> doExtract(tenantId, meetingId, taskId));
+        return doExtract(tenantId, meetingId, taskId);
     }
 
     private ExtractionSummary doExtract(String tenantId, String meetingId, String taskId) {
-        Meeting meeting = meetingRepository.findById(tenantId, meetingId)
-            .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + meetingId));
-        int transcriptVersion = transcriptRepository.currentTranscriptVersion(tenantId, meetingId);
-        List<TranscriptRepository.TranscriptSegmentRecord> segments = transcriptRepository.findByMeeting(tenantId, meetingId, transcriptVersion);
+        // Short TX #1: load meeting + transcript
+        ExtractionContext context = tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            Meeting meeting = meetingRepository.findById(tenantId, meetingId)
+                .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + meetingId));
+            int transcriptVersion = transcriptRepository.currentTranscriptVersion(tenantId, meetingId);
+            List<TranscriptRepository.TranscriptSegmentRecord> segments = transcriptRepository.findByMeeting(tenantId, meetingId, transcriptVersion);
 
-        Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById = new HashMap<>();
-        for (var seg : segments) {
-            segmentById.put(seg.segmentId(), seg);
+            Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById = new HashMap<>();
+            for (var seg : segments) {
+                segmentById.put(seg.segmentId(), seg);
+            }
+
+            return new ExtractionContext(meeting, segments, segmentById, transcriptVersion);
+        });
+
+        // No TX: call LLM gateway
+        LlmGateway.LlmResponse response;
+        try {
+            response = llmGateway.complete(new LlmGateway.LlmRequest(
+                tenantId,
+                meetingId,
+                taskId,
+                CAPABILITY,
+                TASK_NAME,
+                Map.of(
+                    "meetingTitle", context.meeting.title(),
+                    "meetingId", meetingId,
+                    "transcript", renderTranscript(context.segments)
+                ),
+                (String) null,
+                (String) null
+            ));
+        } catch (RuntimeException ex) {
+            log.warn("extraction_llm_failed tenant={} meeting={} error={}", tenantId, meetingId, ex.getMessage());
+            throw ex;
         }
 
-        LlmGateway.LlmResponse response = llmGateway.complete(new LlmGateway.LlmRequest(
-            tenantId,
-            meetingId,
-            taskId,
-            CAPABILITY,
-            TASK_NAME,
-            Map.of(
-                "meetingTitle", meeting.title(),
-                "meetingId", meetingId,
-                "transcript", renderTranscript(segments)
-            ),
-            null,
-            null
-        ));
-
-        JsonNode root = parseJson(response.structuredJson() != null ? response.structuredJson() : response.content());
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        int actions = persistActionItems(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
-        int decisions = persistDecisions(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
-        int risks = persistRisks(root, tenantId, meetingId, transcriptVersion, segmentById, response.artifactManifestId(), now);
-        log.info("extraction_completed tenant={} meeting={} actions={} decisions={} risks={}", tenantId, meetingId, actions, decisions, risks);
-        return new ExtractionSummary(actions, decisions, risks);
+        // Short TX #2: parse and persist extraction results
+        return tenantScopedTransaction.execute(tenantId, null, null, () -> {
+            JsonNode root = parseJson(response.structuredJson() != null ? response.structuredJson() : response.content());
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            int actions = persistActionItems(root, tenantId, meetingId, context.transcriptVersion, context.segmentById, response.artifactManifestId(), now);
+            int decisions = persistDecisions(root, tenantId, meetingId, context.transcriptVersion, context.segmentById, response.artifactManifestId(), now);
+            int risks = persistRisks(root, tenantId, meetingId, context.transcriptVersion, context.segmentById, response.artifactManifestId(), now);
+            log.info("extraction_completed tenant={} meeting={} actions={} decisions={} risks={}", tenantId, meetingId, actions, decisions, risks);
+            return new ExtractionSummary(actions, decisions, risks);
+        });
     }
 
     private int persistActionItems(
@@ -289,5 +304,13 @@ public class ExtractionApplicationService {
     private static String textOrDefault(JsonNode node, String field, String fallback) {
         String text = textOrNull(node, field);
         return text == null ? fallback : text;
+    }
+
+    private record ExtractionContext(
+        Meeting meeting,
+        List<TranscriptRepository.TranscriptSegmentRecord> segments,
+        Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById,
+        int transcriptVersion
+    ) {
     }
 }

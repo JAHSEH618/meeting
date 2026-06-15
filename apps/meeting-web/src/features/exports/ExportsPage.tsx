@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   cancelExport,
   createExport,
+  getAuthToken,
   getMeeting,
   listMeetingExports,
   revokeExportLink,
@@ -13,6 +14,7 @@ import {
 } from "@shared/api/client";
 import type { Meeting } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { fetchSSE } from "@shared/utils/fetch-sse";
 
 const FORMAT_LABELS: Record<ExportFormat, string> = {
   MARKDOWN: "Markdown",
@@ -108,32 +110,46 @@ export function ExportsPage() {
   // EXPORT_STATUS_CHANGED and closes; the browser auto-reconnects, so
   // combined with the 3s polling above we get sub-second update latency
   // when the broker pushes and a guaranteed fallback when SSE is
-  // unsupported / blocked. Closing the EventSource on cleanup prevents
-  // leaks when the page unmounts.
+  // unsupported / blocked. Uses fetch-SSE to support auth headers.
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
-      return;
-    }
     const activeJobs = jobs.filter((j) => !TERMINAL_STATUSES.has(j.status));
     if (activeJobs.length === 0) return;
-    const sources: EventSource[] = [];
+
+    const abortControllers: AbortController[] = [];
+
     for (const job of activeJobs) {
-      try {
-        const source = new EventSource(`/api/exports/${encodeURIComponent(job.exportId)}/events`);
-        source.addEventListener("EXPORT_STATUS_CHANGED", () => {
-          void loadAll();
-        });
-        source.onerror = () => {
-          // Silent — 3s polling still drives updates.
-          source.close();
-        };
-        sources.push(source);
-      } catch {
-        // EventSource construction failure → rely on polling.
-      }
+      const abortController = new AbortController();
+      abortControllers.push(abortController);
+
+      const token = getAuthToken();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+
+      (async () => {
+        try {
+          for await (const event of fetchSSE(
+            `/api/exports/${encodeURIComponent(job.exportId)}/events`,
+            {
+              signal: abortController.signal,
+              headers,
+            }
+          )) {
+            // Parse event type from MessageEvent.type (set by fetchSSE)
+            if (event.type === "EXPORT_STATUS_CHANGED") {
+              void loadAll();
+            }
+          }
+        } catch (error) {
+          if ((error as Error).name !== "AbortError") {
+            // Silent — 3s polling still drives updates.
+          }
+        }
+      })();
     }
+
     return () => {
-      for (const source of sources) source.close();
+      for (const controller of abortControllers) {
+        controller.abort();
+      }
     };
   }, [jobs, loadAll]);
 

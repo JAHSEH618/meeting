@@ -153,6 +153,92 @@ class ProcessingTaskDomainTest {
     }
 
     @Test
+    void newTaskDoesNotPreclaimLease() {
+        ProcessingTask task = newTask();
+
+        assertThat(task.status()).isEqualTo(ProcessingTaskStatus.PENDING);
+        assertThat(task.leaseOwner()).isNull();
+        assertThat(task.leaseExpiresAt()).isNull();
+    }
+
+    @Test
+    void claimLeaseFromQueuedSetStatusRunningAndRecordsLease() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusSeconds(120), now);
+
+        assertThat(task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(task.leaseOwner()).isEqualTo("worker_01:task_01:1");
+        assertThat(task.leaseExpiresAt()).isEqualTo(now.plusSeconds(120));
+        assertThat(task.heartbeatAt()).isEqualTo(now);
+    }
+
+    @Test
+    void claimLeaseFromExpiredLeaseAllowsNewWorkerToTakeOver() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusSeconds(30), now);
+
+        // Mark orphaned after lease expires
+        assertThat(task.markOrphanedIfLeaseExpired(now.plusSeconds(31))).isTrue();
+        task.requeueOrphaned(now.plusSeconds(35));
+
+        // New worker claims lease on attempt 2
+        task.claimLease("worker_02", "worker_02:task_01:2", now.plusSeconds(155), now.plusSeconds(35));
+
+        assertThat(task.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(task.leaseOwner()).isEqualTo("worker_02:task_01:2");
+        assertThat(task.attemptNo()).isEqualTo(2);
+    }
+
+    @Test
+    void completeWorkerPhaseClearsLease() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusMinutes(5), now);
+
+        task.completeWorkerPhase(
+            ProcessingTaskStatus.SUCCEEDED,
+            List.of(ProcessingStep.AUDIO_PREPROCESS, ProcessingStep.ASR, ProcessingStep.TRANSCRIPT_MERGE),
+            List.of(),
+            1,
+            "worker_01:task_01:1",
+            now.plusMinutes(2)
+        );
+
+        assertThat(task.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_DONE);
+        assertThat(task.leaseOwner()).isNull();
+        assertThat(task.leaseExpiresAt()).isNull();
+    }
+
+    @Test
+    void requeueOrphanedFailsAfterThreeAttempts() {
+        ProcessingTask task = newTask();
+        task.enqueue(now);
+
+        // Attempt 1 -> ORPHANED -> requeue -> attempt 2
+        task.claimLease("worker_01", "worker_01:task_01:1", now.plusSeconds(30), now);
+        task.markOrphanedIfLeaseExpired(now.plusSeconds(31));
+        task.requeueOrphaned(now.plusSeconds(35));
+        assertThat(task.attemptNo()).isEqualTo(2);
+
+        // Attempt 2 -> ORPHANED -> requeue -> attempt 3
+        task.claimLease("worker_02", "worker_02:task_01:2", now.plusSeconds(60), now.plusSeconds(40));
+        task.markOrphanedIfLeaseExpired(now.plusSeconds(91));
+        task.requeueOrphaned(now.plusSeconds(95));
+        assertThat(task.attemptNo()).isEqualTo(3);
+
+        // Attempt 3 -> ORPHANED -> requeue should fail
+        task.claimLease("worker_03", "worker_03:task_01:3", now.plusSeconds(90), now.plusSeconds(100));
+        task.markOrphanedIfLeaseExpired(now.plusSeconds(191));
+
+        assertThatThrownBy(() -> task.requeueOrphaned(now.plusSeconds(195)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("retry exhausted");
+    }
+
+    @Test
     void javaStepTerminalStatesPreserveAttemptNoSoSameRowIsUpdated() {
         // The JDBC step row is keyed by (task_id, step_name, attempt_count).
         // If markJavaStepSucceeded/Failed drop attemptNo back to null while

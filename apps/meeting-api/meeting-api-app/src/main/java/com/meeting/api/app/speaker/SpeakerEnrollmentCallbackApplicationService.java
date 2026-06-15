@@ -75,7 +75,13 @@ public class SpeakerEnrollmentCallbackApplicationService {
     }
 
     public EnrollmentResult writeEnrollment(SpeakerEnrollmentCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "SPEAKER_ENROLLMENT"
+        );
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
                 .orElseThrow(() -> new IllegalArgumentException("task not found: " + command.taskId()));

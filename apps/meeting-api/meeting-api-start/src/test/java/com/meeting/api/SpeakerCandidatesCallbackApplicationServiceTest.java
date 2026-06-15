@@ -231,7 +231,7 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
             meetingSpeakerRepository,
             new NoopEnvelopeGateway(),
             TenantScopedTransaction.immediate(),
-            new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+            new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
             CLOCK
         );
     }
@@ -323,6 +323,11 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
         @Override
         public Optional<ProcessingTask> findById(String tenantId, String taskId) {
             return tenantId.equals(task.tenantId()) && taskId.equals(task.taskId()) ? Optional.of(task) : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override

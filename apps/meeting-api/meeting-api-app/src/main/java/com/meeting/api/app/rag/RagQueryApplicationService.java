@@ -51,29 +51,18 @@ import org.springframework.stereotype.Service;
  * after retrieval. The LLM is never called with chunks the user is not
  * authorized to read.
  *
+ * <p>External calls (embedding, rerank, LLM) are moved outside DB transactions
+ * to avoid long-running connections (P2.3). The flow is now split into multiple
+ * short transactions with external calls in between:
  * <ol>
- *   <li>Authorize the requested scope ({@link RagAuthorizationService#authorizeScope}).</li>
- *   <li>Embed the question via {@link EmbeddingGateway} (single-text batch).</li>
- *   <li>Run vector + keyword retrieval in {@link KnowledgeChunkRepository}
- *       under the authorized scope, fetching {@code retrievalTopK}
- *       candidates per channel.</li>
- *   <li>RRF-fuse the two channels into a single ranked list.</li>
- *   <li>Second-pass filter with
- *       {@link RagAuthorizationService#filterAuthorized} (drops chunks
- *       whose owner became unreadable since indexing).</li>
- *   <li>Rerank up to {@code rerankCandidatePoolSize} survivors via
- *       {@link RerankGateway}. If ai-worker is unavailable we degrade
- *       to RRF order and log a metric — contract failures still throw.</li>
- *   <li>Build a numbered context block out of the top-N reranked chunks
- *       and call the LLM through {@link LlmGateway}.</li>
- *   <li>Parse the LLM's JSON output, map cited indices back to chunk
- *       citations, and stamp the response with the audit id from
- *       {@code llm_call_logs}.</li>
+ *   <li>Short TX #1 — Authorize scope.</li>
+ *   <li>No TX — Embed question via {@link EmbeddingGateway}.</li>
+ *   <li>Short TX #2 — Vector + keyword retrieval, RRF fusion, authorization filter.</li>
+ *   <li>No TX — Rerank via {@link RerankGateway} (degraded fallback on unavailable).</li>
+ *   <li>Short TX #3 — Enrich citations with meeting/document titles and segment info.</li>
+ *   <li>No TX — Call {@link LlmGateway} with context block.</li>
+ *   <li>Parse response and return answer with citations.</li>
  * </ol>
- *
- * <p>Returns a degraded answer ("no information") with empty citations
- * when retrieval / authorization yields no chunks — the LLM is not
- * called in that case, which keeps the read-time policy fail-closed.
  */
 @Service
 public class RagQueryApplicationService implements RagQueryFacade {
@@ -177,30 +166,31 @@ public class RagQueryApplicationService implements RagQueryFacade {
             );
             return cached.get();
         }
-        return tenantScopedTransaction.execute(
-            command.tenantId(), command.userId(), command.requestId(),
-            () -> {
-                RagAnswerDTO answer = doQuery(command);
-                // Don't cache the degraded "no information" answer: a
-                // subsequent reindex / permission change should be
-                // observable without waiting for the TTL.
-                if (answer.artifactManifestId() != null) {
-                    answerCache.store(cacheKey, answer, coverageOf(answer));
-                }
-                return answer;
-            }
-        );
+
+        RagAnswerDTO answer = doQuery(command);
+
+        // Don't cache the degraded "no information" answer: a
+        // subsequent reindex / permission change should be
+        // observable without waiting for the TTL.
+        if (answer.artifactManifestId() != null) {
+            answerCache.store(cacheKey, answer, coverageOf(answer));
+        }
+        return answer;
     }
 
     private RagAnswerDTO doQuery(RagQueryCommand command) {
         String tenantId = command.tenantId();
         String userId = command.userId();
 
+        // Short TX #1: authorize scope
         Timer.Sample authorizeSample = Timer.start(meterRegistry);
         RetrievalScope authorizedScope;
         try {
-            authorizedScope = authorizationService.authorizeScope(
-                tenantId, userId, toRetrievalScope(command.scope())
+            authorizedScope = tenantScopedTransaction.execute(
+                tenantId, userId, command.requestId(),
+                () -> authorizationService.authorizeScope(
+                    tenantId, userId, toRetrievalScope(command.scope())
+                )
             );
         } finally {
             authorizeSample.stop(metrics.ragQueryPhaseTimer("authorize"));
@@ -217,6 +207,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
             return degraded(DEGRADED_ANSWER_NO_CHUNKS);
         }
 
+        // No TX: embed the question
         Timer.Sample embedSample = Timer.start(meterRegistry);
         EmbeddingGateway.EmbedResult embedded;
         try {
@@ -231,39 +222,37 @@ public class RagQueryApplicationService implements RagQueryFacade {
         }
         float[] queryVector = embedded.vectors().get(0);
 
+        // Short TX #2: retrieve + authorize filter
         Timer.Sample retrieveSample = Timer.start(meterRegistry);
-        List<KnowledgeChunkCandidate> vectorRanked;
-        List<KnowledgeChunkCandidate> keywordRanked;
-        List<KnowledgeChunkCandidate> fused;
+        List<KnowledgeChunkCandidate> authorized;
         try {
-            vectorRanked = knowledgeChunkRepository.searchByVector(
-                tenantId, queryVector, authorizedScope, retrievalTopK
+            authorized = tenantScopedTransaction.execute(
+                tenantId, userId, command.requestId(),
+                () -> {
+                    List<KnowledgeChunkCandidate> vectorRanked = knowledgeChunkRepository.searchByVector(
+                        tenantId, queryVector, authorizedScope, retrievalTopK
+                    );
+                    List<KnowledgeChunkCandidate> keywordRanked = knowledgeChunkRepository.searchByKeyword(
+                        tenantId, command.question(), authorizedScope, retrievalTopK
+                    );
+                    List<KnowledgeChunkCandidate> fused = RrfFusion.fuse(vectorRanked, keywordRanked, rrfK);
+
+                    if (fused.isEmpty()) {
+                        log.info("rag_query_empty_retrieval tenant={} user={} vec=0 kw=0", tenantId, userId);
+                        return List.of();
+                    }
+
+                    return authorizationService.filterAuthorized(tenantId, userId, fused);
+                }
             );
-            keywordRanked = knowledgeChunkRepository.searchByKeyword(
-                tenantId, command.question(), authorizedScope, retrievalTopK
-            );
-            fused = RrfFusion.fuse(vectorRanked, keywordRanked, rrfK);
         } finally {
             retrieveSample.stop(metrics.ragQueryPhaseTimer("retrieve"));
         }
-        if (fused.isEmpty()) {
-            log.info("rag_query_empty_retrieval tenant={} user={} vec=0 kw=0", tenantId, userId);
-            return degraded(DEGRADED_ANSWER_NO_CHUNKS);
-        }
 
-        Timer.Sample authzFilterSample = Timer.start(meterRegistry);
-        List<KnowledgeChunkCandidate> authorized;
-        try {
-            authorized = authorizationService.filterAuthorized(
-                tenantId, userId, fused
-            );
-        } finally {
-            authzFilterSample.stop(metrics.ragQueryPhaseTimer("authorize_filter"));
-        }
         if (authorized.isEmpty()) {
             log.info(
-                "rag_query_empty_after_authz tenant={} user={} fused={}",
-                tenantId, userId, fused.size()
+                "rag_query_empty_after_authz tenant={} user=",
+                tenantId, userId
             );
             return degraded(DEGRADED_ANSWER_NO_CHUNKS);
         }
@@ -273,6 +262,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
             ? authorized.subList(0, rerankCandidatePoolSize)
             : authorized;
 
+        // No TX: rerank via ai-worker
         Timer.Sample rerankSample = Timer.start(meterRegistry);
         List<KnowledgeChunkCandidate> ordered;
         try {
@@ -284,11 +274,15 @@ public class RagQueryApplicationService implements RagQueryFacade {
         int topN = Math.min(command.topN(), ordered.size());
         List<KnowledgeChunkCandidate> top = ordered.subList(0, topN);
 
+        // Short TX #3: enrich citations
         Timer.Sample citeSample = Timer.start(meterRegistry);
         EnrichedCitations enriched;
         String contextBlock;
         try {
-            enriched = enrich(tenantId, top);
+            enriched = tenantScopedTransaction.execute(
+                tenantId, userId, command.requestId(),
+                () -> enrich(tenantId, top)
+            );
             contextBlock = renderContext(top, enriched);
         } finally {
             citeSample.stop(metrics.ragQueryPhaseTimer("cite"));
@@ -305,6 +299,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
         variables.put("query", command.question());
         variables.put("retrievedChunks", contextBlock);
 
+        // No TX: call LLM
         Timer.Sample llmSample = Timer.start(meterRegistry);
         LlmGateway.LlmResponse response;
         try {
@@ -337,9 +332,8 @@ public class RagQueryApplicationService implements RagQueryFacade {
         RagAnswerCoverage coverage = computeCoverage(citations, top);
 
         log.info(
-            "rag_query_done tenant={} user={} vectorHits={} keywordHits={} fused={} authorized={} top={} citations={} coverage={} llmLog={}",
-            tenantId, userId, vectorRanked.size(), keywordRanked.size(), fused.size(),
-            authorized.size(), top.size(), citations.size(), coverage, response.llmCallLogId()
+            "rag_query_done tenant={} user={} top={} citations={} coverage={} llmLog={}",
+            tenantId, userId, top.size(), citations.size(), coverage, response.llmCallLogId()
         );
 
         return new RagAnswerDTO(parsed.answer(), citations, coverage, response.artifactManifestId());

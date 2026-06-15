@@ -54,8 +54,8 @@ class ProcessingTaskApplicationServiceTest {
             "trace_01"
         ));
 
-        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
-        assertThat(dto.currentStep()).isEqualTo("AUDIO_PREPROCESS");
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
+        assertThat(dto.currentStep()).isEqualTo("AUDIO_UPLOAD");
         assertThat(dto.steps())
             .filteredOn(step -> step.stepName() == ProcessingStep.AUDIO_UPLOAD)
             .singleElement()
@@ -133,7 +133,7 @@ class ProcessingTaskApplicationServiceTest {
 
         assertThat(dto.taskType()).isEqualTo("SPEAKER_ENROLLMENT");
         assertThat(dto.meetingId()).isNull();
-        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
         assertThat(dto.steps()).extracting("stepName")
             .containsExactly(ProcessingStep.SPEAKER_EMBEDDING, ProcessingStep.SPEAKER_MATCHING);
 
@@ -201,6 +201,11 @@ class ProcessingTaskApplicationServiceTest {
         @Override
         public Optional<ProcessingTask> findById(String tenantId, String taskId) {
             return task != null && tenantId.equals(task.tenantId()) && taskId.equals(task.taskId()) ? Optional.of(task) : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
 
         @Override

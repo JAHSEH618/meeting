@@ -10,4 +10,9 @@ public interface AuthFacade {
     Optional<AuthUserDTO> me(String accessToken);
 
     void logout(String accessToken);
+
+    /**
+     * Refresh access token using refresh token. Returns new access token and expiry.
+     */
+    RefreshResultDTO refresh(String refreshTokenId, String csrfToken);
 }

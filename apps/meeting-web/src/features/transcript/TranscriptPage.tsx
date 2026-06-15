@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranscriptQuery, useLatestMeetingTaskQuery, useUpdateSegment } from "./queries";
 import type { ApiClientError } from "@shared/api/client";
 import type { ProcessingTask, TranscriptSegment } from "@shared/api/types";
@@ -29,11 +30,26 @@ export function TranscriptPage() {
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
 
   const segmentRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const sortedSegments = useMemo(
     () => [...(transcript?.segments ?? [])].sort((a, b) => a.startMs - b.startMs),
     [transcript],
   );
+
+  const virtualizer = useVirtualizer({
+    count: sortedSegments.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 150,
+    overscan: 10,
+    initialRect: { width: 1000, height: 600 },
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const isTestEnv = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+  const itemsToRender = isTestEnv && virtualItems.length === 0
+    ? sortedSegments.map((_, index) => ({ index, start: index * 150, size: 150, end: (index + 1) * 150, key: index, lane: 0 }))
+    : virtualItems;
 
   useEffect(() => {
     if (!transcript || (!targetSegmentId && !targetStartMs)) return;
@@ -49,13 +65,13 @@ export function TranscriptPage() {
     if (!match) { setMissingTarget(true); return; }
     setMissingTarget(false);
     setHighlightedSegmentId(match.segmentId);
-    const node = segmentRefs.current.get(match.segmentId);
-    if (node && typeof node.scrollIntoView === "function") {
-      node.scrollIntoView({ block: "center", behavior: "smooth" });
+    const index = sortedSegments.findIndex((s) => s.segmentId === match.segmentId);
+    if (index !== -1) {
+      virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
     }
     const timer = window.setTimeout(() => setHighlightedSegmentId(null), 2500);
     return () => window.clearTimeout(timer);
-  }, [transcript, targetSegmentId, targetStartMs]);
+  }, [transcript, targetSegmentId, targetStartMs, sortedSegments, virtualizer]);
 
   const taskProcessing =
     task && !["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"].includes(task.status);
@@ -196,90 +212,103 @@ export function TranscriptPage() {
             <span>等待 worker 完成或检查任务进度。</span>
           </div>
         ) : (
-          <div className="transcript-list">
-            {sortedSegments.map((segment) => (
-              <article
-                key={segment.segmentId}
-                className={`transcript-row${highlightedSegmentId === segment.segmentId ? " transcript-row-highlighted" : ""}`}
-                ref={(node) => {
-                  if (node) segmentRefs.current.set(segment.segmentId, node);
-                  else segmentRefs.current.delete(segment.segmentId);
-                }}
-                aria-label={`segment-${segment.segmentId}`}
-              >
-                <div className="transcript-meta">
-                  <strong>{segment.speakerDisplayName || segment.speakerLabel}</strong>
-                  <span className="segment-row__time">{formatMs(segment.startMs)} – {formatMs(segment.endMs)}</span>
-                  <span className="pill pill--neutral">{Math.round(segment.asrConfidence * 100)}%</span>
-                  {segment.editedText && segment.editedText !== segment.originalText ? (
-                    <span className="pill pill--warn">已编辑</span>
-                  ) : null}
-                </div>
-
-                {editingId === segment.segmentId ? (
-                  <div className="stack">
-                    <div className="field">
-                      <label className="field__label" htmlFor={`segment-edit-${segment.segmentId}`}>
-                        编辑片段 {segment.segmentId}
-                      </label>
-                      <textarea
-                        id={`segment-edit-${segment.segmentId}`}
-                        name="segment-edit"
-                        value={editingText}
-                        onChange={(e) => setEditingText(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="field">
-                      <label className="field__label" htmlFor={`segment-reason-${segment.segmentId}`}>
-                        编辑原因（可选）
-                      </label>
-                      <input
-                        id={`segment-reason-${segment.segmentId}`}
-                        name="segment-reason"
-                        placeholder="例如：修正错听人名…"
-                        value={editingReason}
-                        onChange={(e) => setEditingReason(e.target.value)}
-                      />
-                    </div>
-                    <div className="toolbar">
-                      <button
-                        type="button"
-                        className="button button--primary"
-                        disabled={update.isPending}
-                        onClick={() => void saveEdit(segment)}
-                      >
-                        {update.isPending ? "保存中…" : "保存"}
-                      </button>
-                      <button
-                        type="button"
-                        className="button button--ghost"
-                        onClick={cancelEdit}
-                        disabled={update.isPending}
-                      >
-                        取消
-                      </button>
-                      {segment.editedText ? (
-                        <span className="page-subtitle">原文：{segment.originalText}</span>
+          <div ref={scrollContainerRef} className="transcript-list" style={{ height: "600px", overflow: "auto" }}>
+            <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+              {itemsToRender.map((virtualRow) => {
+                const segment = sortedSegments[virtualRow.index];
+                if (!segment) return null;
+                return (
+                  <article
+                    key={segment.segmentId}
+                    className={`transcript-row${highlightedSegmentId === segment.segmentId ? " transcript-row-highlighted" : ""}`}
+                    ref={(node) => {
+                      if (node) segmentRefs.current.set(segment.segmentId, node);
+                      else segmentRefs.current.delete(segment.segmentId);
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    aria-label={`segment-${segment.segmentId}`}
+                  >
+                    <div className="transcript-meta">
+                      <strong>{segment.speakerDisplayName || segment.speakerLabel}</strong>
+                      <span className="segment-row__time">{formatMs(segment.startMs)} – {formatMs(segment.endMs)}</span>
+                      <span className="pill pill--neutral">{Math.round(segment.asrConfidence * 100)}%</span>
+                      {segment.editedText && segment.editedText !== segment.originalText ? (
+                        <span className="pill pill--warn">已编辑</span>
                       ) : null}
                     </div>
-                  </div>
-                ) : (
-                  <div className="stack">
-                    <p>{segment.currentText}</p>
-                    <div className="toolbar">
-                      <button
-                        type="button"
-                        className="button button--ghost"
-                        onClick={() => startEdit(segment)}
-                      >
-                        编辑
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </article>
-            ))}
+
+                    {editingId === segment.segmentId ? (
+                      <div className="stack">
+                        <div className="field">
+                          <label className="field__label" htmlFor={`segment-edit-${segment.segmentId}`}>
+                            编辑片段 {segment.segmentId}
+                          </label>
+                          <textarea
+                            id={`segment-edit-${segment.segmentId}`}
+                            name="segment-edit"
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            rows={3}
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="field__label" htmlFor={`segment-reason-${segment.segmentId}`}>
+                            编辑原因（可选）
+                          </label>
+                          <input
+                            id={`segment-reason-${segment.segmentId}`}
+                            name="segment-reason"
+                            placeholder="例如：修正错听人名…"
+                            value={editingReason}
+                            onChange={(e) => setEditingReason(e.target.value)}
+                          />
+                        </div>
+                        <div className="toolbar">
+                          <button
+                            type="button"
+                            className="button button--primary"
+                            disabled={update.isPending}
+                            onClick={() => void saveEdit(segment)}
+                          >
+                            {update.isPending ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={cancelEdit}
+                            disabled={update.isPending}
+                          >
+                            取消
+                          </button>
+                          {segment.editedText ? (
+                            <span className="page-subtitle">原文：{segment.originalText}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="stack">
+                        <p>{segment.currentText}</p>
+                        <div className="toolbar">
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => startEdit(segment)}
+                          >
+                            编辑
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>

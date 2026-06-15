@@ -166,7 +166,7 @@ class EmbeddingsCallbackApplicationServiceTest {
                 callbacks,
                 chunks,
                 TenantScopedTransaction.immediate(),
-                new CallbackSecurityVerifier(SECRET, 300, CLOCK),
+                new CallbackSecurityVerifier(SECRET, 300, CLOCK, new InMemoryCallbackNonceRepository()),
                 CLOCK
             );
         }
@@ -259,6 +259,11 @@ class EmbeddingsCallbackApplicationServiceTest {
         @Override public Optional<ProcessingTask> findById(String tenantId, String taskId) {
             return task != null && task.taskId().equals(taskId) && task.tenantId().equals(tenantId)
                 ? Optional.of(task) : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
+            return findById(tenantId, taskId);
         }
         @Override public Optional<ProcessingTask> findLatestByMeetingId(String tenantId, String meetingId) {
             return Optional.empty();

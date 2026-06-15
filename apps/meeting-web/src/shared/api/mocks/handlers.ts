@@ -282,6 +282,18 @@ export const handlers = [
     });
   }),
 
+  // SSE endpoint for task status updates (used by fetch-SSE or EventSource)
+  http.get("/api/processing-tasks/:taskId/events", () => {
+    // Return empty response immediately to avoid unhandled request warnings
+    // Real SSE would stream events; tests rely on polling fallback
+    return new HttpResponse(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+      },
+    });
+  }),
+
   http.post("/api/meetings/:meetingId/files/audio/uploads", ({ params }) => {
     return HttpResponse.json<ApiResponse<AudioUploadSession>>({
       success: true,
@@ -873,6 +885,18 @@ export const handlers = [
       }
     }
     return HttpResponse.json<ApiResponse>({ success: true, data: null, error: null, requestId: "r", traceId: "t" });
+  }),
+
+  // SSE endpoint for export status updates (used by fetch-SSE)
+  http.get("/api/exports/:exportId/events", () => {
+    // Return empty response immediately to avoid unhandled request warnings
+    // Real SSE would stream events; tests rely on polling fallback
+    return new HttpResponse(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+      },
+    });
   }),
 
   // ── Legal holds (phase 7) ───────────────────────────────────

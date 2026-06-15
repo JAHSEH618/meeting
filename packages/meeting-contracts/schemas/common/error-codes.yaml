@@ -8,6 +8,18 @@ errorCodes:
     userMessage: 请先登录
     i18nKey: errors.AUTH_REQUIRED
     opsTags: [auth]
+  - code: REFRESH_TOKEN_INVALID
+    step: AUTH
+    retryable: false
+    userMessage: 刷新令牌无效或已过期
+    i18nKey: errors.REFRESH_TOKEN_INVALID
+    opsTags: [auth, refresh]
+  - code: CSRF_TOKEN_INVALID
+    step: AUTH
+    retryable: false
+    userMessage: CSRF令牌验证失败
+    i18nKey: errors.CSRF_TOKEN_INVALID
+    opsTags: [auth, csrf]
   - code: PERMISSION_DENIED
     step: AUTH
     retryable: false
@@ -72,6 +84,12 @@ errorCodes:
     userMessage: Worker 租约已过期
     i18nKey: errors.WORKER_LEASE_EXPIRED
     opsTags: [task, lease]
+  - code: TASK_RETRY_EXHAUSTED
+    step: TASK
+    retryable: false
+    userMessage: 任务重试次数已耗尽
+    i18nKey: errors.TASK_RETRY_EXHAUSTED
+    opsTags: [task, retry, exhausted]
   - code: INVALID_TASK_MESSAGE
     step: TASK
     retryable: false
@@ -504,6 +522,38 @@ errorCodes:
     userMessage: 已存在同名人员
     i18nKey: errors.PERSON_DUPLICATE
     opsTags: [person, conflict]
+
+  # ── Enrollment ────────────────────────────────────────────────
+  - code: ENROLLMENT_SESSION_NOT_FOUND
+    step: VALIDATION
+    retryable: false
+    userMessage: 声纹会话已失效，请重新开始
+    i18nKey: errors.ENROLLMENT_SESSION_NOT_FOUND
+    opsTags: [enrollment]
+  - code: ENROLLMENT_PERSON_MISMATCH
+    step: VALIDATION
+    retryable: false
+    userMessage: 声纹会话人员不匹配
+    i18nKey: errors.ENROLLMENT_PERSON_MISMATCH
+    opsTags: [enrollment, validation]
+  - code: ENROLLMENT_NOT_PREVIEWED
+    step: VALIDATION
+    retryable: false
+    userMessage: 请先预览声纹后再确认
+    i18nKey: errors.ENROLLMENT_NOT_PREVIEWED
+    opsTags: [enrollment, validation]
+  - code: ENROLLMENT_AUDIO_MISSING
+    step: VALIDATION
+    retryable: false
+    userMessage: 声纹音频缺失
+    i18nKey: errors.ENROLLMENT_AUDIO_MISSING
+    opsTags: [enrollment, validation]
+  - code: ENROLLMENT_PERSON_REQUIRED
+    step: VALIDATION
+    retryable: false
+    userMessage: 请选择人员
+    i18nKey: errors.ENROLLMENT_PERSON_REQUIRED
+    opsTags: [enrollment, validation]
 
   # ── Generic file upload ───────────────────────────────────────
   - code: FILE_UPLOAD_NOT_FOUND

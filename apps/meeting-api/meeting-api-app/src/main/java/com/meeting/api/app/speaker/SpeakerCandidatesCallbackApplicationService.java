@@ -84,7 +84,13 @@ public class SpeakerCandidatesCallbackApplicationService {
         this.clock = clock;
     }
     public void writeCandidates(SpeakerCandidatesCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "SPEAKER_CANDIDATES"
+        );
         tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
                 .orElseThrow(() -> new IllegalArgumentException("task not found: " + command.taskId()));

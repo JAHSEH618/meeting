@@ -12,9 +12,14 @@ import type { ApiResponse, ApiError, TaskEvent } from "@shared/api/types";
 const API_BASE = "/api";
 
 let authToken: string | null = null;
+let refreshPromise: Promise<{ accessToken: string; expiresAt: string }> | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+}
+
+export function getAuthToken(): string | null {
+  return authToken;
 }
 
 function generateId(prefix: string): string {
@@ -43,11 +48,55 @@ function normalizeSpeakerProfile(profile: SpeakerProfile): SpeakerProfile {
   };
 }
 
+async function handleUnauthorized<T>(
+  originalMethod: string,
+  originalPath: string,
+  originalBody?: unknown,
+  originalIdempotencyKey?: string,
+): Promise<T> {
+  // Single-flight pattern: if refresh already in-flight, await it
+  if (refreshPromise) {
+    try {
+      const result = await refreshPromise;
+      setAuthToken(result.accessToken);
+      // Retry original request with new token
+      return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
+    } catch {
+      // Refresh failed, clear state
+      refreshPromise = null;
+      setAuthToken(null);
+      const error = new Error("认证已过期，请重新登录") as ApiClientError;
+      error.code = "AUTH_REQUIRED";
+      error.retryable = false;
+      throw error;
+    }
+  }
+
+  // Start new refresh
+  refreshPromise = refresh();
+  try {
+    const result = await refreshPromise;
+    setAuthToken(result.accessToken);
+    refreshPromise = null;
+    // Retry original request with new token
+    return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
+  } catch {
+    // Refresh failed, clear state
+    refreshPromise = null;
+    setAuthToken(null);
+    const error = new Error("认证已过期，请重新登录") as ApiClientError;
+    error.code = "AUTH_REQUIRED";
+    error.retryable = false;
+    throw error;
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   idempotencyKey?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -70,6 +119,7 @@ async function request<T>(
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
   } catch (cause) {
     const error = new Error("网络连接失败") as ApiClientError;
@@ -85,6 +135,11 @@ async function request<T>(
     error.retryable = false;
     error.status = res.status;
     throw error;
+  }
+
+  // Intercept 401 for token refresh
+  if (res.status === 401 && authToken) {
+    return handleUnauthorized<T>(method, path, body, idempotencyKey);
   }
 
   const json = (await res.json()) as ApiResponse<unknown>;
@@ -106,6 +161,7 @@ async function uploadBinary(
   url: string,
   body: Blob,
   headers: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ etag: string }> {
   let res: Response;
   try {
@@ -113,6 +169,7 @@ async function uploadBinary(
       method: "PUT",
       headers,
       body,
+      signal,
     });
   } catch (cause) {
     const error = new Error("网络连接失败") as ApiClientError;
@@ -136,15 +193,113 @@ async function uploadBinary(
 // ── Auth ───────────────────────────────────────────────────────────
 
 export async function login(username: string, password: string) {
-  return request<{ accessToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser }>(
-    "POST",
-    "/auth/login",
-    { username, password },
-  );
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ username, password }),
+    });
+  } catch (cause) {
+    const error = new Error("网络连接失败") as ApiClientError;
+    error.code = "DEPENDENCY_UNAVAILABLE";
+    error.retryable = true;
+    error.details = { cause: String(cause) };
+    throw error;
+  }
+
+  const json = (await res.json()) as ApiResponse<unknown>;
+
+  if (!json.success) {
+    const err = json.error as ApiError;
+    const error = new Error(err.message) as ApiClientError;
+    error.code = err.code;
+    error.retryable = err.retryable;
+    error.details = err.details;
+    error.status = res.status;
+    throw error;
+  }
+
+  return json.data as { accessToken: string; expiresAt: string; user: import("@shared/api/types").AuthUser };
 }
 
 export async function logout() {
-  return request<void>("POST", "/auth/logout");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+  };
+
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+  });
+}
+
+export async function refresh() {
+  // Read CSRF token from cookie
+  const csrfToken = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("XSRF-TOKEN="))
+    ?.split("=")[1];
+
+  if (!csrfToken) {
+    const error = new Error("CSRF token not found") as ApiClientError;
+    error.code = "CSRF_TOKEN_INVALID";
+    error.retryable = false;
+    throw error;
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Request-Id": generateId("req"),
+    "X-Trace-Id": generateId("trace"),
+    "X-CSRF-Token": csrfToken,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+    });
+  } catch (cause) {
+    const error = new Error("网络连接失败") as ApiClientError;
+    error.code = "DEPENDENCY_UNAVAILABLE";
+    error.retryable = true;
+    error.details = { cause: String(cause) };
+    throw error;
+  }
+
+  const json = (await res.json()) as ApiResponse<unknown>;
+
+  if (!json.success) {
+    const err = json.error as ApiError;
+    const error = new Error(err.message) as ApiClientError;
+    error.code = err.code;
+    error.retryable = err.retryable;
+    error.details = err.details;
+    error.status = res.status;
+    throw error;
+  }
+
+  return json.data as { accessToken: string; expiresAt: string };
 }
 
 export async function getCurrentUser() {
@@ -153,8 +308,8 @@ export async function getCurrentUser() {
 
 // ── Meetings ───────────────────────────────────────────────────────
 
-export async function createMeeting(data: import("@shared/api/types").CreateMeetingRequest) {
-  return request<import("@shared/api/types").Meeting>("POST", "/meetings", data, generateId("create-meeting"));
+export async function createMeeting(data: import("@shared/api/types").CreateMeetingRequest, idempotencyKey?: string) {
+  return request<import("@shared/api/types").Meeting>("POST", "/meetings", data, idempotencyKey || generateId("create-meeting"));
 }
 
 export async function listMeetings() {
@@ -183,6 +338,7 @@ export async function createAudioUploadPart(
   meetingId: string,
   uploadId: string,
   data: import("@shared/api/types").CreateAudioUploadPartRequest,
+  signal?: AbortSignal,
 ) {
   return request<{
     uploadId: string;
@@ -197,11 +353,12 @@ export async function createAudioUploadPart(
     `/meetings/${meetingId}/files/audio/uploads/${uploadId}/parts`,
     data,
     generateId(`upload-part-${data.partNumber}`),
+    signal,
   );
 }
 
-export async function putAudioUploadPart(uploadUrl: string, part: Blob, headers: Record<string, string>) {
-  return uploadBinary(uploadUrl, part, headers);
+export async function putAudioUploadPart(uploadUrl: string, part: Blob, headers: Record<string, string>, signal?: AbortSignal) {
+  return uploadBinary(uploadUrl, part, headers, signal);
 }
 
 export async function completeAudioUpload(
@@ -235,7 +392,7 @@ export async function getAudioUpload(meetingId: string, uploadId: string) {
 
 // ── Tasks ──────────────────────────────────────────────────────────
 
-export async function createProcessingTask(meetingId: string, audioFileId: string) {
+export async function createProcessingTask(meetingId: string, audioFileId: string, idempotencyKey?: string) {
   return request<import("@shared/api/types").ProcessingTask>(
     "POST",
     `/meetings/${meetingId}/processing-tasks`,
@@ -245,7 +402,7 @@ export async function createProcessingTask(meetingId: string, audioFileId: strin
       options: { enableAsr: true, enableDiarization: true, enableRagIndexing: true },
       expectedInputVersion: { chunkStrategyVersion: "v1" },
     },
-    generateId("create-task"),
+    idempotencyKey || generateId("create-task"),
   );
 }
 

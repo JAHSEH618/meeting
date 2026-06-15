@@ -4,6 +4,9 @@ import com.meeting.api.client.auth.AuthFacade;
 import com.meeting.api.client.auth.AuthUserDTO;
 import com.meeting.api.client.auth.LoginCommand;
 import com.meeting.api.client.auth.LoginResultDTO;
+import com.meeting.api.client.auth.RefreshResultDTO;
+import com.meeting.api.domain.auth.RefreshToken;
+import com.meeting.api.domain.auth.RefreshTokenRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -36,28 +39,58 @@ public class InMemoryAuthApplicationService implements AuthFacade {
 
     private final Clock clock;
     private final AdminJwtCodec jwtCodec;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
 
     @Autowired
     public InMemoryAuthApplicationService(
         @Value("${meeting.admin-jwt.secret:" + AdminJwtCodec.DEFAULT_SECRET + "}") String adminJwtSecret,
         @Value("${meeting.admin-jwt.audience:" + AdminJwtCodec.DEFAULT_AUDIENCE + "}") String adminJwtAudience,
-        @Value("${meeting.admin-jwt.issuer:" + AdminJwtCodec.DEFAULT_ISSUER + "}") String adminJwtIssuer
+        @Value("${meeting.admin-jwt.issuer:" + AdminJwtCodec.DEFAULT_ISSUER + "}") String adminJwtIssuer,
+        RefreshTokenRepository refreshTokenRepository
     ) {
-        this(Clock.systemUTC(), new AdminJwtCodec(adminJwtSecret, adminJwtAudience, adminJwtIssuer));
+        this(Clock.systemUTC(), new AdminJwtCodec(adminJwtSecret, adminJwtAudience, adminJwtIssuer), refreshTokenRepository);
     }
 
     public InMemoryAuthApplicationService() {
-        this(Clock.systemUTC(), AdminJwtCodec.defaults());
+        this(Clock.systemUTC(), AdminJwtCodec.defaults(), new InMemoryRefreshTokenRepository());
     }
 
     public InMemoryAuthApplicationService(Clock clock) {
-        this(clock, AdminJwtCodec.defaults());
+        this(clock, AdminJwtCodec.defaults(), new InMemoryRefreshTokenRepository());
     }
 
-    InMemoryAuthApplicationService(Clock clock, AdminJwtCodec jwtCodec) {
+    InMemoryAuthApplicationService(Clock clock, AdminJwtCodec jwtCodec, RefreshTokenRepository refreshTokenRepository) {
         this.clock = clock;
         this.jwtCodec = jwtCodec;
+        this.refreshTokenRepository = refreshTokenRepository;
+    }
+
+    /**
+     * Simple in-memory implementation for tests.
+     */
+    private static class InMemoryRefreshTokenRepository implements RefreshTokenRepository {
+        private final Map<String, RefreshToken> tokens = new ConcurrentHashMap<>();
+
+        @Override
+        public void save(RefreshToken token) {
+            tokens.put(token.tokenId(), token);
+        }
+
+        @Override
+        public Optional<RefreshToken> findByTokenId(String tokenId) {
+            return Optional.ofNullable(tokens.get(tokenId));
+        }
+
+        @Override
+        public void revokeByTokenId(String tokenId) {
+            tokens.remove(tokenId);
+        }
+
+        @Override
+        public void revokeAllByUserId(String userId) {
+            tokens.entrySet().removeIf(entry -> entry.getValue().userId().equals(userId));
+        }
     }
 
     @Override
@@ -76,7 +109,15 @@ public class InMemoryAuthApplicationService implements AuthFacade {
         OffsetDateTime expiresAt = OffsetDateTime.now(clock).plus(TOKEN_TTL);
         String token = jwtCodec.encode(user, expiresAt);
         sessions.put(token, new Session(user, expiresAt));
-        return new LoginResultDTO(token, expiresAt, user);
+
+        // Issue refresh token (30 days)
+        String refreshTokenId = "rt_" + java.util.UUID.randomUUID();
+        OffsetDateTime refreshExpiresAt = OffsetDateTime.now(clock).plusDays(30);
+        RefreshToken refreshToken = new RefreshToken(refreshTokenId, user.userId(), user.tenantId(), refreshExpiresAt);
+        refreshTokenRepository.save(refreshToken);
+
+        // Return result with access token only (refresh token goes in HttpOnly cookie)
+        return new LoginResultDTO(token, expiresAt, user, refreshTokenId);
     }
 
     @Override
@@ -101,11 +142,60 @@ public class InMemoryAuthApplicationService implements AuthFacade {
     }
 
     @Override
+    public RefreshResultDTO refresh(String refreshTokenId, String csrfToken) {
+        if (refreshTokenId == null || refreshTokenId.isBlank()) {
+            throw new IllegalArgumentException("refresh token required");
+        }
+
+        // CSRF validation (simple match for now; full double-submit in controller)
+        if (csrfToken == null || csrfToken.isBlank()) {
+            throw new IllegalArgumentException("CSRF token required");
+        }
+
+        // Find refresh token
+        Optional<RefreshToken> tokenOpt = refreshTokenRepository.findByTokenId(refreshTokenId);
+        if (tokenOpt.isEmpty()) {
+            throw new IllegalArgumentException("invalid refresh token");
+        }
+
+        RefreshToken refreshToken = tokenOpt.get();
+
+        // Check expiry
+        if (refreshToken.isExpired(OffsetDateTime.now(clock))) {
+            refreshTokenRepository.revokeByTokenId(refreshTokenId);
+            throw new IllegalArgumentException("refresh token expired");
+        }
+
+        // Issue new access token
+        AuthUserDTO user = new AuthUserDTO(
+            refreshToken.userId(),
+            refreshToken.tenantId(),
+            "person_admin",  // Simplified for MVP
+            "Admin",
+            List.of("ADMIN"),
+            List.of("meeting:create", "meeting:read")
+        );
+
+        OffsetDateTime accessExpiresAt = OffsetDateTime.now(clock).plus(TOKEN_TTL);
+        String accessToken = jwtCodec.encode(user, accessExpiresAt);
+
+        return new RefreshResultDTO(accessToken, accessExpiresAt);
+    }
+
+    @Override
     public void logout(String accessToken) {
         if (accessToken == null) {
             return;
         }
-        sessions.remove(accessToken.startsWith("Bearer ") ? accessToken.substring("Bearer ".length()) : accessToken);
+        String raw = accessToken.startsWith("Bearer ")
+            ? accessToken.substring("Bearer ".length())
+            : accessToken;
+
+        sessions.remove(raw);
+
+        // Decode to get userId, then revoke all refresh tokens
+        Optional<AuthUserDTO> userOpt = jwtCodec.decode(raw, clock);
+        userOpt.ifPresent(user -> refreshTokenRepository.revokeAllByUserId(user.userId()));
     }
 
     private record Session(AuthUserDTO user, OffsetDateTime expiresAt) {}

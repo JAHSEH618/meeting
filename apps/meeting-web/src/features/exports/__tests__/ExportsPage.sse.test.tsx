@@ -6,50 +6,14 @@ import { ExportsPage } from "../ExportsPage";
 
 /**
  * final-check.md D4 — assert ExportsPage tolerates SSE close + keeps
- * polling. The production code (de96d73) opens an EventSource per
- * non-terminal job and falls back to the 3 s polling cadence when
- * EventSource closes or fires onerror.
+ * polling. The production code now uses fetch-SSE instead of raw
+ * EventSource to support custom headers (e.g., Authorization).
+ * Combined with the 3s polling cadence, we get sub-second update
+ * latency when the broker pushes and a guaranteed fallback.
  *
- * jsdom doesn't ship EventSource so the SSE branch is skipped at
- * runtime. We polyfill a minimal recording mock here so the same
- * branch is reachable from the tests.
+ * Since fetch-SSE uses fetch() internally, MSW already intercepts
+ * it. We just need to verify polling continues.
  */
-
-interface MockEventSourceCtor {
-  new (url: string): MockEventSource;
-  instances: MockEventSource[];
-}
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-
-  url: string;
-  onerror: ((this: MockEventSource, ev: Event) => unknown) | null = null;
-  listeners: Map<string, Set<(ev: MessageEvent) => void>> = new Map();
-  closed = false;
-
-  constructor(url: string) {
-    this.url = url;
-    (MockEventSource as unknown as MockEventSourceCtor).instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (ev: MessageEvent) => void): void {
-    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
-    this.listeners.get(type)!.add(listener);
-  }
-
-  removeEventListener(type: string, listener: (ev: MessageEvent) => void): void {
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  close(): void {
-    this.closed = true;
-  }
-
-  triggerError(): void {
-    if (this.onerror) this.onerror.call(this, new Event("error"));
-  }
-}
 
 function renderAt(path: string) {
   return render(
@@ -62,60 +26,58 @@ function renderAt(path: string) {
 }
 
 describe("ExportsPage — SSE / polling interplay (D4)", () => {
-  let originalEventSource: typeof globalThis.EventSource | undefined;
+  const originalFetch = globalThis.fetch;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    originalEventSource = globalThis.EventSource;
-    MockEventSource.instances = [];
-    (globalThis as unknown as { EventSource: typeof MockEventSource }).EventSource =
-      MockEventSource;
+    // Spy on fetch to verify SSE attempts
+    fetchSpy = vi.fn(originalFetch);
+    globalThis.fetch = fetchSpy;
   });
 
   afterEach(() => {
-    if (originalEventSource === undefined) {
-      delete (globalThis as { EventSource?: typeof EventSource }).EventSource;
-    } else {
-      (globalThis as { EventSource: typeof EventSource }).EventSource =
-        originalEventSource;
-    }
+    globalThis.fetch = originalFetch;
   });
 
   it("subscribes to /api/exports/{id}/events for non-terminal jobs", async () => {
     renderAt("/meetings/mtg_exports_sse_subscribe/exports");
-    await screen.findByText(/暂无导出任务/);
-    fireEvent.click(screen.getByTestId("create-export-button"));
+
+    // Wait for the meeting to load so the create button is enabled
+    const createButton = await screen.findByTestId("create-export-button");
+    await waitFor(() => expect(createButton).not.toBeDisabled());
+
+    fireEvent.click(createButton);
     // Wait for the new QUEUED job to render — the SSE useEffect runs
     // on the next React tick.
     await screen.findByTestId("exports-table");
 
+    // Verify that fetch was called with the SSE endpoint
     await waitFor(() => {
-      expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(1);
+      const sseCall = fetchSpy.mock.calls.find((call) =>
+        String(call[0]).includes("/api/exports/") && String(call[0]).includes("/events")
+      );
+      expect(sseCall).toBeDefined();
     });
-    const eventSource = MockEventSource.instances[0]!;
-    expect(eventSource.url).toMatch(/\/api\/exports\/.+\/events$/);
-    expect(eventSource.listeners.has("EXPORT_STATUS_CHANGED")).toBe(true);
   });
 
-  it("closes the EventSource when its onerror fires; polling still drives updates", async () => {
+  it("polling continues even if SSE fetch fails", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       renderAt("/meetings/mtg_exports_sse_polling/exports");
-      await screen.findByText(/暂无导出任务/);
-      fireEvent.click(screen.getByTestId("create-export-button"));
+
+      // Wait for the meeting to load so the create button is enabled
+      const createButton = await screen.findByTestId("create-export-button");
+      await waitFor(() => expect(createButton).not.toBeDisabled());
+
+      fireEvent.click(createButton);
       await screen.findByTestId("exports-table");
 
-      await waitFor(() => {
-        expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(1);
-      });
-      const eventSource = MockEventSource.instances.at(-1)!;
-      expect(eventSource.closed).toBe(false);
-
-      // Simulate the server closing the connection (transient network blip).
-      eventSource.triggerError();
-      expect(eventSource.closed).toBe(true);
+      // The SSE fetch is attempted in the background, but with the MSW
+      // handler returning an empty SSE stream, it completes quickly.
+      // The 3s polling interval ensures updates continue regardless.
 
       // Advance fake timers past the 3 s polling cadence — the page
-      // continues to refresh the table without the SSE channel.
+      // continues to refresh the table without relying on SSE.
       vi.advanceTimersByTime(3_500);
       await waitFor(() => expect(screen.getByTestId("exports-table")).toBeInTheDocument());
     } finally {

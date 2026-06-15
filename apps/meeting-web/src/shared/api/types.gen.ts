@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Refresh access token using HttpOnly refresh token cookie. */
+        post: operations["refreshAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -1226,6 +1243,17 @@ export interface components {
             requestId: string;
             traceId: string;
         };
+        RefreshResponse: {
+            success: boolean;
+            data: {
+                accessToken: string;
+                /** Format: date-time */
+                expiresAt: string;
+            };
+            error: components["schemas"]["ErrorInfo"] | null;
+            requestId: string;
+            traceId: string;
+        };
         AuthUserResponse: {
             success: boolean;
             data: components["schemas"]["AuthUser"];
@@ -2198,6 +2226,8 @@ export interface operations {
             /** @description Login successful */
             200: {
                 headers: {
+                    /** @description HttpOnly refresh token cookie and XSRF-TOKEN cookie */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2249,6 +2279,44 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    refreshAccessToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Request-Id": components["parameters"]["XRequestId"];
+                "X-Trace-Id": components["parameters"]["XTraceId"];
+                /** @description CSRF token from XSRF-TOKEN cookie */
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refresh successful */
+            200: {
+                headers: {
+                    /** @description New XSRF-TOKEN cookie */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Refresh token invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse"];
+                };
+            };
+            500: components["responses"]["ServerError"];
         };
     };
     listUsers: {

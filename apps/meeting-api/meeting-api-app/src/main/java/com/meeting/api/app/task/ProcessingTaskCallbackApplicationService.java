@@ -86,9 +86,15 @@ public class ProcessingTaskCallbackApplicationService {
         this.clock = clock;
     }
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            command.stepName().name()
+        );
         if (command.status() == StepStatus.RUNNING && command.progress() != null && command.progress() > 0) {
-            return heartbeat(new StepProgressHeartbeatCommand(
+            return heartbeatInternal(new StepProgressHeartbeatCommand(
                 command.metadata(),
                 command.tenantId(),
                 command.meetingId(),
@@ -100,8 +106,20 @@ public class ProcessingTaskCallbackApplicationService {
             ));
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            ProcessingTask task = load(command.tenantId(), command.taskId());
+            ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
+
+            // First callback (RUNNING with progress=0): claim lease
+            if (command.status() == StepStatus.RUNNING && (command.progress() == null || command.progress() == 0)) {
+                OffsetDateTime now = OffsetDateTime.now(clock);
+                task.claimLease(
+                    command.metadata().workerId(),
+                    command.metadata().leaseOwner(),
+                    now.plusSeconds(120),
+                    now
+                );
+            }
+
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
                 return ProcessingTaskAssembler.toDto(task);
             }
@@ -119,9 +137,19 @@ public class ProcessingTaskCallbackApplicationService {
         });
     }
     public ProcessingTaskDTO heartbeat(StepProgressHeartbeatCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            command.stepName().name()
+        );
+        return heartbeatInternal(command);
+    }
+
+    private ProcessingTaskDTO heartbeatInternal(StepProgressHeartbeatCommand command) {
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            ProcessingTask task = load(command.tenantId(), command.taskId());
+            ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
             task.heartbeat(
                 command.stepName(),
@@ -129,18 +157,24 @@ public class ProcessingTaskCallbackApplicationService {
                 command.attemptNo(),
                 command.metadata().leaseOwner(),
                 command.heartbeatAt(),
-                command.heartbeatAt().plusMinutes(5)
+                command.heartbeatAt().plusSeconds(120)
             );
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
     }
     public ProcessingTaskDTO completeWorkerPhase(CompleteWorkerPhaseCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "COMPLETE_WORKER_PHASE"
+        );
         if (!"WORKER_DAG".equals(command.phase())) {
             throw new IllegalArgumentException("complete phase must be WORKER_DAG");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            ProcessingTask task = load(command.tenantId(), command.taskId());
+            ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
             requireSpeakerEnrollmentSucceededForComplete(command, task);
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, null)) {
@@ -211,7 +245,13 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     public ProcessingTaskDTO fail(FailTaskCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "FAIL_TASK"
+        );
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
             ProcessingTask task = load(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
@@ -258,7 +298,13 @@ public class ProcessingTaskCallbackApplicationService {
     }
 
     public ProcessingTaskDTO writeTranscript(TranscriptCallbackCommand command) {
-        securityVerifier.verify(command.metadata());
+        securityVerifier.verify(
+            command.metadata(),
+            command.tenantId(),
+            command.metadata().workerId(),
+            command.taskId(),
+            "TRANSCRIPT"
+        );
         if (command.meetingId() == null || command.meetingId().isBlank()) {
             throw new IllegalArgumentException("meetingId is required for transcript callback");
         }
@@ -313,6 +359,11 @@ public class ProcessingTaskCallbackApplicationService {
 
     private ProcessingTask load(String tenantId, String taskId) {
         return taskRepository.findById(tenantId, taskId)
+            .orElseThrow(() -> new IllegalArgumentException("task not found: " + taskId));
+    }
+
+    private ProcessingTask loadForUpdate(String tenantId, String taskId) {
+        return taskRepository.findByIdForUpdate(tenantId, taskId)
             .orElseThrow(() -> new IllegalArgumentException("task not found: " + taskId));
     }
 

@@ -375,6 +375,8 @@ public final class ProcessingTask {
         }
         phase = ProcessingTaskPhase.WORKER_DAG_DONE;
         status = ProcessingTaskStatus.RUNNING;
+        leaseOwner = null;
+        leaseExpiresAt = null;
         touch(now);
     }
 
@@ -418,6 +420,9 @@ public final class ProcessingTask {
         requireStatus(ProcessingTaskStatus.ORPHANED);
         requireNonTerminal();
         attemptNo += 1;
+        if (attemptNo > 3) {
+            throw new IllegalStateException("retry exhausted: attemptNo=" + attemptNo);
+        }
         status = ProcessingTaskStatus.QUEUED;
         retryable = false;
         for (ProcessingTaskStep step : steps.values()) {

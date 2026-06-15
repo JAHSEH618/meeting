@@ -79,6 +79,10 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
       };
     }
     case "part-start":
+      // Prevent part-start from resurrecting terminal states
+      if (state.status === "completed" || state.status === "failed" || state.status === "aborted") {
+        return state;
+      }
       return {
         ...state,
         status: "uploading",

@@ -66,6 +66,11 @@ paths:
       responses:
         '200':
           description: Login successful
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie and XSRF-TOKEN cookie
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -111,6 +116,44 @@ paths:
                 $ref: '#/components/schemas/AuthUserResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      operationId: refreshAccessToken
+      description: Refresh access token using HttpOnly refresh token cookie.
+      security: []
+      tags: [Auth]
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTraceId'
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          description: CSRF token from XSRF-TOKEN cookie
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Refresh successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+          headers:
+            Set-Cookie:
+              description: New XSRF-TOKEN cookie
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Refresh token invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
   # ── Users ──────────────────────────────────────────────────
   /users:
@@ -2171,6 +2214,24 @@ components:
             expiresAt: {type: string, format: date-time}
             user:
               $ref: '#/components/schemas/AuthUser'
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ErrorInfo'
+            - type: 'null'
+        requestId: {type: string}
+        traceId: {type: string}
+
+    RefreshResponse:
+      type: object
+      required: [success, data, error, requestId, traceId]
+      properties:
+        success: {type: boolean}
+        data:
+          type: object
+          required: [accessToken, expiresAt]
+          properties:
+            accessToken: {type: string}
+            expiresAt: {type: string, format: date-time}
         error:
           anyOf:
             - $ref: '#/components/schemas/ErrorInfo'

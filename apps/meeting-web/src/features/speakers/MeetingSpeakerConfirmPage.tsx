@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  confirmMeetingSpeaker,
   getMeeting,
   listMeetingSpeakers,
   listSpeakerProfiles,
-  rejectMeetingSpeaker,
   type MeetingSpeaker,
   type SpeakerProfile,
 } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { useConfirmMeetingSpeaker, useRejectMeetingSpeaker } from "./queries";
 
 const CANDIDATE_EXPIRED_HINT = "候选列表过期或为空，请等待转录处理完成后再确认";
 
@@ -20,8 +19,10 @@ export function MeetingSpeakerConfirmPage() {
   const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [transcriptVersion, setTranscriptVersion] = useState<number | null>(null);
+
+  const confirmMutation = useConfirmMeetingSpeaker(meetingId);
+  const rejectMutation = useRejectMeetingSpeaker(meetingId);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -53,10 +54,10 @@ export function MeetingSpeakerConfirmPage() {
       setError("加载失败");
       return;
     }
-    setPendingLabel(speakerLabel);
     setError(null);
     try {
-      await confirmMeetingSpeaker(meetingId, speakerLabel, {
+      await confirmMutation.mutateAsync({
+        speakerLabel,
         personId,
         speakerProfileId,
         expectedTranscriptVersion: transcriptVersion,
@@ -65,22 +66,17 @@ export function MeetingSpeakerConfirmPage() {
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "确认失败");
-    } finally {
-      setPendingLabel(null);
     }
   };
 
   const handleReject = async (speakerLabel: string) => {
-    setPendingLabel(speakerLabel);
     setError(null);
     try {
-      await rejectMeetingSpeaker(meetingId, speakerLabel);
+      await rejectMutation.mutateAsync(speakerLabel);
       await reload();
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setError(apiError.code ? getUserMessage(apiError.code) : "拒绝失败");
-    } finally {
-      setPendingLabel(null);
     }
   };
 
@@ -111,7 +107,7 @@ export function MeetingSpeakerConfirmPage() {
       {speakers.map((speaker) => {
         const profileByCandidate = (personId: string, speakerProfileId: string) =>
           profiles.find((p) => p.speakerProfileId === speakerProfileId) ?? profiles.find((p) => p.personId === personId);
-        const isPending = pendingLabel === speaker.speakerLabel;
+        const isPending = confirmMutation.isPending || rejectMutation.isPending;
         const candidatePersons = speaker.candidates.map((candidate) => ({
           ...candidate,
           profile: profileByCandidate(candidate.personId, candidate.speakerProfileId),
