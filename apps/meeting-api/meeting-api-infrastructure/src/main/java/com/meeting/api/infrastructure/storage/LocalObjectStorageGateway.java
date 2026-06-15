@@ -15,11 +15,11 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "meeting.storage.type", havingValue = "local", matchIfMissing = true)
+@Conditional(LocalOrMinioStorageCondition.class)
 public class LocalObjectStorageGateway implements ObjectStorageGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LocalObjectStorageGateway.class);

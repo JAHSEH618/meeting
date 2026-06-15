@@ -1,5 +1,6 @@
 import { ApiError } from "@/shared/api/client";
 import type { FileUploadCompleteResponseDTO, FileUploadPartDTO, FileUploadSessionDTO } from "@/shared/api/types";
+import { sha256Hex } from "@/shared/utils/sha256-stream";
 
 const DEFAULT_PART_SIZE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_RETRIES = 3;
@@ -62,7 +63,7 @@ export class MultipartUploader<TResult = FileUploadCompleteResponseDTO> {
 
   async upload(): Promise<TResult> {
     const partSizeBytes = this.opts.partSizeBytes ?? DEFAULT_PART_SIZE_BYTES;
-    const fileSha256 = await sha256(await readBlobAsArrayBuffer(this.opts.file));
+    const fileSha256 = await sha256Hex(this.opts.file);
     let shouldAbortSession = false;
 
     try {
@@ -92,7 +93,7 @@ export class MultipartUploader<TResult = FileUploadCompleteResponseDTO> {
         const start = index * effectivePartSizeBytes;
         const end = Math.min(start + effectivePartSizeBytes, this.opts.file.size);
         const blob = this.opts.file.slice(start, end);
-        const partSha256 = await sha256(await readBlobAsArrayBuffer(blob));
+        const partSha256 = await sha256Hex(blob);
         const part =
           session.parts.find((candidate) => candidate.partNumber === partNumber) ??
           await this.opts.createPart(session.uploadId, {
@@ -179,27 +180,4 @@ function normalizeUploadError(error: unknown): unknown {
     return new MultipartUploadError(error.error.code, error.error.message);
   }
   return error;
-}
-
-async function sha256(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function readBlobAsArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
-  if (typeof blob.arrayBuffer === "function") return blob.arrayBuffer();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("failed to read blob"));
-    reader.onload = () => {
-      if (reader.result instanceof ArrayBuffer) {
-        resolve(reader.result);
-      } else {
-        reject(new Error("unexpected blob read result"));
-      }
-    };
-    reader.readAsArrayBuffer(blob);
-  });
 }

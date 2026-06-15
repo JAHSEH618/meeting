@@ -3,6 +3,7 @@ import { ApiError } from "@/shared/api/client";
 import { MultipartUploader } from "./MultipartUploader";
 
 const PART = 5 * 1024 * 1024;
+const FOUR_ZERO_BYTES_SHA256 = "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119";
 
 function file(size: number, type = "application/pdf"): File {
   return new File([new Uint8Array(size)], "ref.pdf", { type });
@@ -46,6 +47,31 @@ describe("MultipartUploader", () => {
     await uploader.upload();
 
     expect(createPart).toHaveBeenCalledWith("u1", expect.objectContaining({ partNumber: 1, sizeBytes: 4 }));
+  });
+
+  it("hashes blobs without relying on WebCrypto digest realm compatibility", async () => {
+    const digestSpy = vi.spyOn(crypto.subtle, "digest").mockRejectedValue(
+      new TypeError("strict WebCrypto BufferSource check"),
+    );
+    const init = vi.fn(async () => ({ uploadId: "u1", parts: [] }));
+    const createPart = vi.fn(async () => ({ partNumber: 1, uploadUrl: "https://presign/1", expiresAt: "", headers: {} }));
+    const complete = vi.fn(async () => ({ fileId: "f1", sha256: "x", sizeBytes: 4, contentType: "application/pdf" }));
+    const uploader = new MultipartUploader({ file: file(4), partSizeBytes: PART, init, createPart, complete, abort: vi.fn() });
+
+    try {
+      await uploader.upload();
+    } finally {
+      digestSpy.mockRestore();
+    }
+
+    expect(digestSpy).not.toHaveBeenCalled();
+    expect(init).toHaveBeenCalledWith(expect.objectContaining({
+      fileSha256: FOUR_ZERO_BYTES_SHA256,
+    }));
+    expect(complete).toHaveBeenCalledWith("u1", expect.objectContaining({
+      fileSha256: FOUR_ZERO_BYTES_SHA256,
+      parts: [expect.objectContaining({ partNumber: 1, partSha256: FOUR_ZERO_BYTES_SHA256 })],
+    }));
   });
 
   it("uses server-returned partSizeBytes when Java coerces uploads to single PUT", async () => {

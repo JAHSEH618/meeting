@@ -10,8 +10,9 @@ import org.springframework.stereotype.Component;
 /**
  * 存储配置校验器：确保本地模式必须配置local-root。
  *
- * <p>当 {@code meeting.storage.type=local} 或 {@code meeting.storage.type=minio} 时，
- * 必须配置 {@code meeting.storage.local-root}，否则启动失败。
+ * <p>当 {@code meeting.storage.type=local} 时，必须配置
+ * {@code meeting.storage.local-root}，否则启动失败。{@code minio}
+ * 通过 LocalObjectStorageGateway 的 endpoint shim 生成对象 URL，不需要本地目录。
  *
  * <p>设计目标：fail-fast，避免运行时才发现配置缺失。
  */
@@ -28,7 +29,7 @@ public class StorageConfigValidator implements ApplicationListener<ApplicationRe
 
     @Override
     public void onApplicationEvent(ApplicationReadyEvent event) {
-        if ("local".equalsIgnoreCase(storageType) || "minio".equalsIgnoreCase(storageType)) {
+        if ("local".equalsIgnoreCase(storageType)) {
             if (localRoot == null || localRoot.isBlank()) {
                 String message = String.format(
                     "Storage configuration error: meeting.storage.type=%s requires " +
@@ -41,6 +42,8 @@ public class StorageConfigValidator implements ApplicationListener<ApplicationRe
                 throw new IllegalStateException(message);
             }
             log.info("storage_config_validated type={} localRoot={}", storageType, localRoot);
+        } else if ("minio".equalsIgnoreCase(storageType)) {
+            log.info("storage_config_validated type=minio (LocalObjectStorageGateway endpoint shim)");
         } else if ("tos".equalsIgnoreCase(storageType)) {
             log.info("storage_config_validated type=tos (TOS gateway will validate credentials)");
         } else {
