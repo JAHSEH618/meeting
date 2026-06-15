@@ -262,9 +262,10 @@ describe('API client 401 interceptor', () => {
         success: true,
         data: {
           userId: 'user-1',
-          username: 'test1',
+          displayName: 'test1',
           tenantId: 'tenant-1',
-          role: 'USER',
+          roles: [],
+          permissions: [],
         },
       }),
     } as Response);
@@ -276,9 +277,10 @@ describe('API client 401 interceptor', () => {
         success: true,
         data: {
           userId: 'user-2',
-          username: 'test2',
+          displayName: 'test2',
           tenantId: 'tenant-1',
-          role: 'USER',
+          roles: [],
+          permissions: [],
         },
       }),
     } as Response);
@@ -290,9 +292,9 @@ describe('API client 401 interceptor', () => {
     ]);
 
     expect(result1).toBeDefined();
-    expect(result1!.username).toBe('test1');
+    expect(result1!.displayName).toBe('test1');
     expect(result2).toBeDefined();
-    expect(result2!.username).toBe('test2');
+    expect(result2!.displayName).toBe('test2');
 
     // Critical assertion: 5 calls total (2x401 + 1xrefresh + 2xretry)
     // This proves only ONE refresh happened despite TWO concurrent 401s
