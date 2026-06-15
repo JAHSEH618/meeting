@@ -42,7 +42,7 @@ async function createMeeting(
   page: import("@playwright/test").Page,
   title: string
 ): Promise<string> {
-  await page.getByRole("link", { name: /新建会议|create/i }).click();
+  await page.getByRole("link", { name: /新建会议|create/i }).first().click();
   await page.getByLabel(/标题|title/i).fill(title);
   await page.getByLabel(/语言|language/i).selectOption("zh");
   await page.getByRole("button", { name: /创建|submit/i }).click();

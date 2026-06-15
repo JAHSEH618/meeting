@@ -68,7 +68,7 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
   const meetingId: string = meeting.meetingId;
 
   // ── 2. Admin places hold ───────────────────────────────────
-  const placeResp = await adminCtx.post(`${API_BASE}/admin/legal-holds`, {
+  const placeResp = await adminCtx.post(`${API_BASE}/api/legal-holds`, {
     headers: {
       "Content-Type": "application/json",
       "X-Request-Id": `e2e_lh_place_${stamp}`,
@@ -104,7 +104,7 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
 
   // ── 4. Admin releases the hold ─────────────────────────────
   const releaseResp = await adminCtx.post(
-    `${API_BASE}/admin/legal-holds/${holdId}/release`,
+    `${API_BASE}/api/legal-holds/${holdId}/release`,
     {
       headers: {
         "Content-Type": "application/json",
