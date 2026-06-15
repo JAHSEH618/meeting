@@ -511,7 +511,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] C1+C2：会话创建后锁定人员选择 + BFF commit 加 personId 防错绑校验（409 ENROLLMENT_PERSON_MISMATCH）；加"重新开始"重置路径，`ENROLLMENT_SESSION_NOT_FOUND` 专门处理。（合并于 2026-06-15 commit e160cf3）
 - [x] I1：commitEnrollment 幂等键 = sessionId（激活 BFF 既有的五步编排幂等设计）。（完成于 2026-06-15）
 - [x] I2：建会流程可续传——保留 createdMeetingId，从失败步骤恢复而非重建会议。（完成于 2026-06-15）
-- [ ] I3+I4：SSE 终态即关 + 重连退避 + lastEventId 跟踪；`latestTask == null` 时轮询聚合直到任务出现。
+- [x] I3+I4：SSE 终态即关 + 重连退避 + lastEventId 跟踪；`latestTask == null` 时轮询聚合直到任务出现。（完成于 2026-06-15）
 - [ ] I5–I8：commit/建会后失效对应 query；导出轮询超时显式报错 + unmount 清理；说话人决策按 label 全局锁定；transcriptVersion 缺失给显式提示。
 - [ ] I9+I10：分块流式 SHA-256（移植 meeting-web `sha256-stream.ts`）+ 空 ETag 快速失败；移除预填凭据。
 

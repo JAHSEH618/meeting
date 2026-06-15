@@ -201,12 +201,24 @@ export function subscribeEventStream<T = unknown>(
               .filter((line) => line.startsWith("data:"))
               .map((line) => line.slice(5).trimStart())
               .join("\n");
-            if (data) handlers.onEvent(JSON.parse(data) as T);
+            if (data) {
+              const event = JSON.parse(data) as T;
+              handlers.onEvent(event);
+              // I3: Close on terminal state
+              if ((event as any).status && ["SUCCEEDED", "FAILED", "CANCELLED"].includes((event as any).status)) {
+                controller.abort();
+                return;
+              }
+            }
           }
         }
       } catch {
         if (controller.signal.aborted) return;
         failures += 1;
+        // I4: Exponential backoff (1s, 2s, 4s...)
+        if (failures < maxFailures) {
+          await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, failures - 1), 8000)));
+        }
       }
     }
     if (!controller.signal.aborted) handlers.onFallback();
