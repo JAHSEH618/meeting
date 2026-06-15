@@ -517,6 +517,6 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 文档同步
 
-- [ ] 根 `CLAUDE.md`：更正"persons.py / files.py 未建"的过时描述（已建成并注册于 `router.py:44-48`）。
-- [ ] `apps/meeting-web/SPEC.md` §10.2 第 9 条：删除 Phase K 前的密级 fail-closed 残留要求。
-- [ ] `apps/ai-worker/SPEC.md`：记录 Dramatiq/Prefect 仍延期、pika 就地修复的决策。
+- [x] 根 `CLAUDE.md`：更正"persons.py / files.py 未建"的过时描述（已建成并注册于 `router.py:44-48`）。（完成于 2026-06-15）
+- [x] `apps/meeting-web/SPEC.md` §10.2 第 9 条：删除 Phase K 前的密级 fail-closed 残留要求。（完成于 2026-06-15）
+- [x] `apps/ai-worker/SPEC.md`：记录 Dramatiq/Prefect 仍延期、pika 就地修复的决策。（完成于 2026-06-15）

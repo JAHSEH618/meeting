@@ -9,8 +9,7 @@ Python 3.11+ AI 计算层。
 ```text
 FastAPI
 Clean Architecture
-Dramatiq WorkerRuntime
-Prefect WorkflowEngine
+Pika RabbitMQ Consumer (direct implementation, Dramatiq/Prefect deferred)
 LangGraph Agent
 model_runtime 作为内部 package
 ```
