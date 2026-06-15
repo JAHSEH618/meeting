@@ -55,16 +55,18 @@ public class RagQueryController {
         @RequestBody RagQueryRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         if (body == null || body.question() == null || body.question().isBlank()) {
             throw new IllegalArgumentException("question must not be blank");
         }
         String tenantId = TenantContextHolder.currentTenantId();
-        String effectiveUserId = userId == null || userId.isBlank() ? "anonymous" : userId;
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — RAG query requires authentication");
+        }
 
-        if (!rateLimiter.tryAcquire(tenantId, effectiveUserId)) {
+        if (!rateLimiter.tryAcquire(tenantId, currentUserId)) {
             metrics.ragRateLimitBlocksCounter("tenant_user").increment();
             throw new ApplicationException(
                 ErrorCode.RAG_RATE_LIMITED, 429,
@@ -82,7 +84,7 @@ public class RagQueryController {
 
         RagAnswerDTO dto = facade.query(new RagQueryCommand(
             tenantId,
-            effectiveUserId,
+            currentUserId,
             body.question(),
             scope,
             body.topN() == null ? DEFAULT_TOP_N : body.topN(),

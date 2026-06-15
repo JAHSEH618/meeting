@@ -58,18 +58,21 @@ public class DeletionJobController {
         @RequestBody CreateDeletionJobRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         if (body == null) {
             throw new IllegalArgumentException("request body is required");
+        }
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — deletion job requires authentication");
         }
         DeletionJobDTO dto = facade.create(new CreateDeletionJobCommand(
             TenantContextHolder.currentTenantId(),
             body.scopeType(),
             body.scopeId(),
             body.reason(),
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            currentUserId,
             body.approvedBy(),
             requestId,
             traceId

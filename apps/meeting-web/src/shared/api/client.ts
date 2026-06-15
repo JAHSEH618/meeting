@@ -137,8 +137,8 @@ async function request<T>(
     throw error;
   }
 
-  // Intercept 401 for token refresh
-  if (res.status === 401 && authToken) {
+  // Intercept 401 for token refresh (try even without authToken - refresh cookie may still be valid)
+  if (res.status === 401 && path !== "/auth/login" && path !== "/auth/refresh") {
     return handleUnauthorized<T>(method, path, body, idempotencyKey);
   }
 

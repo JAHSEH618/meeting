@@ -58,18 +58,21 @@ public class LegalHoldController {
         @RequestBody CreateLegalHoldRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         if (body == null) {
             throw new IllegalArgumentException("request body is required");
+        }
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — legal hold requires authentication");
         }
         LegalHoldDTO dto = facade.create(new CreateLegalHoldCommand(
             TenantContextHolder.currentTenantId(),
             body.scopeType(),
             body.scopeId(),
             body.reason(),
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            currentUserId,
             body.approvedBy(),
             requestId,
             traceId
@@ -95,10 +98,9 @@ public class LegalHoldController {
         @RequestBody ReleaseLegalHoldRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
-        return release(legalHoldId, body, requestId, traceId, userId);
+        return release(legalHoldId, body, requestId, traceId);
     }
 
     @PutMapping("/api/legal-holds/{legalHoldId}/release")
@@ -107,23 +109,26 @@ public class LegalHoldController {
         @RequestBody(required = false) ReleaseLegalHoldRequest body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
-        return release(legalHoldId, body, requestId, traceId, userId);
+        return release(legalHoldId, body, requestId, traceId);
     }
 
     private ResponseEntity<ApiResponse<Void>> release(
         String legalHoldId, ReleaseLegalHoldRequest body,
-        String requestId, String traceId, String userId
+        String requestId, String traceId
     ) {
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — legal hold requires authentication");
+        }
         String reason = (body == null || body.reason() == null || body.reason().isBlank())
             ? "user-initiated release"
             : body.reason();
         facade.release(
             TenantContextHolder.currentTenantId(),
             legalHoldId,
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            currentUserId,
             reason
         );
         return ResponseEntity.ok(ApiResponse.ok(null, requestId, traceId));

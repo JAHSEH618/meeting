@@ -51,18 +51,21 @@ public class BreakGlassController {
         @RequestBody CreateBreakGlassBody body,
         @RequestHeader("X-Request-Id") String requestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         if (body == null) {
             throw new IllegalArgumentException("request body is required");
+        }
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — break-glass requires authentication");
         }
         BreakGlassRequestDTO dto = facade.create(new CreateBreakGlassCommand(
             TenantContextHolder.currentTenantId(),
             body.scopeType(),
             body.scopeId(),
             body.reason(),
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            currentUserId,
             requestId,
             traceId
         ));
@@ -75,13 +78,16 @@ public class BreakGlassController {
         @PathVariable("requestId") String bgRequestId,
         @RequestHeader("X-Request-Id") String httpRequestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — break-glass requires authentication");
+        }
         BreakGlassRequestDTO dto = facade.approve(
             TenantContextHolder.currentTenantId(),
             bgRequestId,
-            userId == null || userId.isBlank() ? "anonymous" : userId
+            currentUserId
         );
         return ResponseEntity.ok(ApiResponse.ok(dto, httpRequestId, traceId));
     }
@@ -92,16 +98,19 @@ public class BreakGlassController {
         @RequestBody RejectBody body,
         @RequestHeader("X-Request-Id") String httpRequestId,
         @RequestHeader("X-Trace-Id") String traceId,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-        @RequestHeader(value = "X-User-Id", required = false) String userId
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         if (body == null || body.reason() == null || body.reason().isBlank()) {
             throw new IllegalArgumentException("reject reason is required");
         }
+        String currentUserId = TenantContextHolder.currentUserId();
+        if (currentUserId == null || currentUserId.isBlank()) {
+            throw new IllegalStateException("User context is not set — break-glass requires authentication");
+        }
         BreakGlassRequestDTO dto = facade.reject(
             TenantContextHolder.currentTenantId(),
             bgRequestId,
-            userId == null || userId.isBlank() ? "anonymous" : userId,
+            currentUserId,
             body.reason()
         );
         return ResponseEntity.ok(ApiResponse.ok(dto, httpRequestId, traceId));
