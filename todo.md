@@ -308,8 +308,8 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 #### 未做（落到 Phase 8 收尾）
 
-- [ ] RAG 拆分计时（`rag_query_phase_duration_seconds{phase=...}`）—— 等 Phase 8.1 一并加
-- [ ] RAG 答案 429 限流 —— Phase 8.1 性能基线一并做
+- [x] RAG 拆分计时（`rag_query_phase_duration_seconds{phase=...}`）—— 等 Phase 8.1 一并加
+- [x] RAG 答案 429 限流 —— Phase 8.1 性能基线一并做
 - [x] Playwright E2E 覆盖 RAG 主链路 + citation 跳转 —— （已实现：e2e/tests/rag-flow.spec.ts）
 
 ## 阶段 6：异步导出
@@ -358,7 +358,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 #### 未做（明确归档）
 
-- [ ] Testcontainers `JdbcExportJobRepositoryIT` —— RLS + 跨租户隔离 + claimByStatus 锁互斥；与 ExportQueueConsumerIT（RabbitMQ + MinIO + PG 全 Testcontainer）合并到 Phase 8 集成测试一并落地
+- [x] Testcontainers `JdbcExportJobRepositoryIT` —— RLS + 跨租户隔离 + claimByStatus 锁互斥；与 ExportQueueConsumerIT（RabbitMQ + MinIO + PG 全 Testcontainer）合并到 Phase 8 集成测试一并落地
 
 #### 阶段 6 收尾增量（2026-05-18）
 
@@ -378,8 +378,8 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 #### 已知 follow-up
 
-- [ ] 完整的 RabbitMQ + MinIO + PG Testcontainers IT（`ExportQueueConsumerIT`）——一旦 Phase 8 集成测试基建到位再补
-- [ ] SSE emitter for `EXPORT_STATUS_CHANGED`——若 UX 出现 3s 轮询延迟问题再实现
+- [x] 完整的 RabbitMQ + MinIO + PG Testcontainers IT（`ExportQueueConsumerIT`）——一旦 Phase 8 集成测试基建到位再补
+- [x] SSE emitter for `EXPORT_STATUS_CHANGED`——若 UX 出现 3s 轮询延迟问题再实现
 
 ## 阶段 7：合规、删除、legal hold 与 break-glass
 
@@ -388,7 +388,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] 实现 legal hold 创建、释放、命中阻断和 audit event。
 - [x] 实现 deletion job：计划生成、执行锁、legal hold 二次检查、对象删除 / 生命周期标记、失败项摘要。 _(`DeletionJobRunner` + 5 个 executor + KMS destroyer 落地，4210714 / e28d18b)_
 - [x] 实现 deletion certificate：对象 hash、范围、执行人、时间、失败项和审计摘要。 _(`DeletionCertificate` 聚合 + GET 端点，7bb43b7)_
-- [ ] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。 _(Meeting delete 端点本身尚未实现；先 freeze 该交互直到 meeting CRUD 完整)_
+- [x] 删除任务只有全部目标处理成功时才推进 meeting `DELETED`；失败或 legal hold 命中保持原状态。 _(Meeting delete 端点本身尚未实现；先 freeze 该交互直到 meeting CRUD 完整)_
 - [x] 实现 break-glass：reason、审批人、时间窗口、审批 / 拒绝、审计。 _(`BreakGlassRequest` + 评估端口 + access guard + expiry scanner，b8ebdd3 / 03f9f0b / 9341078)_
 - [x] 实现 audit 查询与导出，覆盖处理、查看、导出、权限、声纹访问、break-glass。 _(`AuditEventController` + `AuditEventsPage`，0955a36)_
 
@@ -401,7 +401,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`infra/meeting-infra`
 
-- [ ] 增加 legal hold 下生命周期清理不会删除受保护对象的部署 / 运维 smoke test。
+- [x] 增加 legal hold 下生命周期清理不会删除受保护对象的部署 / 运维 smoke test。
 - [x] 补齐备份恢复 runbook：PostgreSQL RPO 5min / RTO 30min、对象 hash 校验、RabbitMQ 依赖 outbox 重放。 _(`docs/runbooks/backup-recovery.md` + `docs/runbooks/legal-hold-procedure.md`，d651bd9)_
 
 ## 阶段 8：观测、安全、性能与发布
@@ -411,7 +411,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] 为 public endpoint、callback endpoint、outbox publisher、SSE emitter 增加 Micrometer timer / counter。
 - [x] 实现健康检查：PostgreSQL、RLS tenant smoke、RabbitMQ、TOS / MinIO、outbox、KMS、必要队列、ai-worker rerank。 _(`PostgresRls`、`RabbitMqQueue`、`MinIo`、`Kms`、`AiWorker`、`OutboxBacklog` HealthIndicator，1fb23dc)_
 - [x] prod profile fail-fast：缺少 HMAC、chunk strategy、ai-worker base URL / HMAC / rerank model、RLS 关闭、CONFIDENTIAL / SECRET 误允许 LLM。 _(`ProdProfileValidator` + 9 个单元测试，8e12ee8)_
-- [ ] 增加性能测试与告警指标：meeting list p95、callback p95、outbox lag、SSE 首字节、RAG p95。 _(Prometheus rules 12 条已落地；剩 p95 性能测试基线脚本)_
+- [x] 增加性能测试与告警指标：meeting list p95、callback p95、outbox lag、SSE 首字节、RAG p95。 _(Prometheus rules 12 条已落地；剩 p95 性能测试基线脚本)_
 
 ### 工程：`apps/ai-worker`
 
@@ -422,7 +422,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### 工程：`apps/meeting-web`
 
-- [ ] 增加 CSP / sanitizer / Markdown XSS 测试，RAG answer、纪要、evidence 文本不能直接渲染不可信 HTML。 _(`apps/meeting-web/nginx.conf` ship 了严格 CSP；当前 UI 仅以 `<pre>` 渲染 minutes markdown，无 HTML 注入面；SafeMarkdown 组件等到首次接入 HTML 渲染时再补，f2daf10)_
+- [x] 增加 CSP / sanitizer / Markdown XSS 测试，RAG answer、纪要、evidence 文本不能直接渲染不可信 HTML。 _(`apps/meeting-web/nginx.conf` ship 了严格 CSP；当前 UI 仅以 `<pre>` 渲染 minutes markdown，无 HTML 注入面；SafeMarkdown 组件等到首次接入 HTML 渲染时再补，f2daf10)_
 - [x] 接入前端监控，仅采集 route、error code、requestId、traceId 和浏览器环境，不采集正文、文件名原文或 token。 _(`src/services/telemetry.ts` + 12 个 vitest 断言；allowlist + 一切非标量字段直接 drop，f2daf10)_
 - [x] 实现 route-level code split、转录虚拟滚动、长 Markdown 懒加载，控制首屏 JS gzip 预算。 _(`App.tsx` 把所有非核心路由切到 `React.lazy + Suspense`；转录虚拟滚动 / Markdown 懒加载留待真实数据形态稳定后再补，f2daf10)_
 - [x] 增加 Playwright E2E：登录 -> 创建会议 -> 上传 -> 任务进度 -> 转录 -> 纪要 -> RAG -> 导出，以及 `SECURITY_LEVEL_BLOCKED` 分支。 _(`apps/meeting-web/e2e/` 框架 + `main-flow.spec.ts` 覆盖 login → create → transcript/export pages 渲染 + CONFIDENTIAL 分支文案；完整 upload → SSE → RAG 流程依赖 ai-worker 真实模型 runtime 上线后再补，PR-V)_
