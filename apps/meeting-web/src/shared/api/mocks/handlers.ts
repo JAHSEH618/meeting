@@ -706,6 +706,56 @@ export const handlers = [
     });
   }),
 
+  // ── Generic File Upload (P3 C1 refactor) ─────────────────────
+  http.post("/api/files", () => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        uploadId: "upload_001",
+        status: "IN_PROGRESS",
+        expiresAt: "2026-06-16T00:00:00Z",
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.post("/api/files/:uploadId/parts", async ({ request }) => {
+    const body = await request.json() as { partNumber: number; partSha256: string };
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        uploadUrl: "https://tos.example.com/upload",
+        headers: {},
+        etag: `etag_${body.partNumber}`,
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
+  http.put("https://tos.example.com/upload", () => {
+    return new HttpResponse(null, {
+      status: 200,
+      headers: { ETag: "etag_001" },
+    });
+  }),
+
+  http.post("/api/files/:uploadId/complete", () => {
+    return HttpResponse.json<ApiResponse<unknown>>({
+      success: true,
+      data: {
+        fileId: "file_001",
+        status: "COMPLETED",
+      },
+      error: null,
+      requestId: "r",
+      traceId: "t",
+    });
+  }),
+
   // ── Documents ────────────────────────────────────────────────────
   http.get("/api/documents", () => {
     return HttpResponse.json<ApiResponse<unknown>>({

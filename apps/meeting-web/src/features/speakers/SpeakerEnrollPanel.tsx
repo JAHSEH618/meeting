@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  createAudioUpload,
-  createAudioUploadPart,
-  putAudioUploadPart,
-  completeAudioUpload,
-  createMeeting,
+  createFileUpload,
+  createFileUploadPart,
+  putFileUploadPart,
+  completeFileUpload,
   createSpeakerEnrollment,
-  listMeetings,
   listSpeakerEnrollments,
 } from "@shared/api/client";
 import { sha256Hex } from "@shared/utils/sha256-stream";
@@ -19,16 +17,6 @@ const SAMPLE_TEXTS = [
   "请阅读这段示例文本，保持声音清晰自然，录制约三十秒左右的音频以完成声纹注册。",
 ];
 
-async function getOrCreateSystemMeeting(): Promise<string> {
-  const meetingsList = await listMeetings();
-  const firstMeeting = meetingsList.items?.[0];
-  if (firstMeeting?.meetingId) return firstMeeting.meetingId;
-  const newMeeting = await createMeeting({
-    title: "声纹注册临时载体会议",
-    language: "zh",
-  });
-  return newMeeting.meetingId;
-}
 
 function formatDuration(sec: number) {
   const mins = Math.floor(sec / 60);
@@ -156,13 +144,11 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
         fileName = uploadFile.name;
       }
 
-      const meetingId = await getOrCreateSystemMeeting();
-
       setStatusText("正在计算音频指纹…");
       const sha256 = await sha256Hex(fileBlob);
 
       setStatusText("正在申请上传通道…");
-      const session = await createAudioUpload(meetingId, {
+      const session = await createFileUpload({
         fileName,
         contentType: fileBlob.type || "application/octet-stream",
         fileSizeBytes: fileBlob.size,
@@ -171,15 +157,15 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
       });
 
       setStatusText("正在上传录音数据…");
-      const signed = await createAudioUploadPart(meetingId, session.uploadId, {
+      const signed = await createFileUploadPart(session.uploadId, {
         partNumber: 1,
         sizeBytes: fileBlob.size,
         partSha256: sha256,
       });
-      await putAudioUploadPart(signed.uploadUrl, fileBlob, signed.headers);
+      await putFileUploadPart(signed.uploadUrl, fileBlob, signed.headers);
 
       setStatusText("正在校验并完成上传…");
-      const completedSession = await completeAudioUpload(meetingId, session.uploadId, {
+      const completedSession = await completeFileUpload(session.uploadId, {
         fileSha256: sha256,
         durationMs: null,
         parts: [{
