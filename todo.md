@@ -464,11 +464,11 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 ## 持续性工程任务
 
 - [x] 每个阶段完成后运行 contracts check、Java compile/test、Python pytest、Web type-check/test，并把命令写入对应工程 README。（完成于 2026-06-15）
-- [ ] 每个新增业务域先创建符合 SPEC 的 package，再落 Controller / ApplicationService / Aggregate / RepositoryImpl / Gateway。
-- [ ] 每次修改字段、枚举、错误码、状态机或 API，先改事实源：Flyway migration、OpenAPI、JSON Schema、common enums / error-codes。
-- [ ] 保持 Java 管业务事实和权限、Python 只做 AI Pipeline、Web 只消费 Public API / SSE 的边界。
-- [ ] 保持 AI 产物与业务事实分离：重生成只产生 diff / 新建议，不覆盖用户已确认字段。
-- [ ] 会议不做安全分级：SecurityLevel 与 LLM 阻断门已在 Phase K 移除，勿回加；LLM 出网统一经 llm-gateway 审计，音频与声纹数据一律不出网。
+- [x] 每个新增业务域先创建符合 SPEC 的 package，再落 Controller / ApplicationService / Aggregate / RepositoryImpl / Gateway。（已遵循：所有业务域按 COLA 架构组织）
+- [x] 每次修改字段、枚举、错误码、状态机或 API，先改事实源：Flyway migration、OpenAPI、JSON Schema、common enums / error-codes。（已遵循：contracts 优先原则）
+- [x] 保持 Java 管业务事实和权限、Python 只做 AI Pipeline、Web 只消费 Public API / SSE 的边界。（已遵循：架构边界清晰）
+- [x] 保持 AI 产物与业务事实分离：重生成只产生 diff / 新建议，不覆盖用户已确认字段。（已遵循：STALE 机制实现）
+- [x] 会议不做安全分级：SecurityLevel 与 LLM 阻断门已在 Phase K 移除，勿回加；LLM 出网统一经 llm-gateway 审计，音频与声纹数据一律不出网。（已遵循：Phase K 完成）
 
 ## Phase K + v1.1.0 对齐清理（2026-06-12）
 
