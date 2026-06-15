@@ -71,6 +71,9 @@ public class AuthController {
         if (authorization != null && !authorization.isBlank()) {
             authFacade.logout(authorization);
         }
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            authFacade.logoutRefreshToken(refreshToken);
+        }
 
         // Clear cookies
         Cookie refreshCookie = new Cookie("REFRESH_TOKEN", null);

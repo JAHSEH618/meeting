@@ -83,6 +83,30 @@ class AuthControllerTest {
     }
 
     @Test
+    void logoutWithRefreshCookieRevokesThatRefreshToken() {
+        InMemoryAuthApplicationService auth = new InMemoryAuthApplicationService();
+        AuthController controller = new AuthController(auth);
+
+        MockHttpServletResponse loginResponse = new MockHttpServletResponse();
+        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), loginResponse);
+        assertThat(login.getBody().success()).isTrue();
+
+        String refreshTokenId = loginResponse.getCookie("REFRESH_TOKEN").getValue();
+        String csrfToken = loginResponse.getCookie("XSRF-TOKEN").getValue();
+
+        MockHttpServletResponse logoutResponse = new MockHttpServletResponse();
+        var logout = controller.logout(null, refreshTokenId, "req_02", "trace_02", logoutResponse);
+        assertThat(logout.getStatusCode().value()).isEqualTo(200);
+        assertThat(logoutResponse.getCookie("REFRESH_TOKEN").getMaxAge()).isZero();
+
+        MockHttpServletResponse refreshResponse = new MockHttpServletResponse();
+        var refresh = controller.refresh(refreshTokenId, csrfToken, csrfToken, "req_03", "trace_03", refreshResponse);
+
+        assertThat(refresh.getStatusCode().value()).isEqualTo(401);
+        assertThat(refresh.getBody().error().code().name()).isEqualTo("REFRESH_TOKEN_INVALID");
+    }
+
+    @Test
     void refresh_rejects_missingCSRF() {
         InMemoryAuthApplicationService auth = new InMemoryAuthApplicationService();
         AuthController controller = new AuthController(auth);

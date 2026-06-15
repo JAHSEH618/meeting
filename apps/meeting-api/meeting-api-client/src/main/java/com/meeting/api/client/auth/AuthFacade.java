@@ -11,6 +11,8 @@ public interface AuthFacade {
 
     void logout(String accessToken);
 
+    void logoutRefreshToken(String refreshTokenId);
+
     /**
      * Refresh access token using refresh token. Returns new access token and expiry.
      */

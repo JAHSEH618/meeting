@@ -198,5 +198,13 @@ public class InMemoryAuthApplicationService implements AuthFacade {
         userOpt.ifPresent(user -> refreshTokenRepository.revokeAllByUserId(user.userId()));
     }
 
+    @Override
+    public void logoutRefreshToken(String refreshTokenId) {
+        if (refreshTokenId == null || refreshTokenId.isBlank()) {
+            return;
+        }
+        refreshTokenRepository.revokeByTokenId(refreshTokenId);
+    }
+
     private record Session(AuthUserDTO user, OffsetDateTime expiresAt) {}
 }

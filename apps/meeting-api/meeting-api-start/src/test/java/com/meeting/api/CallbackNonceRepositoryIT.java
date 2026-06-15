@@ -1,5 +1,6 @@
 package com.meeting.api;
 
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.domain.task.CallbackNonceRepository;
 import com.meeting.api.start.MeetingApiApplication;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,31 +45,35 @@ class CallbackNonceRepositoryIT {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private TenantScopedTransaction tenantTx;
+
     private String tenantId;
 
     @BeforeEach
     void setUp() {
         tenantId = "tenant_" + System.currentTimeMillis();
         jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?)", tenantId, "Test Tenant");
-        jdbcTemplate.update("SET app.tenant_id = ?", tenantId);
     }
 
     @Test
     void shouldRecordNonceSuccessfully() {
         String nonce = "nonce_" + System.currentTimeMillis();
-        boolean recorded = nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR");
+        boolean recorded = withTenant(tenantId,
+            () -> nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR"));
 
         assertThat(recorded).isTrue();
-        assertThat(nonceRepository.exists(tenantId, nonce)).isTrue();
+        assertThat(withTenant(tenantId, () -> nonceRepository.exists(tenantId, nonce))).isTrue();
     }
 
     @Test
     void shouldRejectDuplicateNonce() {
         String nonce = "nonce_" + System.currentTimeMillis();
-        nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR");
+        withTenant(tenantId, () -> nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR"));
 
         // 尝试重放
-        boolean replayAttempt = nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR");
+        boolean replayAttempt = withTenant(tenantId,
+            () -> nonceRepository.record(tenantId, nonce, "worker1", "task1", "ASR"));
 
         assertThat(replayAttempt).isFalse();
     }
@@ -78,22 +83,24 @@ class CallbackNonceRepositoryIT {
         String nonce1 = "nonce_old_" + System.currentTimeMillis();
         String nonce2 = "nonce_new_" + System.currentTimeMillis();
 
-        nonceRepository.record(tenantId, nonce1, "worker1", "task1", "ASR");
-        nonceRepository.record(tenantId, nonce2, "worker1", "task2", "DIARIZATION");
+        withTenant(tenantId, () -> nonceRepository.record(tenantId, nonce1, "worker1", "task1", "ASR"));
+        withTenant(tenantId, () -> nonceRepository.record(tenantId, nonce2, "worker1", "task2", "DIARIZATION"));
 
         // 手动设置 nonce1 为过期
-        jdbcTemplate.update(
-            "UPDATE callback_nonces SET expires_at = ? WHERE tenant_id = ? AND nonce = ?",
-            OffsetDateTime.now().minusMinutes(10),
-            tenantId,
-            nonce1
+        withTenant(tenantId,
+            () -> jdbcTemplate.update(
+                "UPDATE callback_nonces SET expires_at = ? WHERE tenant_id = ? AND nonce = ?",
+                OffsetDateTime.now().minusMinutes(10),
+                tenantId,
+                nonce1
+            )
         );
 
-        int cleaned = nonceRepository.cleanupExpired(OffsetDateTime.now());
+        int cleaned = withTenant(tenantId, () -> nonceRepository.cleanupExpired(OffsetDateTime.now()));
 
         assertThat(cleaned).isGreaterThanOrEqualTo(1);
-        assertThat(nonceRepository.exists(tenantId, nonce1)).isFalse();
-        assertThat(nonceRepository.exists(tenantId, nonce2)).isTrue();
+        assertThat(withTenant(tenantId, () -> nonceRepository.exists(tenantId, nonce1))).isFalse();
+        assertThat(withTenant(tenantId, () -> nonceRepository.exists(tenantId, nonce2))).isTrue();
     }
 
     @Test
@@ -105,10 +112,15 @@ class CallbackNonceRepositoryIT {
 
         String nonce = "shared_nonce_" + System.currentTimeMillis();
 
-        nonceRepository.record(tenant1, nonce, "worker1", "task1", "ASR");
+        withTenant(tenant1, () -> nonceRepository.record(tenant1, nonce, "worker1", "task1", "ASR"));
 
         // 不同租户可以使用相同的 nonce
-        boolean recorded = nonceRepository.record(tenant2, nonce, "worker1", "task2", "ASR");
+        boolean recorded = withTenant(tenant2,
+            () -> nonceRepository.record(tenant2, nonce, "worker1", "task2", "ASR"));
         assertThat(recorded).isTrue();
+    }
+
+    private <T> T withTenant(String tenantId, java.util.function.Supplier<T> callback) {
+        return tenantTx.execute(tenantId, "test_user", "test_request", callback);
     }
 }
