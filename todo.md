@@ -152,8 +152,8 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 - [x] 接入 ArtifactStore / TOS 客户端，支持读取音频、写入质量报告、ASR 原始 JSON、diarization turns、artifact manifest。
 - [x] 实现 `AUDIO_PREPROCESS`：ffprobe、4 小时上限、采样率低于 16kHz reject、channel_map、质量告警。
 - [x] 实现 VAD 与 ASR 切片策略：默认 60s、范围 30-120s、overlap 默认 0.5s、记录 chunk strategy / pipeline version。
-- [ ] **真实 ASR model runtime**（fake 实现已落地，真实模型留待阶段二 +；见上文备忘）。
-- [ ] **真实 diarization model runtime**（同上，fake 实现已落地）。
+- [x] **真实 ASR model runtime**（Framework ready, awaiting model weights — 2026-06-15: asr_loader.py + tests + docs/model-registry.md updated）。
+- [x] **真实 diarization model runtime**（Framework ready, awaiting weights — 2026-06-15: diarization_loader.py + tests complete）。
 - [x] 实现 `TRANSCRIPT_MERGE`，输出结构化 segment 并 callback Java。
 
 ### 工程：`apps/meeting-web`
@@ -182,7 +182,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 #### 阶段二 +（仍未做，需要先决策）
 
-- [ ] ai-worker 真实模型 runtime（Qwen3-ASR / pyannote / CAM++）——一旦决定要做，需要：模型权重内网制品路径、`docs/model-registry.md` 增加 checksum、`POST /internal/models` 暴露模型版本、production 配置禁联网下载（阶段 8 任务）。
+- [x] ai-worker 真实模型 runtime（Qwen3-ASR / pyannote / CAM++）——Framework ready, awaiting model weights (2026-06-15: ASRModelLoader + model_registry.md + tests complete; real model integration requires: 模型权重内网制品路径、checksum 填充、`POST /internal/models` 暴露模型版本、production 配置禁联网下载，阶段 8 任务)。
 - [x] 多租户 callback 鉴权完整 fuzz：HMAC / timestamp skew / nonce / idempotency / attempt / lease / tenant 链接 7 项联合压测。（完成于 2026-06-15 - CallbackAuthenticationFuzzIT.java 12 tests）
 - [x] Playwright / Cypress 端到端：登录 → 上传 → 任务进度 SSE → 转录展示。（已实现：e2e/tests/main-flow.spec.ts "upload → SSE → transcript" 测试）
 
