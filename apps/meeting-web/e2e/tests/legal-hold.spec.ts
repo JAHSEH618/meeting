@@ -81,6 +81,17 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
       reason: "e2e-legal-hold-spec",
     },
   });
+
+  // DIAGNOSTIC: Log response details
+  if (!placeResp.ok()) {
+    const status = placeResp.status();
+    const body = await placeResp.text();
+    console.error(`[E2E DIAGNOSTIC] POST /api/legal-holds failed:`);
+    console.error(`  Status: ${status}`);
+    console.error(`  Body: ${body.substring(0, 500)}`);
+    throw new Error(`POST /api/legal-holds returned ${status}. Check if endpoint exists and admin has permission.`);
+  }
+
   expect(placeResp.ok()).toBeTruthy();
   const placed = (await placeResp.json()).data;
   const holdId: string = placed.holdId ?? placed.id;

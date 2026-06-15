@@ -59,6 +59,17 @@ test("login → create meeting → transcript / exports pages render", async ({ 
   // thoroughly by export-pdf-smoke.sh, which can validate the
   // actual PDF bytes via pdftotext.
   await page.goto(meetingUrl + "/transcript");
+
+  // DIAGNOSTIC: Check what's on the page
+  const pageContent = await page.content();
+  if (!(await page.getByRole("heading", { name: /转录|transcript/i }).isVisible())) {
+    console.error(`[E2E DIAGNOSTIC] Transcript page heading not found. Page content sample:`);
+    console.error(pageContent.substring(0, 1000));
+    // Check if it's an error page or auth redirect
+    const url = page.url();
+    console.error(`  Current URL: ${url}`);
+  }
+
   await expect(page.getByRole("heading", { name: /转录|transcript/i })).toBeVisible();
 
   await page.goto(meetingUrl + "/exports");

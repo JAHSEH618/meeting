@@ -39,6 +39,16 @@ test("rag scope-less question renders an answer card with coverage badge", async
   await login(page);
   await page.goto("/rag");
 
+  // DIAGNOSTIC: Check what's on the page
+  const pageContent = await page.content();
+  const hasElement = await page.locator('#rag-question').count() > 0;
+  if (!hasElement) {
+    console.error(`[E2E DIAGNOSTIC] #rag-question not found. Page content sample:`);
+    console.error(pageContent.substring(0, 1000));
+    const url = page.url();
+    console.error(`  Current URL: ${url}`);
+  }
+
   // Wait for the lazy-loaded RagPage to render by checking for the question input
   await page.waitForSelector('#rag-question', { state: 'visible' });
 
