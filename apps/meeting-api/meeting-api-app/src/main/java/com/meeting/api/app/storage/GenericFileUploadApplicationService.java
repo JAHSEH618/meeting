@@ -45,10 +45,16 @@ public class GenericFileUploadApplicationService implements GenericFileFacade {
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "text/plain",
         "text/markdown",
+        // Audio MIME types (must match public-api.yaml)
         "audio/wav",
+        "audio/x-wav",
         "audio/mpeg",
+        "audio/mp4",
         "audio/x-m4a",
-        "audio/flac"
+        "audio/webm",
+        "audio/ogg",
+        "audio/flac",
+        "application/octet-stream"
     );
 
     private final GenericFileUploadRepository uploadRepository;

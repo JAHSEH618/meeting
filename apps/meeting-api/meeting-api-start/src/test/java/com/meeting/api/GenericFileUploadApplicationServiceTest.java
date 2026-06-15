@@ -51,11 +51,19 @@ class GenericFileUploadApplicationServiceTest {
     void createSessionAllowsDocumentsAndContractAudioTypes() {
         TestContext ctx = new TestContext();
 
+        // Documents
         assertThat(ctx.service.createSession(createCommand("ref.pdf", "application/pdf")).uploadId()).startsWith("upl_");
+
+        // All audio MIME types from public-api.yaml contracts
         assertThat(ctx.service.createSession(createCommand("voice.wav", "audio/wav")).contentType()).isEqualTo("audio/wav");
+        assertThat(ctx.service.createSession(createCommand("voice.wav", "audio/x-wav")).contentType()).isEqualTo("audio/x-wav");
         assertThat(ctx.service.createSession(createCommand("voice.mp3", "audio/mpeg")).contentType()).isEqualTo("audio/mpeg");
+        assertThat(ctx.service.createSession(createCommand("voice.mp4", "audio/mp4")).contentType()).isEqualTo("audio/mp4");
         assertThat(ctx.service.createSession(createCommand("voice.m4a", "audio/x-m4a")).contentType()).isEqualTo("audio/x-m4a");
+        assertThat(ctx.service.createSession(createCommand("voice.webm", "audio/webm")).contentType()).isEqualTo("audio/webm");
+        assertThat(ctx.service.createSession(createCommand("voice.ogg", "audio/ogg")).contentType()).isEqualTo("audio/ogg");
         assertThat(ctx.service.createSession(createCommand("voice.flac", "audio/flac")).contentType()).isEqualTo("audio/flac");
+        assertThat(ctx.service.createSession(createCommand("voice.bin", "application/octet-stream")).contentType()).isEqualTo("application/octet-stream");
     }
 
     @Test
