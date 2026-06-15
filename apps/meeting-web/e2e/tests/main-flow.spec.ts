@@ -10,8 +10,7 @@ const __dirname_local = dirname(fileURLToPath(import.meta.url));
  *
  * Pre-conditions:
  *   1. `docker compose --profile full-stack up -d` is running.
- *   2. A demo user (default `demo@meeting.local` / `demo`) is bootstrapped
- *      by the meeting-api seed migration.
+ *   2. The dev auth account (default `admin` / `admin123`) is available.
  *   3. LibreOffice + Noto CJK are installed in the meeting-api container
  *      (the prod Dockerfile bundles them).
  *
@@ -26,14 +25,14 @@ const __dirname_local = dirname(fileURLToPath(import.meta.url));
  * spuriously. CI mounts a fixture at `e2e/fixtures/sample-30s.wav`.
  */
 
-const DEMO_USER = process.env.E2E_USER ?? "demo@meeting.local";
-const DEMO_PASS = process.env.E2E_PASS ?? "demo";
+const DEMO_USER = process.env.E2E_USER ?? "admin";
+const DEMO_PASS = process.env.E2E_PASS ?? "admin123";
 const AUDIO_FIXTURE = process.env.E2E_AUDIO_FIXTURE
   ?? resolve(__dirname_local, "..", "fixtures", "sample-30s.wav");
 
 async function login(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel(/用户名|username/i).fill(DEMO_USER);
+  await page.getByLabel(/账号|用户名|username/i).fill(DEMO_USER);
   await page.getByLabel(/密码|password/i).fill(DEMO_PASS);
   await page.getByRole("button", { name: /登录|sign in/i }).click();
   await expect(page).toHaveURL(/\/meetings$/);

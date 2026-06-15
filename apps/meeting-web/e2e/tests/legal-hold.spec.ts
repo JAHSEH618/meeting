@@ -13,14 +13,13 @@ import { expect, request, test } from "@playwright/test";
  *      itself returns 423 (asserted via the route observer).
  *   4. Admin releases the hold; the user can now delete successfully.
  *
- * Requires the admin account seeded by the meeting-api migration
- * (default: admin@meeting.local / admin).
+ * Uses the dev auth account by default (`admin` / `admin123`).
  */
 
-const DEMO_USER = process.env.E2E_USER ?? "demo@meeting.local";
-const DEMO_PASS = process.env.E2E_PASS ?? "demo";
-const ADMIN_USER = process.env.E2E_ADMIN_USER ?? "admin@meeting.local";
-const ADMIN_PASS = process.env.E2E_ADMIN_PASS ?? "admin";
+const DEMO_USER = process.env.E2E_USER ?? "admin";
+const DEMO_PASS = process.env.E2E_PASS ?? "admin123";
+const ADMIN_USER = process.env.E2E_ADMIN_USER ?? "admin";
+const ADMIN_PASS = process.env.E2E_ADMIN_PASS ?? "admin123";
 const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8080";
 
 interface LoginResponse {

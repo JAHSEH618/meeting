@@ -22,14 +22,14 @@ const __dirname_local = dirname(fileURLToPath(import.meta.url));
  *    without the fixture there's no transcript to cite.
  */
 
-const DEMO_USER = process.env.E2E_USER ?? "demo@meeting.local";
-const DEMO_PASS = process.env.E2E_PASS ?? "demo";
+const DEMO_USER = process.env.E2E_USER ?? "admin";
+const DEMO_PASS = process.env.E2E_PASS ?? "admin123";
 const AUDIO_FIXTURE = process.env.E2E_AUDIO_FIXTURE
   ?? resolve(__dirname_local, "..", "fixtures", "sample-30s.wav");
 
 async function login(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel(/用户名|username/i).fill(DEMO_USER);
+  await page.getByLabel(/账号|用户名|username/i).fill(DEMO_USER);
   await page.getByLabel(/密码|password/i).fill(DEMO_PASS);
   await page.getByRole("button", { name: /登录|sign in/i }).click();
   await expect(page).toHaveURL(/\/meetings$/);
