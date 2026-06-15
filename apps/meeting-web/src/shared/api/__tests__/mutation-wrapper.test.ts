@@ -30,11 +30,15 @@ describe('wrapMutation', () => {
 
     // First call fails
     await expect(wrapped({ param: 'value' }, 'user1')).rejects.toThrow();
-    const firstKey = mockFn.mock.calls[0][1];
+    const firstCall = mockFn.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const firstKey = firstCall![1];
 
     // Retry succeeds with SAME key
     await wrapped({ param: 'value' }, 'user1');
-    const secondKey = mockFn.mock.calls[1][1];
+    const secondCall = mockFn.mock.calls[1];
+    expect(secondCall).toBeDefined();
+    const secondKey = secondCall![1];
 
     expect(firstKey).toBe(secondKey);
   });
@@ -46,8 +50,12 @@ describe('wrapMutation', () => {
     await wrapped({ meetingId: 'm1', title: 'New' }, 'user1', 'm1');
     await wrapped({ meetingId: 'm2', title: 'New' }, 'user1', 'm2');
 
-    const key1 = mockFn.mock.calls[0][1];
-    const key2 = mockFn.mock.calls[1][1];
+    const call1 = mockFn.mock.calls[0];
+    const call2 = mockFn.mock.calls[1];
+    expect(call1).toBeDefined();
+    expect(call2).toBeDefined();
+    const key1 = call1![1];
+    const key2 = call2![1];
 
     expect(key1).not.toBe(key2); // Different contexts
   });

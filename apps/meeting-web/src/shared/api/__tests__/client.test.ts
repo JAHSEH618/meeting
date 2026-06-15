@@ -187,7 +187,8 @@ describe('API client 401 interceptor', () => {
 
     // Verify the retry used the new token
     const retryCall = fetchMock.mock.calls[2];
-    expect(retryCall[1].headers.Authorization).toBe('Bearer new-token');
+    expect(retryCall).toBeDefined();
+    expect(retryCall![1].headers.Authorization).toBe('Bearer new-token');
   });
 
   it('throws AUTH_REQUIRED after refresh failure', async () => {
@@ -289,9 +290,9 @@ describe('API client 401 interceptor', () => {
     ]);
 
     expect(result1).toBeDefined();
-    expect(result1.username).toBe('test1');
+    expect(result1!.displayName).toBe('test1');
     expect(result2).toBeDefined();
-    expect(result2.username).toBe('test2');
+    expect(result2!.displayName).toBe('test2');
 
     // Critical assertion: 5 calls total (2x401 + 1xrefresh + 2xretry)
     // This proves only ONE refresh happened despite TWO concurrent 401s
@@ -300,8 +301,10 @@ describe('API client 401 interceptor', () => {
     // Verify both retries used the new token
     const retry1 = fetchMock.mock.calls[3];
     const retry2 = fetchMock.mock.calls[4];
-    expect(retry1[1].headers.Authorization).toBe('Bearer new-token');
-    expect(retry2[1].headers.Authorization).toBe('Bearer new-token');
+    expect(retry1).toBeDefined();
+    expect(retry2).toBeDefined();
+    expect(retry1![1].headers.Authorization).toBe('Bearer new-token');
+    expect(retry2![1].headers.Authorization).toBe('Bearer new-token');
   });
 });
 
