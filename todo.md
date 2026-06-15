@@ -183,7 +183,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 #### 阶段二 +（仍未做，需要先决策）
 
 - [ ] ai-worker 真实模型 runtime（Qwen3-ASR / pyannote / CAM++）——一旦决定要做，需要：模型权重内网制品路径、`docs/model-registry.md` 增加 checksum、`POST /internal/models` 暴露模型版本、production 配置禁联网下载（阶段 8 任务）。
-- [ ] 多租户 callback 鉴权完整 fuzz：HMAC / timestamp skew / nonce / idempotency / attempt / lease / tenant 链接 7 项联合压测。
+- [x] 多租户 callback 鉴权完整 fuzz：HMAC / timestamp skew / nonce / idempotency / attempt / lease / tenant 链接 7 项联合压测。（完成于 2026-06-15 - CallbackAuthenticationFuzzIT.java 12 tests）
 - [x] Playwright / Cypress 端到端：登录 → 上传 → 任务进度 SSE → 转录展示。（已实现：e2e/tests/main-flow.spec.ts "upload → SSE → transcript" 测试）
 
 #### 手工 E2E 走查清单（用于阶段三开工前验收）
