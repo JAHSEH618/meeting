@@ -1,7 +1,6 @@
 package com.meeting.api.infrastructure.persistence.task;
 
 import com.meeting.api.domain.task.CallbackNonceRepository;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -31,14 +30,10 @@ public class JdbcCallbackNonceRepository implements CallbackNonceRepository {
         String sql = """
             INSERT INTO callback_nonces (tenant_id, nonce, worker_id, task_id, step_name)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (tenant_id, nonce) DO NOTHING
             """;
-        try {
-            int rows = jdbcTemplate.update(sql, tenantId, nonce, workerId, taskId, stepName);
-            return rows > 0;
-        } catch (DuplicateKeyException e) {
-            // nonce 已存在，重放攻击
-            return false;
-        }
+        int rows = jdbcTemplate.update(sql, tenantId, nonce, workerId, taskId, stepName);
+        return rows > 0;
     }
 
     @Override
