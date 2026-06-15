@@ -11,10 +11,12 @@ Use this file as a lightweight table of contents for humans and AI coding agents
 | `.github/` | directory | TBD: describe this directory. |
 | `.gitignore` | file | Git ignore rules. |
 | `apps/` | directory | Applications in a monorepo layout. |
+| `BACKEND_USER_ID_FIX.md` | file | TBD: describe this file. |
 | `CLAUDE.md` | file | Always-loaded AI coding context. |
 | `CODEBASE_MAP.md` | file | Lightweight map of important paths. |
 | `deploy/` | directory | TBD: describe this directory. |
 | `docs/` | directory | Project documentation. |
+| `E2E_FIX_SUMMARY.md` | file | TBD: describe this file. |
 | `infra/` | directory | Infrastructure and deployment configuration. |
 | `packages/` | directory | Shared packages or libraries. |
 | `README.md` | file | Human-facing project overview and setup guide. |

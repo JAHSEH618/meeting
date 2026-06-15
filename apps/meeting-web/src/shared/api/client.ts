@@ -54,15 +54,20 @@ async function handleUnauthorized<T>(
   originalBody?: unknown,
   originalIdempotencyKey?: string,
 ): Promise<T> {
+  console.log('[Auth] handleUnauthorized triggered for', originalMethod, originalPath);
+
   // Single-flight pattern: if refresh already in-flight, await it
   if (refreshPromise) {
+    console.log('[Auth] Refresh already in-flight, awaiting...');
     try {
       const result = await refreshPromise;
       setAuthToken(result.accessToken);
+      console.log('[Auth] Refresh completed (from in-flight), retrying request');
       // Retry original request with new token
       return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
-    } catch {
+    } catch (err) {
       // Refresh failed, clear state
+      console.error('[Auth] Refresh failed (from in-flight):', err);
       refreshPromise = null;
       setAuthToken(null);
       const error = new Error("认证已过期，请重新登录") as ApiClientError;
@@ -73,15 +78,18 @@ async function handleUnauthorized<T>(
   }
 
   // Start new refresh
+  console.log('[Auth] Starting new refresh...');
   refreshPromise = refresh();
   try {
     const result = await refreshPromise;
     setAuthToken(result.accessToken);
     refreshPromise = null;
+    console.log('[Auth] Refresh completed, retrying request');
     // Retry original request with new token
     return request<T>(originalMethod, originalPath, originalBody, originalIdempotencyKey);
-  } catch {
+  } catch (err) {
     // Refresh failed, clear state
+    console.error('[Auth] Refresh failed:', err);
     refreshPromise = null;
     setAuthToken(null);
     const error = new Error("认证已过期，请重新登录") as ApiClientError;
@@ -251,11 +259,16 @@ export async function logout() {
 }
 
 export async function refresh() {
+  console.log('[Auth] refresh() called');
+
   // Read CSRF token from cookie
   const csrfToken = document.cookie
     .split("; ")
     .find((row) => row.startsWith("XSRF-TOKEN="))
     ?.split("=")[1];
+
+  console.log('[Auth] CSRF token found:', !!csrfToken);
+  console.log('[Auth] All cookies:', document.cookie);
 
   if (!csrfToken) {
     const error = new Error("CSRF token not found") as ApiClientError;
@@ -274,12 +287,15 @@ export async function refresh() {
 
   let res: Response;
   try {
+    console.log('[Auth] Calling POST /auth/refresh with credentials: include');
     res = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
       headers,
       credentials: "include",
     });
+    console.log('[Auth] Refresh response status:', res.status);
   } catch (cause) {
+    console.error('[Auth] Refresh network error:', cause);
     const error = new Error("网络连接失败") as ApiClientError;
     error.code = "DEPENDENCY_UNAVAILABLE";
     error.retryable = true;
@@ -290,6 +306,7 @@ export async function refresh() {
   const json = (await res.json()) as ApiResponse<unknown>;
 
   if (!json.success) {
+    console.error('[Auth] Refresh failed with error:', json.error);
     const err = json.error as ApiError;
     const error = new Error(err.message) as ApiClientError;
     error.code = err.code;
@@ -299,6 +316,7 @@ export async function refresh() {
     throw error;
   }
 
+  console.log('[Auth] Refresh succeeded');
   return json.data as { accessToken: string; expiresAt: string };
 }
 

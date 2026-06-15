@@ -126,6 +126,17 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
       data: { reason: "e2e-legal-hold-spec" },
     },
   );
+
+  // DIAGNOSTIC: Log release response
+  if (!releaseResp.ok()) {
+    const status = releaseResp.status();
+    const body = await releaseResp.text();
+    console.error(`[E2E DIAGNOSTIC] PUT /api/legal-holds/${holdId}/release failed:`);
+    console.error(`  Status: ${status}`);
+    console.error(`  Body: ${body.substring(0, 500)}`);
+    throw new Error(`PUT /api/legal-holds/${holdId}/release returned ${status}. Check backend logs.`);
+  }
+
   expect(releaseResp.ok()).toBeTruthy();
 
   // ── 5. User DELETE now succeeds with 200 ───────────────────
