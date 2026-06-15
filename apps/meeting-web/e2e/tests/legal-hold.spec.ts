@@ -103,7 +103,7 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
   expect(blockedBody.error?.code).toBe("LEGAL_HOLD_BLOCKED");
 
   // ── 4. Admin releases the hold ─────────────────────────────
-  const releaseResp = await adminCtx.post(
+  const releaseResp = await adminCtx.put(
     `${API_BASE}/api/legal-holds/${holdId}/release`,
     {
       headers: {

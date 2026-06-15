@@ -39,8 +39,8 @@ test("rag scope-less question renders an answer card with coverage badge", async
   await login(page);
   await page.goto("/rag");
 
-  // Wait for the lazy-loaded RagPage to render before interacting
-  await expect(page.getByRole("heading", { name: /问答/i })).toBeVisible();
+  // Wait for the lazy-loaded RagPage to render by checking for the question input
+  await page.waitForSelector('#rag-question', { state: 'visible' });
 
   await page.getByLabel(/问题|question/i).fill("最近的会议讨论了哪些主题?");
   await page.getByRole("button", { name: /提问|ask|submit/i }).click();
@@ -68,8 +68,8 @@ test("rag citation deep-links into the transcript", async ({ page, context }) =>
   // Open the first SUCCEEDED meeting's RAG page.
   await page.goto("/rag");
 
-  // Wait for the lazy-loaded RagPage to render before interacting
-  await expect(page.getByRole("heading", { name: /问答/i })).toBeVisible();
+  // Wait for the lazy-loaded RagPage to render by checking for the question input
+  await page.waitForSelector('#rag-question', { state: 'visible' });
 
   await page.getByLabel(/问题|question/i).fill("会议主要讨论了什么");
   await page.getByRole("button", { name: /提问|ask|submit/i }).click();
@@ -82,5 +82,5 @@ test("rag citation deep-links into the transcript", async ({ page, context }) =>
   const link = citation.getByRole("link", { name: /跳转到转写片段|transcript/i });
   await expect(link).toBeVisible();
   await link.click();
-  await expect(page).toHaveURL(/\/meetings\/mtg_[a-z0-9]+\/transcript\?/);
+  await expect(page).toHaveURL(/\/meetings\/m_[a-z0-9]+\/transcript\?/);
 });

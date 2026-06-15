@@ -39,10 +39,10 @@ test("transcript edit surfaces STALE banner on minutes", async ({ page }) => {
   await page.getByRole("button", { name: /登录|sign in/i }).click();
   await expect(page).toHaveURL(/\/meetings$/);
 
-  await page.getByRole("link", { name: /新建会议|create/i }).click();
+  await page.getByRole("link", { name: /新建会议|create/i }).first().click();
   await page.getByLabel(/标题|title/i).fill(`E2E stale ${Date.now()}`);
   await page.getByRole("button", { name: /创建|submit/i }).click();
-  await expect(page).toHaveURL(/\/meetings\/mtg_[a-z0-9]+/);
+  await expect(page).toHaveURL(/\/meetings\/m_[a-z0-9]+/);
   const meetingUrl = page.url();
 
   await page.goto(meetingUrl + "/audio");

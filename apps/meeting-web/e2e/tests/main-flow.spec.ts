@@ -46,7 +46,7 @@ async function createMeeting(
   await page.getByLabel(/标题|title/i).fill(title);
   await page.getByLabel(/语言|language/i).selectOption("zh");
   await page.getByRole("button", { name: /创建|submit/i }).click();
-  await expect(page).toHaveURL(/\/meetings\/mtg_[a-z0-9]+/);
+  await expect(page).toHaveURL(/\/meetings\/m_[a-z0-9]+/);
   return page.url();
 }
 
@@ -79,7 +79,7 @@ test("upload → SSE → transcript → RAG → PDF export", async ({ page }) =>
   // The upload page kicks off multipart upload + auto-redirects to the
   // task progress page on completion. Wait up to 5 min for the worker
   // to finish (deterministic ASR is fast; real ASR may take longer).
-  await page.waitForURL(/\/meetings\/mtg_[a-z0-9]+\/tasks\/task_[a-z0-9]+/, { timeout: 300_000 });
+  await page.waitForURL(/\/meetings\/m_[a-z0-9]+\/tasks\/task_[a-z0-9]+/, { timeout: 300_000 });
 
   // ── Task progress: wait for terminal status via the SSE-driven UI ──
   await expect(page.getByText(/SUCCEEDED|PARTIAL_SUCCEEDED|已完成/i))
