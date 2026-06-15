@@ -156,33 +156,40 @@ export function NewMeetingPage() {
     if (!canStart || !audioFile) return;
     setBusy(true);
     setError(null);
-    setCreatedMeetingId(null);
+    // REMOVED: setCreatedMeetingId(null);  // Don't reset - preserve for resumption
     try {
-      const meeting = await createMeeting({
-        title: title.trim(),
-        language,
-        participants: selectedParticipants.map((participant) => ({
-          personId: participant.personId,
-          displayName: participant.displayName,
-          role: participant.role,
-        })),
-      });
-      setCreatedMeetingId(meeting.meetingId);
-      if (terms.length > 0) await updateMeetingGlossary(meeting.meetingId, terms);
+      // Create meeting only if not already created
+      let meetingId = createdMeetingId;
+      if (!meetingId) {
+        const meeting = await createMeeting({
+          title: title.trim(),
+          language,
+          participants: selectedParticipants.map((participant) => ({
+            personId: participant.personId,
+            displayName: participant.displayName,
+            role: participant.role,
+          })),
+        });
+        meetingId = meeting.meetingId;
+        setCreatedMeetingId(meetingId);
+      }
+
+      // Resume from here - these steps are idempotent
+      if (terms.length > 0) await updateMeetingGlossary(meetingId, terms);
       for (const document of selectedDocuments) {
-        await attachMeetingDocument(meeting.meetingId, { documentId: document.documentId, role: "REFERENCE" });
+        await attachMeetingDocument(meetingId, { documentId: document.documentId, role: "REFERENCE" });
       }
       const audioUploader = new MultipartUploader({
         file: audioFile,
-        init: (req) => initAudioUpload(meeting.meetingId, req),
-        createPart: (uploadId, req) => createAudioUploadPart(meeting.meetingId, uploadId, req),
-        complete: (uploadId, req) => completeAudioUpload(meeting.meetingId, uploadId, req),
-        abort: (uploadId) => abortAudioUpload(meeting.meetingId, uploadId),
+        init: (req) => initAudioUpload(meetingId, req),
+        createPart: (uploadId, req) => createAudioUploadPart(meetingId, uploadId, req),
+        complete: (uploadId, req) => completeAudioUpload(meetingId, uploadId, req),
+        abort: (uploadId) => abortAudioUpload(meetingId, uploadId),
         onProgress: setAudioProgress,
       });
       activeAudioUploader.current = audioUploader;
       await audioUploader.upload();
-      navigate(`/meetings/${meeting.meetingId}`);
+      navigate(`/meetings/${meetingId}`);
     } catch (e) {
       setError(formatError(e));
     } finally {
