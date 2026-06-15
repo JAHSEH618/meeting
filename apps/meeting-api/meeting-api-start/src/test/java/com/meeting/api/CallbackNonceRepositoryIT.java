@@ -18,7 +18,7 @@ import java.time.OffsetDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = MeetingApiApplication.class)
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class CallbackNonceRepositoryIT {
 
     @Container
