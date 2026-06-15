@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
-import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker, releaseLegalHold, getCurrentUser, setAuthToken } from "../client";
+import { createSpeakerEnrollment, createSpeakerProfile, rejectMeetingSpeaker, releaseLegalHold, getCurrentUser, setAuthToken, createFileUpload, createFileUploadPart, completeFileUpload } from "../client";
 import { server } from "../mocks/server";
 import type { ApiResponse } from "../types";
 
@@ -302,5 +302,78 @@ describe('API client 401 interceptor', () => {
     const retry2 = fetchMock.mock.calls[4];
     expect(retry1[1].headers.Authorization).toBe('Bearer new-token');
     expect(retry2[1].headers.Authorization).toBe('Bearer new-token');
+  });
+});
+
+describe('File Upload API', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn();
+  });
+
+  it('createFileUpload sends correct request', async () => {
+    const mockResponse = {
+      success: true,
+      data: {
+        uploadId: 'upload_001',
+        status: 'IN_PROGRESS',
+        expiresAt: '2026-06-16T00:00:00Z',
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => mockResponse,
+    });
+
+    const result = await createFileUpload({
+      fileName: 'test.mp3',
+      contentType: 'audio/mpeg',
+      fileSizeBytes: 1024000,
+      fileSha256: 'a'.repeat(64),
+      partSizeBytes: 8388608,
+    });
+
+    expect(result.uploadId).toBe('upload_001');
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/files',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+        body: expect.stringContaining('test.mp3'),
+      })
+    );
+  });
+
+  it('completeFileUpload sends correct request', async () => {
+    const mockResponse = {
+      success: true,
+      data: {
+        fileId: 'file_001',
+        status: 'COMPLETED',
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => mockResponse,
+    });
+
+    const result = await completeFileUpload('upload_001', {
+      fileSha256: 'a'.repeat(64),
+      durationMs: null,
+      parts: [{ partNumber: 1, partSha256: 'a'.repeat(64), etag: 'etag_1' }],
+    });
+
+    expect(result.fileId).toBe('file_001');
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/files/upload_001/complete',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
   });
 });

@@ -390,6 +390,71 @@ export async function getAudioUpload(meetingId: string, uploadId: string) {
   );
 }
 
+// ── Generic File Upload ────────────────────────────────────────────
+
+export async function createFileUpload(req: {
+  fileName: string;
+  contentType: string;
+  fileSizeBytes: number;
+  fileSha256: string;
+  partSizeBytes: number;
+}): Promise<{
+  uploadId: string;
+  status: string;
+  expiresAt: string;
+}> {
+  return request<{
+    uploadId: string;
+    status: string;
+    expiresAt: string;
+  }>("POST", "/files", req, generateId("file-upload"));
+}
+
+export async function createFileUploadPart(
+  uploadId: string,
+  req: {
+    partNumber: number;
+    sizeBytes: number;
+    partSha256: string;
+  }
+): Promise<{
+  uploadUrl: string;
+  headers: Record<string, string>;
+  etag: string | null;
+}> {
+  return request<{
+    uploadUrl: string;
+    headers: Record<string, string>;
+    etag: string | null;
+  }>("POST", `/files/${uploadId}/parts`, req, generateId(`file-part-${uploadId}-${req.partNumber}`));
+}
+
+export async function putFileUploadPart(
+  uploadUrl: string,
+  body: Blob,
+  headers: Record<string, string>,
+  signal?: AbortSignal
+): Promise<{ etag: string }> {
+  return uploadBinary(uploadUrl, body, headers, signal);
+}
+
+export async function completeFileUpload(
+  uploadId: string,
+  req: {
+    fileSha256: string;
+    durationMs: number | null;
+    parts: Array<{ partNumber: number; partSha256: string; etag: string }>;
+  }
+): Promise<{
+  fileId: string;
+  status: string;
+}> {
+  return request<{
+    fileId: string;
+    status: string;
+  }>("POST", `/files/${uploadId}/complete`, req, generateId(`file-complete-${uploadId}`));
+}
+
 // ── Tasks ──────────────────────────────────────────────────────────
 
 export async function createProcessingTask(meetingId: string, audioFileId: string, idempotencyKey?: string) {
