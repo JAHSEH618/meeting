@@ -508,7 +508,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 ### P4 `apps/ai-worker-web`（计划 p4-worker-web）
 
-- [x] C1+C2：会话创建后锁定人员选择 + BFF commit 加 personId 防错绑校验（409 ENROLLMENT_PERSON_MISMATCH）；加"重新开始"重置路径，`ENROLLMENT_SESSION_NOT_FOUND` 专门处理。
+- [x] C1+C2：会话创建后锁定人员选择 + BFF commit 加 personId 防错绑校验（409 ENROLLMENT_PERSON_MISMATCH）；加"重新开始"重置路径，`ENROLLMENT_SESSION_NOT_FOUND` 专门处理。（合并于 2026-06-15 commit e160cf3）
 - [ ] I1：commitEnrollment 幂等键 = sessionId（激活 BFF 既有的五步编排幂等设计）。
 - [ ] I2：建会流程可续传——保留 createdMeetingId，从失败步骤恢复而非重建会议。
 - [ ] I3+I4：SSE 终态即关 + 重连退避 + lastEventId 跟踪；`latestTask == null` 时轮询聚合直到任务出现。
