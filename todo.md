@@ -184,7 +184,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [ ] ai-worker 真实模型 runtime（Qwen3-ASR / pyannote / CAM++）——一旦决定要做，需要：模型权重内网制品路径、`docs/model-registry.md` 增加 checksum、`POST /internal/models` 暴露模型版本、production 配置禁联网下载（阶段 8 任务）。
 - [ ] 多租户 callback 鉴权完整 fuzz：HMAC / timestamp skew / nonce / idempotency / attempt / lease / tenant 链接 7 项联合压测。
-- [ ] Playwright / Cypress 端到端：登录 → 上传 → 任务进度 SSE → 转录展示。当前本节末提供手工 E2E 清单替代。
+- [x] Playwright / Cypress 端到端：登录 → 上传 → 任务进度 SSE → 转录展示。（已实现：e2e/tests/main-flow.spec.ts "upload → SSE → transcript" 测试）
 
 #### 手工 E2E 走查清单（用于阶段三开工前验收）
 
@@ -310,7 +310,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./mvnw verify -q
 
 - [ ] RAG 拆分计时（`rag_query_phase_duration_seconds{phase=...}`）—— 等 Phase 8.1 一并加
 - [ ] RAG 答案 429 限流 —— Phase 8.1 性能基线一并做
-- [ ] Playwright E2E 覆盖 RAG 主链路 + citation 跳转 —— Phase 8.7
+- [x] Playwright E2E 覆盖 RAG 主链路 + citation 跳转 —— （已实现：e2e/tests/rag-flow.spec.ts）
 
 ## 阶段 6：异步导出
 
