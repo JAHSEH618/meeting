@@ -11,15 +11,20 @@ import type { ApiResponse, ApiError, TaskEvent } from "@shared/api/types";
 
 const API_BASE = "/api";
 
-let authToken: string | null = null;
+const AUTH_TOKEN_KEY = "meeting_auth_token";
+
 let refreshPromise: Promise<{ accessToken: string; expiresAt: string }> | null = null;
 
 export function setAuthToken(token: string | null) {
-  authToken = token;
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
 }
 
 export function getAuthToken(): string | null {
-  return authToken;
+  return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 function generateId(prefix: string): string {
@@ -113,6 +118,7 @@ async function request<T>(
     "X-Trace-Id": generateId("trace"),
   };
 
+  const authToken = getAuthToken();
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
@@ -247,6 +253,7 @@ export async function logout() {
     "X-Trace-Id": generateId("trace"),
   };
 
+  const authToken = getAuthToken();
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
@@ -538,6 +545,7 @@ export function subscribeTaskEvents(
           "X-Request-Id": generateId("req"),
           "X-Trace-Id": generateId("trace"),
         };
+        const authToken = getAuthToken();
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
         if (handlers.lastEventId) headers["Last-Event-Id"] = handlers.lastEventId;
 
