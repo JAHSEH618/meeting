@@ -31,6 +31,13 @@ FROM nginx:1.27-alpine
 COPY --from=build /src/apps/meeting-web/dist /usr/share/nginx/html
 COPY apps/meeting-web/nginx.conf /etc/nginx/conf.d/default.conf
 
+# Create cache directories with proper permissions before switching to nginx user
+RUN mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
+             /var/cache/nginx/fastcgi_temp /var/cache/nginx/uwsgi_temp \
+             /var/cache/nginx/scgi_temp && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /usr/share/nginx/html
+
 # Run as the non-root nginx user (added by the upstream image).
 USER nginx
 
