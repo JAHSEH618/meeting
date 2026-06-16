@@ -1,43 +1,64 @@
 :root {
-  --surface-base: #f5f5f7;
-  --surface-raised: #ffffff;
-  --surface-sunken: #f2f2f7;
+  /* 深色背景 - 精密仪器面板的深色底 */
+  --bg: oklch(0.10 0.000 0);
+  --surface: oklch(0.14 0.000 0);
+  --surface-raised: oklch(0.17 0.000 0);
+  --surface-sunken: oklch(0.12 0.000 0);
 
-  --ink-1: #1d1d1f;
-  --ink-2: #424245;
-  --ink-3: #6e6e73;
-  --ink-4: #aeaeb2;
+  /* 文本 - 高对比度 */
+  --ink-1: oklch(0.95 0.000 0);
+  --ink-2: oklch(0.75 0.000 0);
+  --ink-3: oklch(0.55 0.000 0);
+  --ink-4: oklch(0.35 0.000 0);
 
-  --line-1: rgba(0, 0, 0, 0.12);
-  --line-2: rgba(0, 0, 0, 0.07);
-  --line-3: rgba(0, 0, 0, 0.045);
+  /* 分割线 */
+  --line-1: oklch(0.25 0.000 0);
+  --line-2: oklch(0.20 0.000 0);
+  --line-3: oklch(0.16 0.000 0);
 
-  --accent: #0071e3;
-  --accent-hover: #0064d0;
-  --accent-active: #005bbd;
-  --accent-soft: #e8f1fd;
-  --accent-ink: #0058b0;
+  /* 品牌主色 - 明亮的技术蓝 */
+  --primary: oklch(0.65 0.14 210);
+  --primary-hover: oklch(0.70 0.15 210);
+  --primary-active: oklch(0.60 0.13 210);
+  --primary-soft: oklch(0.25 0.08 210);
+  --primary-ink: oklch(0.80 0.12 210);
 
-  --success: #1f8f3a;
-  --success-soft: #e9f8ee;
-  --success-ink: #166f2c;
+  /* 为了向后兼容，保留 accent 命名 */
+  --accent: var(--primary);
+  --accent-hover: var(--primary-hover);
+  --accent-active: var(--primary-active);
+  --accent-soft: var(--primary-soft);
+  --accent-ink: var(--primary-ink);
 
-  --warn: #d97c00;
-  --warn-soft: #fff4e5;
-  --warn-ink: #9a5700;
+  /* 强调色 - 青绿色 */
+  --secondary: oklch(0.70 0.13 180);
+  --secondary-soft: oklch(0.22 0.08 180);
+  --secondary-ink: oklch(0.75 0.12 180);
 
-  --danger: #d70015;
-  --danger-soft: #ffebe9;
-  --danger-ink: #b3000c;
+  /* 语义色 */
+  --success: oklch(0.68 0.15 145);
+  --success-soft: oklch(0.22 0.08 145);
+  --success-ink: oklch(0.75 0.14 145);
 
-  --focus: #0071e3;
+  --warn: oklch(0.70 0.15 70);
+  --warn-soft: oklch(0.22 0.08 70);
+  --warn-ink: oklch(0.78 0.14 70);
 
-  --radius-s: 6px;
-  --radius-m: 10px;
-  --radius-l: 14px;
-  --radius-xl: 20px;
+  --danger: oklch(0.60 0.18 20);
+  --danger-soft: oklch(0.20 0.08 20);
+  --danger-ink: oklch(0.70 0.16 20);
+
+  /* Focus */
+  --focus: var(--primary);
+
+  /* 圆角 - 更小更精确 */
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 8px;
+  --radius-xl: 12px;
   --radius-pill: 980px;
 
+  /* 间距 */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -46,41 +67,76 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.02);
-  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
-  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  /* 阴影 - 深色主题更深 */
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
 
-  --chrome-bg: rgba(255, 255, 255, 0.72);
+  /* Chrome（侧边栏/header 的毛玻璃效果） */
+  --chrome-bg: oklch(0.12 0.000 0 / 0.85);
   --chrome-blur: saturate(180%) blur(20px);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-               "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 字体 */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "Segoe UI", "Helvetica Neue", "PingFang SC", "Microsoft YaHei",
+               sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Consolas",
+               "Liberation Mono", monospace;
 
-  color-scheme: light;
+  color-scheme: dark;
 }
 
-html { color-scheme: light; }
+html {
+  color-scheme: dark;
+}
 
 body {
   margin: 0;
-  background: var(--surface-base);
+  background: var(--bg);
   color: var(--ink-1);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   touch-action: manipulation;
 }
 
-h1, h2 { letter-spacing: -0.015em; text-wrap: balance; }
+h1, h2, h3 {
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  font-weight: 600;
+  color: var(--ink-1);
+}
 
-* { box-sizing: border-box; }
+h1 { font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; }
+h2 { font-size: 26px; line-height: 1.25; }
+h3 { font-size: 22px; line-height: 1.3; letter-spacing: -0.01em; }
 
-button, input, select, textarea { font: inherit; color: inherit; }
-button { cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: 0.6; }
-a { color: inherit; }
+* {
+  box-sizing: border-box;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+a {
+  color: inherit;
+}
 
 :focus-visible {
   outline: 2px solid var(--focus);
@@ -100,7 +156,22 @@ a { color: inherit; }
   color: var(--ink-1);
   text-decoration: none;
 }
-.skip-link:focus { left: 8px; top: 8px; }
+
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+}
+
+/* 等宽字体工具类 - 用于时间戳、ID、百分比 */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* tabular-nums 工具类 - 用于对齐数字 */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
