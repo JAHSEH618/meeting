@@ -2,17 +2,14 @@
 set -e
 cd "$(dirname "$0")"
 
-echo "=== 加载配置 ==="
-set -a
-source deploy/.meeting-api-prod.env
-set +a
+echo "=== 停止服务 ==="
+./stop.sh
 
-echo "=== 重启 meeting-api ==="
-docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml \
-    -f docker-compose.prod.yml --profile full-stack restart meeting-api
+echo ""
+echo "=== 启动服务 ==="
+./start.sh
 
-echo "=== 等待服务启动 ==="
-sleep 5
-
+echo ""
 echo "=== 实时日志（按 Ctrl+C 退出）==="
+sleep 3
 docker logs -f meeting-api
