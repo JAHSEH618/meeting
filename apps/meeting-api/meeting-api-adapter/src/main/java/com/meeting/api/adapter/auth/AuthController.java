@@ -9,6 +9,7 @@ import com.meeting.api.client.common.ApiResponse;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.common.ErrorInfo;
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -33,14 +34,19 @@ public class AuthController {
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
         @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
         @RequestBody LoginRequest request,
+        HttpServletRequest servletRequest,
         HttpServletResponse response
     ) {
         LoginResultDTO result = authFacade.login(new LoginCommand(request.username(), request.password(), requestId, traceId));
 
+        // Determine if we're on HTTPS or HTTP
+        boolean isSecure = "https".equalsIgnoreCase(servletRequest.getScheme()) ||
+                          "https".equalsIgnoreCase(servletRequest.getHeader("X-Forwarded-Proto"));
+
         // Set HttpOnly refresh token cookie (30 days)
         Cookie refreshCookie = new Cookie("REFRESH_TOKEN", result.refreshTokenId());
         refreshCookie.setHttpOnly(true);
-        refreshCookie.setSecure(true);
+        refreshCookie.setSecure(isSecure);  // Only secure on HTTPS
         refreshCookie.setPath("/api/auth");
         refreshCookie.setMaxAge(30 * 24 * 60 * 60);
         response.addCookie(refreshCookie);
@@ -48,7 +54,7 @@ public class AuthController {
         // Set CSRF token cookie (accessible to JS for X-CSRF-Token header)
         String csrfToken = java.util.UUID.randomUUID().toString();
         Cookie csrfCookie = new Cookie("XSRF-TOKEN", csrfToken);
-        csrfCookie.setSecure(true);
+        csrfCookie.setSecure(isSecure);  // Only secure on HTTPS
         csrfCookie.setPath("/api");
         csrfCookie.setMaxAge(30 * 24 * 60 * 60);
         response.addCookie(csrfCookie);
@@ -97,6 +103,7 @@ public class AuthController {
         @CookieValue(value = "XSRF-TOKEN", required = false) String csrfCookie,
         @RequestHeader(value = "X-Request-Id", required = false) String requestId,
         @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+        HttpServletRequest servletRequest,
         HttpServletResponse response
     ) {
         // Validate CSRF double-submit
@@ -117,10 +124,14 @@ public class AuthController {
         try {
             RefreshResultDTO result = authFacade.refresh(refreshToken, csrfToken);
 
+            // Determine if we're on HTTPS or HTTP
+            boolean isSecure = "https".equalsIgnoreCase(servletRequest.getScheme()) ||
+                              "https".equalsIgnoreCase(servletRequest.getHeader("X-Forwarded-Proto"));
+
             // Rotate CSRF token
             String newCsrfToken = java.util.UUID.randomUUID().toString();
             Cookie newCsrfCookie = new Cookie("XSRF-TOKEN", newCsrfToken);
-            newCsrfCookie.setSecure(true);
+            newCsrfCookie.setSecure(isSecure);  // Only secure on HTTPS
             newCsrfCookie.setPath("/api");
             newCsrfCookie.setMaxAge(30 * 24 * 60 * 60);
             response.addCookie(newCsrfCookie);
