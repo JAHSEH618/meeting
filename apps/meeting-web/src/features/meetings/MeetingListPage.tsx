@@ -42,18 +42,46 @@ export function MeetingListPage() {
         : "会议列表加载失败")
     : null;
 
+  // Stats
+  const stats = {
+    total: meetings.length,
+    processing: meetings.filter(m => m.status === 'PROCESSING').length,
+    ready: meetings.filter(m => m.status === 'READY').length,
+  };
+
   return (
     <div className="page">
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">会议</h1>
-          <p className="page-subtitle">查看会议处理状态并进入详情。</p>
-        </div>
-        <div className="page-actions">
-          <Link className="button button--primary" to="/meetings/new">+ 新建会议</Link>
+      {/* Hero Section */}
+      <header className="hero-section">
+        <h1 className="page-title">会议智能平台</h1>
+        <p className="hero-subtitle">AI 驱动的会议记录与分析系统</p>
+        <div className="hero-actions">
+          <Link className="button button--primary" to="/meetings/new">
+            创建会议
+          </Link>
+          <Link className="button button--ghost" to="/documents">
+            文档库
+          </Link>
         </div>
       </header>
 
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div className="metric card">
+          <div className="metric__value">{stats.total}</div>
+          <div className="metric__label">总会议数</div>
+        </div>
+        <div className="metric card">
+          <div className="metric__value">{stats.processing}</div>
+          <div className="metric__label">处理中</div>
+        </div>
+        <div className="metric card">
+          <div className="metric__value">{stats.ready}</div>
+          <div className="metric__label">已完成</div>
+        </div>
+      </div>
+
+      {/* Search & Table */}
       <section className="card stack">
         <div className="toolbar">
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
@@ -80,7 +108,7 @@ export function MeetingListPage() {
         {!isPending && !error && filtered.length === 0 ? (
           <div className="empty-state">
             <strong>暂无符合条件的会议</strong>
-            <span>调整搜索条件，或点击右上「+ 新建会议」开始。</span>
+            <span>调整搜索条件，或点击右上「创建会议」开始。</span>
           </div>
         ) : null}
 

@@ -241,6 +241,43 @@ body::before {
   border-top: 1px solid var(--line-1);
 }
 
+/* Hero Section */
+.hero-section {
+  margin-bottom: var(--space-24);
+}
+
+.hero-section .page-title {
+  font-size: var(--text-hero);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  margin: 0 0 var(--space-4);
+  max-width: 18ch;
+}
+
+.hero-subtitle {
+  font-size: var(--text-md);
+  font-weight: 400;
+  color: var(--text-light);
+  line-height: 1.5;
+  margin-bottom: var(--space-10);
+  max-width: 50ch;
+}
+
+.hero-actions {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-16);
+}
+
 /* 页面标题 - 超大 */
 .page-title {
   font-size: var(--text-hero);
