@@ -38,6 +38,15 @@ vi.mock("@/shared/api/endpoints", () => ({
     },
   ]),
   revokeSpeakerProfile: vi.fn(async () => undefined),
+  listAdminMeetings: vi.fn(async () => [
+    {
+      meetingId: "m1",
+      title: "Python 工作站联调",
+      status: "PROCESSING",
+      language: "zh-CN",
+      createdAt: "2026-06-17T08:30:00Z",
+    },
+  ]),
 }));
 
 describe("App routes", () => {
@@ -67,5 +76,21 @@ describe("App routes", () => {
     expect(screen.getByRole("link", { name: "人员" })).toHaveAttribute("href", "/people");
     expect(await screen.findByRole("heading", { name: "人员" })).toBeInTheDocument();
     expect(await screen.findByText("li@example.com")).toBeInTheDocument();
+  });
+
+  it("renders the workstation entry without a brand mark", async () => {
+    const { container } = render(
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={["/meetings"]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(container.querySelector(".layout__brand")).not.toBeInTheDocument();
+    expect(container.querySelector(".workstation-modules")).toBeInTheDocument();
+    expect(await screen.findByText("处理链路")).toBeInTheDocument();
+    expect(screen.getByText("声纹档案")).toBeInTheDocument();
+    expect(await screen.findByText("Python 工作站联调")).toBeInTheDocument();
   });
 });

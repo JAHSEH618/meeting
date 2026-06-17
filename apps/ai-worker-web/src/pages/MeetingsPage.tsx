@@ -3,42 +3,103 @@ import { useAdminMeetingsQuery } from "@/features/meetings/queries";
 import { formatDate } from "@/shared/utils/formatters";
 import { ApiError } from "@/shared/api/client";
 
+const STATUS_TONE: Record<string, string> = {
+  CREATED: "pill--neutral",
+  PROCESSING: "pill--info",
+  SUCCEEDED: "pill--success",
+  FAILED: "pill--danger",
+  DELETED: "pill--danger",
+};
+
 export function MeetingsPage() {
   const { data, isPending, error } = useAdminMeetingsQuery();
   const meetings = data ?? [];
+  const stats = {
+    total: meetings.length,
+    processing: meetings.filter((m) => m.status === "PROCESSING").length,
+    ready: meetings.filter((m) => m.status === "SUCCEEDED").length,
+  };
 
   return (
-    <div className="stack">
-      <header className="page-header">
+    <div className="workstation-page">
+      <header className="workstation-hero">
         <div>
-          <h1 className="page-title">运营工作站</h1>
-          <p className="page-subtitle">选择会议进入工作站，或新建一个流程。</p>
+          <span className="workstation-hero__label">PYTHON AI WORKSTATION</span>
+          <h1 className="workstation-hero__title">运营工作站</h1>
+          <p className="workstation-hero__subtitle">
+            面向 Python AI Worker 的会议处理入口，聚焦任务链路、声纹样本和结果复核。
+          </p>
+        </div>
+        <div className="workstation-hero__actions">
+          <Link className="button button--primary" to="/meetings/new">新建会议</Link>
+          <Link className="button button--ghost" to="/enrollment">声纹录入</Link>
         </div>
       </header>
 
-      <section className="grid">
-        <Link
-          className="card stack"
-          to="/meetings/new"
-          style={{ textDecoration: "none", color: "inherit" }}
-        >
-          <strong>新建会议工作流</strong>
-          <span className="page-subtitle">
-            建会议 · 上传录音 · 术语 · 文档 · 启动 worker · 确认说话人 · 生成纪要 · 导出
-          </span>
-        </Link>
-        <Link
-          className="card stack"
-          to="/enrollment"
-          style={{ textDecoration: "none", color: "inherit" }}
-        >
-          <strong>声纹录入</strong>
-          <span className="page-subtitle">为人员录入声纹样本，建立档案。</span>
-        </Link>
+      <section className="workstation-stats" aria-label="工作站概览">
+        <div className="workstation-stat">
+          <strong>{stats.total}</strong>
+          <span>会议总数</span>
+        </div>
+        <div className="workstation-stat">
+          <strong>{stats.processing}</strong>
+          <span>处理中</span>
+        </div>
+        <div className="workstation-stat">
+          <strong>{stats.ready}</strong>
+          <span>已完成</span>
+        </div>
       </section>
 
-      <section className="card stack">
-        <strong>近期会议</strong>
+      <section className="workstation-modules grid-12" aria-label="Python 工作站模块">
+        <article className="workstation-module workstation-module--wide span-6">
+          <div>
+            <p className="workstation-module__eyebrow">01 / FLOW</p>
+            <h2>处理链路</h2>
+            <p>建会议、上传音频、启动 worker、确认说话人、生成纪要和导出结果，按处理阶段组织入口。</p>
+          </div>
+          <div className="workstation-module__rail">
+            <span>建会</span>
+            <span>上传</span>
+            <span>Worker</span>
+            <span>复核</span>
+          </div>
+        </article>
+
+        <article className="workstation-module workstation-module--wide span-6">
+          <div>
+            <p className="workstation-module__eyebrow">02 / VOICE</p>
+            <h2>声纹治理</h2>
+            <p>人员、录入会话和声纹档案保持同一工作区，减少从会议处理跳到样本管理的割裂感。</p>
+          </div>
+          <div className="workstation-module__meta">
+            <span>人员</span>
+            <span>录入</span>
+            <span>档案</span>
+          </div>
+        </article>
+
+        <article className="workstation-module span-4">
+          <p className="workstation-module__eyebrow">03 / REVIEW</p>
+          <h2>质量复核</h2>
+          <p>把转录、说话人确认和纪要结果放在任务上下文里看，减少孤立功能卡。</p>
+        </article>
+
+        <article className="workstation-module span-4">
+          <p className="workstation-module__eyebrow">04 / INDEX</p>
+          <h2>会议索引</h2>
+          <p>近期会议仍用表格承载，状态、语言、创建时间保持稳定扫描节奏。</p>
+        </article>
+
+        <article className="workstation-module span-4">
+          <p className="workstation-module__eyebrow">05 / LOCAL</p>
+          <h2>本地工作台</h2>
+          <p>玻璃背景只做层级和聚焦，不额外放品牌块或装饰标识。</p>
+        </article>
+      </section>
+
+      <section className="glass-table-panel stack">
+        <strong className="section-title">近期会议</strong>
         {isPending ? (
           <p className="page-subtitle" aria-live="polite">加载中…</p>
         ) : null}
@@ -74,7 +135,7 @@ export function MeetingsPage() {
                   <td>
                     <Link to={`/meetings/${m.meetingId}`}>{m.title}</Link>
                   </td>
-                  <td><span className="pill pill--info">{m.status}</span></td>
+                  <td><span className={`pill ${STATUS_TONE[m.status] ?? "pill--neutral"}`}>{m.status}</span></td>
                   <td>{m.language}</td>
                   <td>{formatDate(m.createdAt)}</td>
                 </tr>

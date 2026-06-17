@@ -127,7 +127,7 @@ export function EnrollmentPage() {
         </div>
         {personSearch.loading ? <p className="page-subtitle" aria-live="polite">搜索中…</p> : null}
         {persons.length > 0 ? (
-          <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+          <ul className="option-list">
             {persons.map((p) => (
               <li key={p.personId}>
                 <label className="toolbar">
@@ -199,7 +199,6 @@ export function EnrollmentPage() {
             className="upload-dropzone__input"
             name="enrollmentAudio"
           />
-          <span className="upload-dropzone__icon" aria-hidden="true">📁</span>
           <span className="upload-dropzone__label">
             {file ? file.name : "点击选择音频文件 (MP3, WAV, M4A)"}
           </span>

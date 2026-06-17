@@ -205,7 +205,8 @@ export function subscribeEventStream<T = unknown>(
               const event = JSON.parse(data) as T;
               handlers.onEvent(event);
               // I3: Close on terminal state
-              if ((event as any).status && ["SUCCEEDED", "FAILED", "CANCELLED"].includes((event as any).status)) {
+              const eventStatus = (event as { status?: unknown }).status;
+              if (typeof eventStatus === "string" && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(eventStatus)) {
                 controller.abort();
                 return;
               }

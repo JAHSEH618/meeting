@@ -17,25 +17,41 @@
   /* 保留向后兼容 */
   --primary: var(--accent);
   --primary-hover: var(--accent-hover);
+  --primary-active: #0048b8;
   --primary-soft: var(--accent-light);
+  --primary-ink: #004fbc;
+  --accent-active: #0048b8;
+  --accent-soft: var(--accent-light);
+  --accent-ink: #004fbc;
 
   --ink-1: var(--text);
   --ink-2: var(--text-light);
   --ink-3: var(--text-lighter);
+  --ink-4: #c7c7cc;
+
+  --surface-raised: rgba(255, 255, 255, 0.82);
+  --surface-sunken: rgba(0, 0, 0, 0.035);
+  --chrome-bg: var(--glass-header);
+  --chrome-blur: var(--glass-header-blur);
 
   /* 分割线 */
   --line-1: rgba(0, 0, 0, 0.06);
   --line-2: rgba(0, 0, 0, 0.04);
+  --line-3: rgba(0, 0, 0, 0.035);
+  --focus: var(--accent);
 
   /* 语义色 */
   --success: #34c759;
   --success-soft: rgba(52, 199, 89, 0.1);
+  --success-ink: #1f8f3a;
 
   --warn: #ff9500;
   --warn-soft: rgba(255, 149, 0, 0.1);
+  --warn-ink: #a35a00;
 
   --danger: #ff3b30;
   --danger-soft: rgba(255, 59, 48, 0.1);
+  --danger-ink: #b42318;
 
   /* 圆角 - 更大 */
   --radius-s: 6px;

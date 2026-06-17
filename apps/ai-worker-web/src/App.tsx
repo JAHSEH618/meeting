@@ -35,14 +35,13 @@ export default function App() {
     <div className="layout">
       <SkipLink />
       <header className="layout__header">
-        <strong className="layout__brand">运营工作站</strong>
         <nav className="layout__nav" aria-label="主导航">
           <NavLink to="/meetings" className={({ isActive }) => (isActive ? "active" : "")}>会议</NavLink>
           <NavLink to="/people" className={({ isActive }) => (isActive ? "active" : "")}>人员</NavLink>
           <NavLink to="/enrollment" className={({ isActive }) => (isActive ? "active" : "")}>声纹录入</NavLink>
           <NavLink to="/speaker-profiles" className={({ isActive }) => (isActive ? "active" : "")}>声纹档案</NavLink>
         </nav>
-        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{token ? "已登录" : "未登录"}</span>
+        <span className="layout__status">{token ? "已登录" : "未登录"}</span>
       </header>
       <main id="main-content" className="layout__main">
         <Suspense fallback={<div aria-busy="true" role="status">加载中…</div>}>
