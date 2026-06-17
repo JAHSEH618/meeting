@@ -75,7 +75,7 @@ services:
       context: ../../../../apps/meeting-api
       dockerfile: Dockerfile
       args:
-        APT_MIRROR: ${MEETING_API_APT_MIRROR:-https://mirrors.aliyun.com/ubuntu}
+        APT_MIRROR: ${MEETING_API_APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ubuntu}
     depends_on:
       postgres:
         condition: service_healthy
