@@ -34,11 +34,21 @@ export function LoginPage() {
   }
 
   return (
-    <main className="page">
-      <section className="card" style={{ maxWidth: 460, margin: "64px auto" }}>
-        <h1 className="page-title">本地会议智能系统</h1>
-        <p className="muted">使用内置 MVP 账号进入会议处理工作台。</p>
-        <form className="form" onSubmit={onSubmit}>
+    <main className="auth-page">
+      <section className="auth-hero" aria-labelledby="auth-title">
+        <span className="auth-hero__label">PRIVATE MEETING AI</span>
+        <h1 id="auth-title" className="auth-hero__title">本地会议智能系统</h1>
+        <p className="auth-hero__subtitle">
+          转录、纪要、知识问答与合规留痕集中在一个本地工作台内完成。
+        </p>
+      </section>
+
+      <section className="auth-card glass-panel" aria-label="登录">
+        <div>
+          <h2 className="auth-card__title">登录</h2>
+          <p className="auth-card__subtitle">使用内置 MVP 账号进入会议处理工作台。</p>
+        </div>
+        <form className="auth-form form" onSubmit={onSubmit}>
           <div className="field">
             <label htmlFor="username">账号</label>
             <input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
@@ -48,7 +58,7 @@ export function LoginPage() {
             <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
           </div>
           {error ? <div className="error" role="alert">{error}</div> : null}
-          <button className="primary" type="submit" disabled={submitting || !username.trim() || !password}>
+          <button className="button button--primary" type="submit" disabled={submitting || !username.trim() || !password}>
             {submitting ? "登录中" : "登录"}
           </button>
         </form>

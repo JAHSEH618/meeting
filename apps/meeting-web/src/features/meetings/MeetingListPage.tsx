@@ -42,7 +42,6 @@ export function MeetingListPage() {
         : "会议列表加载失败")
     : null;
 
-  // Stats
   const stats = {
     total: meetings.length,
     processing: meetings.filter(m => m.status === 'PROCESSING').length,
@@ -50,12 +49,14 @@ export function MeetingListPage() {
   };
 
   return (
-    <div className="page">
-      {/* Hero Section */}
-      <header className="hero-section">
-        <h1 className="page-title">会议智能平台</h1>
-        <p className="hero-subtitle">AI 驱动的会议记录与分析系统</p>
-        <div className="hero-actions">
+    <div className="page page--hero">
+      <header className="page-hero">
+        <div>
+          <span className="page-hero__label">POWERED BY AI</span>
+          <h1 className="page-hero__title">会议智能平台</h1>
+          <p className="page-hero__subtitle">实时转录、结构化纪要、知识问答与合规留痕，集中在一个本地工作台中完成。</p>
+        </div>
+        <div className="page-hero__actions">
           <Link className="button button--primary" to="/meetings/new">
             创建会议
           </Link>
@@ -65,25 +66,28 @@ export function MeetingListPage() {
         </div>
       </header>
 
-      {/* Stats Cards */}
-      <div className="stats-grid">
-        <div className="metric card">
-          <div className="metric__value">{stats.total}</div>
-          <div className="metric__label">总会议数</div>
+      <section className="stats-grid" aria-label="会议概览">
+        <div className="stat-card">
+          <div className="stat-card__value">{stats.total}</div>
+          <div className="stat-card__label">总会议数</div>
         </div>
-        <div className="metric card">
-          <div className="metric__value">{stats.processing}</div>
-          <div className="metric__label">处理中</div>
+        <div className="stat-card">
+          <div className="stat-card__value">{stats.processing}</div>
+          <div className="stat-card__label">处理中</div>
         </div>
-        <div className="metric card">
-          <div className="metric__value">{stats.ready}</div>
-          <div className="metric__label">已完成</div>
+        <div className="stat-card">
+          <div className="stat-card__value">{stats.ready}</div>
+          <div className="stat-card__label">已完成</div>
         </div>
-      </div>
+      </section>
 
-      {/* Search & Table */}
-      <section className="card stack">
-        <div className="toolbar">
+      <section className="glass-panel glass-panel--hero">
+        <h2 className="glass-panel__title">实时 AI 会议助手</h2>
+        <p className="glass-panel__body">自动沉淀会议内容、追踪处理状态，并把可检索的组织知识留在本地系统内。</p>
+      </section>
+
+      <section className="glass-panel glass-panel--table stack">
+        <div className="meeting-list-toolbar toolbar">
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
             <label className="field__label" htmlFor="meeting-search">搜索会议</label>
             <input
@@ -108,7 +112,7 @@ export function MeetingListPage() {
         {!isPending && !error && filtered.length === 0 ? (
           <div className="empty-state">
             <strong>暂无符合条件的会议</strong>
-            <span>调整搜索条件，或点击右上「创建会议」开始。</span>
+            <span>调整搜索条件，或创建一场新会议。</span>
           </div>
         ) : null}
 

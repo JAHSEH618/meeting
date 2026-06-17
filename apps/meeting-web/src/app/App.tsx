@@ -150,8 +150,8 @@ function Shell() {
     <div className="app-shell">
       <SkipLink />
       <aside className="shell__rail" aria-label="主导航">
-        <div className="shell__brand">会议系统</div>
-        <Link className="button button--primary" to="/meetings/new">+ 新建会议</Link>
+        <div className="shell__brand">Meeting</div>
+        <Link className="button button--primary shell__create" to="/meetings/new">新建会议</Link>
 
         <nav className="shell__rail-section" aria-labelledby="rail-work">
           <h3 id="rail-work">工作</h3>

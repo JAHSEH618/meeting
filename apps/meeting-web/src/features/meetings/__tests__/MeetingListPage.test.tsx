@@ -5,11 +5,15 @@ import { MeetingListPage } from "../MeetingListPage";
 
 describe("MeetingListPage", () => {
   it("loads and renders meetings", async () => {
-    render(
+    const { container } = render(
       <TestRouter>
         <MeetingListPage />
       </TestRouter>,
     );
+
+    expect(container.querySelector(".page--hero")).toBeInTheDocument();
+    expect(container.querySelector(".page-hero")).toBeInTheDocument();
+    expect(container.querySelector(".glass-panel--table")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("产品周会")).toBeInTheDocument());
     expect(screen.getByText("CREATED")).toBeInTheDocument();

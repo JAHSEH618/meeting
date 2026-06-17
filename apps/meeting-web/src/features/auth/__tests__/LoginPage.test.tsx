@@ -6,7 +6,7 @@ import { LoginPage } from "../LoginPage";
 
 describe("LoginPage", () => {
   it("submits credentials and navigates to meetings", async () => {
-    render(
+    const { container } = render(
       <TestRouter initialEntries={["/login"]}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -14,6 +14,10 @@ describe("LoginPage", () => {
         </Routes>
       </TestRouter>,
     );
+
+    expect(container.querySelector(".auth-page")).toBeInTheDocument();
+    expect(container.querySelector(".auth-card")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本地会议智能系统" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
