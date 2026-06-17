@@ -93,6 +93,11 @@ meeting:
       region: ${TOS_REGION:cn-beijing}
       access-key-id: ${TOS_ACCESS_KEY_ID:}
       access-key-secret: ${TOS_ACCESS_KEY_SECRET:}
+    oss:
+      endpoint: ${OSS_ENDPOINT:}
+      region: ${OSS_REGION:cn-hangzhou}
+      access-key-id: ${OSS_ACCESS_KEY_ID:}
+      access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
   chunk:
     strategy-version: ${CHUNK_STRATEGY_VERSION:v1}
     default-size-seconds: 60
