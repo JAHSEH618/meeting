@@ -11,7 +11,7 @@ export function DesignShowcasePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
-    <div className="page">
+    <div className="page page--workbench">
       {/* Hero Section */}
       <HeroSection
         label="DESIGN SYSTEM"

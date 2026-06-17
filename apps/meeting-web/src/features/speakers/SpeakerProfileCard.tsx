@@ -41,7 +41,7 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
 
   return (
     <section
-      className="card stack"
+      className="glass-panel glass-panel--compact stack"
       data-profile-id={profile.speakerProfileId}
     >
       <div className="toolbar">

@@ -81,24 +81,25 @@ export function MeetingSpeakerConfirmPage() {
   };
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">说话人确认</h1>
-          <p className="muted">{meetingId}</p>
+          <span className="page-hero__label">SPEAKERS</span>
+          <h1 className="page-hero__title">说话人确认</h1>
+          <p className="page-hero__subtitle">{meetingId}</p>
         </div>
-        <div className="toolbar">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/transcript`}>查看转录</Link>
           <Link className="button" to="/speaker-profiles">声纹档案</Link>
         </div>
-      </div>
+      </header>
 
       {loading ? <p className="muted">加载中</p> : null}
       {error ? <div className="error" role="alert">{error}</div> : null}
 
       {!loading && speakers.length === 0 ? (
-        <section className="card stack" role="status">
+        <section className="glass-panel glass-panel--compact stack" role="status">
           <strong>暂无说话人候选</strong>
           <span className="muted">{CANDIDATE_EXPIRED_HINT}</span>
         </section>
@@ -113,7 +114,7 @@ export function MeetingSpeakerConfirmPage() {
           profile: profileByCandidate(candidate.personId, candidate.speakerProfileId),
         }));
         return (
-          <section className="card stack" key={speaker.speakerLabel} data-speaker-label={speaker.speakerLabel}>
+          <section className="glass-panel glass-panel--compact stack" key={speaker.speakerLabel} data-speaker-label={speaker.speakerLabel}>
             <div className="toolbar">
               <strong>{speaker.speakerLabel}</strong>
               <span className="badge" data-status={speaker.confirmationStatus}>{speaker.confirmationStatus}</span>
@@ -140,7 +141,7 @@ export function MeetingSpeakerConfirmPage() {
                     <div className="toolbar">
                       <button
                         type="button"
-                        className="button primary"
+                        className="button button--primary"
                         disabled={isPending || (profile && profile.consentStatus !== "ACTIVE")}
                         onClick={() => void handleConfirm(speaker.speakerLabel, personId, speakerProfileId)}
                       >

@@ -5,7 +5,7 @@ import { HeroSection } from '@shared/components/HeroSection';
  */
 export function GridShowcasePage() {
   return (
-    <div className="page">
+    <div className="page page--workbench">
       <HeroSection
         label="GRID SYSTEM"
         title="12 列不规则网格"

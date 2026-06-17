@@ -107,11 +107,12 @@ export function RagPage() {
   }, [selectedMeetings, selectedDocuments]);
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">问答</h1>
-          <p className="page-subtitle">
+          <span className="page-hero__label">KNOWLEDGE</span>
+          <h1 className="page-hero__title">问答</h1>
+          <p className="page-hero__subtitle">
             基于已索引的会议转写与文档生成带引用的回答。所有候选片段都会经过 Java 端的二次权限校验。
           </p>
         </div>
@@ -121,7 +122,7 @@ export function RagPage() {
         <div className="error" role="alert">{error}</div>
       ) : null}
 
-      <section className="card stack">
+      <section className="glass-panel stack">
         <div className="field">
           <label className="field__label" htmlFor="rag-question">问题</label>
           <textarea
@@ -234,7 +235,7 @@ export function RagPage() {
 function AnswerCard({ answer }: { answer: RagAnswerDTO }) {
   const noCitations = answer.citations.length === 0;
   return (
-    <div className="card stack" aria-label="rag-answer">
+    <div className="glass-panel stack" aria-label="rag-answer">
       <div className="toolbar">
         <strong>回答</strong>
         <span className="pill pill--info" aria-label="rag-coverage">
@@ -275,7 +276,7 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
       citation.segmentId,
     )}&startMs=${citation.startMs}`;
     return (
-      <article className="card stack" aria-label={`citation-${index}`}>
+      <article className="glass-panel glass-panel--compact stack" aria-label={`citation-${index}`}>
         <div className="toolbar">
           <span className="pill pill--info">会议片段</span>
           <strong>{citation.meetingTitle}</strong>
@@ -290,7 +291,7 @@ function CitationItem({ citation, index }: { citation: Citation; index: number }
     );
   }
   return (
-    <article className="card stack" aria-label={`citation-${index}`}>
+    <article className="glass-panel glass-panel--compact stack" aria-label={`citation-${index}`}>
       <div className="toolbar">
         <span className="pill pill--info">文档块</span>
         <strong>{citation.documentTitle}</strong>

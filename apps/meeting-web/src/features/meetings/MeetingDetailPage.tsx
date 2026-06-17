@@ -16,7 +16,7 @@ export function MeetingDetailPage() {
     : null;
 
   return (
-    <div className="page">
+    <div className="page page--workbench">
       {isPending ? <p className="page-subtitle" aria-busy="true">加载中…</p> : null}
       {errorMsg ? (
         <div className="banner banner--danger" role="alert">
@@ -25,14 +25,15 @@ export function MeetingDetailPage() {
       ) : null}
       {meeting ? (
         <>
-          <header className="page-header">
+          <header className="page-hero page-hero--workbench">
             <div>
-              <h1 className="page-title">{meeting.title}</h1>
-              <p className="page-subtitle">
+              <span className="page-hero__label">MEETING</span>
+              <h1 className="page-hero__title">{meeting.title}</h1>
+              <p className="page-hero__subtitle">
                 <span translate="no">{meeting.meetingId}</span> · {meeting.language}
               </p>
             </div>
-            <div className="page-actions">
+            <div className="page-hero__actions">
               <Link className="button button--primary" to={`/meetings/${meeting.meetingId}/audio`}>上传音频</Link>
               <Link className="button" to="/meetings">返回列表</Link>
             </div>

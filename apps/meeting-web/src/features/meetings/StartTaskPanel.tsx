@@ -26,7 +26,7 @@ export function StartTaskPanel({ meetingId }: { meetingId: string }) {
   }
 
   return (
-    <section className="card stack">
+    <section className="glass-panel glass-panel--compact stack">
       <div>
         <strong>处理任务</strong>
         <p className="page-subtitle">提交音频文件 ID 启动 MEETING_FULL_PIPELINE。</p>

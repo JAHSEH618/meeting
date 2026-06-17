@@ -41,13 +41,14 @@ export function MinutesPage() {
   };
 
   return (
-    <main className="page">
-      <header className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">会议纪要</h1>
-          <p className="page-subtitle"><span translate="no">{meetingId}</span></p>
+          <span className="page-hero__label">MINUTES</span>
+          <h1 className="page-hero__title">会议纪要</h1>
+          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/transcript`}>查看转录</Link>
           <button
@@ -82,7 +83,7 @@ export function MinutesPage() {
       ) : null}
 
       {minutes ? (
-        <section className="card stack">
+        <section className="glass-panel stack">
           <div className="toolbar">
             <strong>纪要</strong>
             <span className="pill pill--info">v{minutes.minutesVersion}</span>
@@ -121,7 +122,7 @@ function MinutesSectionView({
 }) {
   const items = section.items ?? [];
   return (
-    <section className="card stack">
+    <section className="glass-panel glass-panel--compact stack">
       <div className="toolbar">
         <strong>{section.title}</strong>
         <span className="page-subtitle">{section.type}</span>

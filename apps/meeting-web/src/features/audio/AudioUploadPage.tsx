@@ -222,13 +222,14 @@ export function AudioUploadPage() {
   }
 
   return (
-    <main className="page">
-      <header className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">音频上传</h1>
-          <p className="page-subtitle"><span translate="no">{meetingId}</span></p>
+          <span className="page-hero__label">AUDIO</span>
+          <h1 className="page-hero__title">音频上传</h1>
+          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/transcript`}>转录</Link>
         </div>
@@ -237,7 +238,7 @@ export function AudioUploadPage() {
       {state.errorCode ? <div className="error" role="alert">{getUserMessage(state.errorCode)}</div> : null}
       {message ? <div className="error" role="alert">{message}</div> : null}
 
-      <section className="card stack">
+      <section className="glass-panel stack">
         <div className="field">
           <label className="field__label" htmlFor="audio-file">音频文件</label>
           <input
@@ -301,7 +302,7 @@ export function AudioUploadPage() {
         </div>
       </section>
 
-      <section className="card stack">
+      <section className="glass-panel glass-panel--compact stack">
         <div className="toolbar">
           <strong>上传状态</strong>
           <span className="pill pill--info">{state.status}</span>

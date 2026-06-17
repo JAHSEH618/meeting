@@ -43,13 +43,14 @@ export function SpeakerProfilesPage() {
   };
 
   return (
-    <main className="page">
-      <header className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">声纹档案</h1>
-          <p className="page-subtitle">{profiles.length} 个档案 · 声纹向量已用 KMS 信封加密存储</p>
+          <span className="page-hero__label">VOICEPRINTS</span>
+          <h1 className="page-hero__title">声纹档案</h1>
+          <p className="page-hero__subtitle">{profiles.length} 个档案 · 声纹向量已用 KMS 信封加密存储</p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <Link className="button" to="/meetings">会议</Link>
           <button
             type="button"
@@ -65,7 +66,7 @@ export function SpeakerProfilesPage() {
       {displayError ? <div className="error" role="alert">{displayError}</div> : null}
 
       {showCreate ? (
-        <section className="card stack" aria-label="新建档案表单">
+        <section className="glass-panel stack" aria-label="新建档案表单">
           <strong>新建声纹档案</strong>
           <div className="field">
             <label className="field__label" htmlFor="speaker-person-id">Person ID</label>

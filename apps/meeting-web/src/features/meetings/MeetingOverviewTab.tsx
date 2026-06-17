@@ -31,7 +31,7 @@ export function MeetingOverviewTab({ meeting }: { meeting: Meeting }) {
 
       <StartTaskPanel meetingId={meeting.meetingId} />
 
-      <section className="card stack">
+      <section className="glass-panel glass-panel--compact stack">
         <strong>快速进入</strong>
         <div className="toolbar">
           <Link className="button" to={`/meetings/${meeting.meetingId}/audio`}>上传音频</Link>

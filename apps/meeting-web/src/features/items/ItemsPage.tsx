@@ -78,23 +78,24 @@ export function ItemsPage() {
   };
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">事项</h1>
-          <p className="muted">{meetingId}</p>
+          <span className="page-hero__label">ITEMS</span>
+          <h1 className="page-hero__title">事项</h1>
+          <p className="page-hero__subtitle">{meetingId}</p>
         </div>
-        <div className="toolbar">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/transcript`}>查看转录</Link>
           <Link className="button" to={`/meetings/${meetingId}/minutes`}>查看纪要</Link>
         </div>
-      </div>
+      </header>
 
       {loading ? <p className="muted">加载中</p> : null}
       {error ? <div className="error" role="alert">{error}</div> : null}
 
-      <section className="card stack" aria-label="待办">
+      <section className="glass-panel stack" aria-label="待办">
         <div className="toolbar">
           <strong>待办</strong>
           <span className="muted">{actions.length} 项</span>
@@ -122,7 +123,7 @@ export function ItemsPage() {
         ))}
       </section>
 
-      <section className="card stack" aria-label="决策">
+      <section className="glass-panel stack" aria-label="决策">
         <div className="toolbar">
           <strong>决策</strong>
           <span className="muted">{decisions.length} 项</span>
@@ -146,7 +147,7 @@ export function ItemsPage() {
         ))}
       </section>
 
-      <section className="card stack" aria-label="风险">
+      <section className="glass-panel stack" aria-label="风险">
         <div className="toolbar">
           <strong>风险</strong>
           <span className="muted">{risks.length} 项</span>
@@ -197,7 +198,7 @@ function ItemCard({ id, title, description, evidence, acceptanceStatus, staleSta
     : acceptanceStatus === "NEEDS_REVIEW" ? "pill--warn"
     : "pill--info";
   return (
-    <article className="card stack item-card" data-item-id={id} data-status={acceptanceStatus}>
+    <article className="glass-panel glass-panel--compact stack item-card" data-item-id={id} data-status={acceptanceStatus}>
       <div className="toolbar">
         <strong>{title}</strong>
         <span className={`pill ${tone}`} data-acceptance={acceptanceStatus}>{acceptanceLabel(acceptanceStatus)}</span>
@@ -223,7 +224,7 @@ function ItemCard({ id, title, description, evidence, acceptanceStatus, staleSta
       <div className="toolbar">
         <button
           type="button"
-          className="button primary"
+          className="button button--primary"
           disabled={pending || acceptanceStatus === "ACCEPTED"}
           onClick={() => onAccept(kind, id)}
         >

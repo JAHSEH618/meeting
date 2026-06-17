@@ -129,13 +129,14 @@ export function TranscriptPage() {
       : null;
 
   return (
-    <main className="page">
-      <header className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">转录</h1>
-          <p className="page-subtitle"><span translate="no">{meetingId}</span></p>
+          <span className="page-hero__label">TRANSCRIPT</span>
+          <h1 className="page-hero__title">转录</h1>
+          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <Link className="button" to={`/meetings/${meetingId}/audio`}>上传音频</Link>
           <Link className="button" to={`/meetings/${meetingId}/minutes`}>查看纪要</Link>
@@ -200,7 +201,7 @@ export function TranscriptPage() {
         </section>
       ) : null}
 
-      <section className="card stack">
+      <section className="glass-panel stack">
         <div className="toolbar">
           <strong>片段</strong>
           {transcript ? <span className="pill pill--info">v{transcript.transcriptVersion}</span> : null}

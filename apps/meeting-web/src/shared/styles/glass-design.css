@@ -280,6 +280,14 @@ body::before {
   letter-spacing: 0;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.page--workbench .stat-card__value,
+.page--workbench .metric__value,
+.page--dense .stat-card__value,
+.page--dense .metric__value {
+  font-size: 40px;
 }
 
 .metric__value--accent {

@@ -112,13 +112,14 @@ export function DocumentsPage() {
   };
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">知识库文档</h1>
-          <p className="page-subtitle">用于问答检索的文档元数据登记与索引重建。</p>
+          <span className="page-hero__label">DOCUMENTS</span>
+          <h1 className="page-hero__title">知识库文档</h1>
+          <p className="page-hero__subtitle">用于问答检索的文档元数据登记与索引重建。</p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <button
             type="button"
             className="button button--primary"
@@ -135,7 +136,7 @@ export function DocumentsPage() {
       ) : null}
 
       {showCreate ? (
-        <div className="card stack" aria-label="登记文档表单">
+        <div className="glass-panel stack" aria-label="登记文档表单">
           <p className="page-subtitle">{FILE_ID_HINT}</p>
           <div className="field">
             <label className="field__label" htmlFor="doc-title">标题</label>
@@ -215,7 +216,7 @@ export function DocumentsPage() {
         {documents.map((doc) => (
           <article
             key={doc.documentId}
-            className="card stack"
+            className="glass-panel glass-panel--compact stack"
             aria-label={`document-${doc.documentId}`}
           >
             <div className="toolbar">

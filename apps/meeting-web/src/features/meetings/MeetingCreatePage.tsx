@@ -41,14 +41,15 @@ export function MeetingCreatePage() {
   }
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">新建会议</h1>
-          <p className="muted">创建后可在详情页启动处理任务。</p>
+          <span className="page-hero__label">MEETING</span>
+          <h1 className="page-hero__title">新建会议</h1>
+          <p className="page-hero__subtitle">创建后可在详情页启动处理任务。</p>
         </div>
-      </div>
-      <section className="card">
+      </header>
+      <section className="glass-panel">
         <form className="form" onSubmit={onSubmit}>
           <div className="field">
             <label htmlFor="title">会议标题</label>
@@ -92,7 +93,7 @@ export function MeetingCreatePage() {
               {error}
             </div>
           ) : null}
-          <button className="primary" type="submit" disabled={submitting || !title.trim()}>
+          <button className="button button--primary" type="submit" disabled={submitting || !title.trim()}>
             {submitting ? "创建中…" : "创建会议"}
           </button>
         </form>

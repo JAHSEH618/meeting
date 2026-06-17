@@ -57,7 +57,7 @@ const TaskProgressPage = lazy(() =>
 );
 
 const RouteFallback = () => (
-  <div className="page" aria-busy="true" role="status" aria-live="polite">
+  <div className="page page--workbench" aria-busy="true" role="status" aria-live="polite">
     加载中…
   </div>
 );

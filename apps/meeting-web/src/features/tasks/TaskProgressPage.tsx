@@ -55,13 +55,14 @@ export function TaskProgressPage() {
     ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"].includes(snapshot.status as string);
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className="page page--workbench">
+      <header className="page-hero page-hero--workbench">
         <div>
-          <h1 className="page-title">任务进度</h1>
-          <p className="page-subtitle"><span translate="no">{taskId}</span></p>
+          <span className="page-hero__label">PROCESSING</span>
+          <h1 className="page-hero__title">任务进度</h1>
+          <p className="page-hero__subtitle"><span translate="no">{taskId}</span></p>
         </div>
-        <div className="page-actions">
+        <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
           <button
             type="button"
@@ -92,27 +93,27 @@ export function TaskProgressPage() {
         </div>
       </header>
 
-      <section className="grid" aria-live="polite">
-        <div className="metric">
-          <div className="metric__label">状态</div>
-          <div className="metric__value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <section className="stats-grid" aria-live="polite">
+        <div className="stat-card">
+          <div className="stat-card__label">状态</div>
+          <div className="stat-card__value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className={STATUS_DOT[snapshot.status as string] ?? "dot"} />
             <span>{snapshot.status}</span>
           </div>
           <div className="page-subtitle">{STATUS_LABEL[snapshot.status as string] ?? ""}</div>
         </div>
-        <div className="metric">
-          <div className="metric__label">阶段</div>
-          <div className="metric__value" style={{ fontSize: 16 }}>{snapshot.phase ?? "—"}</div>
+        <div className="stat-card">
+          <div className="stat-card__label">阶段</div>
+          <div className="stat-card__value" style={{ fontSize: 16 }}>{snapshot.phase ?? "—"}</div>
           <PhaseStrip phase={snapshot.phase} />
         </div>
-        <div className="metric">
-          <div className="metric__label">尝试</div>
-          <div className="metric__value">{snapshot.attemptNo}</div>
+        <div className="stat-card">
+          <div className="stat-card__label">尝试</div>
+          <div className="stat-card__value">{snapshot.attemptNo}</div>
         </div>
-        <div className="metric">
-          <div className="metric__label">总体进度</div>
-          <div className="metric__value">{totalProgress}%</div>
+        <div className="stat-card">
+          <div className="stat-card__label">总体进度</div>
+          <div className="stat-card__value">{totalProgress}%</div>
           <div className="progress">
             <span style={{ display: "block", height: "100%", width: `${totalProgress}%`, background: "var(--accent)" }} />
           </div>
@@ -128,7 +129,7 @@ export function TaskProgressPage() {
         </div>
       ) : null}
 
-      <section className="card stack">
+      <section className="glass-panel glass-panel--table stack">
         <div className="toolbar">
           <strong>步骤</strong>
           {snapshot.currentStep ? (

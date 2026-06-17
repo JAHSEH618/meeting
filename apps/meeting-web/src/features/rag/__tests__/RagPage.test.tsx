@@ -5,12 +5,14 @@ import { RagPage } from "../RagPage";
 
 describe("RagPage", () => {
   it("renders the question form with default topN and scope summary", async () => {
-    render(
+    const { container } = render(
       <TestRouter>
         <RagPage />
       </TestRouter>,
     );
 
+    expect(container.querySelector(".page--workbench")).toBeInTheDocument();
+    expect(container.querySelector(".glass-panel")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText("topN")).toBeInTheDocument());
     expect((screen.getByLabelText("topN") as HTMLInputElement).value).toBe("8");
     expect(screen.getByText("全部可读范围")).toBeInTheDocument();

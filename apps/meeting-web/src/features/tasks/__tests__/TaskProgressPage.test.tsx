@@ -35,8 +35,10 @@ function task(status: ProcessingTask["status"], stepProgress: number): Processin
 
 describe("TaskProgressPage", () => {
   it("renders task status, phase, and step progress from snapshot", async () => {
-    renderPage();
+    const { container } = renderPage();
 
+    expect(container.querySelector(".page--workbench")).toBeInTheDocument();
+    expect(container.querySelector(".page-hero--workbench")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("WORKER_DAG_RUNNING")).toBeInTheDocument());
     expect(screen.getByText("ASR")).toBeInTheDocument();
     expect(screen.getAllByText("RUNNING").length).toBeGreaterThan(0);
