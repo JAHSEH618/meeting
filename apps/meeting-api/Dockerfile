@@ -26,13 +26,23 @@ FROM eclipse-temurin:17-jre-jammy
 # LibreOffice headless + CJK + common fonts. We deliberately keep only
 # Writer (no impress/calc/draw/base) to stay under the 1.5 GB image cap;
 # PdfExportGateway only needs DOCX → PDF.
-RUN apt-get update \
+ARG APT_MIRROR=""
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    set -eux; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
+    if [ -n "${APT_MIRROR}" ]; then \
+      sed -i \
+        -e "s|http://archive.ubuntu.com/ubuntu|${APT_MIRROR}|g" \
+        -e "s|http://security.ubuntu.com/ubuntu|${APT_MIRROR}|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi; \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
          libreoffice-core libreoffice-writer \
          fonts-noto-cjk fonts-noto-cjk-extra \
          fonts-liberation \
          curl ca-certificates \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user; mount points stay writable so soffice can create profile dirs.

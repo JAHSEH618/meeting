@@ -100,6 +100,8 @@ services:
     build:
       context: ../../../../apps/meeting-api
       dockerfile: Dockerfile
+      args:
+        APT_MIRROR: ${MEETING_API_APT_MIRROR:-}
     depends_on:
       postgres:
         condition: service_healthy

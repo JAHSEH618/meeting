@@ -99,11 +99,15 @@ build_jar() {
 build_image() {
     command -v docker >/dev/null 2>&1 || { err "docker not in PATH"; exit 1; }
     local tag="${1:-meeting-api:dev}"
+    local build_args=()
+    if [ -n "${MEETING_API_APT_MIRROR:-}" ]; then
+        build_args+=(--build-arg "APT_MIRROR=${MEETING_API_APT_MIRROR}")
+    fi
     log "docker build → ${tag}"
     # Context is apps/meeting-api/ — the Dockerfile self-contains the
     # multi-module Maven build, so no repo-root context juggling like
     # meeting-web needs.
-    docker build -t "${tag}" \
+    docker build "${build_args[@]}" -t "${tag}" \
         -f "${API_DIR}/Dockerfile" \
         "${API_DIR}"
     log "Built ${tag}"
@@ -111,7 +115,7 @@ build_image() {
     # Apple Silicon producers who need to push amd64 nodes for prod:
     if [ "$(uname -m)" = "arm64" ] && [ "${2:-}" = "--cross" ]; then
         log "docker buildx → linux/amd64 (cross-arch build for prod nodes)"
-        docker buildx build --platform linux/amd64 \
+        docker buildx build "${build_args[@]}" --platform linux/amd64 \
             -t "${tag}-amd64" \
             -f "${API_DIR}/Dockerfile" \
             "${API_DIR}"
