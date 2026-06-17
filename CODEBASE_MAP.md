@@ -17,6 +17,7 @@ Use this file as a lightweight table of contents for humans and AI coding agents
 | `CODEBASE_MAP.md` | file | Lightweight map of important paths. |
 | `deploy/` | directory | TBD: describe this directory. |
 | `DESIGN.md` | file | TBD: describe this file. |
+| `diagnose-frontend.sh` | file | TBD: describe this file. |
 | `docker-compose.prod.yml` | file | TBD: describe this file. |
 | `docs/` | directory | Project documentation. |
 | `E2E_ACTION_PLAN.md` | file | TBD: describe this file. |
