@@ -5,6 +5,23 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /src
 
+# Configure Aliyun Maven mirror for faster downloads in China
+RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 http://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>aliyun-public</id>
+      <mirrorOf>*</mirrorOf>
+      <name>Aliyun Public Mirror</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
+
 # Cache dependencies first so source-only changes don't redownload the world.
 COPY pom.xml ./
 COPY meeting-api-client/pom.xml meeting-api-client/
