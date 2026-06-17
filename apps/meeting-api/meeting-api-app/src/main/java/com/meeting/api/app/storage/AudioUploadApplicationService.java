@@ -205,9 +205,8 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
                 }
             }
             StorageObject object = objectStorageGateway.statObject(session.bucket(), session.objectKey());
-            // sizeBytes >= 0 means the gateway reported a real size; -1 means
-            // "unknown" (LocalObjectStorageGateway when no local mirror
-            // exists). A real OSS HEAD always returns a non-negative size,
+            // sizeBytes >= 0 means the gateway reported a real size.
+            // A real OSS/TOS HEAD always returns a non-negative size,
             // so 0 bytes vs a positive session size is treated as mismatch.
             if (object.sizeBytes() >= 0 && object.sizeBytes() != session.fileSizeBytes()) {
                 throw conflict(

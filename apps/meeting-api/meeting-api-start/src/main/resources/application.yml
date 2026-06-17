@@ -78,16 +78,12 @@ meeting:
       models-timeout-ms: 2000
       connect-timeout-ms: 1000
   storage:
-    type: ${STORAGE_TYPE:minio}
+    type: ${STORAGE_TYPE:oss}
     # Logical bucket names — shared by every backend. Override per env
     # via STORAGE_BUCKET_* env vars; the TOS gateway uses these directly.
     bucket-audio: ${STORAGE_BUCKET_AUDIO:meeting-audio-auska}
     bucket-artifacts: ${STORAGE_BUCKET_ARTIFACTS:meeting-artifacts}
     bucket-exports: ${STORAGE_BUCKET_EXPORTS:meeting-exports}
-    minio:
-      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-      access-key: ${MINIO_ROOT_USER:minioadmin}
-      secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
     tos:
       endpoint: ${TOS_ENDPOINT:}
       region: ${TOS_REGION:cn-beijing}

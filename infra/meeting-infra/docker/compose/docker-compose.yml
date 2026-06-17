@@ -40,32 +40,6 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
-    container_name: meeting-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio-data:/data
-      - ./minio/init-buckets.sh:/usr/local/bin/init-buckets.sh:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    entrypoint: >
-      /bin/sh -c "
-      minio server /data --console-address ':9001' &
-      sleep 5;
-      /usr/local/bin/init-buckets.sh;
-      wait
-      "
-
   vault-dev:
     image: hashicorp/vault:1.17
     container_name: meeting-vault
@@ -117,17 +91,18 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-meeting}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-meeting_dev}
-      STORAGE_TYPE: ${STORAGE_TYPE:-minio}
+      STORAGE_TYPE: ${STORAGE_TYPE:-oss}
       STORAGE_BUCKET_AUDIO: ${STORAGE_BUCKET_AUDIO:-meeting-audio-auska}
       STORAGE_BUCKET_ARTIFACTS: ${STORAGE_BUCKET_ARTIFACTS:-meeting-artifacts}
       STORAGE_BUCKET_EXPORTS: ${STORAGE_BUCKET_EXPORTS:-meeting-exports}
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       TOS_ENDPOINT: ${TOS_ENDPOINT:-}
       TOS_REGION: ${TOS_REGION:-cn-beijing}
       TOS_ACCESS_KEY_ID: ${TOS_ACCESS_KEY_ID:-}
       TOS_ACCESS_KEY_SECRET: ${TOS_ACCESS_KEY_SECRET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_REGION: ${OSS_REGION:-cn-hangzhou}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
       # Default to the compose ai-worker service. Apple Silicon real-model
       # runs can point meeting-api at a host-native ai-worker with:
       #   AI_WORKER_BASE_URL=http://host.docker.internal:8090
@@ -233,6 +208,5 @@ services:
 volumes:
   postgres-data:
   rabbitmq-data:
-  minio-data:
   prometheus-data:
   grafana-data:

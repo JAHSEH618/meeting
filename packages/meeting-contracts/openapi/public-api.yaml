@@ -3128,7 +3128,7 @@ components:
       required: [title, fileId, documentType]
       properties:
         title: {type: string, minLength: 1}
-        fileId: {type: string, minLength: 1, description: 'TOS / MinIO object key for the source file'}
+        fileId: {type: string, minLength: 1, description: 'TOS / OSS object key for the source file'}
         documentType:
           type: string
           enum: [PDF, DOCX, MARKDOWN, TXT]

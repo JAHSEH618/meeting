@@ -155,7 +155,7 @@ public class CreateDocumentRequest {
   }
 
   /**
-   * TOS / MinIO object key for the source file
+   * TOS / OSS object key for the source file
    * @return fileId
    */
   @javax.annotation.Nonnull

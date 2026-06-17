@@ -16,6 +16,7 @@ Use this file as a lightweight table of contents for humans and AI coding agents
 | `CLAUDE.md` | file | Always-loaded AI coding context. |
 | `CODEBASE_MAP.md` | file | Lightweight map of important paths. |
 | `deploy/` | directory | TBD: describe this directory. |
+| `DESIGN.md` | file | TBD: describe this file. |
 | `docker-compose.prod.yml` | file | TBD: describe this file. |
 | `docs/` | directory | Project documentation. |
 | `E2E_ACTION_PLAN.md` | file | TBD: describe this file. |
@@ -24,6 +25,7 @@ Use this file as a lightweight table of contents for humans and AI coding agents
 | `infra/` | directory | Infrastructure and deployment configuration. |
 | `logs.sh` | file | TBD: describe this file. |
 | `packages/` | directory | Shared packages or libraries. |
+| `PRODUCT.md` | file | TBD: describe this file. |
 | `README.md` | file | Human-facing project overview and setup guide. |
 | `RELEASE-NOTES-v1.1.0.md` | file | Release notes for v1.1.0: TOS SDK migration, differential storage strategy, and Phase K cleanup. |
 | `restart-web.sh` | file | TBD: describe this file. |

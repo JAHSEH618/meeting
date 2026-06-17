@@ -1777,7 +1777,7 @@ export interface components {
          */
         CreateDocumentRequest: {
             title: string;
-            /** @description TOS / MinIO object key for the source file */
+            /** @description TOS / OSS object key for the source file */
             fileId: string;
             /** @enum {string} */
             documentType: "PDF" | "DOCX" | "MARKDOWN" | "TXT";
