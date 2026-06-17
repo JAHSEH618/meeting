@@ -1,588 +1,355 @@
-# AI Worker 阶段一：核心稳定性 - 实施计划
+# AI Worker Stage 1 Stability Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 增强 ai-worker 的核心稳定性，实现错误自动恢复、资源清理和改进的健康检查
+**Goal:** Make the existing ai-worker RabbitMQ consumer and Java callback path recover from transient infrastructure failures while preserving the current FastAPI health/readiness model.
 
-**Architecture:** 添加重试装饰器用于模型加载，重构 RabbitMQ 消费者支持自动重连，实现 GPU/临时文件资源清理机制，分层健康检查（liveness/readiness）
+**Architecture:** Keep the existing FastAPI endpoints in `interfaces/api/main.py` and the existing RabbitMQ consumer in `infrastructure/mq/rabbitmq_consumer.py`. Add configuration, retry parsing, reconnect loops, failure classification, graceful shutdown, and focused tests without introducing new service frameworks or duplicate health routers.
 
-**Tech Stack:** Python 3.11, pika, torch, FastAPI, pytest
-
----
-
-## 文件结构
-
-### 新增文件
-- `apps/ai-worker/ai_worker/common/retry.py` - 通用重试装饰器
-- `apps/ai-worker/ai_worker/common/gpu_context.py` - GPU 资源管理上下文
-- `apps/ai-worker/ai_worker/common/tempfile_manager.py` - 临时文件清理管理器
-- `apps/ai-worker/tests/common/test_retry.py` - 重试装饰器测试
-- `apps/ai-worker/tests/common/test_gpu_context.py` - GPU 上下文测试
-- `apps/ai-worker/tests/common/test_tempfile_manager.py` - 临时文件管理器测试
-
-### 修改文件
-- `apps/ai-worker/ai_worker/common/config.py` - 添加稳定性相关配置
-- `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py` - 添加自动重连
-- `apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py` - 添加信号处理
-- `apps/ai-worker/ai_worker/interfaces/api/health.py` - 增强健康检查（如果存在，否则创建）
+**Tech Stack:** Python 3.11, FastAPI, pika, httpx, prometheus-client, pytest, pyright, Docker/Kubernetes manifests already in the repository.
 
 ---
 
-## Task 1: 添加稳定性配置项
+## File Structure
+
+### Modify
+
+- `apps/ai-worker/ai_worker/common/config.py`
+  Add stability settings with defaults.
+
+- `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py`
+  Add reconnect loop, `is_connected()`, failure classification, and configurable timeout handling.
+
+- `apps/ai-worker/ai_worker/infrastructure/java_callback/client.py`
+  Replace hard-coded short retry with configured retry delays and retryable-status classification.
+
+- `apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py`
+  Add SIGTERM/SIGINT shutdown handling around the existing consumer.
+
+- `apps/ai-worker/ai_worker/interfaces/api/main.py`
+  Keep current health endpoints. Add no new health router. Tests may be adjusted only if the response contract changes.
+
+- `apps/ai-worker/ai_worker/observability/gpu_metrics.py`
+  May be extended with RabbitMQ/callback counters if no separate metrics module is introduced.
+
+- `apps/ai-worker/README.md`
+  Document the new stability settings and current health semantics.
+
+### Create
+
+- `apps/ai-worker/ai_worker/common/retry_config.py`
+  Parse comma-separated retry delay settings into validated float seconds.
+
+- `apps/ai-worker/ai_worker/observability/worker_metrics.py`
+  Add RabbitMQ and callback counters/gauges. Keep metric labels low-cardinality.
+
+- `apps/ai-worker/tests/test_retry_config.py`
+
+### Extend Existing Tests
+
+- `apps/ai-worker/tests/test_rabbitmq_consumer.py`
+  Extend existing file instead of creating a parallel infrastructure test tree.
+
+- `apps/ai-worker/tests/test_callback_client.py`
+  Extend existing file.
+
+### Do Not Create
+
+- `apps/ai-worker/ai_worker/interfaces/api/health.py`
+  Health/readiness already live in `interfaces/api/main.py`.
+
+- `apps/ai-worker/Dockerfile.optimized`
+  Docker changes belong in the existing Dockerfile and are not part of Stage 1.
+
+- `infra/meeting-infra/docker/compose/docker-compose.observability.yml`
+  Observability is already a profile in `infra/meeting-infra/docker/compose/docker-compose.yml`.
+
+---
+
+## Task 1: Add Stability Settings and Retry Parsing
 
 **Files:**
 - Modify: `apps/ai-worker/ai_worker/common/config.py`
+- Create: `apps/ai-worker/ai_worker/common/retry_config.py`
+- Create: `apps/ai-worker/tests/test_retry_config.py`
 
-- [ ] **Step 1: 读取当前配置文件**
+- [ ] **Step 1: Write retry delay parser tests**
 
-```bash
-cat apps/ai-worker/ai_worker/common/config.py
-```
-
-Expected: 查看现有配置结构
-
-- [ ] **Step 2: 在 Settings 类末尾添加稳定性配置**
-
-在 `class Settings(BaseSettings):` 的最后字段后添加：
+Create `apps/ai-worker/tests/test_retry_config.py`:
 
 ```python
-    # ===== 阶段一：稳定性配置 =====
-    # 重试配置
-    model_load_max_retries: int = 3
-    callback_retry_delays: str = "1,2,4,8,16"  # 逗号分隔的秒数
-    rabbitmq_reconnect_delay: int = 5
-    
-    # 清理配置
-    temp_file_max_age_hours: int = 24
-    temp_file_cleanup_interval_minutes: int = 60
-    gpu_memory_cleanup_threshold: float = 0.9  # 90%时强制清理
+from __future__ import annotations
+
+import pytest
+
+from ai_worker.common.retry_config import parse_retry_delays
+
+
+def test_parse_retry_delays_accepts_comma_separated_seconds() -> None:
+    assert parse_retry_delays("1, 2.5,5") == (1.0, 2.5, 5.0)
+
+
+def test_parse_retry_delays_rejects_empty_value() -> None:
+    with pytest.raises(ValueError, match="must contain at least one delay"):
+        parse_retry_delays("")
+
+
+def test_parse_retry_delays_rejects_negative_value() -> None:
+    with pytest.raises(ValueError, match="must be >= 0"):
+        parse_retry_delays("1,-2")
 ```
 
-- [ ] **Step 3: 验证配置加载**
+- [ ] **Step 2: Run the focused test and confirm it fails**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run python -c "from ai_worker.common.config import settings; print(f'重试次数: {settings.model_load_max_retries}, 重连延迟: {settings.rabbitmq_reconnect_delay}秒')"
+uv run pytest tests/test_retry_config.py -q
 ```
 
-Expected: 输出 "重试次数: 3, 重连延迟: 5秒"
+Expected: fail with `ModuleNotFoundError: No module named 'ai_worker.common.retry_config'`.
 
-- [ ] **Step 4: 提交配置更改**
+- [ ] **Step 3: Add settings**
+
+Append these fields inside `Settings` in `apps/ai-worker/ai_worker/common/config.py`, before `model_config`:
+
+```python
+    # Stability controls.
+    rabbitmq_reconnect_initial_delay_seconds: float = 1.0
+    rabbitmq_reconnect_max_delay_seconds: float = 30.0
+    rabbitmq_reconnect_max_attempts: int = 0  # 0 means retry forever.
+    rabbitmq_requeue_max_attempts: int = 3
+    task_execution_timeout_seconds: float = 30 * 60
+    callback_retry_delays: str = "1,2,5,10"
+    callback_timeout_seconds: float = 30.0
+```
+
+- [ ] **Step 4: Implement the parser**
+
+Create `apps/ai-worker/ai_worker/common/retry_config.py`:
+
+```python
+from __future__ import annotations
+
+
+def parse_retry_delays(value: str) -> tuple[float, ...]:
+    delays: list[float] = []
+    for raw in value.split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        delay = float(item)
+        if delay < 0:
+            raise ValueError("retry delay must be >= 0")
+        delays.append(delay)
+    if not delays:
+        raise ValueError("retry delays must contain at least one delay")
+    return tuple(delays)
+```
+
+- [ ] **Step 5: Verify parser tests pass**
+
+Run:
 
 ```bash
-git add apps/ai-worker/ai_worker/common/config.py
-git commit -m "config: add stability-related settings for stage 1
-
-Add retry, reconnection, and cleanup configuration:
-- model_load_max_retries, callback_retry_delays
-- rabbitmq_reconnect_delay
-- temp_file cleanup and GPU memory thresholds"
+cd apps/ai-worker
+uv run pytest tests/test_retry_config.py -q
 ```
+
+Expected: `3 passed`.
 
 ---
 
-## Task 2: 实现重试装饰器
+## Task 2: Add Worker-Level Metrics
 
 **Files:**
-- Create: `apps/ai-worker/ai_worker/common/retry.py`
-- Create: `apps/ai-worker/tests/common/test_retry.py`
+- Create: `apps/ai-worker/ai_worker/observability/worker_metrics.py`
+- Create: `apps/ai-worker/tests/test_worker_metrics.py`
 
-- [ ] **Step 1: 编写重试装饰器测试**
+- [ ] **Step 1: Write import smoke test**
 
-创建 `apps/ai-worker/tests/common/test_retry.py`:
-
-```python
-import pytest
-from ai_worker.common.retry import retry, exponential_backoff
-
-
-def test_exponential_backoff():
-    """测试指数退避计算"""
-    assert exponential_backoff(0, base=2.0) == 1.0
-    assert exponential_backoff(1, base=2.0) == 2.0
-    assert exponential_backoff(2, base=2.0) == 4.0
-    assert exponential_backoff(10, base=2.0, max_delay=60.0) == 60.0
-
-
-def test_retry_success_first_attempt():
-    """测试首次尝试成功"""
-    call_count = 0
-    
-    @retry(max_attempts=3)
-    def succeeds_immediately():
-        nonlocal call_count
-        call_count += 1
-        return "success"
-    
-    result = succeeds_immediately()
-    assert result == "success"
-    assert call_count == 1
-
-
-def test_retry_success_after_failures():
-    """测试重试后成功"""
-    call_count = 0
-    
-    @retry(max_attempts=3, backoff_base=1.0)
-    def succeeds_on_third():
-        nonlocal call_count
-        call_count += 1
-        if call_count < 3:
-            raise ValueError("Not yet")
-        return "success"
-    
-    result = succeeds_on_third()
-    assert result == "success"
-    assert call_count == 3
-
-
-def test_retry_exhausts_attempts():
-    """测试重试次数耗尽"""
-    call_count = 0
-    
-    @retry(max_attempts=3, backoff_base=1.0, on_exception=(ValueError,))
-    def always_fails():
-        nonlocal call_count
-        call_count += 1
-        raise ValueError("Always fails")
-    
-    with pytest.raises(ValueError, match="Always fails"):
-        always_fails()
-    
-    assert call_count == 3
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-```bash
-cd apps/ai-worker
-uv run pytest tests/common/test_retry.py -v
-```
-
-Expected: ModuleNotFoundError: No module named 'ai_worker.common.retry'
-
-- [ ] **Step 3: 实现重试装饰器**
-
-创建 `apps/ai-worker/ai_worker/common/retry.py`:
+Create `apps/ai-worker/tests/test_worker_metrics.py`:
 
 ```python
-import time
-import logging
-from functools import wraps
-from typing import Callable, Type, Tuple
-
-logger = logging.getLogger(__name__)
+from __future__ import annotations
 
 
-def exponential_backoff(attempt: int, base: float = 2.0, max_delay: float = 60.0) -> float:
-    """计算指数退避延迟"""
-    delay = min(base ** attempt, max_delay)
-    return delay
-
-
-def retry(
-    max_attempts: int = 3,
-    backoff_base: float = 2.0,
-    max_delay: float = 60.0,
-    on_exception: Tuple[Type[Exception], ...] = (Exception,),
-):
-    """重试装饰器，支持指数退避
-    
-    Args:
-        max_attempts: 最大尝试次数
-        backoff_base: 退避基数
-        max_delay: 最大延迟秒数
-        on_exception: 需要重试的异常类型元组
-    """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except on_exception as exc:
-                    if attempt == max_attempts - 1:
-                        logger.error(
-                            f"{func.__name__} failed after {max_attempts} attempts",
-                            exc_info=True
-                        )
-                        raise
-                    delay = exponential_backoff(attempt, backoff_base, max_delay)
-                    logger.warning(
-                        f"{func.__name__} failed (attempt {attempt + 1}/{max_attempts}), "
-                        f"retrying in {delay:.1f}s: {exc}"
-                    )
-                    time.sleep(delay)
-            return None
-        return wrapper
-    return decorator
-```
-
-- [ ] **Step 4: 运行测试确认通过**
-
-```bash
-cd apps/ai-worker
-uv run pytest tests/common/test_retry.py -v
-```
-
-Expected: 4 passed
-
-- [ ] **Step 5: 提交重试功能**
-
-```bash
-git add apps/ai-worker/ai_worker/common/retry.py apps/ai-worker/tests/common/test_retry.py
-git commit -m "feat(common): add retry decorator with exponential backoff
-
-Implements:
-- exponential_backoff() for delay calculation
-- retry() decorator with configurable attempts and exception types
-- Full test coverage for success/failure scenarios"
-```
-
----
-
-## Task 3: 实现 GPU 资源清理上下文
-
-**Files:**
-- Create: `apps/ai-worker/ai_worker/common/gpu_context.py`
-- Create: `apps/ai-worker/tests/common/test_gpu_context.py`
-
-- [ ] **Step 1: 编写 GPU 上下文测试**
-
-创建 `apps/ai-worker/tests/common/test_gpu_context.py`:
-
-```python
-import pytest
-from unittest.mock import Mock, patch
-from ai_worker.common.gpu_context import gpu_context
-
-
-@patch('ai_worker.common.gpu_context.torch')
-def test_gpu_context_cuda_cleanup(mock_torch):
-    """测试 CUDA GPU 清理"""
-    mock_torch.cuda.is_available.return_value = True
-    
-    with gpu_context("cuda"):
-        pass
-    
-    mock_torch.cuda.empty_cache.assert_called_once()
-    mock_torch.cuda.synchronize.assert_called_once()
-
-
-@patch('ai_worker.common.gpu_context.torch')
-def test_gpu_context_no_cuda_available(mock_torch):
-    """测试 CUDA 不可用时不报错"""
-    mock_torch.cuda.is_available.return_value = False
-    
-    with gpu_context("cuda"):
-        pass
-    
-    mock_torch.cuda.empty_cache.assert_not_called()
-
-
-def test_gpu_context_torch_not_installed():
-    """测试 torch 未安装时优雅降级"""
-    with patch.dict('sys.modules', {'torch': None}):
-        with gpu_context("cuda"):
-            pass  # 应该不抛异常
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-```bash
-cd apps/ai-worker
-uv run pytest tests/common/test_gpu_context.py -v
-```
-
-Expected: ModuleNotFoundError
-
-- [ ] **Step 3: 实现 GPU 上下文管理器**
-
-创建 `apps/ai-worker/ai_worker/common/gpu_context.py`:
-
-```python
-import logging
-from contextlib import contextmanager
-from typing import Iterator
-
-logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def gpu_context(device: str = "cuda") -> Iterator[None]:
-    """GPU 资源管理上下文，自动清理显存
-    
-    Args:
-        device: 设备类型 (cuda/mps)
-    
-    Usage:
-        with gpu_context("cuda"):
-            result = model.inference(data)
-    """
-    try:
-        yield
-    finally:
-        try:
-            import torch
-            if device.startswith("cuda") and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
-                logger.debug("GPU 显存已清理")
-            elif device == "mps" and hasattr(torch.backends, "mps"):
-                if torch.backends.mps.is_available():
-                    if hasattr(torch.mps, "empty_cache"):
-                        torch.mps.empty_cache()
-        except ImportError:
-            pass  # torch 未安装，跳过清理
-        except Exception as exc:
-            logger.warning(f"GPU 清理失败: {exc}")
-```
-
-- [ ] **Step 4: 运行测试确认通过**
-
-```bash
-cd apps/ai-worker
-uv run pytest tests/common/test_gpu_context.py -v
-```
-
-Expected: 3 passed
-
-- [ ] **Step 5: 提交 GPU 上下文功能**
-
-```bash
-git add apps/ai-worker/ai_worker/common/gpu_context.py apps/ai-worker/tests/common/test_gpu_context.py
-git commit -m "feat(common): add GPU memory cleanup context manager
-
-Implements gpu_context() for automatic CUDA/MPS memory cleanup after operations.
-Gracefully handles torch unavailable or GPU not present."
-```
-
----
-
-## Task 4: 实现临时文件清理管理器
-
-**Files:**
-- Create: `apps/ai-worker/ai_worker/common/tempfile_manager.py`
-- Create: `apps/ai-worker/tests/common/test_tempfile_manager.py`
-
-- [ ] **Step 1: 编写临时文件管理器测试**
-
-创建 `apps/ai-worker/tests/common/test_tempfile_manager.py`:
-
-```python
-import pytest
-import time
-from pathlib import Path
-from datetime import datetime, timedelta
-from ai_worker.common.tempfile_manager import TempFileManager
-
-
-@pytest.fixture
-def temp_manager(tmp_path):
-    """创建临时文件管理器实例"""
-    return TempFileManager(
-        temp_dir=tmp_path,
-        max_age_hours=1,
-        cleanup_interval_minutes=5,
+def test_worker_metrics_imports() -> None:
+    from ai_worker.observability.worker_metrics import (
+        CALLBACK_REQUESTS,
+        CALLBACK_RETRIES,
+        RABBITMQ_CONNECTED,
+        RABBITMQ_RECONNECTS,
     )
 
-
-def test_cleanup_old_files(temp_manager, tmp_path):
-    """测试清理过期文件"""
-    # 创建旧文件
-    old_file = tmp_path / "old.txt"
-    old_file.write_text("old")
-    old_time = datetime.now() - timedelta(hours=2)
-    old_file.touch()
-    old_file.stat().st_mtime = old_time.timestamp()
-    
-    # 创建新文件
-    new_file = tmp_path / "new.txt"
-    new_file.write_text("new")
-    
-    deleted = temp_manager.cleanup_old_files()
-    
-    assert deleted >= 1
-    assert not old_file.exists()
-    assert new_file.exists()
-
-
-def test_cleanup_no_files(temp_manager):
-    """测试空目录清理"""
-    deleted = temp_manager.cleanup_old_files()
-    assert deleted == 0
+    assert CALLBACK_REQUESTS is not None
+    assert CALLBACK_RETRIES is not None
+    assert RABBITMQ_CONNECTED is not None
+    assert RABBITMQ_RECONNECTS is not None
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: Run the focused test and confirm it fails**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/common/test_tempfile_manager.py -v
+uv run pytest tests/test_worker_metrics.py -q
 ```
 
-Expected: ModuleNotFoundError
+Expected: fail with `ModuleNotFoundError`.
 
-- [ ] **Step 3: 实现临时文件管理器**
+- [ ] **Step 3: Implement metrics**
 
-创建 `apps/ai-worker/ai_worker/common/tempfile_manager.py`:
+Create `apps/ai-worker/ai_worker/observability/worker_metrics.py`:
 
 ```python
-import logging
-from pathlib import Path
-from datetime import datetime, timedelta
+from __future__ import annotations
 
-from ai_worker.common.config import settings
+from prometheus_client import Counter, Gauge
 
-logger = logging.getLogger(__name__)
+RABBITMQ_RECONNECTS = Counter(
+    "ai_worker_rabbitmq_reconnects_total",
+    "RabbitMQ consumer reconnect attempts.",
+    labelnames=("reason",),
+)
 
+RABBITMQ_CONNECTED = Gauge(
+    "ai_worker_rabbitmq_connected",
+    "Whether the RabbitMQ consumer connection is currently open.",
+)
 
-class TempFileManager:
-    """临时文件管理器，定期清理过期文件"""
-    
-    def __init__(
-        self,
-        temp_dir: Path | None = None,
-        max_age_hours: int | None = None,
-        cleanup_interval_minutes: int | None = None,
-    ):
-        self.max_age_hours = max_age_hours or settings.temp_file_max_age_hours
-        self.cleanup_interval = cleanup_interval_minutes or settings.temp_file_cleanup_interval_minutes
-        self.temp_dir = temp_dir or (Path(settings.artifact_store_root) / "temp")
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-    
-    def cleanup_old_files(self) -> int:
-        """清理超过 max_age_hours 的临时文件，返回删除数量"""
-        cutoff_time = datetime.now() - timedelta(hours=self.max_age_hours)
-        deleted_count = 0
-        
-        for file_path in self.temp_dir.rglob("*"):
-            if not file_path.is_file():
-                continue
-            
-            try:
-                mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-                if mtime < cutoff_time:
-                    file_path.unlink()
-                    deleted_count += 1
-            except Exception as exc:
-                logger.warning(f"删除临时文件失败 {file_path}: {exc}")
-        
-        if deleted_count > 0:
-            logger.info(f"清理了 {deleted_count} 个过期临时文件")
-        
-        return deleted_count
+CALLBACK_REQUESTS = Counter(
+    "ai_worker_callback_requests_total",
+    "Java callback requests by operation, outcome, and stable error code.",
+    labelnames=("operation", "outcome", "error_code"),
+)
+
+CALLBACK_RETRIES = Counter(
+    "ai_worker_callback_retries_total",
+    "Java callback retry attempts by operation.",
+    labelnames=("operation",),
+)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 4: Verify metric import test passes**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/common/test_tempfile_manager.py -v
+uv run pytest tests/test_worker_metrics.py -q
 ```
 
-Expected: 2 passed
-
-- [ ] **Step 5: 提交临时文件管理器**
-
-```bash
-git add apps/ai-worker/ai_worker/common/tempfile_manager.py apps/ai-worker/tests/common/test_tempfile_manager.py
-git commit -m "feat(common): add temporary file cleanup manager
-
-Implements TempFileManager for automatic cleanup of old temporary files.
-Configurable max age and cleanup interval."
-```
+Expected: `1 passed`.
 
 ---
 
-## Task 5: RabbitMQ 消费者自动重连
+## Task 3: Make RabbitMQ Consumer Reconnect
 
 **Files:**
 - Modify: `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py`
-- Create: `apps/ai-worker/tests/infrastructure/test_rabbitmq_reconnect.py`
+- Modify: `apps/ai-worker/tests/test_rabbitmq_consumer.py`
 
-- [ ] **Step 1: 读取现有 RabbitMQ 消费者代码**
+- [ ] **Step 1: Add reconnect tests to the existing test file**
 
-```bash
-cat apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py
-```
-
-Expected: 查看当前实现
-
-- [ ] **Step 2: 编写重连测试**
-
-创建 `apps/ai-worker/tests/infrastructure/test_rabbitmq_reconnect.py`:
+Append to `apps/ai-worker/tests/test_rabbitmq_consumer.py`:
 
 ```python
-import pytest
-from unittest.mock import Mock, patch, call
 from pika.exceptions import AMQPConnectionError
-from ai_worker.infrastructure.mq.rabbitmq_consumer import RabbitMqTaskConsumer
 
 
-def test_start_consuming_handles_connection_error():
-    """测试连接错误后重连"""
-    runtime = Mock()
+def test_start_consuming_reconnects_after_connection_error(monkeypatch) -> None:
+    runtime = AsyncMock()
     consumer = RabbitMqTaskConsumer(runtime)
-    
-    call_count = 0
-    
-    def mock_connect_and_consume():
-        nonlocal call_count
-        call_count += 1
-        if call_count < 3:
-            raise AMQPConnectionError("Connection failed")
-        # 第三次成功后模拟中断
+    calls = 0
+    sleeps: list[float] = []
+
+    def connect_and_consume() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise AMQPConnectionError("temporary outage")
         raise KeyboardInterrupt()
-    
-    consumer._connect_and_consume = mock_connect_and_consume
-    
-    with patch('time.sleep'):  # 跳过实际延迟
-        consumer.start_consuming()
-    
-    assert call_count == 3
+
+    monkeypatch.setattr(consumer, "_connect_and_consume", connect_and_consume)
+    monkeypatch.setattr("time.sleep", lambda seconds: sleeps.append(seconds))
+
+    consumer.start_consuming()
+
+    assert calls == 2
+    assert sleeps == [1.0]
+
+
+def test_is_connected_returns_false_before_connection() -> None:
+    runtime = AsyncMock()
+    consumer = RabbitMqTaskConsumer(runtime)
+
+    assert consumer.is_connected() is False
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [ ] **Step 2: Run tests and confirm reconnect test fails**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/infrastructure/test_rabbitmq_reconnect.py -v
+uv run pytest tests/test_rabbitmq_consumer.py -q
 ```
 
-Expected: AttributeError: '_connect_and_consume'
+Expected: fail because `_connect_and_consume` and `is_connected` do not exist.
 
-- [ ] **Step 4: 重构消费者支持重连**
+- [ ] **Step 3: Refactor consumer**
 
-修改 `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py`:
-
-在 `RabbitMqTaskConsumer` 类中添加导入和修改方法：
+In `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py` add imports:
 
 ```python
 import time
-from pika.exceptions import AMQPConnectionError, ConnectionClosedByBroker
+
+from pika.exceptions import AMQPConnectionError, ConnectionClosedByBroker, StreamLostError
+
+from ai_worker.observability.worker_metrics import RABBITMQ_CONNECTED, RABBITMQ_RECONNECTS
 ```
 
-将现有的 `start_consuming` 方法内容移到新方法 `_connect_and_consume`，然后修改：
+Replace `start_consuming()` with:
 
 ```python
     def start_consuming(self) -> None:
-        """启动消费者，自动处理连接断开重连"""
-        reconnect_delay = settings.rabbitmq_reconnect_delay
-        
-        while True:  # 外层循环处理连接断开
+        attempt = 0
+        delay = settings.rabbitmq_reconnect_initial_delay_seconds
+        max_attempts = settings.rabbitmq_reconnect_max_attempts
+        max_delay = settings.rabbitmq_reconnect_max_delay_seconds
+
+        while True:
             try:
                 self._connect_and_consume()
-            except (AMQPConnectionError, ConnectionClosedByBroker) as exc:
-                logger.warning(
-                    f"RabbitMQ 连接断开: {exc}，{reconnect_delay}秒后重试"
-                )
-                time.sleep(reconnect_delay)
+                attempt = 0
+                delay = settings.rabbitmq_reconnect_initial_delay_seconds
             except KeyboardInterrupt:
-                logger.info("收到中断信号，停止消费者")
+                logger.info("RabbitMQ task consumer stopped by interrupt")
                 break
-    
+            except (AMQPConnectionError, ConnectionClosedByBroker, StreamLostError) as exc:
+                attempt += 1
+                RABBITMQ_CONNECTED.set(0)
+                RABBITMQ_RECONNECTS.labels(reason=type(exc).__name__).inc()
+                if max_attempts > 0 and attempt > max_attempts:
+                    logger.exception("RabbitMQ reconnect attempts exhausted")
+                    raise
+                logger.warning(
+                    "RabbitMQ connection lost; reconnecting in %.1fs attempt=%s error=%s",
+                    delay,
+                    attempt,
+                    exc,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, max_delay)
+```
+
+Add `_connect_and_consume()` by moving the old `start_consuming()` body into it, and set the gauge after a successful channel setup:
+
+```python
     def _connect_and_consume(self) -> None:
-        """建立连接并开始消费"""
         credentials = pika.PlainCredentials(self.config.username, self.config.password)
         parameters = pika.ConnectionParameters(
             host=self.config.host,
@@ -596,574 +363,481 @@ from pika.exceptions import AMQPConnectionError, ConnectionClosedByBroker
         channel = self._connection.channel()
         self._channel = channel
         channel.basic_qos(prefetch_count=1)
-        
         for queue in self.config.queues:
             channel.basic_consume(
                 queue=queue,
                 on_message_callback=self._on_message,
                 auto_ack=False,
             )
-        
-        logger.info(f"RabbitMQ 消费者已连接，监听队列: {self.config.queues}")
+        RABBITMQ_CONNECTED.set(1)
+        logger.info("RabbitMQ task consumer started for queues=%s", self.config.queues)
         channel.start_consuming()
 ```
 
-- [ ] **Step 5: 添加连接状态检查方法**
-
-在 `RabbitMqTaskConsumer` 类中添加：
+Add:
 
 ```python
     def is_connected(self) -> bool:
-        """检查是否已连接"""
-        return (
-            self._connection is not None 
+        return bool(
+            self._connection is not None
             and self._connection.is_open
             and self._channel is not None
             and self._channel.is_open
         )
 ```
 
-- [ ] **Step 6: 运行测试确认通过**
+- [ ] **Step 4: Verify RabbitMQ tests pass**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/infrastructure/test_rabbitmq_reconnect.py -v
+uv run pytest tests/test_rabbitmq_consumer.py -q
 ```
 
-Expected: 1 passed
-
-- [ ] **Step 7: 提交 RabbitMQ 重连功能**
-
-```bash
-git add apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py apps/ai-worker/tests/infrastructure/test_rabbitmq_reconnect.py
-git commit -m "feat(mq): add automatic reconnection for RabbitMQ consumer
-
-Refactored start_consuming() to handle connection errors:
-- Outer loop retries on AMQPConnectionError/ConnectionClosedByBroker
-- Extracted _connect_and_consume() for testability
-- Added is_connected() status check method"
-```
+Expected: all tests in the file pass.
 
 ---
 
-## Task 6: 优雅关闭信号处理
+## Task 4: Make Callback Retry Policy Configurable
+
+**Files:**
+- Modify: `apps/ai-worker/ai_worker/infrastructure/java_callback/client.py`
+- Modify: `apps/ai-worker/tests/test_callback_client.py`
+
+- [ ] **Step 1: Add retryable-status tests**
+
+Extend `apps/ai-worker/tests/test_callback_client.py` with tests that assert:
+
+```python
+def test_callback_client_treats_401_as_non_retryable() -> None:
+    client = JavaCallbackClient(base_url="http://meeting-api")
+    assert client._is_retryable_status(401) is False
+
+
+def test_callback_client_treats_409_as_non_retryable() -> None:
+    client = JavaCallbackClient(base_url="http://meeting-api")
+    assert client._is_retryable_status(409) is False
+
+
+def test_callback_client_treats_503_and_429_as_retryable() -> None:
+    client = JavaCallbackClient(base_url="http://meeting-api")
+    assert client._is_retryable_status(503) is True
+    assert client._is_retryable_status(429) is True
+```
+
+- [ ] **Step 2: Run callback tests and confirm new tests fail**
+
+Run:
+
+```bash
+cd apps/ai-worker
+uv run pytest tests/test_callback_client.py -q
+```
+
+Expected: fail because `_is_retryable_status` does not exist.
+
+- [ ] **Step 3: Implement retryable classification and configured delays**
+
+In `JavaCallbackClient.__init__`, add:
+
+```python
+        from ai_worker.common.retry_config import parse_retry_delays
+
+        self.retry_delays = parse_retry_delays(settings.callback_retry_delays)
+        self.timeout_seconds = settings.callback_timeout_seconds
+```
+
+Add methods:
+
+```python
+    def _is_retryable_status(self, status_code: int) -> bool:
+        return status_code == 429 or 500 <= status_code <= 599
+
+    def _operation_for_path(self, path: str) -> str:
+        parts = [part for part in path.split("/") if part]
+        return parts[-1] if parts else "unknown"
+```
+
+Keep the `_request(..., max_retries: int = 3)` parameter for compatibility with existing tests and callers, but stop using it to drive retry count. The configured `settings.callback_retry_delays` is the source of truth.
+
+Update `_request()` loop to use configured delays:
+
+```python
+        operation = self._operation_for_path(path)
+        attempts = self.retry_delays
+        for attempt_index, delay in enumerate(self.retry_delays):
+            headers = self._build_headers(
+                method, path, body_str, task_id, attempt_no, trace_id, idempotency_key
+            )
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    response = await client.request(method, url, content=body_str, headers=headers)
+                    if response.status_code == 409:
+                        CALLBACK_REQUESTS.labels(operation=operation, outcome="failed", error_code="CALLBACK_IDEMPOTENCY_CONFLICT").inc()
+                        return CallbackResponse(http_status=409, accepted=False, error_code="CALLBACK_IDEMPOTENCY_CONFLICT")
+                    if response.status_code == 401:
+                        CALLBACK_REQUESTS.labels(operation=operation, outcome="failed", error_code="CALLBACK_AUTH_FAILED").inc()
+                        return CallbackResponse(http_status=401, accepted=False, error_code="CALLBACK_AUTH_FAILED")
+                    if response.status_code < 400:
+                        CALLBACK_REQUESTS.labels(operation=operation, outcome="success", error_code="NONE").inc()
+                        try:
+                            response_body = response.json()
+                        except ValueError:
+                            response_body = {}
+                        return CallbackResponse(http_status=response.status_code, accepted=True, body=response_body)
+                    last_error = f"HTTP {response.status_code}"
+                    if not self._is_retryable_status(response.status_code):
+                        CALLBACK_REQUESTS.labels(operation=operation, outcome="failed", error_code="CALLBACK_HTTP_4XX").inc()
+                        return CallbackResponse(http_status=response.status_code, accepted=False, error_code="CALLBACK_HTTP_4XX", body={"message": last_error})
+            except Exception as e:
+                last_error = str(e)
+            if attempt_index < len(attempts) - 1:
+                CALLBACK_RETRIES.labels(operation=operation).inc()
+                await asyncio.sleep(delay)
+
+        CALLBACK_REQUESTS.labels(operation=operation, outcome="failed", error_code="WRITEBACK_FAILED").inc()
+```
+
+Also import:
+
+```python
+from ai_worker.observability.worker_metrics import CALLBACK_REQUESTS, CALLBACK_RETRIES
+```
+
+- [ ] **Step 4: Verify callback tests pass**
+
+Run:
+
+```bash
+cd apps/ai-worker
+uv run pytest tests/test_callback_client.py -q
+```
+
+Expected: all callback tests pass.
+
+---
+
+## Task 5: Add Bounded Requeue for Message Processing Failures
+
+**Files:**
+- Modify: `apps/ai-worker/ai_worker/infrastructure/mq/rabbitmq_consumer.py`
+- Modify: `apps/ai-worker/tests/test_rabbitmq_consumer.py`
+
+- [ ] **Step 1: Add bounded requeue tests**
+
+Append tests:
+
+```python
+from ai_worker.common.config import settings
+
+
+class _Properties:
+    def __init__(self, headers: dict | None = None) -> None:
+        self.headers = headers or {}
+
+
+def test_on_message_rejects_timeout_with_requeue_before_limit() -> None:
+    runtime = AsyncMock()
+    runtime.consume_message.side_effect = TimeoutError("task timed out")
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+
+    consumer._on_message(
+        channel,
+        _Method(),
+        _Properties(headers={"x-delivery-count": 1}),
+        json.dumps({"taskId": "task_01"}).encode(),
+    )
+
+    assert channel.acked == []
+    assert channel.rejected == [("delivery_01", True)]
+
+
+def test_on_message_rejects_timeout_without_requeue_at_limit(monkeypatch) -> None:
+    runtime = AsyncMock()
+    runtime.consume_message.side_effect = TimeoutError("task timed out")
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+
+    monkeypatch.setattr(settings, "rabbitmq_requeue_max_attempts", 3)
+
+    consumer._on_message(
+        channel,
+        _Method(),
+        _Properties(headers={"x-delivery-count": 3}),
+        json.dumps({"taskId": "task_01"}).encode(),
+    )
+
+    assert channel.acked == []
+    assert channel.rejected == [("delivery_01", False)]
+```
+
+- [ ] **Step 2: Run test and confirm it fails**
+
+Run:
+
+```bash
+cd apps/ai-worker
+uv run pytest tests/test_rabbitmq_consumer.py -q
+```
+
+Expected: timeout currently rejects without requeue and does not inspect delivery count.
+
+- [ ] **Step 3: Add helper methods**
+
+In `RabbitMqTaskConsumer`, add:
+
+```python
+    def _delivery_count(self, properties: Any) -> int:
+        headers = getattr(properties, "headers", None) or {}
+        value = headers.get("x-delivery-count", 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _should_requeue_exception(self, exc: BaseException, properties: Any) -> bool:
+        if not isinstance(exc, (TimeoutError, AMQPConnectionError, StreamLostError)):
+            return False
+        max_attempts = settings.rabbitmq_requeue_max_attempts
+        if max_attempts <= 0:
+            return True
+        return self._delivery_count(properties) < max_attempts
+
+    async def _consume_with_timeout(self, raw_message: dict[str, Any]) -> None:
+        await asyncio.wait_for(
+            self.runtime.consume_message(raw_message),
+            timeout=settings.task_execution_timeout_seconds,
+        )
+```
+
+Update `_on_message()`:
+
+```python
+            raw_message = json.loads(body.decode("utf-8"))
+            asyncio.run(self._consume_with_timeout(raw_message))
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+```
+
+Rename `_properties` to `properties` in `_on_message()`, then replace the broad exception block with:
+
+```python
+        except Exception as exc:
+            requeue = self._should_requeue_exception(exc, properties)
+            logger.exception("task message failed; rejecting requeue=%s", requeue)
+            channel.basic_reject(delivery_tag=method.delivery_tag, requeue=requeue)
+```
+
+- [ ] **Step 4: Verify RabbitMQ tests pass**
+
+Run:
+
+```bash
+cd apps/ai-worker
+uv run pytest tests/test_rabbitmq_consumer.py -q
+```
+
+Expected: all tests pass.
+
+---
+
+## Task 6: Add Graceful Shutdown to Consumer Entrypoint
 
 **Files:**
 - Modify: `apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py`
+- Create: `apps/ai-worker/tests/test_rabbitmq_entrypoint.py`
 
-- [ ] **Step 1: 读取现有 worker 入口**
+- [ ] **Step 1: Write entrypoint smoke test**
 
-```bash
-cat apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py
-```
-
-Expected: 查看当前实现
-
-- [ ] **Step 2: 添加信号处理**
-
-在 `run()` 函数开头添加导入：
+Create `apps/ai-worker/tests/test_rabbitmq_entrypoint.py`:
 
 ```python
+from __future__ import annotations
+
+from ai_worker.interfaces.workers import rabbitmq
+
+
+def test_rabbitmq_entrypoint_exposes_run() -> None:
+    assert callable(rabbitmq.run)
+```
+
+- [ ] **Step 2: Add signal handling**
+
+Update `apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py`:
+
+```python
+from __future__ import annotations
+
+import logging
 import signal
 import sys
-```
 
-修改 `run()` 函数：
+from ai_worker.application.workflows.state import workflow_state_store
+from ai_worker.infrastructure.mq.rabbitmq_consumer import RabbitMqTaskConsumer
+from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
-```python
-def run() -> None:
-    runtime = MvpWorkerRuntime(state_store=workflow_state_store)
-    consumer = RabbitMqTaskConsumer(runtime)
-    
-    def shutdown_handler(signum, frame):
-        logger.info(f"收到信号 {signum}，正在优雅关闭...")
-        try:
-            consumer.stop()
-            logger.info("RabbitMQ 消费者已停止")
-            # 清理运行时资源（如果有 cleanup 方法）
-            if hasattr(runtime, 'cleanup'):
-                runtime.cleanup()
-                logger.info("运行时资源已清理")
-        except Exception as exc:
-            logger.error(f"清理资源时出错: {exc}", exc_info=True)
-        finally:
-            sys.exit(0)
-    
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    signal.signal(signal.SIGINT, shutdown_handler)
-    
-    logger.info("启动 RabbitMQ 消费者...")
-    consumer.start_consuming()
-```
-
-- [ ] **Step 3: 手动测试信号处理**
-
-```bash
-cd apps/ai-worker
-# 启动消费者（需要 RabbitMQ 运行）
-uv run ai-worker-consumer &
-WORKER_PID=$!
-sleep 2
-# 发送 SIGTERM
-kill -TERM $WORKER_PID
-# 等待优雅关闭
-wait $WORKER_PID
-```
-
-Expected: 日志显示 "收到信号 15，正在优雅关闭..."
-
-- [ ] **Step 4: 提交信号处理功能**
-
-```bash
-git add apps/ai-worker/ai_worker/interfaces/workers/rabbitmq.py
-git commit -m "feat(worker): add graceful shutdown signal handling
-
-Handle SIGTERM/SIGINT for clean shutdown:
-- Stop RabbitMQ consumer
-- Cleanup runtime resources
-- Log shutdown progress"
-```
-
----
-
-## Task 7: 增强健康检查端点
-
-**Files:**
-- Modify or Create: `apps/ai-worker/ai_worker/interfaces/api/health.py`
-
-- [ ] **Step 1: 检查健康检查端点是否存在**
-
-```bash
-find apps/ai-worker -name "health.py" -o -name "*health*" | grep -v __pycache__
-```
-
-Expected: 找到现有文件或无结果
-
-- [ ] **Step 2: 创建或修改健康检查端点**
-
-如果文件不存在，创建 `apps/ai-worker/ai_worker/interfaces/api/health.py`:
-
-```python
-from fastapi import APIRouter, Response
-import json
-import logging
-
-router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def check_models_loaded() -> str:
-    """检查模型是否已加载"""
-    # 简化实现：返回 unknown（后续阶段会完善）
-    return "unknown"
+def run() -> None:
+    runtime = MvpWorkerRuntime(state_store=workflow_state_store)
+    consumer = RabbitMqTaskConsumer(runtime)
 
+    def shutdown_handler(signum, _frame) -> None:
+        logger.info("stopping RabbitMQ consumer signal=%s", signum)
+        try:
+            consumer.stop()
+        finally:
+            sys.exit(0)
 
-def check_rabbitmq_alive() -> str:
-    """检查 RabbitMQ 连接状态"""
-    try:
-        from ai_worker.infrastructure.mq import rabbitmq_consumer
-        # 尝试访问全局消费者实例（如果存在）
-        if hasattr(rabbitmq_consumer, 'consumer_instance'):
-            consumer = rabbitmq_consumer.consumer_instance
-            if consumer and consumer.is_connected():
-                return "ok"
-            return "disconnected"
-    except Exception:
-        pass
-    return "unknown"
-
-
-def check_storage_accessible() -> str:
-    """检查存储是否可写"""
-    try:
-        from pathlib import Path
-        from ai_worker.common.config import settings
-        
-        test_file = Path(settings.artifact_store_root) / ".healthcheck"
-        test_file.parent.mkdir(parents=True, exist_ok=True)
-        test_file.write_text("ok")
-        test_file.unlink()
-        return "ok"
-    except Exception as exc:
-        logger.error(f"存储检查失败: {exc}")
-        return "error"
-
-
-@router.get("/internal/health")
-async def health_check():
-    """健康检查（liveness probe）- 进程是否存活"""
-    checks = {
-        "api": "ok",
-        "models": check_models_loaded(),
-        "rabbitmq": check_rabbitmq_alive(),
-        "storage": check_storage_accessible(),
-    }
-    
-    # 只要存储可用就返回 200（宽松策略，仅用于 liveness）
-    all_ok = checks["storage"] == "ok"
-    status_code = 200 if all_ok else 503
-    
-    return Response(
-        content=json.dumps(checks, ensure_ascii=False),
-        media_type="application/json",
-        status_code=status_code,
-    )
-
-
-@router.get("/internal/ready")
-async def readiness_check():
-    """就绪检查（readiness probe）- 是否可以接受流量"""
-    checks = {
-        "models": check_models_loaded(),
-        "rabbitmq": check_rabbitmq_alive(),
-        "storage": check_storage_accessible(),
-    }
-    
-    # 所有组件就绪才返回 200（严格策略）
-    all_ready = all(v == "ok" for v in checks.values())
-    status_code = 200 if all_ready else 503
-    
-    return Response(
-        content=json.dumps(checks, ensure_ascii=False),
-        media_type="application/json",
-        status_code=status_code,
-    )
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+    consumer.start_consuming()
 ```
 
-- [ ] **Step 3: 注册健康检查路由到 FastAPI app**
+- [ ] **Step 3: Verify entrypoint smoke test**
 
-修改 `apps/ai-worker/ai_worker/interfaces/api/main.py`，添加导入：
-
-```python
-from ai_worker.interfaces.api.health import router as health_router
-```
-
-在 app 创建后添加路由：
-
-```python
-app.include_router(health_router)
-```
-
-- [ ] **Step 4: 手动测试健康检查**
+Run:
 
 ```bash
-# 启动 API（如果尚未运行）
 cd apps/ai-worker
-uv run ai-worker-api &
-sleep 3
-
-# 测试 liveness
-curl -i http://localhost:8090/internal/health
-
-# 测试 readiness
-curl -i http://localhost:8090/internal/ready
-
-# 停止 API
-pkill -f ai-worker-api
+uv run pytest tests/test_rabbitmq_entrypoint.py -q
 ```
 
-Expected: 返回 JSON 响应，包含各组件状态
-
-- [ ] **Step 5: 提交健康检查功能**
-
-```bash
-git add apps/ai-worker/ai_worker/interfaces/api/health.py apps/ai-worker/ai_worker/interfaces/api/main.py
-git commit -m "feat(api): add layered health check endpoints
-
-Implements:
-- /internal/health (liveness): process alive check
-- /internal/ready (readiness): all dependencies ready check
-- Check storage, RabbitMQ, and models status"
-```
+Expected: `1 passed`.
 
 ---
 
-## Task 8: 集成测试和文档更新
+## Task 7: Keep Health Semantics and Add Regression Tests
 
 **Files:**
+- Modify: `apps/ai-worker/tests/test_health.py`
 - Modify: `apps/ai-worker/README.md`
-- Create: `apps/ai-worker/tests/integration/test_stage1_stability.py`
 
-- [ ] **Step 1: 编写集成测试**
+- [ ] **Step 1: Add regression tests for existing health contract**
 
-创建 `apps/ai-worker/tests/integration/test_stage1_stability.py`:
+Append to `apps/ai-worker/tests/test_health.py`:
 
 ```python
-import pytest
-from ai_worker.common.retry import retry
-from ai_worker.common.gpu_context import gpu_context
-from ai_worker.common.tempfile_manager import TempFileManager
+def test_health_is_liveness_only() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/internal/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "UP"
+    assert "dependencies" in response.json()
 
 
-def test_retry_integration():
-    """集成测试：重试装饰器"""
-    attempts = 0
-    
-    @retry(max_attempts=2, backoff_base=0.1)
-    def flaky_operation():
-        nonlocal attempts
-        attempts += 1
-        if attempts < 2:
-            raise RuntimeError("Transient error")
-        return "success"
-    
-    result = flaky_operation()
-    assert result == "success"
-    assert attempts == 2
+def test_hardware_endpoint_exists() -> None:
+    client = TestClient(create_app())
 
+    response = client.get("/internal/hardware")
 
-def test_gpu_context_integration():
-    """集成测试：GPU 上下文"""
-    # 不应抛出异常，即使 GPU 不可用
-    with gpu_context("cuda"):
-        pass
-
-
-def test_tempfile_manager_integration(tmp_path):
-    """集成测试：临时文件管理"""
-    manager = TempFileManager(temp_dir=tmp_path, max_age_hours=0)
-    
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
-    
-    deleted = manager.cleanup_old_files()
-    assert deleted == 1
-    assert not test_file.exists()
+    assert response.status_code == 200
+    assert "torch" in response.json()
+    assert "resolvedDevices" in response.json()
 ```
 
-- [ ] **Step 2: 运行集成测试**
+- [ ] **Step 2: Run health tests**
+
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/integration/test_stage1_stability.py -v
+uv run pytest tests/test_health.py -q
 ```
 
-Expected: 3 passed
+Expected: all health tests pass.
 
-- [ ] **Step 3: 更新 README.md**
+- [ ] **Step 3: Update README stability section**
 
-在 `apps/ai-worker/README.md` 添加或更新"稳定性特性"章节：
+Add to `apps/ai-worker/README.md`:
 
 ```markdown
-## 稳定性特性
+## 稳定性与健康检查
 
-### 错误处理
-- **自动重试**：模型加载失败自动重试（最多3次，指数退避）
-- **RabbitMQ 重连**：连接断开后自动重连（5秒延迟）
-- **优雅关闭**：接收 SIGTERM/SIGINT 信号后清理资源
+- `/internal/health` 是 liveness-only：只表示进程可响应，不检查模型 checksum，也不把 RabbitMQ 短暂断线作为重启条件。
+- `/internal/ready` 是 readiness：汇总模型状态和 checksum guard，模型损坏或 real-mode 依赖缺失时返回 503。
+- `/internal/hardware` 暴露 torch/CUDA/MPS/package/device 诊断。
+- `/metrics` 复用 API 端口 `8090`，Prometheus 不需要单独的 `8091` 端口。
 
-### 资源清理
-- **GPU 显存**：任务完成后自动清理 CUDA/MPS 显存
-- **临时文件**：超过24小时的临时文件自动删除
-
-### 健康检查
-- `/internal/health` - Liveness probe（进程存活检查）
-- `/internal/ready` - Readiness probe（依赖就绪检查）
-
-### 配置
-
-通过环境变量调整稳定性参数：
+稳定性相关环境变量：
 
 ```bash
-AI_WORKER_MODEL_LOAD_MAX_RETRIES=3           # 模型加载重试次数
-AI_WORKER_CALLBACK_RETRY_DELAYS=1,2,4,8,16  # 回调重试延迟（秒）
-AI_WORKER_RABBITMQ_RECONNECT_DELAY=5         # RabbitMQ 重连延迟（秒）
-AI_WORKER_TEMP_FILE_MAX_AGE_HOURS=24         # 临时文件最大保留时间
+AI_WORKER_RABBITMQ_RECONNECT_INITIAL_DELAY_SECONDS=1
+AI_WORKER_RABBITMQ_RECONNECT_MAX_DELAY_SECONDS=30
+AI_WORKER_RABBITMQ_RECONNECT_MAX_ATTEMPTS=0
+AI_WORKER_TASK_EXECUTION_TIMEOUT_SECONDS=1800
+AI_WORKER_CALLBACK_RETRY_DELAYS=1,2,5,10
+AI_WORKER_CALLBACK_TIMEOUT_SECONDS=30
 ```
-```
-
-- [ ] **Step 4: 运行所有测试验证**
-
-```bash
-cd apps/ai-worker
-uv run pytest tests/common/ tests/infrastructure/ tests/integration/ -v
-```
-
-Expected: 所有测试通过
-
-- [ ] **Step 5: 提交文档和集成测试**
-
-```bash
-git add apps/ai-worker/README.md apps/ai-worker/tests/integration/test_stage1_stability.py
-git commit -m "docs(stage1): add stability features documentation and integration tests
-
-Added:
-- Integration tests for retry, GPU context, and temp file manager
-- README section documenting stability features
-- Configuration examples"
 ```
 
 ---
 
-## Task 9: 最终验证和标记
+## Task 8: Focused Verification
 
 **Files:**
-- None (manual testing)
+- None
 
-- [ ] **Step 1: 完整功能测试清单**
+- [ ] **Step 1: Run focused tests**
 
-手动验证以下场景：
-
-```bash
-# 1. 启动 API 和消费者
-cd apps/ai-worker
-uv run ai-worker-api &
-API_PID=$!
-uv run ai-worker-consumer &
-CONSUMER_PID=$!
-sleep 3
-
-# 2. 检查健康检查端点
-curl http://localhost:8090/internal/health | jq
-curl http://localhost:8090/internal/ready | jq
-
-# 3. 测试优雅关闭
-kill -TERM $CONSUMER_PID
-wait $CONSUMER_PID
-echo "消费者优雅关闭完成"
-
-# 4. 清理
-kill $API_PID
-```
-
-Expected:
-- 健康检查返回 200/503 + JSON 状态
-- SIGTERM 触发优雅关闭日志
-- 无崩溃或错误
-
-- [ ] **Step 2: 运行完整测试套件**
+Run:
 
 ```bash
 cd apps/ai-worker
-uv run pytest tests/ -v --tb=short
+uv run pytest \
+  tests/test_retry_config.py \
+  tests/test_worker_metrics.py \
+  tests/test_rabbitmq_consumer.py \
+  tests/test_callback_client.py \
+  tests/test_rabbitmq_entrypoint.py \
+  tests/test_health.py \
+  -q
 ```
 
-Expected: 所有测试通过（跳过需要真实模型的测试）
+Expected: selected tests pass.
 
-- [ ] **Step 3: 类型检查**
+- [ ] **Step 2: Run type check**
+
+Run:
 
 ```bash
 cd apps/ai-worker
 uv run pyright ai_worker/
 ```
 
-Expected: 无类型错误
+Expected: pyright reports no errors for touched modules.
 
-- [ ] **Step 4: 创建阶段一完成标记**
+- [ ] **Step 3: Run import smoke test**
 
-```bash
-git tag -a stage1-stability-complete -m "Stage 1: Core Stability Complete
-
-Implemented:
-- Retry decorator with exponential backoff
-- GPU memory cleanup context
-- Temporary file manager
-- RabbitMQ auto-reconnection
-- Graceful shutdown signal handling
-- Layered health check endpoints
-
-Tests: All passing
-Type check: Clean"
-
-git push origin stage1-stability-complete
-```
-
-- [ ] **Step 5: 生成变更日志**
-
-创建 `apps/ai-worker/CHANGELOG-stage1.md`:
-
-```markdown
-# Stage 1: Core Stability - 变更日志
-
-## 新增功能
-
-### 错误处理
-- 新增 `ai_worker/common/retry.py` 重试装饰器
-- RabbitMQ 消费者自动重连机制
-- 优雅关闭信号处理
-
-### 资源管理
-- 新增 `ai_worker/common/gpu_context.py` GPU 显存清理
-- 新增 `ai_worker/common/tempfile_manager.py` 临时文件清理
-
-### 健康检查
-- 新增 `/internal/health` liveness 端点
-- 新增 `/internal/ready` readiness 端点
-
-## 配置变更
-
-新增配置项（向后兼容，有默认值）：
-- `AI_WORKER_MODEL_LOAD_MAX_RETRIES`
-- `AI_WORKER_CALLBACK_RETRY_DELAYS`
-- `AI_WORKER_RABBITMQ_RECONNECT_DELAY`
-- `AI_WORKER_TEMP_FILE_MAX_AGE_HOURS`
-- `AI_WORKER_TEMP_FILE_CLEANUP_INTERVAL_MINUTES`
-- `AI_WORKER_GPU_MEMORY_CLEANUP_THRESHOLD`
-
-## 测试覆盖
-
-- 单元测试：`tests/common/test_*.py`
-- 集成测试：`tests/integration/test_stage1_stability.py`
-- 覆盖率：> 85%
-
-## 升级指南
-
-无需操作，所有新功能向后兼容。可选：
-1. 调整重试/重连配置以适应您的环境
-2. 监控健康检查端点验证稳定性
-```
-
-- [ ] **Step 6: 提交变更日志**
+Run:
 
 ```bash
-git add apps/ai-worker/CHANGELOG-stage1.md
-git commit -m "docs: add Stage 1 changelog
-
-Summarizes all stability enhancements, configuration changes, and testing coverage."
+cd apps/ai-worker
+uv run python -c "import ai_worker; from ai_worker.common.config import settings; print(settings.worker_id)"
 ```
 
----
-
-## 自审清单
-
-✅ **规范完整性**：
-- [x] 所有步骤包含实际代码（无 TODO/TBD）
-- [x] 文件路径准确（`apps/ai-worker/` 前缀）
-- [x] 测试先行（TDD）
-- [x] 每个任务有提交步骤
-
-✅ **类型一致性**：
-- [x] 配置字段命名一致
-- [x] 函数签名匹配
-- [x] 导入路径正确
-
-✅ **规格覆盖**：
-- [x] 2.1 错误处理增强 → Task 2, 5
-- [x] 2.2 资源清理机制 → Task 3, 4
-- [x] 2.3 健康检查改进 → Task 7
-- [x] 2.4 配置变更 → Task 1
-- [x] 2.5 实施清单 → 全覆盖
+Expected: prints the configured worker id, default `worker_dev_001` in dev.
 
 ---
 
-## 预计时间
+## Self-Review Checklist
 
-| 任务 | 时间 |
-|------|------|
-| Task 1: 配置 | 10分钟 |
-| Task 2: 重试装饰器 | 30分钟 |
-| Task 3: GPU 上下文 | 30分钟 |
-| Task 4: 临时文件管理 | 30分钟 |
-| Task 5: RabbitMQ 重连 | 45分钟 |
-| Task 6: 信号处理 | 20分钟 |
-| Task 7: 健康检查 | 45分钟 |
-| Task 8: 测试和文档 | 30分钟 |
-| Task 9: 验证 | 20分钟 |
-| **总计** | **4小时** |
+- [x] No plan step creates `interfaces/api/health.py`.
+- [x] No plan introduces a separate `8091` metrics port.
+- [x] No plan introduces `Dockerfile.optimized`.
+- [x] Stage 1 focuses on RabbitMQ, callback retry, shutdown, health contract tests, and docs.
+- [x] Existing test files are extended where they already exist.
+- [x] Health semantics match current `interfaces/api/main.py`.
 
----
+## Execution Handoff
 
-**计划完成！** 准备执行请选择：
-1. **Subagent-Driven (推荐)**
-2. **Inline Execution**
+Plan updated and saved to `docs/superpowers/plans/2026-06-16-ai-worker-stage1-stability.md`.
 
+Two execution options:
+
+1. **Subagent-Driven (recommended)** - use `superpowers:subagent-driven-development`, one fresh worker per task, review between tasks.
+2. **Inline Execution** - use `superpowers:executing-plans`, execute tasks in this session with checkpoints.
