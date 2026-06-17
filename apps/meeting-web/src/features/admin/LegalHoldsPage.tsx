@@ -136,29 +136,32 @@ export function LegalHoldsPage() {
   }, [loadAll, releaseReason, releaseTarget]);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--dense">
+      <header className="page-hero page-hero--compact">
         <div>
-          <h1 className="page-title">法定保全（Legal Holds）</h1>
-          <p className="muted">放置 / 释放对会议、文档、声纹档案的法定保全。命中保全的对象不可被删除或导出。</p>
+          <span className="page-hero__label">COMPLIANCE</span>
+          <h1 className="page-hero__title">法定保全</h1>
+          <p className="page-hero__subtitle">放置 / 释放对会议、文档、声纹档案的法定保全。命中保全的对象不可被删除或导出。</p>
         </div>
-        <button
-          className="button primary"
-          onClick={() => setShowCreate((v) => !v)}
-          data-testid="toggle-create-legal-hold"
-        >
-          {showCreate ? "取消创建" : "放置保全"}
-        </button>
-      </div>
+        <div className="page-hero__actions">
+          <button
+            className="button button--primary"
+            onClick={() => setShowCreate((v) => !v)}
+            data-testid="toggle-create-legal-hold"
+          >
+            {showCreate ? "取消创建" : "放置保全"}
+          </button>
+        </div>
+      </header>
 
       {error && (
-        <section className="card error" role="alert" data-testid="lh-error">
+        <section className="glass-panel glass-panel--compact error" role="alert" data-testid="lh-error">
           {error}
         </section>
       )}
 
       {showCreate && (
-        <section className="card" data-testid="lh-create-form">
+        <section className="glass-panel glass-panel--compact stack" data-testid="lh-create-form">
           <h2 className="card-title">放置法定保全</h2>
           <div className="form-grid">
             <label>
@@ -200,7 +203,7 @@ export function LegalHoldsPage() {
             </p>
           )}
           <button
-            className="button primary"
+            className="button button--primary"
             disabled={creating}
             onClick={handleCreate}
             data-testid="lh-create-submit"
@@ -210,7 +213,7 @@ export function LegalHoldsPage() {
         </section>
       )}
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">保全列表</h2>
         {pending && holds.length === 0 ? (
           <p className="muted">加载中...</p>

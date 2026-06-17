@@ -82,18 +82,19 @@ export function AuditEventsPage() {
   }, [actorUserId, resourceType, action, result, from, to, fetchAt]);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--dense">
+      <header className="page-hero page-hero--compact">
         <div>
-          <h1 className="page-title">审计事件</h1>
-          <p className="muted">
+          <span className="page-hero__label">AUDIT TRAIL</span>
+          <h1 className="page-hero__title">审计事件</h1>
+          <p className="page-hero__subtitle">
             查询合规相关写操作（legal-hold、deletion、break-glass、export）的审计日志。
             时间窗最大 90 天。
           </p>
         </div>
-      </div>
+      </header>
 
-      <section className="card" data-testid="audit-filter-form">
+      <section className="glass-panel glass-panel--compact stack" data-testid="audit-filter-form">
         <h2 className="card-title">筛选</h2>
         <div className="form-grid">
           <label>
@@ -162,7 +163,7 @@ export function AuditEventsPage() {
           </label>
         </div>
         <button
-          className="button primary"
+          className="button button--primary"
           onClick={handleFilter}
           disabled={pending}
           data-testid="audit-filter-submit"
@@ -172,12 +173,12 @@ export function AuditEventsPage() {
       </section>
 
       {error && (
-        <section className="card error" role="alert" data-testid="audit-error">
+        <section className="glass-panel glass-panel--compact error" role="alert" data-testid="audit-error">
           {error}
         </section>
       )}
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">事件列表（{events.length} 条）</h2>
         {events.length === 0 ? (
           <p className="muted">暂无匹配的审计事件。</p>

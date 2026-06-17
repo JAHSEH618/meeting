@@ -155,32 +155,35 @@ export function BreakGlassPage() {
   }, [loadAll, rejectReason, rejectTarget]);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--dense">
+      <header className="page-hero page-hero--compact">
         <div>
-          <h1 className="page-title">应急访问</h1>
-          <p className="muted">
+          <span className="page-hero__label">EMERGENCY ACCESS</span>
+          <h1 className="page-hero__title">应急访问</h1>
+          <p className="page-hero__subtitle">
             申请、审批和拒绝对受限资源的临时访问。审批默认 4 小时窗口；过期后自动失效。
             申请人不能审批自己的申请。
           </p>
         </div>
-        <button
-          className="button primary"
-          onClick={() => setShowCreate((v) => !v)}
-          data-testid="toggle-create-bg"
-        >
-          {showCreate ? "取消申请" : "提交新申请"}
-        </button>
-      </div>
+        <div className="page-hero__actions">
+          <button
+            className="button button--primary"
+            onClick={() => setShowCreate((v) => !v)}
+            data-testid="toggle-create-bg"
+          >
+            {showCreate ? "取消申请" : "提交新申请"}
+          </button>
+        </div>
+      </header>
 
       {error && (
-        <section className="card error" role="alert" data-testid="bg-error">
+        <section className="glass-panel glass-panel--compact error" role="alert" data-testid="bg-error">
           {error}
         </section>
       )}
 
       {showCreate && (
-        <section className="card" data-testid="bg-create-form">
+        <section className="glass-panel glass-panel--compact stack" data-testid="bg-create-form">
           <h2 className="card-title">紧急访问申请</h2>
           <div className="form-grid">
             <label>
@@ -222,7 +225,7 @@ export function BreakGlassPage() {
             </p>
           )}
           <button
-            className="button primary"
+            className="button button--primary"
             disabled={creating}
             onClick={handleCreate}
             data-testid="bg-create-submit"
@@ -232,7 +235,7 @@ export function BreakGlassPage() {
         </section>
       )}
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">申请列表</h2>
         {pending && requests.length === 0 ? (
           <p className="muted">加载中...</p>
@@ -280,7 +283,7 @@ export function BreakGlassPage() {
                     {req.status === "PENDING" && (
                       <>
                         <button
-                          className="button primary"
+                          className="button button--primary"
                           onClick={() => setApproveTarget(req)}
                           disabled={actionPendingId === req.breakGlassRequestId}
                           data-testid={`bg-approve-${req.breakGlassRequestId}`}
@@ -288,7 +291,7 @@ export function BreakGlassPage() {
                           批准
                         </button>
                         <button
-                          className="button danger"
+                          className="button button--danger"
                           onClick={() => openRejectDialog(req)}
                           disabled={actionPendingId === req.breakGlassRequestId}
                           data-testid={`bg-reject-${req.breakGlassRequestId}`}

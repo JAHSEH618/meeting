@@ -5,11 +5,13 @@ import { LegalHoldsPage } from "../LegalHoldsPage";
 
 describe("LegalHoldsPage", () => {
   it("shows empty state when there are no holds", async () => {
-    render(
+    const { container } = render(
       <TestRouter>
         <LegalHoldsPage />
       </TestRouter>,
     );
+    expect(container.querySelector(".page--dense")).toBeInTheDocument();
+    expect(container.querySelector(".page-hero--compact")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/暂无法定保全/)).toBeInTheDocument());
   });
 

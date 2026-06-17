@@ -217,22 +217,25 @@ export function ExportsPage() {
   }, [loadAll, revokeTarget]);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--dense">
+      <header className="page-hero page-hero--compact">
         <div>
-          <h1 className="page-title">导出</h1>
-          <p className="muted">{meeting?.title ?? meetingId}</p>
+          <span className="page-hero__label">EXPORTS</span>
+          <h1 className="page-hero__title">导出</h1>
+          <p className="page-hero__subtitle">{meeting?.title ?? meetingId}</p>
         </div>
-        <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
-      </div>
+        <div className="page-hero__actions">
+          <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
+        </div>
+      </header>
 
       {error && (
-        <section className="card error" role="alert">
+        <section className="glass-panel glass-panel--compact error" role="alert">
           {error}
         </section>
       )}
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">创建导出</h2>
         <div className="form-grid">
           <label>
@@ -303,7 +306,7 @@ export function ExportsPage() {
         )}
 
         <button
-          className="button primary"
+          className="button button--primary"
           disabled={creating || !meeting}
           onClick={handleCreate}
           data-testid="create-export-button"
@@ -312,7 +315,7 @@ export function ExportsPage() {
         </button>
       </section>
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">导出历史</h2>
         {pending && jobs.length === 0 ? (
           <p className="muted">加载中...</p>
@@ -459,7 +462,7 @@ function ExportRow({ job, onCancel, onRevoke }: ExportRowProps) {
         )}
         {job.status === "SUCCEEDED" && !job.revoked && (
           <button
-            className="button danger"
+            className="button button--danger"
             onClick={onRevoke}
             data-testid={`export-revoke-${job.exportId}`}
           >

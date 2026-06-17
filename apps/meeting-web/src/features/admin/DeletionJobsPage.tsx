@@ -147,31 +147,34 @@ export function DeletionJobsPage() {
   }, [confirmTarget, tenantConfirmPhrase]);
 
   return (
-    <main className="page">
-      <div className="page-header">
+    <main className="page page--dense">
+      <header className="page-hero page-hero--compact">
         <div>
-          <h1 className="page-title">数据删除任务</h1>
-          <p className="muted">
+          <span className="page-hero__label">DATA RETENTION</span>
+          <h1 className="page-hero__title">数据删除任务</h1>
+          <p className="page-hero__subtitle">
             异步删除会议、文档、声纹档案等数据。完成后生成 deletion certificate 作为审计证明。
           </p>
         </div>
-        <button
-          className="button danger"
-          onClick={() => setShowCreate((v) => !v)}
-          data-testid="toggle-create-deletion-job"
-        >
-          {showCreate ? "取消创建" : "新建删除任务"}
-        </button>
-      </div>
+        <div className="page-hero__actions">
+          <button
+            className="button button--danger"
+            onClick={() => setShowCreate((v) => !v)}
+            data-testid="toggle-create-deletion-job"
+          >
+            {showCreate ? "取消创建" : "新建删除任务"}
+          </button>
+        </div>
+      </header>
 
       {error && (
-        <section className="card error" role="alert" data-testid="dj-error">
+        <section className="glass-panel glass-panel--compact error" role="alert" data-testid="dj-error">
           {error}
         </section>
       )}
 
       {showCreate && (
-        <section className="card" data-testid="dj-create-form">
+        <section className="glass-panel glass-panel--compact stack" data-testid="dj-create-form">
           <h2 className="card-title">新建删除任务</h2>
           <p className="muted">
             提交后系统将先检查法定保全；命中保全的任务会立即标记为 BLOCKED_BY_LEGAL_HOLD 并写入审计。
@@ -216,7 +219,7 @@ export function DeletionJobsPage() {
             </p>
           )}
           <button
-            className="button danger"
+            className="button button--danger"
             disabled={creating}
             onClick={openCreateConfirmation}
             data-testid="dj-create-submit"
@@ -226,7 +229,7 @@ export function DeletionJobsPage() {
         </section>
       )}
 
-      <section className="card">
+      <section className="glass-panel glass-panel--compact stack">
         <h2 className="card-title">删除任务列表</h2>
         {pending && jobs.length === 0 ? (
           <p className="muted">加载中...</p>
