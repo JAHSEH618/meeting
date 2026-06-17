@@ -29,7 +29,7 @@ public class LocalObjectStorageGateway implements ObjectStorageGateway {
     private final Path localRoot;
 
     public LocalObjectStorageGateway(
-        @Value("${meeting.storage.endpoint:http://localhost:9000}") String endpoint,
+        @Value("${meeting.storage.minio.endpoint:http://localhost:9000}") String endpoint,
         @Value("${meeting.storage.bucket-audio:meeting-audio-auska}") String bucket,
         @Value("${meeting.storage.local-root:}") String localRoot
     ) {
