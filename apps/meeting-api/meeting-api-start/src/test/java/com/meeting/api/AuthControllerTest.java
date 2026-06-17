@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.adapter.auth.AuthController;
 import com.meeting.api.app.auth.InMemoryAuthApplicationService;
 import jakarta.servlet.http.Cookie;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -19,9 +20,10 @@ class AuthControllerTest {
     void loginReturnsAccessTokenAndMeResolvesUser() {
         InMemoryAuthApplicationService auth = new InMemoryAuthApplicationService();
         AuthController controller = new AuthController(auth);
+        MockHttpServletRequest request = secureRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), response);
+        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), request, response);
 
         assertThat(login.getBody().success()).isTrue();
         String token = login.getBody().data().accessToken();
@@ -37,7 +39,7 @@ class AuthControllerTest {
         Cookie csrfCookie = response.getCookie("XSRF-TOKEN");
         assertThat(csrfCookie).isNotNull();
         assertThat(csrfCookie.getSecure()).isTrue();
-        assertThat(csrfCookie.getPath()).isEqualTo("/api");
+        assertThat(csrfCookie.getPath()).isEqualTo("/");
 
         JsonNode payload = jwtPayload(token);
         assertThat(payload.path("sub").asText()).isEqualTo("user_admin");
@@ -61,16 +63,18 @@ class AuthControllerTest {
         AuthController controller = new AuthController(auth);
 
         // First login to get refresh token
+        MockHttpServletRequest loginRequest = secureRequest();
         MockHttpServletResponse loginResponse = new MockHttpServletResponse();
-        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), loginResponse);
+        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), loginRequest, loginResponse);
         assertThat(login.getBody().success()).isTrue();
 
         String refreshTokenId = loginResponse.getCookie("REFRESH_TOKEN").getValue();
         String csrfToken = loginResponse.getCookie("XSRF-TOKEN").getValue();
 
         // Now refresh
+        MockHttpServletRequest refreshRequest = secureRequest();
         MockHttpServletResponse refreshResponse = new MockHttpServletResponse();
-        var refresh = controller.refresh(refreshTokenId, csrfToken, csrfToken, "req_02", "trace_02", refreshResponse);
+        var refresh = controller.refresh(refreshTokenId, csrfToken, csrfToken, "req_02", "trace_02", refreshRequest, refreshResponse);
 
         assertThat(refresh.getStatusCode().value()).isEqualTo(200);
         assertThat(refresh.getBody().success()).isTrue();
@@ -80,6 +84,7 @@ class AuthControllerTest {
         Cookie newCsrfCookie = refreshResponse.getCookie("XSRF-TOKEN");
         assertThat(newCsrfCookie).isNotNull();
         assertThat(newCsrfCookie.getValue()).isNotEqualTo(csrfToken);
+        assertThat(newCsrfCookie.getPath()).isEqualTo("/");
     }
 
     @Test
@@ -87,8 +92,9 @@ class AuthControllerTest {
         InMemoryAuthApplicationService auth = new InMemoryAuthApplicationService();
         AuthController controller = new AuthController(auth);
 
+        MockHttpServletRequest loginRequest = secureRequest();
         MockHttpServletResponse loginResponse = new MockHttpServletResponse();
-        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), loginResponse);
+        var login = controller.login("req_01", "trace_01", new AuthController.LoginRequest("admin", "admin123"), loginRequest, loginResponse);
         assertThat(login.getBody().success()).isTrue();
 
         String refreshTokenId = loginResponse.getCookie("REFRESH_TOKEN").getValue();
@@ -100,7 +106,7 @@ class AuthControllerTest {
         assertThat(logoutResponse.getCookie("REFRESH_TOKEN").getMaxAge()).isZero();
 
         MockHttpServletResponse refreshResponse = new MockHttpServletResponse();
-        var refresh = controller.refresh(refreshTokenId, csrfToken, csrfToken, "req_03", "trace_03", refreshResponse);
+        var refresh = controller.refresh(refreshTokenId, csrfToken, csrfToken, "req_03", "trace_03", secureRequest(), refreshResponse);
 
         assertThat(refresh.getStatusCode().value()).isEqualTo(401);
         assertThat(refresh.getBody().error().code().name()).isEqualTo("REFRESH_TOKEN_INVALID");
@@ -112,7 +118,7 @@ class AuthControllerTest {
         AuthController controller = new AuthController(auth);
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        var refresh = controller.refresh("rt_123", null, "csrf_abc", "req_01", "trace_01", response);
+        var refresh = controller.refresh("rt_123", null, "csrf_abc", "req_01", "trace_01", secureRequest(), response);
 
         assertThat(refresh.getStatusCode().value()).isEqualTo(401);
         assertThat(refresh.getBody().error().code().name()).isEqualTo("CSRF_TOKEN_INVALID");
@@ -124,7 +130,7 @@ class AuthControllerTest {
         AuthController controller = new AuthController(auth);
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        var refresh = controller.refresh("rt_123", "csrf_header", "csrf_cookie", "req_01", "trace_01", response);
+        var refresh = controller.refresh("rt_123", "csrf_header", "csrf_cookie", "req_01", "trace_01", secureRequest(), response);
 
         assertThat(refresh.getStatusCode().value()).isEqualTo(401);
         assertThat(refresh.getBody().error().code().name()).isEqualTo("CSRF_TOKEN_INVALID");
@@ -138,5 +144,11 @@ class AuthControllerTest {
         } catch (Exception e) {
             throw new AssertionError("invalid JWT payload", e);
         }
+    }
+
+    private static MockHttpServletRequest secureRequest() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setScheme("https");
+        return request;
     }
 }

@@ -55,7 +55,7 @@ public class AuthController {
         String csrfToken = java.util.UUID.randomUUID().toString();
         Cookie csrfCookie = new Cookie("XSRF-TOKEN", csrfToken);
         csrfCookie.setSecure(isSecure);  // Only secure on HTTPS
-        csrfCookie.setPath("/api");
+        csrfCookie.setPath("/");
         csrfCookie.setMaxAge(30 * 24 * 60 * 60);
         response.addCookie(csrfCookie);
 
@@ -89,7 +89,7 @@ public class AuthController {
         response.addCookie(refreshCookie);
 
         Cookie csrfCookie = new Cookie("XSRF-TOKEN", null);
-        csrfCookie.setPath("/api");
+        csrfCookie.setPath("/");
         csrfCookie.setMaxAge(0);
         response.addCookie(csrfCookie);
 
@@ -132,7 +132,7 @@ public class AuthController {
             String newCsrfToken = java.util.UUID.randomUUID().toString();
             Cookie newCsrfCookie = new Cookie("XSRF-TOKEN", newCsrfToken);
             newCsrfCookie.setSecure(isSecure);  // Only secure on HTTPS
-            newCsrfCookie.setPath("/api");
+            newCsrfCookie.setPath("/");
             newCsrfCookie.setMaxAge(30 * 24 * 60 * 60);
             response.addCookie(newCsrfCookie);
 
