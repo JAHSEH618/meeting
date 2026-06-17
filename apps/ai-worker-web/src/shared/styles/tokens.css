@@ -3,32 +3,29 @@
   --bg: #fafafa;
   --surface: #ffffff;
   --surface-glass: rgba(255, 255, 255, 0.7);
-  --surface-base: var(--bg);
 
   /* 文本 - 黑色系统 */
   --text: #000000;
   --text-light: #666666;
   --text-lighter: #999999;
 
-  /* 向后兼容 */
-  --ink-1: var(--text);
-  --ink-2: var(--text-light);
-  --ink-3: var(--text-lighter);
-
   /* Apple 蓝 */
   --accent: #0066ff;
   --accent-hover: #0052cc;
   --accent-light: rgba(0, 102, 255, 0.1);
 
+  /* 保留向后兼容 */
   --primary: var(--accent);
   --primary-hover: var(--accent-hover);
   --primary-soft: var(--accent-light);
-  --primary-ink: var(--accent);
+
+  --ink-1: var(--text);
+  --ink-2: var(--text-light);
+  --ink-3: var(--text-lighter);
 
   /* 分割线 */
   --line-1: rgba(0, 0, 0, 0.06);
   --line-2: rgba(0, 0, 0, 0.04);
-  --border: var(--line-1);
 
   /* 语义色 */
   --success: #34c759;
@@ -39,10 +36,6 @@
 
   --danger: #ff3b30;
   --danger-soft: rgba(255, 59, 48, 0.1);
-
-  /* Focus */
-  --focus: var(--accent);
-  --focus-ring: var(--accent);
 
   /* 圆角 - 更大 */
   --radius-s: 6px;
@@ -64,6 +57,9 @@
   --space-16: 64px;
   --space-20: 80px;
   --space-24: 96px;
+  --space-32: 128px;
+  --space-40: 160px;
+  --space-60: 240px;
 
   /* 毛玻璃系统 */
   --glass-header: rgba(255, 255, 255, 0.75);
@@ -74,10 +70,6 @@
 
   --glass-modal: rgba(255, 255, 255, 0.92);
   --glass-modal-blur: blur(80px) saturate(200%);
-
-  /* Chrome */
-  --chrome-bg: var(--glass-header);
-  --chrome-blur: var(--glass-header-blur);
 
   /* 阴影 - 浅色主题 */
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -117,7 +109,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 标题系统 */
+/* 标题系统 - 极端字号 */
 h1 {
   font-size: var(--text-hero);
   font-weight: 800;
