@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { App } from "./app/App";
 import { createQueryClient } from "@shared/queries/queryClient";
 
@@ -17,7 +16,6 @@ ReactDOM.createRoot(root).render(
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <App />
       </BrowserRouter>
-      {import.meta.env.DEV ? <ReactQueryDevtools buttonPosition="bottom-right" /> : null}
     </QueryClientProvider>
   </React.StrictMode>
 );

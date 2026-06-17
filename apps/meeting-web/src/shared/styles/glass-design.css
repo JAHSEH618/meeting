@@ -540,6 +540,82 @@ body::before {
   line-height: 1.65;
 }
 
+.meeting-modules {
+  align-items: stretch;
+}
+
+.module-card {
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-9);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.64)),
+    rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(42px) saturate(170%);
+  -webkit-backdrop-filter: blur(42px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: var(--radius-l);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95) inset, var(--shadow-2);
+}
+
+.module-card--wide {
+  min-height: 280px;
+}
+
+.module-card__eyebrow {
+  margin: 0 0 var(--space-5);
+  color: var(--accent-ink);
+  font-size: var(--text-xs);
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.module-card h2 {
+  margin: 0;
+  max-width: 12ch;
+  color: var(--text);
+  font-size: var(--text-xl);
+  font-weight: 850;
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.module-card p:not(.module-card__eyebrow) {
+  margin: var(--space-5) 0 0;
+  max-width: 48ch;
+  color: var(--text-light);
+  font-size: var(--text-base);
+  line-height: 1.62;
+}
+
+.module-card__rail,
+.module-card__meta {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line-2);
+}
+
+.module-card__rail {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.module-card__rail span,
+.module-card__meta span {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.module-card__meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .meeting-list-toolbar {
   padding: var(--space-6);
 }

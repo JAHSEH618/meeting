@@ -81,9 +81,51 @@ export function MeetingListPage() {
         </div>
       </section>
 
-      <section className="glass-panel glass-panel--hero">
-        <h2 className="glass-panel__title">实时 AI 会议助手</h2>
-        <p className="glass-panel__body">自动沉淀会议内容、追踪处理状态，并把可检索的组织知识留在本地系统内。</p>
+      <section className="meeting-modules grid-12" aria-label="会议工作流模块">
+        <article className="module-card module-card--wide span-6">
+          <div>
+            <p className="module-card__eyebrow">01 / FLOW</p>
+            <h2>处理链路</h2>
+            <p>从音频上传、转录、纪要到行动项确认，按会议生命周期组织状态，不再用孤立功能入口堆叠页面。</p>
+          </div>
+          <div className="module-card__rail" aria-label="处理链路阶段">
+            <span>上传</span>
+            <span>转录</span>
+            <span>纪要</span>
+            <span>复核</span>
+          </div>
+        </article>
+
+        <article className="module-card module-card--wide span-6">
+          <div>
+            <p className="module-card__eyebrow">02 / MEMORY</p>
+            <h2>知识沉淀</h2>
+            <p>会议、文档和问答共享同一套本地知识索引，入口保持克制，重点放在可追溯内容和引用上下文。</p>
+          </div>
+          <div className="module-card__meta">
+            <span>会议记录</span>
+            <span>文档库</span>
+            <span>RAG 问答</span>
+          </div>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">03 / CONTROL</p>
+          <h2>合规留痕</h2>
+          <p>法律保留、删除任务、应急访问和审计事件统一成低噪音表格工作流。</p>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">04 / INDEX</p>
+          <h2>会议索引</h2>
+          <p>列表先服务查找和继续处理，状态、语言、创建时间保留稳定扫描节奏。</p>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">05 / LOCAL</p>
+          <h2>本地工作台</h2>
+          <p>浅色玻璃背景只承担层级表达，不把每个模块做成独立品牌块。</p>
+        </article>
       </section>
 
       <section className="glass-panel glass-panel--table stack">

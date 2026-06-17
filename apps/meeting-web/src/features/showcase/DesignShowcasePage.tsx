@@ -3,134 +3,115 @@ import { HeroSection } from '@shared/components/HeroSection';
 import { StatsGrid, StatCard } from '@shared/components/StatsGrid';
 import { GlassModal } from '@shared/components/GlassModal';
 
-/**
- * 设计系统展示页面
- * 展示所有极致毛玻璃组件
- */
 export function DesignShowcasePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <div className="page page--workbench">
-      {/* Hero Section */}
       <HeroSection
-        label="DESIGN SYSTEM"
-        title="极致前卫毛玻璃设计"
-        subtitle="120px 超大标题 · blur(80px) 极致毛玻璃 · Apple 质感"
+        label="VISUAL DIRECTION"
+        title="会议工作台视觉方案"
+        subtitle="浅色玻璃、强标题、12 列业务模块。模块只表达职责和数据关系，不再放独立装饰标识。"
         actions={
           <>
             <button className="button button--primary" onClick={() => setIsModalOpen(true)}>
-              查看 Modal 示例
+              查看面板层级
             </button>
-            <button className="button button--ghost">了解更多</button>
+            <button className="button button--ghost">对照入口页</button>
           </>
         }
       />
 
-      {/* Stats Grid */}
       <StatsGrid>
-        <StatCard value="120px" label="超大标题" variant="accent" />
-        <StatCard value="80px" label="模糊强度" variant="accent" />
-        <StatCard value="9.2:1" label="字号对比" variant="accent" />
+        <StatCard value="4" label="页面密度层级" variant="accent" />
+        <StatCard value="12" label="业务栅格列数" variant="accent" />
+        <StatCard value="0" label="装饰图形数量" variant="accent" />
       </StatsGrid>
 
-      {/* Glass Cards Demo */}
-      <section className="card stack">
-        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700 }}>
-          毛玻璃卡片示例
-        </h2>
-        <p style={{ color: 'var(--text-light)' }}>
-          这个卡片使用 blur(40px) 毛玻璃效果，背景透明度 70%，内高光边缘处理。
-        </p>
-        <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-          <button className="button button--primary">主要按钮</button>
-          <button className="button button--ghost">次要按钮</button>
-        </div>
+      <section className="meeting-modules grid-12" aria-label="视觉模块预览">
+        <article className="module-card module-card--wide span-6">
+          <div>
+            <p className="module-card__eyebrow">ENTRY / HERO</p>
+            <h2>入口页负责定调</h2>
+            <p>使用大标题、黑色主按钮和宽玻璃面板建立第一印象，内容直接指向会议创建与继续处理。</p>
+          </div>
+          <div className="module-card__rail">
+            <span>标题</span>
+            <span>概览</span>
+            <span>模块</span>
+            <span>列表</span>
+          </div>
+        </article>
+
+        <article className="module-card module-card--wide span-6">
+          <div>
+            <p className="module-card__eyebrow">WORKBENCH / FLOW</p>
+            <h2>工作页负责推进</h2>
+            <p>上传、转录、纪要、RAG 等页面保留操作密度，玻璃只承担分区和焦点，不制造额外装饰。</p>
+          </div>
+          <div className="module-card__meta">
+            <span>8/4 主侧栏</span>
+            <span>长内容列表</span>
+            <span>低位移 hover</span>
+          </div>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">DENSE</p>
+          <h2>合规页收敛高度</h2>
+          <p>表格首屏必须露出，标题和卡片更紧凑，主按钮不泛滥。</p>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">TYPE</p>
+          <h2>中文标题不拉字距</h2>
+          <p>大字号靠字重和留白建立冲击，不用装饰性字距模拟科技感。</p>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">SURFACE</p>
+          <h2>玻璃只做层级</h2>
+          <p>没有圆形图标、品牌徽章或装饰标识，模块靠内容职责区分。</p>
+        </article>
       </section>
 
-      {/* Typography */}
-      <section className="card stack">
-        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700 }}>
-          字号系统
-        </h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-          <div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-light)', marginBottom: '8px' }}>
-              Hero (120px)
-            </div>
-            <div style={{ fontSize: 'var(--text-hero)', fontWeight: 800, lineHeight: 0.98 }}>
-              会议智能
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-light)', marginBottom: '8px' }}>
-              XXL (56px)
-            </div>
-            <div style={{ fontSize: 'var(--text-xxl)', fontWeight: 700 }}>
-              实时会议记录
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-light)', marginBottom: '8px' }}>
-              XL (40px)
-            </div>
-            <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700 }}>
-              智能分析
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-light)', marginBottom: '8px' }}>
-              Base (17px)
-            </div>
-            <div style={{ fontSize: 'var(--text-base)' }}>
-              这是正文文字，使用 17px 字号，行高 1.6，适合长文本阅读。
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Table Example */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
-          毛玻璃表格
-        </h2>
+      <section className="glass-panel glass-panel--table">
         <table className="data-table">
           <thead>
             <tr>
-              <th>组件</th>
-              <th>模糊强度</th>
-              <th>透明度</th>
-              <th>圆角</th>
+              <th>页面类型</th>
+              <th>标题强度</th>
+              <th>模块表达</th>
+              <th>主要目标</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Header</td>
-              <td>blur(30px)</td>
-              <td>75%</td>
-              <td>0px</td>
+              <td>入口页</td>
+              <td>最大</td>
+              <td>不规则业务模块</td>
+              <td>开始和继续会议</td>
             </tr>
             <tr>
-              <td>Card</td>
-              <td>blur(40px)</td>
-              <td>70%</td>
-              <td>24px</td>
+              <td>工作页</td>
+              <td>中等</td>
+              <td>主内容 + 状态侧栏</td>
+              <td>推进处理流</td>
             </tr>
             <tr>
-              <td>Modal</td>
-              <td>blur(80px)</td>
-              <td>92%</td>
-              <td>32px</td>
+              <td>合规页</td>
+              <td>收敛</td>
+              <td>紧凑表格面板</td>
+              <td>扫描和审计</td>
             </tr>
           </tbody>
         </table>
       </section>
 
-      {/* Modal */}
       <GlassModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="极致毛玻璃 Modal"
+        title="会议处理详情"
         footer={
           <>
             <button className="button button--ghost" onClick={() => setIsModalOpen(false)}>
@@ -142,16 +123,8 @@ export function DesignShowcasePage() {
           </>
         }
       >
-        <p>
-          这个 Modal 使用 <strong>blur(80px)</strong> 极致毛玻璃效果，
-          透明度 92%，32px 大圆角。
-        </p>
-        <p>
-          进入动画使用 scale(0.95 → 1) + fade in，350ms cubic-bezier 缓动。
-        </p>
-        <p>
-          关闭按钮 hover 时旋转 90 度。按 ESC 键或点击背景也可以关闭。
-        </p>
+        <p>Modal 用于确认、导出和高风险操作。内容优先，玻璃背景只负责把它从页面层级中抬起来。</p>
+        <p>关闭按钮、背景点击和 ESC 逻辑保持一致，不在弹层里加入额外品牌图形。</p>
       </GlassModal>
     </div>
   );

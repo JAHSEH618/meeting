@@ -13,7 +13,11 @@ describe("MeetingListPage", () => {
 
     expect(container.querySelector(".page--hero")).toBeInTheDocument();
     expect(container.querySelector(".page-hero")).toBeInTheDocument();
+    expect(container.querySelector(".meeting-modules")).toBeInTheDocument();
     expect(container.querySelector(".glass-panel--table")).toBeInTheDocument();
+    expect(screen.getByText("处理链路")).toBeInTheDocument();
+    expect(screen.getByText("知识沉淀")).toBeInTheDocument();
+    expect(screen.getByText("合规留痕")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("产品周会")).toBeInTheDocument());
     expect(screen.getByText("CREATED")).toBeInTheDocument();

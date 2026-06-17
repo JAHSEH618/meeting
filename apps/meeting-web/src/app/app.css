@@ -1,6 +1,28 @@
 @import "../shared/styles/tokens.css";
 @import "../shared/styles/glass-design.css";
 
+.skip-link {
+  position: fixed;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: var(--radius-m);
+  background: var(--text);
+  color: white;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-140%);
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  transform: translateY(0);
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -9,20 +31,6 @@
 
 @media (max-width: 1280px) {
   .app-shell { grid-template-columns: 240px minmax(0, 1fr); }
-}
-
-@media (max-width: 768px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .shell__rail {
-    position: fixed;
-    left: -280px;
-    top: 0;
-    width: 280px;
-    height: 100vh;
-    transition: left 200ms ease;
-    z-index: 50;
-  }
-  .shell__rail[data-open="true"] { left: 0; }
 }
 
 .shell__rail {
@@ -44,13 +52,9 @@
   .shell__rail { background: var(--surface); }
 }
 
-.shell__brand {
-  font-size: 22px;
-  font-weight: 750;
-  letter-spacing: 0;
-  color: var(--ink-1);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--line-1);
+.shell__create {
+  width: 100%;
+  min-height: 48px;
 }
 
 .shell__rail-section {
@@ -114,6 +118,54 @@
 .shell__main {
   display: flex;
   min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    display: block;
+  }
+
+  .shell__rail {
+    position: sticky;
+    top: 0;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    z-index: 40;
+    padding: var(--space-4);
+    gap: var(--space-3);
+    border-right: 0;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  .shell__create {
+    min-height: 44px;
+  }
+
+  .shell__rail-section {
+    flex-direction: row;
+    gap: var(--space-2);
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .shell__rail-section h3 {
+    display: none;
+  }
+
+  .shell__rail-link {
+    flex: 0 0 auto;
+    padding: 9px 12px;
+  }
+
+  .logout-btn {
+    width: 100%;
+    margin-top: 0;
+  }
+
+  .shell__main {
+    display: block;
+  }
 }
 
 .crumbs {

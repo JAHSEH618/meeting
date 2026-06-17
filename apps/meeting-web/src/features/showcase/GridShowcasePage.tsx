@@ -1,155 +1,72 @@
 import { HeroSection } from '@shared/components/HeroSection';
 
-/**
- * 12列不规则网格展示页面
- */
 export function GridShowcasePage() {
   return (
     <div className="page page--workbench">
       <HeroSection
-        label="GRID SYSTEM"
-        title="12 列不规则网格"
-        subtitle="灵活的网格系统，支持 span 1-12 任意组合"
+        label="LAYOUT SYSTEM"
+        title="会议模块布局"
+        subtitle="跨列关系由业务职责决定：入口页强调总览，工作页强调推进，合规页强调扫描。模块不用装饰标识抢注意力。"
       />
 
-      {/* 示例 1: 6 + 6 */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>
-          布局示例：6 + 6（对称）
-        </h2>
-        <div className="grid-12">
-          <div className="grid-item span-6">
-            <h3>左侧内容区</h3>
-            <p>占据 6 列（50% 宽度）。适合展示主要内容、图文并茂的介绍。</p>
-          </div>
-          <div className="grid-item span-6">
-            <h3>右侧内容区</h3>
-            <p>占据 6 列（50% 宽度）。与左侧平衡，形成对称布局。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 示例 2: 8 + 4 */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>
-          布局示例：8 + 4（主次）
-        </h2>
-        <div className="grid-12">
-          <div className="grid-item span-8">
-            <h3>主要内容区域</h3>
-            <p>占据 8 列（约 67% 宽度）。适合展示详细内容、长文本、数据表格。信息重要性决定尺寸，不是为了不对称而不对称。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>侧边栏</h3>
-            <p>占据 4 列（约 33% 宽度）。适合 Stats、导航、相关链接。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 示例 3: 4 + 4 + 4 */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>
-          布局示例：4 + 4 + 4（三栏）
-        </h2>
-        <div className="grid-12">
-          <div className="grid-item span-4">
-            <h3>功能卡片 1</h3>
-            <p>占据 4 列。三栏布局，每栏约 33% 宽度，适合展示并列功能。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>功能卡片 2</h3>
-            <p>占据 4 列。视觉平衡，信息清晰。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>功能卡片 3</h3>
-            <p>占据 4 列。完整的三栏对称布局。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 示例 4: 混合布局 */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>
-          布局示例：混合（12 → 6+6 → 4+4+4）
-        </h2>
-        <div className="grid-12">
-          <div className="grid-item span-12">
-            <h3>全宽横幅</h3>
-            <p>占据 12 列（100% 宽度）。适合重要通知、Hero 区域、大图展示。</p>
-          </div>
-          <div className="grid-item span-6">
-            <h3>中等卡片 A</h3>
-            <p>占据 6 列（50%）。</p>
-          </div>
-          <div className="grid-item span-6">
-            <h3>中等卡片 B</h3>
-            <p>占据 6 列（50%）。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>小卡片 1</h3>
-            <p>占据 4 列（33%）。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>小卡片 2</h3>
-            <p>占据 4 列（33%）。</p>
-          </div>
-          <div className="grid-item span-4">
-            <h3>小卡片 3</h3>
-            <p>占据 4 列（33%）。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 示例 5: 不规则组合 */}
-      <section>
-        <h2 style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-4)' }}>
-          布局示例：不规则（3+9 → 5+7）
-        </h2>
-        <div className="grid-12">
-          <div className="grid-item span-3">
-            <h3>导航</h3>
-            <p>25% 宽度</p>
-          </div>
-          <div className="grid-item span-9">
-            <h3>内容区域</h3>
-            <p>75% 宽度。不对称但有功能理由：左侧是紧凑导航，右侧是主要内容。</p>
-          </div>
-          <div className="grid-item span-5">
-            <h3>信息卡片</h3>
-            <p>约 42% 宽度</p>
-          </div>
-          <div className="grid-item span-7">
-            <h3>详情区域</h3>
-            <p>约 58% 宽度。5+7 的不对称组合。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 响应式说明 */}
-      <section className="card">
-        <h2 style={{ fontSize: 'var(--text-xl)', marginBottom: 'var(--space-4)' }}>
-          响应式断点
-        </h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <section className="meeting-modules grid-12" aria-label="入口页模块布局">
+        <article className="module-card module-card--wide span-8">
           <div>
-            <strong>桌面（&gt; 1024px）</strong>
-            <p style={{ color: 'var(--text-light)', margin: 0 }}>
-              完整 12 列网格，所有 span 值生效
-            </p>
+            <p className="module-card__eyebrow">ENTRY / 8 COLUMNS</p>
+            <h2>会议入口总览</h2>
+            <p>宽模块承载系统当前状态、继续处理入口和最近会议线索，承担第一屏的信息重心。</p>
           </div>
-          <div>
-            <strong>平板（768-1024px）</strong>
-            <p style={{ color: 'var(--text-light)', margin: 0 }}>
-              8 列网格，span-6 → span-4，span-8 → span-8，span-4 → span-4
-            </p>
+          <div className="module-card__rail">
+            <span>总览</span>
+            <span>状态</span>
+            <span>搜索</span>
+            <span>继续处理</span>
           </div>
-          <div>
-            <strong>移动端（&lt; 768px）</strong>
-            <p style={{ color: 'var(--text-light)', margin: 0 }}>
-              单列布局，所有网格项堆叠显示
-            </p>
-          </div>
-        </div>
+        </article>
+
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">ACTION / 4 COLUMNS</p>
+          <h2>主操作</h2>
+          <p>新建会议、文档库和问答入口放在侧重位置，但不做成独立品牌区。</p>
+        </article>
+      </section>
+
+      <section className="meeting-modules grid-12" aria-label="工作台模块布局">
+        <article className="module-card span-6">
+          <p className="module-card__eyebrow">WORKBENCH / MAIN</p>
+          <h2>处理内容</h2>
+          <p>转录、纪要、行动项等长内容使用 6 到 8 列主区域，确保阅读和编辑稳定。</p>
+        </article>
+        <article className="module-card span-6">
+          <p className="module-card__eyebrow">WORKBENCH / SIDE</p>
+          <h2>状态上下文</h2>
+          <p>任务阶段、引用来源、发言人确认等辅助信息靠右组织，减少页面跳转。</p>
+        </article>
+      </section>
+
+      <section className="meeting-modules grid-12" aria-label="合规模块布局">
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">DENSE / HOLDS</p>
+          <h2>法律保留</h2>
+          <p>紧凑标题下直接露出表格，优先支持扫描和筛选。</p>
+        </article>
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">DENSE / DELETE</p>
+          <h2>删除任务</h2>
+          <p>危险操作保留明确按钮层级，不用视觉装饰提高紧张感。</p>
+        </article>
+        <article className="module-card span-4">
+          <p className="module-card__eyebrow">DENSE / AUDIT</p>
+          <h2>审计事件</h2>
+          <p>数据表承载细节，模块卡只说明页面密度和信息职责。</p>
+        </article>
+      </section>
+
+      <section className="glass-panel glass-panel--compact stack">
+        <h2 className="glass-panel__title">响应式策略</h2>
+        <p className="glass-panel__body">
+          宽屏使用 12 列建立主次关系；中屏收敛到 6 列；移动端单列堆叠。所有模块保持文字优先，不额外生成装饰位。
+        </p>
       </section>
     </div>
   );
