@@ -3,6 +3,8 @@
   --bg: #fafafa;
   --surface: #ffffff;
   --surface-glass: rgba(255, 255, 255, 0.7);
+  --surface-raised: rgba(255, 255, 255, 0.82);
+  --surface-sunken: rgba(0, 0, 0, 0.035);
 
   /* 文本 - 黑色系统 */
   --text: #000000;
@@ -17,25 +19,35 @@
   /* 保留向后兼容 */
   --primary: var(--accent);
   --primary-hover: var(--accent-hover);
+  --primary-active: #0048b8;
   --primary-soft: var(--accent-light);
+  --primary-ink: #004fbc;
+  --accent-active: #0048b8;
+  --accent-soft: var(--accent-light);
+  --accent-ink: #004fbc;
 
   --ink-1: var(--text);
   --ink-2: var(--text-light);
   --ink-3: var(--text-lighter);
+  --ink-4: #c7c7cc;
 
   /* 分割线 */
   --line-1: rgba(0, 0, 0, 0.06);
   --line-2: rgba(0, 0, 0, 0.04);
+  --line-3: rgba(0, 0, 0, 0.035);
 
   /* 语义色 */
   --success: #34c759;
   --success-soft: rgba(52, 199, 89, 0.1);
+  --success-ink: #1f8f3a;
 
   --warn: #ff9500;
   --warn-soft: rgba(255, 149, 0, 0.1);
+  --warn-ink: #a35a00;
 
   --danger: #ff3b30;
   --danger-soft: rgba(255, 59, 48, 0.1);
+  --danger-ink: #b42318;
 
   /* 圆角 - 更大 */
   --radius-s: 6px;
@@ -43,6 +55,7 @@
   --radius-l: 16px;
   --radius-xl: 24px;
   --radius-xxl: 32px;
+  --radius-pill: 999px;
 
   /* 间距 - 更大胆 */
   --space-1: 4px;
@@ -64,6 +77,8 @@
   /* 毛玻璃系统 */
   --glass-header: rgba(255, 255, 255, 0.75);
   --glass-header-blur: blur(30px) saturate(180%);
+  --chrome-bg: var(--glass-header);
+  --chrome-blur: var(--glass-header-blur);
 
   --glass-card: rgba(255, 255, 255, 0.7);
   --glass-card-blur: blur(40px) saturate(150%);
@@ -76,13 +91,14 @@
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.10);
   --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.12);
   --shadow-4: 0 32px 80px rgba(0, 0, 0, 0.15);
+  --focus: var(--accent);
 
   /* 字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
 
   /* 字号系统 - 极端对比 */
-  --text-hero: clamp(72px, 10vw, 120px);
+  --text-hero: 96px;
   --text-xxl: 56px;
   --text-xl: 40px;
   --text-lg: 28px;
@@ -100,6 +116,7 @@ html {
 
 body {
   margin: 0;
+  min-width: 320px;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
@@ -107,22 +124,23 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-/* 标题系统 - 极端字号 */
+/* 标题系统 */
 h1 {
-  font-size: var(--text-hero);
+  font-size: var(--text-xxl);
   font-weight: 800;
-  line-height: 0.98;
-  letter-spacing: -0.045em;
+  line-height: 1.02;
+  letter-spacing: 0;
   margin: 0;
 }
 
 h2 {
-  font-size: var(--text-xxl);
+  font-size: var(--text-xl);
   font-weight: 700;
   line-height: 1.1;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -130,7 +148,7 @@ h3 {
   font-size: var(--text-lg);
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -161,8 +179,29 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --text-hero: 64px;
+    --text-xxl: 44px;
+    --text-xl: 32px;
+    --text-lg: 24px;
+    --text-md: 19px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --text-hero: 44px;
+    --text-xxl: 34px;
+    --text-xl: 28px;
+    --text-lg: 22px;
+    --text-md: 18px;
+    --text-base: 16px;
+  }
 }
 
 /* 工具类 */
