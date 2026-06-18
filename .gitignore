@@ -61,6 +61,7 @@ __pycache__/
 .agents/
 .worktrees/
 .superpowers/
+docs/superpowers/
 skills-lock.json
 
 # Misc
