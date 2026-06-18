@@ -64,6 +64,14 @@ describe("SpeakerEnrollPanel", () => {
     vi.restoreAllMocks();
   });
 
+  it("refreshes the reference audio list after the enrollment is accepted", async () => {
+    const { onEnrollSuccess } = renderPanel();
+
+    await submitUpload();
+
+    expect(onEnrollSuccess).toHaveBeenCalledOnce();
+  });
+
   it("announces successful enrollment inline instead of using alert()", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const alertSpy = vi.spyOn(window, "alert").mockReturnValue(undefined);
@@ -79,7 +87,7 @@ describe("SpeakerEnrollPanel", () => {
       expect(screen.getByRole("status")).toHaveTextContent("声纹注册成功"),
     );
     expect(alertSpy).not.toHaveBeenCalled();
-    expect(onEnrollSuccess).toHaveBeenCalledOnce();
+    expect(onEnrollSuccess).toHaveBeenCalledTimes(2);
   });
 
   it("announces failed enrollment inline instead of using alert()", async () => {
@@ -97,6 +105,6 @@ describe("SpeakerEnrollPanel", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("声纹注册失败"),
     );
     expect(alertSpy).not.toHaveBeenCalled();
-    expect(onEnrollSuccess).toHaveBeenCalledOnce();
+    expect(onEnrollSuccess).toHaveBeenCalledTimes(2);
   });
 });

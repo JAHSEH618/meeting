@@ -185,6 +185,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
         setRecordedBlob(null);
         setUploadFile(null);
         setError(null);
+        onEnrollSuccess();
       } else {
         throw new Error("声纹档案注册返回数据异常");
       }
