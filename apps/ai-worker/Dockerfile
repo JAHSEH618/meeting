@@ -33,6 +33,7 @@ RUN npm run build && ls -la dist
 #   real-bge          — embedding + reranker box
 #   real-asr          — Qwen3-ASR box
 #   real-diarization  — pyannote diarization box
+#   real-speaker      — 3D-Speaker CAM++ box
 #   real-models       — single-host all-GPU box (everything)
 # Multiple extras can be passed comma-separated, e.g. `real-bge,real-asr`.
 ARG BASE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04

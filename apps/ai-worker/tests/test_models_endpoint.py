@@ -57,10 +57,16 @@ def test_get_models_returns_fake_runtimes_ready() -> None:
     payload = response.json()
     assert payload["success"] is True
     models = payload["data"]["models"]
-    assert len(models) == 4
+    assert len(models) == 5
 
     by_name = {m["name"]: m for m in models}
-    assert set(by_name) == {"bge-m3", "bge-reranker-v2-m3", "qwen3-asr", "pyannote-diarization"}
+    assert set(by_name) == {
+        "bge-m3",
+        "bge-reranker-v2-m3",
+        "qwen3-asr",
+        "pyannote-diarization",
+        "cam++-speaker",
+    }
 
     for info in models:
         assert info["status"] == "READY"
@@ -103,7 +109,7 @@ def test_post_warmup_in_fake_mode_reports_not_triggered() -> None:
     assert payload["success"] is True
     # Fake mode starts READY → nothing to trigger.
     assert payload["data"]["triggered"] is False
-    assert len(payload["data"]["models"]) == 4
+    assert len(payload["data"]["models"]) == 5
     for info in payload["data"]["models"]:
         assert info["status"] == "READY"
 
@@ -158,6 +164,7 @@ def test_get_models_reports_models_dir_when_configured(
     monkeypatch.setattr(
         settings, "bge_reranker_models_dir", "/data/models/bge-reranker/v1"
     )
+    monkeypatch.setattr(settings, "cam_plus_models_dir", "/data/models/cam_plus/v1")
     registry.reset_for_tests()
 
     client = TestClient(create_app())
@@ -169,6 +176,7 @@ def test_get_models_reports_models_dir_when_configured(
     by_name = {m["name"]: m for m in response.json()["data"]["models"]}
     assert by_name["bge-m3"]["modelsDir"] == "/data/models/bge-m3/v1"
     assert by_name["bge-reranker-v2-m3"]["modelsDir"] == "/data/models/bge-reranker/v1"
+    assert by_name["cam++-speaker"]["modelsDir"] == "/data/models/cam_plus/v1"
 
 
 def _stage_weight(tmp_path: Path, sub: str) -> Path:
@@ -276,6 +284,7 @@ def test_ready_endpoint_returns_200_in_fake_mode() -> None:
         "bge-reranker-v2-m3",
         "qwen3-asr",
         "pyannote-diarization",
+        "cam++-speaker",
     }
 
 
@@ -326,7 +335,35 @@ def test_hardware_endpoint_reports_device_resolution() -> None:
     assert "packages" in body
     # Per-model device resolution must be present; values vary by host
     # (auto → cpu in fake mode) so we only assert the keys exist.
-    assert set(body["resolvedDevices"]) == {"bgeM3", "bgeReranker", "asr", "diarization"}
+    assert set(body["resolvedDevices"]) == {
+        "bgeM3",
+        "bgeReranker",
+        "asr",
+        "diarization",
+        "speaker",
+    }
+
+
+def test_registry_applies_bge_batch_size_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "bge_m3_batch_size", 32)
+    registry.reset_for_tests()
+
+    runtime = registry.get_bge_m3()
+
+    assert runtime.batch_size == 32
+
+
+def test_registry_applies_speaker_runtime_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "use_fake_speaker_runtime", False)
+    monkeypatch.setattr(settings, "cam_plus_models_dir", "/data/models/cam_plus/v1")
+    monkeypatch.setattr(settings, "speaker_device", "cpu")
+    registry.reset_for_tests()
+
+    runtime = registry.get_speaker_runtime()
+
+    assert runtime.use_fake is False
+    assert str(runtime.models_dir) == "/data/models/cam_plus/v1"
+    assert runtime.device == "cpu"
 
 
 def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -345,7 +382,13 @@ def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPat
     """
     from ai_worker.interfaces.api import main as main_module
 
-    calls: dict[str, int] = {"asr": 0, "bge_m3": 0, "bge_reranker": 0, "diar": 0}
+    calls: dict[str, int] = {
+        "asr": 0,
+        "bge_m3": 0,
+        "bge_reranker": 0,
+        "diar": 0,
+        "speaker": 0,
+    }
 
     def _patch(name: str, real):
         def _wrapped():
@@ -359,10 +402,12 @@ def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPat
     orig_m3 = main_module.get_bge_m3
     orig_rr = main_module.get_bge_reranker
     orig_d = main_module.get_diarization_runtime
+    orig_s = main_module.get_speaker_runtime
     monkeypatch.setattr(main_module, "get_asr_runtime", _patch("asr", orig_asr))
     monkeypatch.setattr(main_module, "get_bge_m3", _patch("bge_m3", orig_m3))
     monkeypatch.setattr(main_module, "get_bge_reranker", _patch("bge_reranker", orig_rr))
     monkeypatch.setattr(main_module, "get_diarization_runtime", _patch("diar", orig_d))
+    monkeypatch.setattr(main_module, "get_speaker_runtime", _patch("speaker", orig_s))
     # Re-bind the capability table to the patched getters; the module-level
     # dict captured the originals at import time.
     monkeypatch.setattr(
@@ -373,6 +418,7 @@ def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPat
             "rerank": ("bge-reranker-v2-m3", lambda: main_module.get_bge_reranker()),
             "asr": ("qwen3-asr", lambda: main_module.get_asr_runtime()),
             "diarization": ("pyannote-diarization", lambda: main_module.get_diarization_runtime()),
+            "speaker": ("cam++-speaker", lambda: main_module.get_speaker_runtime()),
         },
     )
 
@@ -389,6 +435,42 @@ def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPat
     assert calls["asr"] >= 2
     assert calls["bge_m3"] <= 1
     assert calls["bge_reranker"] <= 1
+    assert calls["speaker"] <= 1
+
+
+def test_warmup_capability_filter_selects_speaker_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_worker.interfaces.api import main as main_module
+
+    calls: dict[str, int] = {"speaker": 0, "asr": 0}
+
+    def _patch(name: str, real):
+        def _wrapped():
+            calls[name] += 1
+            return real()
+        return _wrapped
+
+    orig_s = main_module.get_speaker_runtime
+    orig_asr = main_module.get_asr_runtime
+    monkeypatch.setattr(main_module, "get_speaker_runtime", _patch("speaker", orig_s))
+    monkeypatch.setattr(main_module, "get_asr_runtime", _patch("asr", orig_asr))
+    monkeypatch.setattr(
+        main_module,
+        "_CAPABILITY_TO_RUNTIMES",
+        {
+            "speaker": ("cam++-speaker", lambda: main_module.get_speaker_runtime()),
+            "asr": ("qwen3-asr", lambda: main_module.get_asr_runtime()),
+        },
+    )
+
+    client = TestClient(main_module.create_app())
+    headers = _auth_headers("POST", "/internal/models/warmup", b"")
+    response = client.post(
+        "/internal/models/warmup?capabilities=speaker", headers=headers
+    )
+
+    assert response.status_code == 200
+    assert calls["speaker"] >= 2
+    assert calls["asr"] <= 1
 
 
 def test_warmup_rejects_unknown_capability() -> None:

@@ -120,6 +120,10 @@ class BgeM3Runtime:
     def use_fake(self) -> bool:
         return self._use_fake
 
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
     async def ensure_loaded(self) -> None:
         """Idempotently bring the runtime to READY.
 

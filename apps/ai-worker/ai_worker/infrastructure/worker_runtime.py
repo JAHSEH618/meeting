@@ -21,6 +21,7 @@ from ai_worker.model_runtime.registry import (
     get_asr_runtime,
     get_bge_m3,
     get_diarization_runtime,
+    get_speaker_runtime,
 )
 from ai_worker.pipeline.speaker.submit import (
     SpeakerCandidateSubmission,
@@ -88,6 +89,7 @@ class MvpWorkerRuntime:
             artifact_store=build_artifact_store(),
             asr_runtime=get_asr_runtime(),
             diarization_runtime=get_diarization_runtime(),
+            speaker_embedding_runtime=get_speaker_runtime(),
             speaker_reference_supplier=build_speaker_reference_client(),
         )
         self.embedding_workflow = embedding_workflow or TextEmbeddingWorkflow(

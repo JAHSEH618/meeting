@@ -6,8 +6,8 @@ Follows the same pattern as Qwen3-ASR/pyannote/bge runtimes:
 - **real**: lazy-loads 3D-Speaker CAM++ model for production embeddings
 
 Production requirements:
-1. Install: `uv sync --extra real-models`
-2. Stage weights: `/opt/models/cam++/v1`
+1. Install: `uv sync --extra real-speaker`
+2. Stage weights: `/opt/models/cam_plus/v1`
 3. Set offline: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
 """
 
@@ -72,6 +72,14 @@ class CamPlusPlusRuntime:
     def device(self) -> str:
         return self._device
 
+    @property
+    def use_fake(self) -> bool:
+        return self._use_fake
+
+    @property
+    def models_dir(self) -> Path | None:
+        return self._models_dir
+
     async def ensure_loaded(self) -> None:
         """Idempotently load the real model."""
         if self._status == "READY":
@@ -99,25 +107,24 @@ class CamPlusPlusRuntime:
 
     def _load_model_blocking(self) -> None:
         """Load CAM++ model synchronously."""
-        if not self._models_dir:
-            raise ValueError("models_dir required for real mode")
+        if self._models_dir is None or not self._models_dir.exists():
+            raise FileNotFoundError(
+                f"CAM++ weights not found at {self._models_dir} — "
+                "stage them under AI_WORKER_CAM_PLUS_MODELS_DIR before boot"
+            )
 
-        # Lazy import to avoid torch dependency in fake mode
+        # Lazy import to avoid torch dependency in fake mode.
         try:
             from modelscope.pipelines import pipeline as ms_pipeline  # type: ignore[import-not-found]
         except ImportError as exc:
             raise CamPlusPlusRuntimeError(
                 "SPEAKER_EMBEDDING_FAILED",
-                "modelscope not installed - run: uv sync --extra real-models",
+                "modelscope not installed - run: uv sync --extra real-speaker",
             ) from exc
-
-        model_path = self._models_dir / "cam++" / "v1"
-        if not model_path.exists():
-            raise FileNotFoundError(f"CAM++ model not found: {model_path}")
 
         self._model = ms_pipeline(
             task="speaker-verification",
-            model=str(model_path),
+            model=str(self._models_dir),
             device=self._device,
         )
 
@@ -132,13 +139,16 @@ class CamPlusPlusRuntime:
             return await self._fake.embed(audio_path, metadata, speaker_turn)
 
         await self.ensure_loaded()
-        return await asyncio.get_running_loop().run_in_executor(
-            None,
-            self._embed_blocking,
-            audio_path,
-            metadata,
-            speaker_turn,
-        )
+        from ai_worker.model_runtime.concurrency import get_device_semaphore
+
+        async with get_device_semaphore(self._device):
+            return await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._embed_blocking,
+                audio_path,
+                metadata,
+                speaker_turn,
+            )
 
     def _embed_blocking(
         self,
@@ -182,3 +192,8 @@ class CamPlusPlusRuntime:
                 "SPEAKER_EMBEDDING_FAILED",
                 f"CAM++ inference failed: {exc}",
             ) from exc
+
+
+# Protocol contract check.
+_protocol_check: SpeakerEmbeddingRuntime = CamPlusPlusRuntime(use_fake=True)  # type: ignore[assignment]
+del _protocol_check

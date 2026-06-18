@@ -78,7 +78,7 @@ ai-worker 真实路径。下表是 prod / staging 推荐配置（dev / CI 留空
 | BAAI/bge-m3 | `AI_WORKER_BGE_M3_MODELS_DIR` | `/opt/models/bge-m3/v1` | 一并设 `AI_WORKER_USE_FAKE_RUNTIME=false` |
 | BAAI/bge-reranker-v2-m3 | `AI_WORKER_BGE_RERANKER_MODELS_DIR` | `/opt/models/bge-reranker-v2-m3/v1` | 同上 |
 | Qwen3-ForcedAligner-0.6B | 暂未接入 runtime — pipeline 仍走轻量对齐 | — | 待 alignment 改造再开 env |
-| 3D-Speaker CAM++ | 暂未接入 runtime — speaker matching 走 mock | — | 待 speaker matching 改造再开 env |
+| 3D-Speaker CAM++ | `AI_WORKER_CAM_PLUS_MODELS_DIR` | `/opt/models/cam_plus/v1` | 一并设 `AI_WORKER_USE_FAKE_SPEAKER_RUNTIME=false` |
 
 Dockerfile 已注入 `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1`，因此
 即使代码里 `from_pretrained("...")` 也不会触发联网下载——挂载缺失会
@@ -117,7 +117,7 @@ uv run python scripts/stage_mock_weights.py --format table    # 给本文档用
 
 脚本会:
 
-1. 在 `<root>/{bge-m3,bge-reranker-v2-m3,qwen3-asr-1.7b,pyannote}/...` 下生成确定性 mock 权重文件;
+1. 在 `<root>/{bge-m3,bge-reranker-v2-m3,qwen3-asr-1.7b,pyannote,cam_plus}/...` 下生成确定性 mock 权重文件;
 2. 对每个目录调用 `compute_checksum()`（与 ai-worker 运行时使用同一函数）;
 3. 输出可直接 `eval` / `source` 的 `AI_WORKER_*_MODELS_DIR` + `AI_WORKER_*_EXPECTED_CHECKSUM` 对。
 
@@ -125,7 +125,7 @@ uv run python scripts/stage_mock_weights.py --format table    # 给本文档用
 返回 200。改任一权重文件一个字节再重启，`/internal/models` 对应模型 `status=ERROR` + `lastError`
 说明 checksum 不匹配，`/internal/ready` 返回 503。
 
-### 当前 mock checksums（`scripts/stage_mock_weights.py` 输出，2026-05-20 重算可复现）
+### 当前 mock checksums（`scripts/stage_mock_weights.py` 输出，2026-06-18 重算可复现）
 
 | 模型 | 相对路径 | SHA256 (staging mock) |
 |---|---|---|
@@ -133,10 +133,11 @@ uv run python scripts/stage_mock_weights.py --format table    # 给本文档用
 | bge-reranker-v2-m3 | `bge-reranker-v2-m3/v1` | `sha256:794d3b4b6f9b2991ab0c8f7e3790fea6b5f70d3a233939547716daaf91b56f5d` |
 | qwen3-asr-1.7b | `qwen3-asr-1.7b/v2026.05.1` | `sha256:41b21abe05af064ba0737ab5622152443495c114a1a73a5b1d494bba656dc0e3` |
 | pyannote/speaker-diarization-3.1 | `pyannote/v3.1` | `sha256:b434841f09abc5ac194e04daf5e56e72bdba21c1fcaf5852df02d52136eb6165` |
+| 3D-Speaker CAM++ | `cam_plus/v1` | `sha256:79d265f8347e955244198b5c537378f8638a8cfa5e00069fd01069b8b864c8d4` |
 
 ### 不在 staging 清单里的模型
 
-`Qwen3-ForcedAligner-0.6B` 和 `3D-Speaker CAM++` 仍按本文档前述章节的 license 流程走，但因为
-`apps/ai-worker/ai_worker/common/config.py` 还没有它们的 `*_models_dir` env，
-`apps/ai-worker/ai_worker/interfaces/api/main.py:_all_model_infos` 也不会枚举它们，所以这一版
-Phase J 验收不为它们生成 staging hash。等 alignment / speaker-matching runtime 真正接入后再补。
+`Qwen3-ForcedAligner-0.6B` 仍按本文档前述章节的 license 流程走，但因为
+`apps/ai-worker/ai_worker/common/config.py` 还没有它的 `*_models_dir` env，
+`apps/ai-worker/ai_worker/interfaces/api/main.py:_all_model_infos` 也不会枚举它，所以这一版
+Phase J 验收不为它生成 staging hash。等 alignment runtime 真正接入后再补。

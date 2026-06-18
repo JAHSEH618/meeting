@@ -540,7 +540,9 @@ kubectl rollout status statefulset/ai-worker  -n "$NS" --timeout=600s
   - `/opt/models/qwen3-asr-1.7b/v2026.05.1/`
   - `/opt/models/pyannote/v3.1/`
 - **环境变量**: 生产环境必须设 `AI_WORKER_USE_FAKE_RUNTIME=false`、`AI_WORKER_USE_FAKE_ASR_RUNTIME=false`、`AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false`、`HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1`
-- **镜像构建** (Phase J): Dockerfile 接受 `UV_EXTRAS` build-arg 控制安装哪些可选依赖。常见组合：`real-bge`（仅 embedding + rerank）、`real-asr`（Qwen3-ASR via funasr）、`real-diarization`（pyannote.audio）、`real-models`（单机全 GPU 装载，逗号分隔多个）。CUDA base image 已对齐 `uv.lock`（torch 2.12 + CUDA 13），其他基线需显式 `--build-arg BASE=...`
+- **镜像构建** (Phase J): Dockerfile 接受 `UV_EXTRAS` build-arg 控制安装哪些可选依赖。常见组合：`real-bge`（仅 embedding + rerank）、`real-asr`（Qwen3-ASR via funasr）、`real-diarization`（pyannote.audio）、`real-speaker`（3D-Speaker CAM++）、`real-models`（单机全 GPU 装载，逗号分隔多个）。CUDA base image 已对齐 `uv.lock`（torch 2.12 + CUDA 13），其他基线需显式 `--build-arg BASE=...`
+- **启动保护**: ai-worker StatefulSet 使用 `/internal/health` 作为 startup/liveness，`/internal/ready` 只做 readiness；模型 checksum 或包缺失会让 Pod NotReady，但不会触发 liveness 重启风暴
+- **临时产物边界**: `/app/.artifacts` 使用 `emptyDir.sizeLimit`，base 默认为 `20Gi`，dev overlay 为 `2Gi`；ASR 中间产物、质量报告和缓存必须受该边界约束
 - **诊断端点** (Phase J): `GET /internal/hardware`（无需 HMAC）输出 torch/CUDA/MPS 可用性、FlagEmbedding/funasr/pyannote 是否安装、每个模型解析到的 device；`POST /internal/models/warmup?capabilities=embedding,rerank,asr,diarization`（或 `=all`）按能力维度预热
 - **checksum 校验 (Phase J)**: 为每个模型设 `AI_WORKER_*_EXPECTED_CHECKSUM=sha256:...`。`/internal/ready` 在 hash 不匹配时返回 503，readinessProbe 转 NotReady，kubelet 停止路由流量。本地准备 mock 权重见 `docs/model-registry.md` Staging Fixtures 章节或 `apps/ai-worker/scripts/stage_mock_weights.py`
 - **Secret**: `ai-worker-secret` 必须在 kustomize apply 之前创建（dev 由 `deploy.sh k8s-dev` 自动处理；staging/prod 由 SealedSecrets / ExternalSecret 注入）

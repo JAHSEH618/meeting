@@ -1,6 +1,6 @@
 """Phase J — generate deterministic staging mock weights.
 
-Stages four small mock weight files under a configurable root so that
+Stages five small mock weight files under a configurable root so that
 :func:`ai_worker.observability.model_checksum.compute_checksum` returns a
 stable hash; the script then prints the corresponding
 ``AI_WORKER_*_MODELS_DIR`` and ``AI_WORKER_*_EXPECTED_CHECKSUM`` env vars
@@ -73,6 +73,13 @@ FIXTURES: tuple[ModelFixture, ...] = (
         weight_files=("pytorch_model.bin",),
         models_dir_env="AI_WORKER_PYANNOTE_MODELS_DIR",
         expected_env="AI_WORKER_PYANNOTE_EXPECTED_CHECKSUM",
+    ),
+    ModelFixture(
+        name="cam++-speaker",
+        relative_dir="cam_plus/v1",
+        weight_files=("model.bin",),
+        models_dir_env="AI_WORKER_CAM_PLUS_MODELS_DIR",
+        expected_env="AI_WORKER_CAM_PLUS_EXPECTED_CHECKSUM",
     ),
 )
 

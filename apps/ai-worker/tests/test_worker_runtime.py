@@ -359,6 +359,7 @@ def test_default_workflow_engine_uses_registry_runtimes() -> None:
     from ai_worker.application.workflows.audio_pipeline import LocalAudioPipelineEngine
     from ai_worker.model_runtime.asr import Qwen3AsrRuntime
     from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
+    from ai_worker.model_runtime.speaker import CamPlusPlusRuntime
 
     runtime = MvpWorkerRuntime(callback_client=AsyncMock())
 
@@ -368,3 +369,4 @@ def test_default_workflow_engine_uses_registry_runtimes() -> None:
     # internal, but a regression here is exactly what we want to catch.
     assert isinstance(engine._asr_runtime, Qwen3AsrRuntime)
     assert isinstance(engine._diarization_runtime, PyannoteDiarizationRuntime)
+    assert isinstance(engine._speaker_embedding_runtime, CamPlusPlusRuntime)

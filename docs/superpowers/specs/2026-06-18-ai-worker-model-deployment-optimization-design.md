@@ -10,7 +10,7 @@
 当前 ai-worker 已经不是从零开始的模型服务。仓库里已经有一批可复用的基础能力：
 
 - `apps/ai-worker/Dockerfile` 已支持多阶段构建、`BASE` 切换、`UV_EXTRAS` 能力子集安装、离线 HuggingFace 环境变量和非 root 运行。
-- `apps/ai-worker/pyproject.toml` 已按能力拆出 `real-bge`、`real-asr`、`real-diarization`、`real-models` extras。
+- `apps/ai-worker/pyproject.toml` 已按能力拆出 `real-bge`、`real-asr`、`real-diarization`、`real-speaker`、`real-models` extras。
 - `apps/ai-worker/ai_worker/model_runtime/registry.py` 已有 per-model device resolution、fake/real runtime 切换和 dtype 策略。
 - `apps/ai-worker/ai_worker/model_runtime/concurrency.py` 已有 per-device semaphore，单 GPU 默认可以串行化模型加载和推理。
 - `apps/ai-worker/ai_worker/interfaces/api/main.py` 已提供 `/internal/models`、`/internal/models/warmup`、`/internal/hardware`、`/internal/ready`、`/metrics`。
@@ -61,7 +61,7 @@
 - 不把模型权重 bake 进默认运行镜像。镜像包含运行依赖，权重通过只读 PVC、节点 cache 或制品同步提供。
 - 不新增 `apps/ai-worker/Dockerfile.optimized`。继续演进现有 Dockerfile。
 - 不新增独立 metrics 端口。继续使用 `8090/metrics`。
-- 不在 Stage 1 强行落地尚未完成的 ForcedAligner 和 CAM++ production runtime。ForcedAligner 继续预留；CAM++ 必须纳入模型部署路线，但作为独立 speaker 阶段完成。
+- 不在 Stage 1 强行落地尚未完成的 ForcedAligner production runtime。CAM++ 已纳入 Stage 1 的 registry / worker 默认构造 / warmup / checksum 路线，后续 speaker 阶段聚焦真实权重质量、片段选择和 CPU/MPS/CUDA 性能压测。
 - 不把 Mac 本地部署定义为生产 serving 路径。生产默认仍是 Linux + NVIDIA + CUDA + K8s GPU 节点池。
 - 不在 Mac 上强行把所有模型塞进 MPS。MPS 只用于已验证稳定的模型；不稳定模型优先 CPU。
 
@@ -170,13 +170,13 @@ Mac 场景不是生产替代品，但它必须和生产共享同一套模型 reg
 |---|---|---|---|---|
 | ASR / `ASR` | Qwen3-ASR，fake 为 `deterministic-asr-v0` | 已接入 `Settings`、registry、worker runtime | `get_asr_runtime()`、`Qwen3AsrRuntime` | `AI_WORKER_USE_FAKE_ASR_RUNTIME=false` + `AI_WORKER_QWEN3_ASR_MODELS_DIR` 后走真实模型 |
 | 说话人区分 / `DIARIZATION` | pyannote/speaker-diarization-3.1，fake 为 `single-speaker-v0` | 已接入 `Settings`、registry、worker runtime | `get_diarization_runtime()`、`PyannoteDiarizationRuntime` | 负责输出 `SPEAKER_00` 这类匿名 speaker turn，不等于识别具体人 |
-| 声纹 embedding / `SPEAKER_EMBEDDING` | 当前默认 `deterministic-speaker-v0`；目标真实模型为 3D-Speaker CAM++ | pipeline 已使用，但真实 CAM++ 尚未接入 `Settings`/registry/worker 默认构造 | `DeterministicSpeakerEmbeddingRuntime`、`CamPlusPlusRuntime` | 这是当前最大缺口：流程有声纹步骤，但生产模型还没完整纳入部署 profile |
+| 声纹 embedding / `SPEAKER_EMBEDDING` | 3D-Speaker CAM++，fake 为 `deterministic-speaker-v0` | Stage 1 已接入 `Settings`、registry、worker runtime、warmup 和 checksum guard | `get_speaker_runtime()`、`CamPlusPlusRuntime` | 真实质量仍取决于 CAM++ 权重、有效片段筛选和授权 reference embedding 质量 |
 | 声纹匹配 / `SPEAKER_MATCHING` | 余弦相似度匹配 authorized reference embeddings | 已接入流程，不是独立深度模型 | `AuthorizedScopeMatcher` | Java 决定授权范围并提供参考 embedding，Python 只在授权范围内匹配 |
 | 文本 embedding / `RAG_INDEXING`、`/internal/embed` | BAAI/bge-m3，fake 为 `bge-m3-fake-v0` | 已接入 `Settings`、registry、worker runtime 和内部 API | `get_bge_m3()`、`BgeM3Runtime` | 用于 RAG chunk embedding 和同步 query embedding |
 | Rerank / `/internal/rerank` | BAAI/bge-reranker-v2-m3，fake 为 `bge-reranker-v2-m3-fake-v0` | 已接入 `Settings`、registry、内部 API | `get_bge_reranker()`、`BgeRerankerRuntime` | Java 完成权限过滤后同步调用 ai-worker rerank |
 | Forced Alignment | Qwen3-ForcedAligner-0.6B 或等价模型 | 仅文档预留，当前 pipeline 仍走轻量时间戳/merge | 暂无生产 runtime | 后续只对精确引用片段按需启用 |
 
-结论：当前实际链路已完整覆盖 ASR、说话人区分、声纹步骤、文本 embedding 和 rerank，但声纹识别这块现在是“流程已打通、真实 CAM++ 生产接入未完成”。模型部署优化必须把 `speaker-gpu` 和 CAM++ registry/env/checksum/warmup 纳入后续阶段，否则 ASR 和 diarization 上线后仍无法形成完整的“匿名 speaker -> 候选人员”闭环。
+结论：当前实际链路已完整覆盖 ASR、说话人区分、声纹步骤、文本 embedding 和 rerank；Stage 1 后 CAM++ 也进入统一 registry/env/checksum/warmup 体系。后续 speaker 优化重点不再是“是否接入”，而是“是否稳定且足够准”：有效片段选择、embedding 质心、top-K 阈值、CPU/MPS/CUDA 路由和授权 reference embedding 的质量闭环。
 
 ## 6. 模型权重供应链
 
@@ -618,7 +618,7 @@ CUDA 路径：
 - profile 是 `bge`，但 `AI_WORKER_USE_FAKE_RUNTIME=true`，应 fail loud。
 - profile 是 `asr`，但未配置 `AI_WORKER_QWEN3_ASR_MODELS_DIR`，应 fail loud。
 - profile 是 `diar`，但镜像缺 `pyannote.audio`，readiness 应 503。
-- profile 是 `speaker`，但真实 CAM++ runtime 没接入 registry/settings，阶段计划应阻止进入 prod。
+- profile 是 `speaker`，但 CAM++ 权重、checksum 或 `real-speaker` 依赖缺失，readiness 必须阻止进入 prod。
 - local profile 是 `mac-audio`，但终端不是 arm64，应 fail loud。
 
 ## 12. Warmup 和流量接入
@@ -772,7 +772,7 @@ checksum 和具体路径不要作为 Prometheus 高基数字段，但应进入�
 - `GET /internal/hardware` 显示 MPS/CPU/package 状态。
 - `GET /internal/models` 显示模型目录和 checksum。
 - `POST /internal/models/warmup?capabilities=embedding,rerank` 成功。
-- `POST /internal/models/warmup?capabilities=speaker` 在 CAM++ 接入后成功。
+- `POST /internal/models/warmup?capabilities=speaker` 可触发 CAM++ fake/real runtime 预热并反映到 `/internal/models`。
 - 30-60 秒音频 smoke 记录 ASR/diarization RTF 和 speaker candidates。
 - 两机联调时验证 RabbitMQ 消费、OSS/TOS 只读拉取和 HMAC 回调。
 
@@ -810,7 +810,7 @@ checksum 和具体路径不要作为 Prometheus 高基数字段，但应进入�
 - 给 StatefulSet 加 `startupProbe`。
 - 写模型同步和校验 runbook。
 - 更新 Mac 本地部署 runbook，明确 `mac-fake`、`mac-bge`、`mac-audio`、`mac-all`。
-- 明确声纹当前状态：deterministic 已接入流程，CAM++ 生产接入另拆 stage。
+- 明确声纹当前状态：deterministic fake 和 CAM++ real 已进入同一 registry/worker/warmup/checksum 合约，真实质量验收另拆 stage。
 - 固化发布前检查命令。
 
 ### Stage 2: Mac 加速基线
@@ -888,7 +888,7 @@ checksum 和具体路径不要作为 Prometheus 高基数字段，但应进入�
 | Mac MPS 算子不完整 | 本地真实模型 crash 或 fallback | BGE/rerank 才默认 MPS，ASR/diarization 默认 CPU |
 | Mac 内存不足 | 进程被系统杀掉 | 提供 fake/bge/audio/all profile，长会议送 CUDA staging |
 | 分片加速影响准确率 | ASR 边界错字或 speaker stitching 错误 | chunk overlap、质量回归和可回滚参数 |
-| CAM++ 尚未完整接入 registry/settings | 声纹生产部署缺 profile/env/checksum | 单独 Stage 补真实 speaker runtime 接入，不把 deterministic 当生产模型 |
+| CAM++ 权重或依赖缺失 | speaker profile 无法进入真实声纹服务 | readiness、checksum、`real-speaker` 镜像构建和 staging mock fixtures 一起拦截，不把 deterministic 当生产模型 |
 | 量化导致质量下降 | 召回、rerank 或转录质量退化 | 量化只能进入深度加速专项，必须过质量评测 |
 
 ## 19. 后续文档拆分

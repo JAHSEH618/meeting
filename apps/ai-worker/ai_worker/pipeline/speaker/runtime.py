@@ -1,8 +1,8 @@
 """Speaker embedding model runtime.
 
 A small, deterministic placeholder that produces a stable 192-dim embedding
-keyed off the speaker label + audio path. Real production replaces this with
-a CAM++ model implementation (see model registry / phase 4+).
+keyed off the speaker label + audio path. Real deployments use the registry-
+managed CAM++ runtime from ``ai_worker.model_runtime.speaker``.
 
 The runtime is intentionally cheap so smoke pipelines and tests can exercise
 the full speaker-candidates callback path without a GPU.

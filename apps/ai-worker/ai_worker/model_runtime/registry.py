@@ -34,12 +34,14 @@ from ai_worker.model_runtime.asr import Qwen3AsrRuntime
 from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
 from ai_worker.model_runtime.embedding import BgeM3Runtime
 from ai_worker.model_runtime.rerank import BgeRerankerRuntime
+from ai_worker.model_runtime.speaker import CamPlusPlusRuntime
 
 
 _bge_m3: BgeM3Runtime | None = None
 _bge_reranker: BgeRerankerRuntime | None = None
 _asr: Qwen3AsrRuntime | None = None
 _diarization: PyannoteDiarizationRuntime | None = None
+_speaker: CamPlusPlusRuntime | None = None
 
 
 def get_bge_m3() -> BgeM3Runtime:
@@ -52,6 +54,7 @@ def get_bge_m3() -> BgeM3Runtime:
             if settings.bge_m3_models_dir
             else None,
             device=device,
+            batch_size=settings.bge_m3_batch_size,
             use_fp16=_resolve_fp16(device, settings.bge_m3_dtype),
         )
     return _bge_m3
@@ -104,14 +107,32 @@ def get_diarization_runtime() -> PyannoteDiarizationRuntime:
     return _diarization
 
 
+def get_speaker_runtime() -> CamPlusPlusRuntime:
+    """Return the process-wide CAM++ speaker embedding runtime singleton."""
+    global _speaker
+    if _speaker is None:
+        device = _resolve_device(
+            settings.speaker_device, settings.use_fake_speaker_runtime
+        )
+        _speaker = CamPlusPlusRuntime(
+            use_fake=settings.use_fake_speaker_runtime,
+            models_dir=Path(settings.cam_plus_models_dir)
+            if settings.cam_plus_models_dir
+            else None,
+            device=device,
+        )
+    return _speaker
+
+
 def reset_for_tests() -> None:
     """Drop the cached instances. Used by test fixtures that need a fresh
     state (e.g. to flip use_fake mid-test)."""
-    global _bge_m3, _bge_reranker, _asr, _diarization
+    global _bge_m3, _bge_reranker, _asr, _diarization, _speaker
     _bge_m3 = None
     _bge_reranker = None
     _asr = None
     _diarization = None
+    _speaker = None
 
 
 def _resolve_device(preferred: str, use_fake: bool) -> str:
@@ -188,5 +209,8 @@ def resolve_devices_snapshot() -> dict[str, str]:
         "asr": _resolve_device(settings.asr_device, settings.use_fake_asr_runtime),
         "diarization": _resolve_device(
             settings.diarization_device, settings.use_fake_diarization_runtime
+        ),
+        "speaker": _resolve_device(
+            settings.speaker_device, settings.use_fake_speaker_runtime
         ),
     }

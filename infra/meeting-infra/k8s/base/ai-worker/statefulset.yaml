@@ -53,6 +53,17 @@ spec:
                 name: ai-worker-config
             - secretRef:
                 name: ai-worker-secret
+          startupProbe:
+            # Real-model images can spend a long time importing torch/CUDA
+            # or warming Python packages before the app is ready for the
+            # normal liveness cadence. Keep startup on live-only health so
+            # checksum/model errors surface via readiness instead of a
+            # restart loop.
+            httpGet:
+              path: /internal/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
           readinessProbe:
             # Phase J — /internal/ready rolls up per-model checksum guards.
             # A corrupted weight (mismatch vs *_EXPECTED_CHECKSUM) flips
@@ -94,7 +105,8 @@ spec:
           persistentVolumeClaim:
             claimName: ai-worker-models
         - name: artifacts
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 20Gi
   # Phase 9 P6 / E1.6 — enrollment session staging volume.
   volumeClaimTemplates:
     - metadata:
@@ -161,9 +173,24 @@ kind: ConfigMap
 metadata:
   name: ai-worker-config
 data:
+  AI_WORKER_MODEL_PROFILE: "all"
+  AI_WORKER_MODEL_WARMUP_ON_STARTUP: "false"
+  AI_WORKER_MODEL_WARMUP_CAPABILITIES: "embedding,rerank"
+  AI_WORKER_MODEL_LOAD_TIMEOUT_SECONDS: "600"
+  AI_WORKER_BGE_M3_BATCH_SIZE: "16"
+  AI_WORKER_RERANK_BATCH_SIZE: "16"
+  AI_WORKER_ASR_MAX_CONCURRENCY: "1"
+  AI_WORKER_DIARIZATION_MAX_CONCURRENCY: "1"
+  AI_WORKER_SPEAKER_MAX_CONCURRENCY: "1"
+  AI_WORKER_ASR_CHUNK_SECONDS: "60"
+  AI_WORKER_ASR_CHUNK_OVERLAP_SECONDS: "0.5"
+  AI_WORKER_SPEAKER_MIN_SEGMENT_SECONDS: "3"
+  AI_WORKER_SPEAKER_TOP_K: "5"
+  AI_WORKER_ENABLE_AUDIO_ARTIFACT_CACHE: "true"
   AI_WORKER_USE_FAKE_RUNTIME: "false"
   AI_WORKER_USE_FAKE_ASR_RUNTIME: "false"
   AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME: "false"
+  AI_WORKER_USE_FAKE_SPEAKER_RUNTIME: "false"
   # Phase J — model dirs must include the version subdirectory so the
   # checksum guard in /internal/ready can locate the pinned weights.
   # Keep these in sync with docs/model-registry.md and the
@@ -172,6 +199,7 @@ data:
   AI_WORKER_BGE_RERANKER_MODELS_DIR: "/opt/models/bge-reranker-v2-m3/v1"
   AI_WORKER_QWEN3_ASR_MODELS_DIR: "/opt/models/qwen3-asr-1.7b/v2026.05.1"
   AI_WORKER_PYANNOTE_MODELS_DIR: "/opt/models/pyannote/v3.1"
+  AI_WORKER_CAM_PLUS_MODELS_DIR: "/opt/models/cam_plus/v1"
   AI_WORKER_RABBITMQ_HOST: "rabbitmq"
   AI_WORKER_RABBITMQ_PORT: "5672"
   AI_WORKER_RABBITMQ_USERNAME: "meeting"

@@ -234,6 +234,22 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 
 ## 3. 设备路由与性能预期
 
+### 3.1 本地运行 Profile
+
+Mac 本地运行按调试目标选择 profile，避免每次都加载所有真实模型：
+
+| Profile | 启用能力 | 适用场景 |
+|---------|----------|----------|
+| `mac-fake` | 全部 fake runtime | 日常开发、BFF/UI 调试、无权重 smoke |
+| `mac-bge` | BGE-m3 + BGE reranker | RAG embedding / rerank 调试 |
+| `mac-speaker` | CAM++ 声纹 embedding + speaker matching | 声纹注册、候选匹配调试 |
+| `mac-audio` | ASR + diarization + speaker | 会议音频链路验收 |
+| `mac-all` | 全部真实模型 | 演示、两机联调、回归验收 |
+
+Stage 1 已把 CAM++ 接入 `Settings` / registry / warmup / worker 默认构造。`mac-speaker` 仍需本地准备 `/opt/models/cam_plus/v1` 或 `$HOME/meeting-models/cam_plus/v1` 权重后，才具备真实声纹验收意义。
+
+### 3.2 设备路由
+
 本手册在 Apple Silicon 原生运行时，模型计算资源分配策略如下：
 
 | 模型 / 能力 | 物理运行设备 | 精度类型 | 硬件分配决策理由 |
@@ -242,11 +258,13 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 | **BGE-reranker-v2** | **MPS (GPU)** | `fp32` | 同样使用 MPS 加速，大幅缩短 RAG 阶段耗时 |
 | **Qwen3-ASR (funasr)**| **CPU** | `fp32` | Funasr 涉及的算子集在 PyTorch 2.5 MPS 下支持不全，强切易 Crash |
 | **pyannote diarization**| **CPU** | `fp32` | 分离模型常触发 CPU Fallback 回退警告，直接运行在 CPU 上反而最稳定 |
+| **3D-Speaker CAM++** | **CPU 起步** | `fp32` | 声纹模型较小，先以稳定和候选质量为基线；MPS/GPU 后续单独压测 |
 
 性能预期参考：
 - **Embedding / Rerank**：毫秒至亚秒级响应，完全无感。
 - **ASR (语音转文字)**：在 M 系列芯片上运行吞吐大约为 `0.5× 实时` (即处理 1 分钟音频需要约 2 分钟)。
 - **Diarization (说话人分离)**：M2/M3 等芯片大约可达到 `1× 实时`。
+- **Speaker Embedding / Matching**：优先验证同一人 embedding 稳定性、不同人区分度和 top-K 候选排序；真实 CAM++ 接入前不要把 deterministic 结果当作生产质量结论。
 - **内存建议**：运行真实权重建议 Mac 物理内存 >= 32GB。运行前关闭 Xcode、Docker Desktop 等高内存开销任务。
 
 ---

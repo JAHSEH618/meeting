@@ -69,7 +69,8 @@ patches:
           - name: models
             emptyDir: {}
           - name: artifacts
-            emptyDir: {}
+            emptyDir:
+              sizeLimit: 2Gi
   # Flip the runtime flags back to fake so the lean ai-worker:dev image
   # (no real-models extras installed) doesn't trip readiness.
   - target:
@@ -84,6 +85,9 @@ patches:
         value: "true"
       - op: replace
         path: /data/AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME
+        value: "true"
+      - op: replace
+        path: /data/AI_WORKER_USE_FAKE_SPEAKER_RUNTIME
         value: "true"
 
 images:

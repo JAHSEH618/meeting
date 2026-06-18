@@ -25,18 +25,24 @@ from ai_worker.model_runtime.registry import (
     get_bge_m3,
     get_bge_reranker,
     get_diarization_runtime,
+    get_speaker_runtime,
     resolve_devices_snapshot,
 )
 from ai_worker.model_runtime.rerank import (
     BgeRerankerRuntime,
     BgeRerankerRuntimeError,
 )
+from ai_worker.model_runtime.speaker import CamPlusPlusRuntime
 from ai_worker.observability.gpu_metrics import refresh_gpu_metrics
 from ai_worker.observability.model_checksum import compute_checksum
 
 
 RuntimeLike = (
-    BgeM3Runtime | BgeRerankerRuntime | Qwen3AsrRuntime | PyannoteDiarizationRuntime
+    BgeM3Runtime
+    | BgeRerankerRuntime
+    | Qwen3AsrRuntime
+    | PyannoteDiarizationRuntime
+    | CamPlusPlusRuntime
 )
 
 
@@ -73,6 +79,8 @@ def _models_dir_for(runtime: RuntimeLike) -> str | None:
         return settings.qwen3_asr_models_dir
     if isinstance(runtime, PyannoteDiarizationRuntime):
         return settings.pyannote_models_dir
+    if isinstance(runtime, CamPlusPlusRuntime):
+        return settings.cam_plus_models_dir
     return None
 
 
@@ -85,6 +93,8 @@ def _expected_checksum_for(runtime: RuntimeLike) -> str | None:
         return settings.qwen3_asr_expected_checksum
     if isinstance(runtime, PyannoteDiarizationRuntime):
         return settings.pyannote_expected_checksum
+    if isinstance(runtime, CamPlusPlusRuntime):
+        return settings.cam_plus_expected_checksum
     return None
 
 
@@ -102,6 +112,8 @@ def _required_package_for(runtime: RuntimeLike) -> str | None:
         return "funasr"
     if isinstance(runtime, PyannoteDiarizationRuntime):
         return "pyannote.audio"
+    if isinstance(runtime, CamPlusPlusRuntime):
+        return "modelscope"
     return None
 
 
@@ -176,6 +188,7 @@ def _all_model_infos() -> list[dict]:
         _model_info(get_bge_reranker(), "bge-reranker-v2-m3"),
         _model_info(get_asr_runtime(), "qwen3-asr"),
         _model_info(get_diarization_runtime(), "pyannote-diarization"),
+        _model_info(get_speaker_runtime(), "cam++-speaker"),
     ]
 
 
@@ -241,6 +254,7 @@ def _hardware_snapshot() -> dict:
             "FlagEmbedding": _pkg_available("FlagEmbedding"),
             "funasr": _pkg_available("funasr"),
             "pyannote.audio": _pkg_available("pyannote.audio"),
+            "modelscope": _pkg_available("modelscope"),
             "pynvml": _pkg_available("pynvml"),
         },
         "resolvedDevices": resolve_devices_snapshot(),
@@ -252,6 +266,7 @@ _CAPABILITY_TO_RUNTIMES = {
     "rerank": ("bge-reranker-v2-m3", lambda: get_bge_reranker()),
     "asr": ("qwen3-asr", lambda: get_asr_runtime()),
     "diarization": ("pyannote-diarization", lambda: get_diarization_runtime()),
+    "speaker": ("cam++-speaker", lambda: get_speaker_runtime()),
 }
 
 

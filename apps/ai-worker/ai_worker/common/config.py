@@ -14,6 +14,27 @@ class Settings(BaseSettings):
     rabbitmq_task_queues: str = "audio-cpu-queue,gpu-asr-queue,gpu-diar-queue,gpu-speaker-queue,embed-queue"
     callback_max_retries: int = 3
     artifact_store_root: str = ".artifacts"
+    # ── Model deployment profile controls ───────────────────────────────
+    # These settings are intentionally lightweight in Stage 1: they give
+    # K8s/Mac deployments a typed contract before profile-specific workers
+    # are split out. Later stages can turn the profile into stricter startup
+    # validation without changing the environment variable names again.
+    model_profile: str = "all"  # api, bge, asr, diar, speaker, all
+    local_profile: str | None = None  # mac-fake, mac-bge, mac-speaker, mac-audio, mac-all
+    model_warmup_on_startup: bool = False
+    model_warmup_capabilities: str = "embedding,rerank"
+    model_load_timeout_seconds: float = 600.0
+    bge_m3_batch_size: int = 16
+    rerank_batch_size: int = 16
+    asr_max_concurrency: int = 1
+    diarization_max_concurrency: int = 1
+    speaker_max_concurrency: int = 1
+    asr_chunk_seconds: float = 60.0
+    asr_chunk_overlap_seconds: float = 0.5
+    speaker_min_segment_seconds: float = 3.0
+    speaker_top_k: int = 5
+    enable_audio_artifact_cache: bool = True
+    model_cache_dir: str | None = None
     # ── Storage backend (TOS read-path) ───────────────────────────────────
     # storage_backend selects how ai-worker resolves ``tos://bucket/key`` URIs
     # produced by meeting-api. Choices:
@@ -51,8 +72,10 @@ class Settings(BaseSettings):
     # HF_HUB_OFFLINE=1 + TRANSFORMERS_OFFLINE=1 (already set in the Dockerfile).
     use_fake_asr_runtime: bool = True
     use_fake_diarization_runtime: bool = True
+    use_fake_speaker_runtime: bool = True
     qwen3_asr_models_dir: str | None = None
     pyannote_models_dir: str | None = None
+    cam_plus_models_dir: str | None = None
     # Device autodetect happens in the runtime; "auto" → cuda > mps > cpu.
     # ``model_device`` is the legacy global default; the per-model env vars
     # below win when set so deployments can pin e.g. ASR to ``cuda:0`` while
@@ -63,6 +86,7 @@ class Settings(BaseSettings):
     bge_reranker_device: str = "auto"
     asr_device: str = "auto"
     diarization_device: str = "auto"
+    speaker_device: str = "auto"
     # Optional explicit dtype override. ``auto`` resolves per-device:
     #   CUDA → fp16   (matches FlagEmbedding/funasr defaults)
     #   MPS  → fp32   (fp16 is unstable on many ops, see PyTorch MPS notes)
@@ -85,6 +109,7 @@ class Settings(BaseSettings):
     bge_reranker_expected_checksum: str | None = None
     qwen3_asr_expected_checksum: str | None = None
     pyannote_expected_checksum: str | None = None
+    cam_plus_expected_checksum: str | None = None
     # ── Phase 9 workstation BFF (P3) ──────────────────────────────────────
     # Workstation admin UI is hosted same-process under /admin/*. The BFF
     # validates JWTs minted by meeting-api and proxies to Java public API.
