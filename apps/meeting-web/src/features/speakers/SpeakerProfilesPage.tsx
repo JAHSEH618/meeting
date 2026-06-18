@@ -5,6 +5,10 @@ import { SpeakerProfileCard } from "./SpeakerProfileCard";
 import type { ApiClientError } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
 
+const PERSON_ID_RULE_TEXT = "2 到 64 位，支持中文、英文、数字、点、下划线和短横线，不允许空格。";
+const PERSON_ID_ERROR_TEXT = "人员编号格式不正确：2 到 64 位，只能包含中文、英文、数字、点、下划线和短横线";
+const PERSON_ID_PATTERN = /^[A-Za-z0-9._\-\u4e00-\u9fff]{2,64}$/;
+
 export function SpeakerProfilesPage() {
   const profilesQ = useSpeakerProfilesQuery();
   const create = useCreateSpeakerProfile();
@@ -23,16 +27,22 @@ export function SpeakerProfilesPage() {
   const displayError = overrideError ?? formError ?? apiErrMsg;
 
   const handleCreate = async () => {
-    if (!createPersonId.trim() || !createDisplayName.trim()) {
+    const personId = createPersonId.trim();
+    const displayName = createDisplayName.trim();
+    if (!personId || !displayName) {
       setFormError("请填写人员编号和显示名");
+      return;
+    }
+    if (!PERSON_ID_PATTERN.test(personId)) {
+      setFormError(PERSON_ID_ERROR_TEXT);
       return;
     }
     setFormError(null);
     setOverrideError(null);
     try {
       await create.mutateAsync({
-        personId: createPersonId.trim(),
-        displayName: createDisplayName.trim(),
+        personId,
+        displayName,
       });
       setShowCreate(false);
       setCreatePersonId("");
@@ -74,10 +84,15 @@ export function SpeakerProfilesPage() {
               id="speaker-person-id"
               name="personId"
               autoComplete="off"
+              maxLength={64}
+              aria-describedby="speaker-person-id-rule"
               value={createPersonId}
               onChange={(e) => setCreatePersonId(e.target.value)}
-              placeholder="例：员工编号或用户名"
+              placeholder="例：EMP-001 / zhangsan / 张三01"
             />
+            <p className="field__hint" id="speaker-person-id-rule">
+              {PERSON_ID_RULE_TEXT}
+            </p>
           </div>
           <div className="field">
             <label className="field__label" htmlFor="speaker-display-name">显示名</label>
@@ -105,6 +120,8 @@ export function SpeakerProfilesPage() {
               onClick={() => {
                 setShowCreate(false);
                 setFormError(null);
+                setCreatePersonId("");
+                setCreateDisplayName("");
               }}
             >
               取消

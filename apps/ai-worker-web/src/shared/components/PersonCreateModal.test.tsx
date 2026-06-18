@@ -18,6 +18,9 @@ describe("PersonCreateModal", () => {
 
     expect(screen.getByLabelText(/姓名/)).toHaveAttribute("name", "displayName");
     expect(screen.getByLabelText(/姓名/)).toHaveAttribute("autocomplete", "name");
+    expect(screen.getByLabelText("人员编号")).toHaveAttribute("name", "externalId");
+    expect(screen.getByLabelText("人员编号")).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByText("2 到 64 位，支持中文、英文、数字、点、下划线和短横线，不允许空格。")).toBeInTheDocument();
     expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("name", "email");
     expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("type", "email");
     expect(screen.getByLabelText(/邮箱/)).toHaveAttribute("autocomplete", "email");
@@ -31,11 +34,26 @@ describe("PersonCreateModal", () => {
 
     render(<PersonCreateModal open onClose={onClose} onCreated={onCreated} createFn={createFn} />);
     fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "王五" } });
+    fireEvent.change(screen.getByLabelText("人员编号"), { target: { value: "EMP-001" } });
     fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ personId: "p2" })));
-    expect(createFn).toHaveBeenCalledWith({ displayName: "王五" });
+    expect(createFn).toHaveBeenCalledWith({ displayName: "王五", externalId: "EMP-001" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks invalid person id before creating", async () => {
+    const createFn = vi.fn();
+
+    render(<PersonCreateModal open onClose={vi.fn()} onCreated={vi.fn()} createFn={createFn} />);
+    fireEvent.change(screen.getByLabelText(/姓名/), { target: { value: "王五" } });
+    fireEvent.change(screen.getByLabelText("人员编号"), { target: { value: "EMP 001" } });
+    fireEvent.click(screen.getByRole("button", { name: /^创建$/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "人员编号格式不正确：2 到 64 位，只能包含中文、英文、数字、点、下划线和短横线",
+    );
+    expect(createFn).not.toHaveBeenCalled();
   });
 
   it("shows duplicate matches and lets the user choose existing", async () => {
@@ -137,6 +155,7 @@ describe("PersonCreateModal", () => {
     rerender(<PersonCreateModal open {...props} />);
 
     expect(screen.getByLabelText(/姓名/)).toHaveValue("");
+    expect(screen.getByLabelText("人员编号")).toHaveValue("");
     expect(screen.getByLabelText(/邮箱/)).toHaveValue("");
     expect(screen.queryByText(/已存在/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^创建$/ })).toBeDisabled();

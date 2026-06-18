@@ -65,7 +65,7 @@ export function MeetingListPage() {
         <div>
           <span className="page-hero__label">智能工作台</span>
           <h1 className="page-hero__title">会议智能平台</h1>
-          <p className="page-hero__subtitle">实时转录、结构化纪要、知识问答与合规留痕，集中在一个本地工作台中完成。</p>
+          <p className="page-hero__subtitle">实时转录、结构化纪要、知识问答与声纹档案，集中在一个本地工作台中完成。</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button button--primary" to="/meetings/new">
@@ -192,7 +192,7 @@ export function MeetingListPage() {
           <div className="module-card__link-list" aria-label="知识入口">
             <Link to="/rag">知识问答</Link>
             <Link to="/documents">文档库</Link>
-            <Link to="/admin/audit-events">审计事件</Link>
+            <Link to="/speaker-profiles">声纹档案</Link>
           </div>
         </article>
       </section>

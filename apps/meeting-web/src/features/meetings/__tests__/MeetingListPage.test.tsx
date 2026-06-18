@@ -23,6 +23,8 @@ describe("MeetingListPage", () => {
     expect(screen.getByText("快捷入口")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "打开最近会议" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "创建会议" })).toBeInTheDocument();
+    expect(screen.queryByText(/合规留痕/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "审计事件" })).not.toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("产品周会")).toBeInTheDocument());
     expect(screen.getByText("已创建")).toBeInTheDocument();

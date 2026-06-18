@@ -40,18 +40,6 @@ const DocumentsPage = lazy(() =>
 const ExportsPage = lazy(() =>
   import("@features/exports/ExportsPage").then((m) => ({ default: m.ExportsPage })),
 );
-const LegalHoldsPage = lazy(() =>
-  import("@features/admin/LegalHoldsPage").then((m) => ({ default: m.LegalHoldsPage })),
-);
-const DeletionJobsPage = lazy(() =>
-  import("@features/admin/DeletionJobsPage").then((m) => ({ default: m.DeletionJobsPage })),
-);
-const BreakGlassPage = lazy(() =>
-  import("@features/admin/BreakGlassPage").then((m) => ({ default: m.BreakGlassPage })),
-);
-const AuditEventsPage = lazy(() =>
-  import("@features/admin/AuditEventsPage").then((m) => ({ default: m.AuditEventsPage })),
-);
 const TaskProgressPage = lazy(() =>
   import("@features/tasks/TaskProgressPage").then((m) => ({ default: m.TaskProgressPage })),
 );
@@ -113,22 +101,7 @@ export function App() {
             path="/documents"
             element={<Suspense fallback={<RouteFallback />}><DocumentsPage /></Suspense>}
           />
-          <Route
-            path="/admin/legal-holds"
-            element={<Suspense fallback={<RouteFallback />}><LegalHoldsPage /></Suspense>}
-          />
-          <Route
-            path="/admin/deletion-jobs"
-            element={<Suspense fallback={<RouteFallback />}><DeletionJobsPage /></Suspense>}
-          />
-          <Route
-            path="/admin/break-glass"
-            element={<Suspense fallback={<RouteFallback />}><BreakGlassPage /></Suspense>}
-          />
-          <Route
-            path="/admin/audit-events"
-            element={<Suspense fallback={<RouteFallback />}><AuditEventsPage /></Suspense>}
-          />
+          <Route path="/admin/*" element={<Navigate to="/meetings" replace />} />
           <Route path="/speakers" element={<Navigate to="/speaker-profiles" replace />} />
           <Route path="/exports" element={<Navigate to="/meetings" replace />} />
         </Route>
@@ -177,34 +150,6 @@ function Shell() {
             to="/speaker-profiles"
           >
             声纹档案
-          </NavLink>
-        </nav>
-
-        <nav className="shell__rail-section" aria-labelledby="rail-compliance">
-          <h3 id="rail-compliance">合规</h3>
-          <NavLink
-            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
-            to="/admin/legal-holds"
-          >
-            法律保留
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
-            to="/admin/deletion-jobs"
-          >
-            删除任务
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
-            to="/admin/break-glass"
-          >
-            应急访问
-          </NavLink>
-          <NavLink
-            className={({ isActive }) => `shell__rail-link${isActive ? " active" : ""}`}
-            to="/admin/audit-events"
-          >
-            审计
           </NavLink>
         </nav>
 

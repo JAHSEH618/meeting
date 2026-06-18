@@ -12,7 +12,7 @@ import type {
 } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import type { ApiClientError } from "@shared/api/client";
-import { formatMs } from "@shared/utils/formatters";
+import { formatDate, formatMeetingStatus, formatMs } from "@shared/utils/formatters";
 
 const MIN_TOP_N = 1;
 const MAX_TOP_N = 20;
@@ -42,7 +42,7 @@ export function RagPage() {
 
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [selectedMeetings, setSelectedMeetings] = useState<Set<string>>(new Set());
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
 
   const [answer, setAnswer] = useState<RagAnswerDTO | null>(null);
@@ -56,8 +56,12 @@ export function RagPage() {
     if (scope.data) {
       setMeetings(scope.data.meetings);
       setDocuments(scope.data.documents);
+      if (selectedMeetingId && !scope.data.meetings.some((meeting) => meeting.meetingId === selectedMeetingId)) {
+        setSelectedMeetingId(null);
+        setAnswer(null);
+      }
     }
-  }, [scope.data]);
+  }, [scope.data, selectedMeetingId]);
 
   const scopeLoadError = scope.error
     ? ((scope.error as ApiClientError).code
@@ -66,6 +70,10 @@ export function RagPage() {
     : null;
 
   const handleAsk = useCallback(async () => {
+    if (!selectedMeetingId) {
+      setError("请先选择会议");
+      return;
+    }
     if (!question.trim()) {
       setError("请先输入问题");
       return;
@@ -75,7 +83,7 @@ export function RagPage() {
       const result = await ask.mutateAsync({
         question: question.trim(),
         scope: {
-          meetingIds: Array.from(selectedMeetings),
+          meetingIds: [selectedMeetingId],
           documentIds: Array.from(selectedDocuments),
         },
         topN,
@@ -87,24 +95,33 @@ export function RagPage() {
       setError(apiError.code ? getUserMessage(apiError.code) : "知识问答查询失败");
       setAnswer(null);
     }
-  }, [ask, question, selectedMeetings, selectedDocuments, topN, includeStale]);
+  }, [ask, question, selectedMeetingId, selectedDocuments, topN, includeStale]);
 
-  const toggle = (set: Set<string>, id: string): Set<string> => {
+  const toggleDocument = (set: Set<string>, id: string): Set<string> => {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     return next;
   };
 
+  const selectedMeeting = useMemo(
+    () => meetings.find((meeting) => meeting.meetingId === selectedMeetingId) ?? null,
+    [meetings, selectedMeetingId],
+  );
+
   const scopeSummary = useMemo(() => {
-    const m = selectedMeetings.size;
     const d = selectedDocuments.size;
-    if (m === 0 && d === 0) return "全部可读范围";
-    const parts: string[] = [];
-    if (m > 0) parts.push(`${m} 个会议`);
+    const parts = ["当前会议"];
     if (d > 0) parts.push(`${d} 个文档`);
     return parts.join(" + ");
-  }, [selectedMeetings, selectedDocuments]);
+  }, [selectedDocuments]);
+
+  const handleSelectMeeting = (meetingId: string) => {
+    setSelectedMeetingId(meetingId);
+    setQuestion("");
+    setAnswer(null);
+    setError(null);
+  };
 
   return (
     <div className="page page--workbench">
@@ -122,7 +139,67 @@ export function RagPage() {
         <div className="error" role="alert">{error}</div>
       ) : null}
 
-      <section className="glass-panel control-panel">
+      {!selectedMeeting ? (
+        <section className="glass-panel stack rag-meeting-panel" aria-labelledby="rag-meeting-title">
+          <div className="toolbar control-row--between">
+            <div className="stack">
+              <h2 id="rag-meeting-title" className="card-title">选择会议</h2>
+              <p className="page-subtitle">先确定要查询的会议，再基于该会议的转写内容发起问答。</p>
+            </div>
+            <Link className="button button--ghost" to="/meetings/new">新建会议</Link>
+          </div>
+          {scopeLoadError ? (
+            <div className="error" role="alert">{scopeLoadError}</div>
+          ) : null}
+          {scope.isPending ? (
+            <p className="page-subtitle" aria-live="polite">正在加载可选会议…</p>
+          ) : null}
+          {!scope.isPending && meetings.length === 0 ? (
+            <div className="empty-state empty-state--compact">
+              <strong>暂无可问答的会议</strong>
+              <span>先创建会议并完成音频处理后，再回到这里提问。</span>
+            </div>
+          ) : null}
+          {meetings.length > 0 ? (
+            <div className="rag-meeting-list" aria-label="可问答会议">
+              {meetings.map((meeting) => (
+                <button
+                  key={meeting.meetingId}
+                  type="button"
+                  className="rag-meeting-option"
+                  aria-label={`选择${meeting.title}`}
+                  onClick={() => handleSelectMeeting(meeting.meetingId)}
+                >
+                  <span className="rag-meeting-option__title">{meeting.title}</span>
+                  <span className="rag-meeting-option__meta">
+                    <span className={`pill ${meeting.status === "SUCCEEDED" ? "pill--success" : "pill--neutral"}`}>
+                      {formatMeetingStatus(meeting.status)}
+                    </span>
+                    <span>{formatDate(meeting.createdAt)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : (
+        <section className="glass-panel control-panel">
+        <div className="rag-selected-context">
+          <strong>已选择会议：{selectedMeeting.title}</strong>
+          <button
+            type="button"
+            className="button button--subtle button--compact"
+            onClick={() => {
+              setSelectedMeetingId(null);
+              setQuestion("");
+              setAnswer(null);
+              setError(null);
+            }}
+          >
+            重新选择
+          </button>
+        </div>
+
         <div className="field">
           <label className="field__label" htmlFor="rag-question">问题</label>
           <textarea
@@ -142,7 +219,7 @@ export function RagPage() {
           onToggle={(e) => setScopeOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>
-            <span>范围</span>
+            <span>补充范围</span>
             <span className="disclosure-summary__meta">{scopeSummary}</span>
           </summary>
           {scopeLoadError ? (
@@ -150,28 +227,7 @@ export function RagPage() {
           ) : null}
           <div className="scope-grid">
             <fieldset className="scope-fieldset stack">
-              <legend>会议</legend>
-              {meetings.length === 0 ? (
-                <p className="page-subtitle">暂无可选会议</p>
-              ) : (
-                meetings.map((mtg) => (
-                  <label key={mtg.meetingId} className="scope-option">
-                    <input
-                      className="control-checkbox"
-                      type="checkbox"
-                      checked={selectedMeetings.has(mtg.meetingId)}
-                      onChange={() => setSelectedMeetings((s) => toggle(s, mtg.meetingId))}
-                    />
-                    <span className="scope-option__content">
-                      <span>{mtg.title}</span>
-                      <span className="scope-option__id">会议记录</span>
-                    </span>
-                  </label>
-                ))
-              )}
-            </fieldset>
-            <fieldset className="scope-fieldset stack">
-              <legend>文档</legend>
+              <legend>可补充的文档</legend>
               {documents.length === 0 ? (
                 <p className="page-subtitle">暂无可选文档</p>
               ) : (
@@ -181,7 +237,7 @@ export function RagPage() {
                       className="control-checkbox"
                       type="checkbox"
                       checked={selectedDocuments.has(doc.documentId)}
-                      onChange={() => setSelectedDocuments((s) => toggle(s, doc.documentId))}
+                      onChange={() => setSelectedDocuments((s) => toggleDocument(s, doc.documentId))}
                     />
                     <span className="scope-option__content">
                       <span>{doc.title}</span>
@@ -232,6 +288,7 @@ export function RagPage() {
           </button>
         </div>
       </section>
+      )}
 
       {ask.isPending ? (
         <p className="page-subtitle" aria-live="polite">正在检索 + 推理…</p>

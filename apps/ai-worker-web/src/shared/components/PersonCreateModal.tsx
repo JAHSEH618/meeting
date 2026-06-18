@@ -10,8 +10,13 @@ interface PersonCreateModalProps {
   createFn?: (req: CreatePersonRequest) => Promise<PersonDTO>;
 }
 
+const PERSON_ID_RULE_TEXT = "2 到 64 位，支持中文、英文、数字、点、下划线和短横线，不允许空格。";
+const PERSON_ID_ERROR_TEXT = "人员编号格式不正确：2 到 64 位，只能包含中文、英文、数字、点、下划线和短横线";
+const PERSON_ID_PATTERN = /^[A-Za-z0-9._\-\u4e00-\u9fff]{2,64}$/;
+
 export function PersonCreateModal({ open, onClose, onCreated, createFn = createPerson }: PersonCreateModalProps) {
   const [displayName, setDisplayName] = useState("");
+  const [externalId, setExternalId] = useState("");
   const [email, setEmail] = useState("");
   const [duplicates, setDuplicates] = useState<PersonDTO[]>([]);
   const [busy, setBusy] = useState(false);
@@ -19,6 +24,7 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
 
   const reset = useCallback(() => {
     setDisplayName("");
+    setExternalId("");
     setEmail("");
     setDuplicates([]);
     setBusy(false);
@@ -44,12 +50,18 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
 
   const submit = async (forceCreate = false) => {
     const trimmedName = displayName.trim();
+    const trimmedExternalId = externalId.trim();
     if (!trimmedName) return;
+    if (trimmedExternalId && !PERSON_ID_PATTERN.test(trimmedExternalId)) {
+      setError(PERSON_ID_ERROR_TEXT);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const req: CreatePersonRequest = {
         displayName: trimmedName,
+        ...(trimmedExternalId ? { externalId: trimmedExternalId } : {}),
         ...(email.trim() ? { email: email.trim() } : {}),
         ...(forceCreate ? { forceCreate: true } : {}),
       };
@@ -90,6 +102,28 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
             }}
             autoComplete="name"
           />
+        </div>
+
+        <div className="field">
+          <label className="field__label" htmlFor="person-create-external-id">人员编号</label>
+          <input
+            id="person-create-external-id"
+            name="externalId"
+            className="input"
+            value={externalId}
+            onChange={(event) => {
+              setExternalId(event.target.value);
+              setDuplicates([]);
+              setError(null);
+            }}
+            placeholder="例：EMP-001 / zhangsan / 张三01"
+            autoComplete="off"
+            maxLength={64}
+            aria-describedby="person-create-external-id-rule"
+          />
+          <p className="field__hint" id="person-create-external-id-rule">
+            {PERSON_ID_RULE_TEXT}
+          </p>
         </div>
 
         <div className="field">

@@ -291,6 +291,13 @@
   color: var(--ink-2);
 }
 
+.field__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
 .input,
 .textarea,
 .select {

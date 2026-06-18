@@ -800,6 +800,69 @@
   }
 }
 
+.rag-meeting-panel .toolbar {
+  align-items: flex-start;
+}
+
+.rag-meeting-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.rag-meeting-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 68px;
+  padding: var(--space-4) var(--space-5);
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-l);
+  box-shadow: 0 0 0 1px var(--line-2) inset;
+  color: var(--ink-1);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.rag-meeting-option:hover {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px var(--accent-light) inset, var(--shadow-1);
+  transform: translateY(-1px);
+}
+
+.rag-meeting-option:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 4px var(--accent-light);
+}
+
+.rag-meeting-option__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-md);
+  font-weight: 800;
+}
+
+.rag-meeting-option__meta,
+.rag-selected-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.rag-selected-context {
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-l);
+  color: var(--ink-1);
+}
+
 .route-fallback { padding: var(--space-6); color: var(--ink-3); }
 
 .form {
