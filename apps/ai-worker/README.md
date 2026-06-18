@@ -11,6 +11,17 @@ uv sync --extra dev   # 一次性安装依赖
 uv run ai-worker-api  # FastAPI 启动，监听 :8090
 ```
 
+后台控制脚本：
+
+```bash
+./deploy/ai-worker-control.sh start api local     # 启动 Python API / BFF
+./deploy/ai-worker-control.sh start web local     # 启动 ai-worker-web (:5174/workstation/)
+./deploy/ai-worker-control.sh start all centos    # API + 前端，连接远端 Java
+./deploy/ai-worker-control.sh status all
+./deploy/ai-worker-control.sh restart all local
+./deploy/ai-worker-control.sh stop all
+```
+
 ### 测试与验证（每个阶段完成后必跑）
 
 ```bash

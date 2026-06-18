@@ -206,29 +206,31 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 
 | 操作 | 运行命令 | 场景说明 |
 |------|----------|----------|
-| **启动 (本地模式)** | `./deploy/ai-worker-control.sh start` | 用于单机 localhost 测试，读取 `.ai-worker-apple-silicon.env` |
-| **启动 (联调模式)** | `./deploy/ai-worker-control.sh start centos` | 用于两机部署联调，读取 `.ai-worker-apple-silicon.env.centos` |
-| **停止服务** | `./deploy/ai-worker-control.sh stop` | 安全、优雅地杀掉后台的 uv 和 python 推理进程 |
-| **重启服务** | `./deploy/ai-worker-control.sh restart [local/centos]` | 一键平滑重启服务并重新加载对应环境参数 |
-| **查看状态** | `./deploy/ai-worker-control.sh status` | 查看进程运行状态、端口监听情况、以及 Actuator API 响应 |
-| **查看日志** | `./deploy/ai-worker-control.sh logs` | 实时追踪后台输出流，Ctrl-C 退出跟踪但不停止后台服务 |
+| **启动 API (本地模式)** | `./deploy/ai-worker-control.sh start` 或 `./deploy/ai-worker-control.sh start api local` | 用于单机 localhost 测试，读取 `.ai-worker-apple-silicon.env` |
+| **启动 API (联调模式)** | `./deploy/ai-worker-control.sh start centos` 或 `./deploy/ai-worker-control.sh start api centos` | 用于两机部署联调，读取 `.ai-worker-apple-silicon.env.centos` |
+| **启动工作站前端** | `./deploy/ai-worker-control.sh start web [local/centos]` | 启动 `apps/ai-worker-web` Vite dev server，默认监听 `127.0.0.1:5174/workstation/`；如需局域网访问，设置 `AI_WORKER_WEB_HOST=0.0.0.0` |
+| **启动 API + 前端** | `./deploy/ai-worker-control.sh start all [local/centos]` | 同时启动 Python BFF/API 和工作站前端 |
+| **停止服务** | `./deploy/ai-worker-control.sh stop [api/web/all]` | 安全、优雅地杀掉对应后台进程 |
+| **重启服务** | `./deploy/ai-worker-control.sh restart [api/web/all] [local/centos]` | 一键平滑重启服务并重新加载对应环境参数 |
+| **查看状态** | `./deploy/ai-worker-control.sh status [api/web/all]` | 查看进程运行状态、端口监听情况和健康响应 |
+| **查看日志** | `./deploy/ai-worker-control.sh logs [api/web]` | 实时追踪后台输出流，Ctrl-C 退出跟踪但不停止后台服务 |
 
 ---
 
 ### 2.2 启动与运行管理示例
 
 ```bash
-# 1. 以后台守护进程模式启动，连接 CentOS 机器
-./deploy/ai-worker-control.sh start centos
+# 1. 以后台守护进程模式启动 API + 工作站前端，连接 CentOS 机器
+./deploy/ai-worker-control.sh start all centos
 
 # 2. 检查后台进程状态、端口监听与 API readiness
-./deploy/ai-worker-control.sh status
+./deploy/ai-worker-control.sh status all
 
 # 3. 追踪启动日志，观察 Python 推理环境初始化
-./deploy/ai-worker-control.sh logs
+./deploy/ai-worker-control.sh logs api
 ```
 
-后台日志文件默认保存在 `deploy/ai-worker.log`，PID 保存在 `deploy/ai-worker.pid`。
+API 后台日志文件默认保存在 `deploy/ai-worker.log`，PID 保存在 `deploy/ai-worker.pid`。工作站前端日志保存在 `deploy/ai-worker-web.log`，PID 保存在 `deploy/ai-worker-web.pid`。
 
 ---
 

@@ -66,6 +66,7 @@ skills-lock.json
 # Misc
 todo.md
 *.log
+*.pid
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
