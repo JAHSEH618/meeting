@@ -12,6 +12,11 @@ import {
 import { getUserMessage } from "@shared/utils/error-mapper";
 
 const SCOPE_OPTIONS = ["MEETING", "DOCUMENT", "TENANT"] as const;
+const SCOPE_LABELS: Record<string, string> = {
+  MEETING: "会议",
+  DOCUMENT: "文档",
+  TENANT: "租户",
+};
 
 const STATUS_LABELS: Record<BreakGlassStatus, string> = {
   PENDING: "待审批",
@@ -75,7 +80,7 @@ export function BreakGlassPage() {
 
   const handleCreate = useCallback(async () => {
     if (!scopeId.trim() || !reason.trim()) {
-      setCreateError("请填写 scopeId 和原因");
+      setCreateError("请填写目标编号和原因");
       return;
     }
     setCreateError(null);
@@ -158,7 +163,7 @@ export function BreakGlassPage() {
     <main className="page page--dense">
       <header className="page-hero page-hero--compact">
         <div>
-          <span className="page-hero__label">EMERGENCY ACCESS</span>
+          <span className="page-hero__label">应急访问</span>
           <h1 className="page-hero__title">应急访问</h1>
           <p className="page-hero__subtitle">
             申请、审批和拒绝对受限资源的临时访问。审批默认 4 小时窗口；过期后自动失效。
@@ -194,17 +199,17 @@ export function BreakGlassPage() {
                 data-testid="bg-scope-type"
               >
                 {SCOPE_OPTIONS.map((value) => (
-                  <option key={value} value={value}>{value}</option>
+                  <option key={value} value={value}>{SCOPE_LABELS[value]}</option>
                 ))}
               </select>
             </label>
             <label>
-              范围 ID
+              目标编号
               <input
                 type="text"
                 value={scopeId}
                 onChange={(e) => setScopeId(e.target.value)}
-                placeholder="例：mtg_xxx"
+                placeholder="例：需要临时访问的目标编号"
                 data-testid="bg-scope-id"
               />
             </label>
@@ -245,7 +250,7 @@ export function BreakGlassPage() {
           <table className="data-table" data-testid="bg-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>申请</th>
                 <th>范围</th>
                 <th>状态</th>
                 <th>申请人</th>
@@ -256,18 +261,18 @@ export function BreakGlassPage() {
             <tbody>
               {sorted.map((req) => (
                 <tr key={req.breakGlassRequestId} data-testid={`bg-row-${req.breakGlassRequestId}`}>
-                  <td className="muted">{req.breakGlassRequestId}</td>
+                  <td className="muted">申请已记录</td>
                   <td>
-                    <strong>{req.scopeType}</strong>
+                    <strong>{SCOPE_LABELS[req.scopeType] ?? "资源"}</strong>
                     <br />
-                    <span className="muted">{req.scopeId}</span>
+                    <span className="muted">目标已记录</span>
                   </td>
                   <td>
                     <span className={`status-badge status-${req.status.toLowerCase()}`}>
                       {STATUS_LABELS[req.status]}
                     </span>
                   </td>
-                  <td>{req.requesterId}</td>
+                  <td>{req.requesterId ? "已记录" : "系统"}</td>
                   <td>
                     {req.validFrom && req.validUntil ? (
                       <>
@@ -324,7 +329,7 @@ export function BreakGlassPage() {
               <div>
                 <h2 id="bg-approve-title" className="card-title">批准紧急访问</h2>
                 <p id="bg-approve-description" className="muted">
-                  {approveTarget.scopeType} {approveTarget.scopeId} · {approveTarget.breakGlassRequestId}
+                  {SCOPE_LABELS[approveTarget.scopeType] ?? "资源"}访问申请，目标编号已记录。
                 </p>
               </div>
               <button
@@ -374,7 +379,7 @@ export function BreakGlassPage() {
               <div>
                 <h2 id="bg-reject-title" className="card-title">拒绝紧急访问</h2>
                 <p id="bg-reject-description" className="muted">
-                  {rejectTarget.scopeType} {rejectTarget.scopeId} · {rejectTarget.breakGlassRequestId}
+                  {SCOPE_LABELS[rejectTarget.scopeType] ?? "资源"}访问申请，目标编号已记录。
                 </p>
               </div>
               <button

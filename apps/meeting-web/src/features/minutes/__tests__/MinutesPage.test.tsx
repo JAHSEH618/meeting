@@ -15,7 +15,7 @@ describe("MinutesPage", () => {
     );
 
     await waitFor(() => expect(screen.getByText("阶段二上线")).toBeInTheDocument());
-    expect(screen.getByText("seg_01")).toBeInTheDocument();
+    expect(screen.getByText("引用片段 1")).toBeInTheDocument();
   });
 
   it("clicks regenerate and replaces minutes with new version", async () => {

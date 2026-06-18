@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMeetingsQuery } from "./queries";
-import { formatDate } from "@shared/utils/formatters";
+import { formatDate, formatLanguage, formatMeetingStatus } from "@shared/utils/formatters";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import type { ApiClientError } from "@shared/api/client";
 import type { Meeting } from "@shared/api/types";
@@ -52,7 +52,7 @@ export function MeetingListPage() {
     <div className="page page--hero">
       <header className="page-hero">
         <div>
-          <span className="page-hero__label">POWERED BY AI</span>
+          <span className="page-hero__label">智能工作台</span>
           <h1 className="page-hero__title">会议智能平台</h1>
           <p className="page-hero__subtitle">实时转录、结构化纪要、知识问答与合规留痕，集中在一个本地工作台中完成。</p>
         </div>
@@ -84,7 +84,7 @@ export function MeetingListPage() {
       <section className="meeting-modules grid-12" aria-label="会议工作流模块">
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">01 / FLOW</p>
+            <p className="module-card__eyebrow">01 / 流程</p>
             <h2>处理链路</h2>
             <p>从音频上传、转录、纪要到行动项确认，按会议生命周期组织状态，不再用孤立功能入口堆叠页面。</p>
           </div>
@@ -98,31 +98,31 @@ export function MeetingListPage() {
 
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">02 / MEMORY</p>
+            <p className="module-card__eyebrow">02 / 知识</p>
             <h2>知识沉淀</h2>
             <p>会议、文档和问答共享同一套本地知识索引，入口保持克制，重点放在可追溯内容和引用上下文。</p>
           </div>
           <div className="module-card__meta">
             <span>会议记录</span>
             <span>文档库</span>
-            <span>RAG 问答</span>
+            <span>知识问答</span>
           </div>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">03 / CONTROL</p>
+          <p className="module-card__eyebrow">03 / 合规</p>
           <h2>合规留痕</h2>
           <p>法律保留、删除任务、应急访问和审计事件统一成低噪音表格工作流。</p>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">04 / INDEX</p>
+          <p className="module-card__eyebrow">04 / 索引</p>
           <h2>会议索引</h2>
           <p>列表先服务查找和继续处理，状态、语言、创建时间保留稳定扫描节奏。</p>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">05 / LOCAL</p>
+          <p className="module-card__eyebrow">05 / 本地</p>
           <h2>本地工作台</h2>
           <p>浅色玻璃背景只承担层级表达，不把每个模块做成独立品牌块。</p>
         </article>
@@ -176,10 +176,10 @@ export function MeetingListPage() {
                   </td>
                   <td>
                     <span className={`pill ${STATUS_TONE[meeting.status] ?? "pill--neutral"}`}>
-                      {meeting.status}
+                      {formatMeetingStatus(meeting.status)}
                     </span>
                   </td>
-                  <td>{meeting.language}</td>
+                  <td>{formatLanguage(meeting.language)}</td>
                   <td>{formatDate(meeting.createdAt)}</td>
                 </tr>
               ))}

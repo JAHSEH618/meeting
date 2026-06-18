@@ -36,7 +36,7 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-hero" aria-labelledby="auth-title">
-        <span className="auth-hero__label">PRIVATE MEETING AI</span>
+        <span className="auth-hero__label">本地会议智能系统</span>
         <h1 id="auth-title" className="auth-hero__title">本地会议智能系统</h1>
         <p className="auth-hero__subtitle">
           转录、纪要、知识问答与合规留痕集中在一个本地工作台内完成。

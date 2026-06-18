@@ -1,4 +1,5 @@
 import type { UploadPartState } from "./upload-reducer";
+import { formatUploadStatus } from "@shared/utils/formatters";
 
 interface Props {
   parts: UploadPartState[];
@@ -19,10 +20,10 @@ export function AudioPartList({ parts }: Props) {
         <div className="part-tile" key={part.partNumber}>
           <strong>#{part.partNumber}</strong>
           <span className={`pill ${PART_STATUS_PILL[part.status] ?? "pill--neutral"}`}>
-            {part.status}
+            {formatUploadStatus(part.status)}
           </span>
           <span className="page-subtitle">{formatBytes(part.sizeBytes)}</span>
-          <span className="page-subtitle">retry {part.attempts}</span>
+          <span className="page-subtitle">重试 {part.attempts}</span>
         </div>
       ))}
     </div>

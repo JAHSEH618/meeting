@@ -5,18 +5,12 @@ import { useRetryTask, useCancelTask } from "./queries";
 import { PhaseStrip } from "@shared/components/PhaseStrip";
 import { SourceLabel } from "@shared/components/SourceLabel";
 import { getUserMessage } from "@shared/utils/error-mapper";
-
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "等待中",
-  QUEUED: "已排队",
-  RUNNING: "进行中",
-  SUCCEEDED: "已完成",
-  PARTIAL_SUCCEEDED: "部分完成",
-  FAILED: "失败",
-  CANCELLED: "已取消",
-  ORPHANED: "已回收",
-  CANCEL_PENDING: "取消中",
-};
+import {
+  formatProcessingPhase,
+  formatProcessingStep,
+  formatProcessingStepStatus,
+  formatProcessingTaskStatus,
+} from "@shared/utils/formatters";
 
 const STATUS_DOT: Record<string, string> = {
   PENDING: "dot",
@@ -58,9 +52,9 @@ export function TaskProgressPage() {
     <div className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">PROCESSING</span>
+          <span className="page-hero__label">处理任务</span>
           <h1 className="page-hero__title">任务进度</h1>
-          <p className="page-hero__subtitle"><span translate="no">{taskId}</span></p>
+          <p className="page-hero__subtitle">当前会议的处理进度</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -88,7 +82,7 @@ export function TaskProgressPage() {
                   ? "dot dot--warn"
                   : "dot"
             } />
-            {connectionMode === "SSE" ? "SSE" : connectionMode === "POLLING" ? "轮询" : "已结束"}
+            {connectionMode === "SSE" ? "实时连接" : connectionMode === "POLLING" ? "轮询" : "已结束"}
           </span>
         </div>
       </header>
@@ -98,13 +92,13 @@ export function TaskProgressPage() {
           <div className="stat-card__label">状态</div>
           <div className="stat-card__value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className={STATUS_DOT[snapshot.status as string] ?? "dot"} />
-            <span>{snapshot.status}</span>
+            <span>{formatProcessingTaskStatus(snapshot.status)}</span>
           </div>
-          <div className="page-subtitle">{STATUS_LABEL[snapshot.status as string] ?? ""}</div>
+          <div className="page-subtitle">任务状态</div>
         </div>
         <div className="stat-card">
           <div className="stat-card__label">阶段</div>
-          <div className="stat-card__value" style={{ fontSize: 16 }}>{snapshot.phase ?? "—"}</div>
+          <div className="stat-card__value" style={{ fontSize: 16 }}>{formatProcessingPhase(snapshot.phase)}</div>
           <PhaseStrip phase={snapshot.phase} />
         </div>
         <div className="stat-card">
@@ -123,9 +117,7 @@ export function TaskProgressPage() {
       {snapshot.lastErrorCode ? (
         <div className="banner banner--danger" role="alert">
           <strong className="banner__title">最近错误</strong>
-          <span className="banner__body">
-            {getUserMessage(snapshot.lastErrorCode)} · <code translate="no">{snapshot.lastErrorCode}</code>
-          </span>
+          <span className="banner__body">{getUserMessage(snapshot.lastErrorCode)}</span>
         </div>
       ) : null}
 
@@ -133,7 +125,7 @@ export function TaskProgressPage() {
         <div className="toolbar">
           <strong>步骤</strong>
           {snapshot.currentStep ? (
-            <span className="page-subtitle">当前 step: {snapshot.currentStep}</span>
+            <span className="page-subtitle">当前步骤：{formatProcessingStep(snapshot.currentStep)}</span>
           ) : null}
         </div>
         <table className="data-table">
@@ -150,14 +142,14 @@ export function TaskProgressPage() {
             {snapshot.steps.map((step) => (
               <tr key={step.stepName}>
                 <td>
-                  <strong>{step.stepName}</strong>
+                  <strong>{formatProcessingStep(step.stepName)}</strong>
                   {step.stepName === "AUDIO_UPLOAD" ? (
                     <div className="page-subtitle">已完成于任务创建时</div>
                   ) : null}
                 </td>
                 <td>
                   <span className={`pill ${STEP_STATUS_PILL[step.status] ?? "pill--neutral"}`}>
-                    {step.status}
+                    {formatProcessingStepStatus(step.status)}
                   </span>
                 </td>
                 <td style={{ minWidth: 160 }}>

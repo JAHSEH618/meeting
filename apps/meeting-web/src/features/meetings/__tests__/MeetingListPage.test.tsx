@@ -20,6 +20,6 @@ describe("MeetingListPage", () => {
     expect(screen.getByText("合规留痕")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("产品周会")).toBeInTheDocument());
-    expect(screen.getByText("CREATED")).toBeInTheDocument();
+    expect(screen.getByText("已创建")).toBeInTheDocument();
   });
 });

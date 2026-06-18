@@ -9,6 +9,7 @@ import {
 } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { formatConsentStatus, formatSpeakerConfirmationStatus } from "@shared/utils/formatters";
 import { useConfirmMeetingSpeaker, useRejectMeetingSpeaker } from "./queries";
 
 const CANDIDATE_EXPIRED_HINT = "候选列表过期或为空，请等待转录处理完成后再确认";
@@ -84,9 +85,9 @@ export function MeetingSpeakerConfirmPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">SPEAKERS</span>
+          <span className="page-hero__label">说话人</span>
           <h1 className="page-hero__title">说话人确认</h1>
-          <p className="page-hero__subtitle">{meetingId}</p>
+          <p className="page-hero__subtitle">根据转录候选确认真实说话人</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -116,13 +117,15 @@ export function MeetingSpeakerConfirmPage() {
         return (
           <section className="glass-panel glass-panel--compact stack" key={speaker.speakerLabel} data-speaker-label={speaker.speakerLabel}>
             <div className="toolbar">
-              <strong>{speaker.speakerLabel}</strong>
-              <span className="badge" data-status={speaker.confirmationStatus}>{speaker.confirmationStatus}</span>
+              <strong>{formatSpeakerLabel(speaker.speakerLabel)}</strong>
+              <span className="badge" data-status={speaker.confirmationStatus}>
+                {formatSpeakerConfirmationStatus(speaker.confirmationStatus)}
+              </span>
               {speaker.displayName ? <span className="muted">已确认 {speaker.displayName}</span> : null}
             </div>
 
             {speaker.confirmationStatus === "CONFIRMED" ? (
-              <p className="muted">已确认为 {speaker.displayName ?? speaker.personId}</p>
+              <p className="muted">已确认为 {speaker.displayName ?? "已确认说话人"}</p>
             ) : null}
 
             {speaker.confirmationStatus !== "CONFIRMED" && candidatePersons.length === 0 ? (
@@ -134,9 +137,13 @@ export function MeetingSpeakerConfirmPage() {
                 {candidatePersons.map(({ personId, speakerProfileId, displayName, confidence, profile }) => (
                   <article className="stack" key={`${personId}:${speakerProfileId}`}>
                     <div className="toolbar">
-                      <strong>{profile?.displayName ?? displayName}</strong>
+                      <strong>{profile?.displayName ?? displayName ?? "候选说话人"}</strong>
                       <span className="muted">匹配 {Math.round(confidence * 100)}%</span>
-                      {profile ? <span className="badge" data-consent={profile.consentStatus}>{profile.consentStatus}</span> : null}
+                      {profile ? (
+                        <span className="badge" data-consent={profile.consentStatus}>
+                          {formatConsentStatus(profile.consentStatus)}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="toolbar">
                       <button
@@ -145,7 +152,7 @@ export function MeetingSpeakerConfirmPage() {
                         disabled={isPending || (profile && profile.consentStatus !== "ACTIVE")}
                         onClick={() => void handleConfirm(speaker.speakerLabel, personId, speakerProfileId)}
                       >
-                        确认为 {profile?.displayName ?? displayName}
+                        确认为 {profile?.displayName ?? displayName ?? "候选说话人"}
                       </button>
                     </div>
                   </article>
@@ -167,4 +174,10 @@ export function MeetingSpeakerConfirmPage() {
       })}
     </main>
   );
+}
+
+function formatSpeakerLabel(label: string): string {
+  const match = /^SPEAKER[_-]?(\d+)$/i.exec(label);
+  if (!match) return "说话人";
+  return `说话人 ${Number(match[1]) + 1}`;
 }

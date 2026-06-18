@@ -175,7 +175,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
         }],
       });
 
-      if (!completedSession.fileId) throw new Error("完成上传失败，未生成 File ID");
+      if (!completedSession.fileId) throw new Error("完成上传失败，未生成源文件编号");
 
       setStatusText("正在提交声纹注册任务…");
       const enrollment = await createSpeakerEnrollment(profileId, completedSession.fileId);
@@ -241,7 +241,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
               音频上传成功，后端正在提取并注册声纹…
             </span>
             <span className="page-subtitle">
-              正在等待机器学习特征匹配完成，完成后将自动在页面内提示。
+              正在等待声纹特征匹配完成，完成后将自动在页面内提示。
             </span>
           </div>
         </div>
@@ -306,11 +306,11 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
                   name="speakerEnrollmentAudio"
                 />
                 <span className="upload-dropzone__label">
-                  {uploadFile ? uploadFile.name : "点击选择音频文件 (MP3, WAV, M4A)"}
+                  {uploadFile ? uploadFile.name : "点击选择音频文件（MP3、WAV、M4A）"}
                 </span>
                 {uploadFile ? (
                   <span className="page-subtitle">
-                    大小: {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    大小：{(uploadFile.size / 1024 / 1024).toFixed(2)} MB
                   </span>
                 ) : null}
               </label>

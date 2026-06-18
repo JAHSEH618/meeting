@@ -84,7 +84,7 @@ export function RagPage() {
       setAnswer(result);
     } catch (cause) {
       const apiError = cause as ApiClientError;
-      setError(apiError.code ? getUserMessage(apiError.code) : "RAG 查询失败");
+      setError(apiError.code ? getUserMessage(apiError.code) : "知识问答查询失败");
       setAnswer(null);
     }
   }, [ask, question, selectedMeetings, selectedDocuments, topN, includeStale]);
@@ -110,7 +110,7 @@ export function RagPage() {
     <div className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">KNOWLEDGE</span>
+          <span className="page-hero__label">知识问答</span>
           <h1 className="page-hero__title">问答</h1>
           <p className="page-hero__subtitle">
             基于已索引的会议转写与文档生成带引用的回答。所有候选片段都会经过 Java 端的二次权限校验。
@@ -164,7 +164,7 @@ export function RagPage() {
                     />
                     <span className="scope-option__content">
                       <span>{mtg.title}</span>
-                      <span className="scope-option__id" translate="no">{mtg.meetingId}</span>
+                      <span className="scope-option__id">会议记录</span>
                     </span>
                   </label>
                 ))
@@ -185,7 +185,7 @@ export function RagPage() {
                     />
                     <span className="scope-option__content">
                       <span>{doc.title}</span>
-                      <span className="scope-option__id" translate="no">{doc.documentId}</span>
+                      <span className="scope-option__id">知识库文档</span>
                     </span>
                   </label>
                 ))
@@ -196,7 +196,7 @@ export function RagPage() {
 
         <div className="control-row">
           <label className="control-label">
-            <span>topN</span>
+            <span>检索条数</span>
             <input
               className="control-input"
               type="number"
@@ -209,7 +209,7 @@ export function RagPage() {
                   setTopN(Math.max(MIN_TOP_N, Math.min(MAX_TOP_N, next)));
                 }
               }}
-              aria-label="topN"
+              aria-label="检索条数"
             />
           </label>
           <label className="control-label">
@@ -252,7 +252,7 @@ function AnswerCard({ answer }: { answer: RagAnswerDTO }) {
           {COVERAGE_LABEL[answer.coverage]}
         </span>
         {noCitations ? (
-          <span className="pill pill--warn">无引用 — 仅供参考</span>
+          <span className="pill pill--warn">无引用，仅供参考</span>
         ) : (
           <span className="pill pill--neutral">{answer.citations.length} 条引用</span>
         )}

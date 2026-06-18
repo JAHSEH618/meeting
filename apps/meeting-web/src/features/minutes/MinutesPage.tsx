@@ -5,7 +5,15 @@ import type { MinutesSection } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
 import { SafeMarkdown } from "@shared/components/SafeMarkdown";
 import { MeetingTabBar } from "@features/meetings/MeetingTabBar";
-import { formatMs } from "@shared/utils/formatters";
+import { formatMs, formatStaleStatus } from "@shared/utils/formatters";
+
+const SECTION_TYPE_LABEL: Record<string, string> = {
+  SUMMARY: "摘要",
+  DECISION: "决策",
+  ACTION_ITEM: "待办",
+  RISK: "风险",
+  TOPIC: "议题",
+};
 
 export function MinutesPage() {
   const { meetingId = "" } = useParams();
@@ -44,9 +52,9 @@ export function MinutesPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">MINUTES</span>
+          <span className="page-hero__label">纪要</span>
           <h1 className="page-hero__title">会议纪要</h1>
-          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
+          <p className="page-hero__subtitle">{meeting?.title ?? "当前会议"}</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -70,7 +78,7 @@ export function MinutesPage() {
 
       {isStale ? (
         <section className="banner banner--warn" role="status" aria-live="polite">
-          <strong className="banner__title">当前纪要标记为 {minutes?.staleStatus}</strong>
+          <strong className="banner__title">当前纪要{formatStaleStatus(minutes?.staleStatus)}</strong>
           <span className="banner__body">转录已被编辑，建议重新生成纪要以同步最新内容。</span>
         </section>
       ) : null}
@@ -87,7 +95,7 @@ export function MinutesPage() {
           <div className="toolbar">
             <strong>纪要</strong>
             <span className="pill pill--info">v{minutes.minutesVersion}</span>
-            <span className="pill pill--neutral">{minutes.staleStatus}</span>
+            <span className="pill pill--neutral">{formatStaleStatus(minutes.staleStatus)}</span>
           </div>
 
           {minutes.markdown ? (
@@ -125,7 +133,7 @@ function MinutesSectionView({
     <section className="glass-panel glass-panel--compact stack">
       <div className="toolbar">
         <strong>{section.title}</strong>
-        <span className="page-subtitle">{section.type}</span>
+        <span className="page-subtitle">{SECTION_TYPE_LABEL[section.type] ?? "纪要小节"}</span>
       </div>
       {items.length === 0 ? <p className="page-subtitle">本节暂无条目</p> : null}
       {items.map((item, idx) => (
@@ -136,7 +144,7 @@ function MinutesSectionView({
               {item.evidence.map((ev, evIdx) => (
                 <li key={evIdx}>
                   <Link to={`/meetings/${meetingId}/transcript`} className="link">
-                    {ev.segmentId ?? "片段"}
+                    引用片段 {evIdx + 1}
                   </Link>
                   {typeof ev.startMs === "number" && typeof ev.endMs === "number" ? (
                     <span className="page-subtitle"> {formatMs(ev.startMs)} - {formatMs(ev.endMs)} </span>

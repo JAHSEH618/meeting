@@ -69,7 +69,7 @@ describe("AudioUploadPage", () => {
     );
 
     renderPage();
-    await waitFor(() => expect(screen.getByText("upl_resume")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("已建立")).toBeInTheDocument());
 
     const file = new File([new Uint8Array([9, 9, 9, 9])], "standup.wav", { type: "audio/wav" });
     fireEvent.change(screen.getByLabelText("音频文件"), { target: { files: [file] } });

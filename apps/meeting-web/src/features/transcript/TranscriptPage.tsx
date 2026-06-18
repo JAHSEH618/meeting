@@ -5,10 +5,14 @@ import { useTranscriptQuery, useLatestMeetingTaskQuery, useUpdateSegment } from 
 import type { ApiClientError } from "@shared/api/client";
 import type { ProcessingTask, TranscriptSegment } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
-import { formatMs } from "@shared/utils/formatters";
+import {
+  formatMs,
+  formatProcessingStep,
+  formatProcessingTaskStatus,
+} from "@shared/utils/formatters";
 
 const STALE_BANNER_TEXT =
-  "下游纪要、待办、决策、风险与 RAG chunk 已标记为 STALE，重新生成后会读取最新转录";
+  "下游纪要、待办、决策、风险与知识片段已标记为待更新，重新生成后会读取最新转录";
 const VERSION_CONFLICT_TEXT = "内容已被更新；已自动刷新到最新版本，请重新编辑";
 
 export function TranscriptPage() {
@@ -132,9 +136,9 @@ export function TranscriptPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">TRANSCRIPT</span>
+          <span className="page-hero__label">转录</span>
           <h1 className="page-hero__title">转录</h1>
-          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
+          <p className="page-hero__subtitle">查看、校对和修正当前会议的转写内容</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -183,7 +187,8 @@ export function TranscriptPage() {
         <section className="banner banner--info">
           <strong className="banner__title">处理中</strong>
           <span className="banner__body">
-            状态 {task.status}{task.currentStep ? ` · ${task.currentStep}` : ""}
+            状态 {formatProcessingTaskStatus(task.status)}
+            {task.currentStep ? ` · ${formatProcessingStep(task.currentStep)}` : ""}
           </span>
           <div className="progress">
             <span style={{ display: "block", height: "100%", width: `${taskProgress(task)}%`, background: "var(--accent)" }} />
@@ -210,7 +215,7 @@ export function TranscriptPage() {
         {sortedSegments.length === 0 ? (
           <div className="empty-state">
             <strong>暂无转录内容</strong>
-            <span>等待 worker 完成或检查任务进度。</span>
+            <span>等待处理服务完成，或检查任务进度。</span>
           </div>
         ) : (
           <div ref={scrollContainerRef} className="transcript-list" style={{ height: "600px", overflow: "auto" }}>
@@ -236,7 +241,7 @@ export function TranscriptPage() {
                     aria-label={`segment-${segment.segmentId}`}
                   >
                     <div className="transcript-meta">
-                      <strong>{segment.speakerDisplayName || segment.speakerLabel}</strong>
+                      <strong>{segment.speakerDisplayName || formatSpeakerLabel(segment.speakerLabel)}</strong>
                       <span className="segment-row__time">{formatMs(segment.startMs)} – {formatMs(segment.endMs)}</span>
                       <span className="pill pill--neutral">{Math.round(segment.asrConfidence * 100)}%</span>
                       {segment.editedText && segment.editedText !== segment.originalText ? (
@@ -248,7 +253,7 @@ export function TranscriptPage() {
                       <div className="stack">
                         <div className="field">
                           <label className="field__label" htmlFor={`segment-edit-${segment.segmentId}`}>
-                            编辑片段 {segment.segmentId}
+                            编辑转录片段
                           </label>
                           <textarea
                             id={`segment-edit-${segment.segmentId}`}
@@ -320,4 +325,10 @@ export function TranscriptPage() {
 function taskProgress(task: ProcessingTask): number {
   if (task.steps.length === 0) return 0;
   return Math.round(task.steps.reduce((sum, step) => sum + step.progress, 0) / task.steps.length);
+}
+
+function formatSpeakerLabel(label: string): string {
+  const match = /^SPEAKER[_-]?(\d+)$/i.exec(label);
+  if (!match) return "说话人";
+  return `说话人 ${Number(match[1]) + 1}`;
 }

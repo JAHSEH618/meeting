@@ -220,9 +220,9 @@ export function ExportsPage() {
     <main className="page page--dense">
       <header className="page-hero page-hero--compact">
         <div>
-          <span className="page-hero__label">EXPORTS</span>
+          <span className="page-hero__label">导出</span>
           <h1 className="page-hero__title">导出</h1>
-          <p className="page-hero__subtitle">{meeting?.title ?? meetingId}</p>
+          <p className="page-hero__subtitle">{meeting?.title ?? "当前会议"}</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>

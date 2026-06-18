@@ -14,7 +14,7 @@ describe("MeetingSpeakerConfirmPage", () => {
       </TestRouter>,
     );
 
-    await waitFor(() => expect(screen.getByText("SPEAKER_00")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("说话人 1")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /确认为 Alice 张/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "拒绝候选" })).toBeInTheDocument();
     expect(screen.getByText(/匹配 78%/)).toBeInTheDocument();
@@ -32,6 +32,6 @@ describe("MeetingSpeakerConfirmPage", () => {
     const confirmButton = await screen.findByRole("button", { name: /确认为 Alice 张/ });
     fireEvent.click(confirmButton);
 
-    await waitFor(() => expect(screen.getByText("SPEAKER_00")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("说话人 1")).toBeInTheDocument());
   });
 });

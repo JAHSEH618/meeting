@@ -16,6 +16,7 @@ import { sha256Hex } from "@shared/utils/sha256-stream";
 import { initialUploadState, uploadReducer, type UploadPartState } from "./upload-reducer";
 import { AudioUploadSummary } from "./AudioUploadSummary";
 import { AudioPartList } from "./AudioPartList";
+import { formatUploadStatus } from "@shared/utils/formatters";
 
 const DEFAULT_CONCURRENCY = 3;
 const MAX_PART_RETRIES = 3;
@@ -225,9 +226,9 @@ export function AudioUploadPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">AUDIO</span>
+          <span className="page-hero__label">音频</span>
           <h1 className="page-hero__title">音频上传</h1>
-          <p className="page-hero__subtitle"><span translate="no">{meetingId}</span></p>
+          <p className="page-hero__subtitle">为当前会议上传音频文件</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -305,12 +306,12 @@ export function AudioUploadPage() {
       <section className="glass-panel glass-panel--compact stack">
         <div className="toolbar">
           <strong>上传状态</strong>
-          <span className="pill pill--info">{state.status}</span>
+          <span className="pill pill--info">{formatUploadStatus(state.status)}</span>
         </div>
         <div className="progress" aria-label="upload-progress">
           <span style={{ display: "block", height: "100%", width: `${state.progress}%`, background: "var(--accent)" }} />
         </div>
-        <p className="page-subtitle">{completedCount} / {state.parts.length} parts</p>
+        <p className="page-subtitle">已完成 {completedCount} / {state.parts.length} 个分片</p>
         <AudioPartList parts={state.parts} />
       </section>
     </main>

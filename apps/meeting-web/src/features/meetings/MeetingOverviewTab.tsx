@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { Meeting } from "@shared/api/types";
-import { formatDate } from "@shared/utils/formatters";
+import { formatDate, formatLanguage, formatMeetingStatus } from "@shared/utils/formatters";
 import { StartTaskPanel } from "./StartTaskPanel";
 
 export function MeetingOverviewTab({ meeting }: { meeting: Meeting }) {
@@ -9,11 +9,11 @@ export function MeetingOverviewTab({ meeting }: { meeting: Meeting }) {
       <section className="grid">
         <div className="metric">
           <div className="metric__label">状态</div>
-          <div className="metric__value">{meeting.status}</div>
+          <div className="metric__value">{formatMeetingStatus(meeting.status)}</div>
         </div>
         <div className="metric">
           <div className="metric__label">语言</div>
-          <div className="metric__value">{meeting.language}</div>
+          <div className="metric__value">{formatLanguage(meeting.language)}</div>
         </div>
         <div className="metric">
           <div className="metric__label">转录版本</div>

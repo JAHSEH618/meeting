@@ -13,8 +13,8 @@ describe("RagPage", () => {
 
     expect(container.querySelector(".page--workbench")).toBeInTheDocument();
     expect(container.querySelector(".glass-panel")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText("topN")).toBeInTheDocument());
-    expect((screen.getByLabelText("topN") as HTMLInputElement).value).toBe("8");
+    await waitFor(() => expect(screen.getByLabelText("检索条数")).toBeInTheDocument());
+    expect((screen.getByLabelText("检索条数") as HTMLInputElement).value).toBe("8");
     expect(screen.getByText("全部可读范围")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "提问" })).toBeEnabled();
   });
@@ -62,7 +62,7 @@ describe("RagPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "提问" }));
 
     await screen.findByLabelText("rag-answer");
-    expect(screen.getByText("无引用 — 仅供参考")).toBeInTheDocument();
+    expect(screen.getByText("无引用，仅供参考")).toBeInTheDocument();
     expect(screen.getByText(/模型未明确指明引用来源/)).toBeInTheDocument();
   });
 

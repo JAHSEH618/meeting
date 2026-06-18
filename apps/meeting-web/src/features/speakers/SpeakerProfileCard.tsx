@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSpeakerEnrollmentsQuery, useRevokeSpeakerProfile, useDeleteSpeakerProfile } from "./queries";
 import { SpeakerEnrollPanel } from "./SpeakerEnrollPanel";
 import type { SpeakerProfile } from "@shared/api/client";
+import { formatConsentStatus, formatEnrollmentStatus } from "@shared/utils/formatters";
 
 interface Props {
   profile: SpeakerProfile;
@@ -45,14 +46,14 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
       data-profile-id={profile.speakerProfileId}
     >
       <div className="toolbar">
-        <strong>{profile.displayName ?? profile.personId}</strong>
+        <strong>{profile.displayName ?? "未命名声纹档案"}</strong>
         <span
           className={`pill ${isActive ? "pill--success" : "pill--neutral"}`}
           data-consent={profile.consentStatus}
         >
-          {profile.consentStatus}
+          {formatConsentStatus(profile.consentStatus)}
         </span>
-        <span className="page-subtitle" translate="no">{profile.personId}</span>
+        <span className="page-subtitle">声纹档案</span>
       </div>
 
       <details
@@ -66,22 +67,20 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
         {enrollments ? (
           <div className="stack">
             {enrollments.length === 0 ? <p className="page-subtitle">暂无参考音频</p> : null}
-            {enrollments.map((enrollment) => (
+            {enrollments.map((enrollment, index) => (
               <article className="reference-audio-card" key={enrollment.enrollmentId}>
                 <div className="control-row control-row--tight">
-                  <span className="reference-audio-card__id" translate="no">
-                    {enrollment.sourceAudioFileId}
-                  </span>
+                  <span className="reference-audio-card__id">参考音频 {index + 1}</span>
                   <span
                     className={`pill ${
                       enrollment.enrollmentStatus === "SUCCEEDED"
                         ? "pill--success"
                         : enrollment.enrollmentStatus === "FAILED"
                           ? "pill--danger"
-                          : "pill--info"
+                      : "pill--info"
                     }`}
                   >
-                    {enrollment.enrollmentStatus}
+                    {formatEnrollmentStatus(enrollment.enrollmentStatus)}
                   </span>
                   {typeof enrollment.qualityScore === "number" ? (
                     <span className="reference-audio-card__meta">

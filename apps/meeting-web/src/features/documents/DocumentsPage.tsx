@@ -7,14 +7,24 @@ import {
 } from "./queries";
 import type { ApiClientError } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
-import { formatDate } from "@shared/utils/formatters";
+import {
+  formatDate,
+  formatDocumentStatus,
+  formatTextExtractionStatus,
+} from "@shared/utils/formatters";
 
 const FILE_ID_HINT =
-  "fileId 指向已上传到对象存储的源文件。当前阶段文件上传由后台管道完成；在此处仅登记元数据并触发解析 / 索引。";
+  "源文件编号指向已上传到对象存储的文件。当前阶段文件上传由后台管道完成；在此处仅登记元数据并触发解析和索引。";
 
 const DOCUMENT_TYPES = ["PDF", "DOCX", "MARKDOWN", "TXT"] as const;
 type DocumentType = (typeof DOCUMENT_TYPES)[number];
 const DEFAULT_DOCUMENT_TYPE: DocumentType = "PDF";
+const DOCUMENT_TYPE_LABELS: Record<DocumentType | string, string> = {
+  PDF: "PDF",
+  DOCX: "Word 文档",
+  MARKDOWN: "Markdown",
+  TXT: "纯文本",
+};
 
 const INDEX_TONE: Record<string, string> = {
   ACTIVE: "pill--success",
@@ -61,7 +71,7 @@ export function DocumentsPage() {
 
   const handleCreate = async () => {
     if (!title.trim() || !fileId.trim()) {
-      setFormError("请填写文档标题和 fileId");
+      setFormError("请填写文档标题和源文件编号");
       return;
     }
     setFormError(null);
@@ -115,7 +125,7 @@ export function DocumentsPage() {
     <div className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">DOCUMENTS</span>
+          <span className="page-hero__label">文档库</span>
           <h1 className="page-hero__title">知识库文档</h1>
           <p className="page-hero__subtitle">用于问答检索的文档元数据登记与索引重建。</p>
         </div>
@@ -150,13 +160,13 @@ export function DocumentsPage() {
             />
           </div>
           <div className="field">
-            <label className="field__label" htmlFor="doc-file-id">fileId</label>
+            <label className="field__label" htmlFor="doc-file-id">源文件编号</label>
             <input
               id="doc-file-id"
               name="fileId"
               value={fileId}
               onChange={(e) => setFileId(e.target.value)}
-              placeholder="例：file_doc_abc"
+              placeholder="例：后台上传后生成的文件编号"
               autoComplete="off"
             />
           </div>
@@ -169,12 +179,12 @@ export function DocumentsPage() {
               onChange={(e) => setDocumentType(e.target.value as DocumentType)}
             >
               {DOCUMENT_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{DOCUMENT_TYPE_LABELS[t]}</option>
               ))}
             </select>
           </div>
           <div className="field">
-            <label className="field__label" htmlFor="doc-hash">SHA-256（可选）</label>
+            <label className="field__label" htmlFor="doc-hash">内容指纹（可选）</label>
             <input
               id="doc-hash"
               name="contentHash"
@@ -221,24 +231,20 @@ export function DocumentsPage() {
           >
             <div className="toolbar">
               <strong>{doc.title}</strong>
-              <span className="pill pill--neutral">{doc.documentType}</span>
+              <span className="pill pill--neutral">{DOCUMENT_TYPE_LABELS[doc.documentType] ?? "文档"}</span>
               <span className={`pill ${INDEX_TONE[doc.status] ?? "pill--neutral"}`}>
-                {doc.status}
+                {formatDocumentStatus(doc.status)}
               </span>
-              <span className="page-subtitle">索引: {doc.textExtractionStatus}</span>
+              <span className="page-subtitle">索引：{formatTextExtractionStatus(doc.textExtractionStatus)}</span>
             </div>
             <dl className="grid">
               <div>
-                <dt className="page-subtitle">documentId</dt>
-                <dd><code translate="no">{doc.documentId}</code></dd>
+                <dt className="page-subtitle">源文件</dt>
+                <dd>{doc.fileId ? "已登记" : "未登记"}</dd>
               </div>
               <div>
-                <dt className="page-subtitle">fileId</dt>
-                <dd><code translate="no">{doc.fileId}</code></dd>
-              </div>
-              <div>
-                <dt className="page-subtitle">contentHash</dt>
-                <dd><code translate="no">{doc.contentHash ?? "（未计算）"}</code></dd>
+                <dt className="page-subtitle">内容指纹</dt>
+                <dd>{doc.contentHash ? "已记录" : "未计算"}</dd>
               </div>
               <div>
                 <dt className="page-subtitle">创建时间</dt>

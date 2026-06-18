@@ -32,7 +32,7 @@ describe("LegalHoldsPage", () => {
     );
   });
 
-  it("creates a legal hold and lists it as ACTIVE", async () => {
+  it("creates a legal hold and lists it as active", async () => {
     render(
       <TestRouter>
         <LegalHoldsPage />
@@ -46,7 +46,7 @@ describe("LegalHoldsPage", () => {
     fireEvent.click(screen.getByTestId("lh-create-submit"));
 
     await waitFor(() => expect(screen.getByTestId("lh-table")).toBeInTheDocument());
-    expect(screen.getByText("mtg_test_01")).toBeInTheDocument();
+    expect(screen.getAllByText("目标已记录").length).toBeGreaterThan(0);
     expect(screen.getByText("监管调查")).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
   });
@@ -65,8 +65,8 @@ describe("LegalHoldsPage", () => {
     fireEvent.change(screen.getByTestId("lh-reason"), { target: { value: "诉讼保全" } });
     fireEvent.click(screen.getByTestId("lh-create-submit"));
 
-    const scopeCell = await screen.findByText("mtg_release_01");
-    const row = scopeCell.closest("tr");
+    const reasonCell = await screen.findByText("诉讼保全");
+    const row = reasonCell.closest("tr");
     expect(row).not.toBeNull();
     fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "释放" }));
 

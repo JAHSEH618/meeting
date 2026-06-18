@@ -76,7 +76,7 @@ export function LegalHoldsPage() {
 
   const handleCreate = useCallback(async () => {
     if (!scopeId.trim() || !reason.trim()) {
-      setCreateError("请填写 scopeId 和原因");
+      setCreateError("请填写目标编号和原因");
       return;
     }
     setCreateError(null);
@@ -139,7 +139,7 @@ export function LegalHoldsPage() {
     <main className="page page--dense">
       <header className="page-hero page-hero--compact">
         <div>
-          <span className="page-hero__label">COMPLIANCE</span>
+          <span className="page-hero__label">合规</span>
           <h1 className="page-hero__title">法定保全</h1>
           <p className="page-hero__subtitle">放置 / 释放对会议、文档、声纹档案的法定保全。命中保全的对象不可被删除或导出。</p>
         </div>
@@ -177,12 +177,12 @@ export function LegalHoldsPage() {
               </select>
             </label>
             <label>
-              范围 ID
+              目标编号
               <input
                 type="text"
                 value={scopeId}
                 onChange={(e) => setScopeId(e.target.value)}
-                placeholder="例：mtg_xxx"
+                placeholder="例：需要保全的目标编号"
                 data-testid="lh-scope-id"
               />
             </label>
@@ -223,7 +223,7 @@ export function LegalHoldsPage() {
           <table className="data-table" data-testid="lh-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>保全记录</th>
                 <th>范围</th>
                 <th>状态</th>
                 <th>原因</th>
@@ -234,11 +234,11 @@ export function LegalHoldsPage() {
             <tbody>
               {sortedHolds.map((hold) => (
                 <tr key={hold.legalHoldId} data-testid={`lh-row-${hold.legalHoldId}`}>
-                  <td className="muted">{hold.legalHoldId}</td>
+                  <td className="muted">记录已创建</td>
                   <td>
                     <strong>{SCOPE_LABELS[hold.scopeType]}</strong>
                     <br />
-                    <span className="muted">{hold.scopeId}</span>
+                    <span className="muted">目标已记录</span>
                   </td>
                   <td>
                     <span className={`status-badge status-${hold.status.toLowerCase()}`}>
@@ -283,7 +283,7 @@ export function LegalHoldsPage() {
               <div>
                 <h2 id="lh-release-title" className="card-title">释放法定保全</h2>
                 <p id="lh-release-description" className="muted">
-                  {releaseTarget.legalHoldId} · {SCOPE_LABELS[releaseTarget.scopeType]} {releaseTarget.scopeId}
+                  {SCOPE_LABELS[releaseTarget.scopeType]}保全记录，目标编号已记录。
                 </p>
               </div>
               <button className="button button--ghost" type="button" onClick={closeReleaseDialog} disabled={releasing}>

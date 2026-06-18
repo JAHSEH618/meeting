@@ -18,7 +18,7 @@ describe("TranscriptPage", () => {
     );
 
     await waitFor(() => expect(screen.getByText("今天先确认阶段二验收范围。")).toBeInTheDocument());
-    expect(screen.getByText("SPEAKER_00")).toBeInTheDocument();
+    expect(screen.getByText("说话人 1")).toBeInTheDocument();
     expect(screen.getByText("任务进度")).toBeInTheDocument();
   });
 
@@ -36,12 +36,12 @@ describe("TranscriptPage", () => {
     if (!article) throw new Error("segment article not rendered");
 
     fireEvent.click(within(article).getByRole("button", { name: "编辑" }));
-    const textarea = await screen.findByLabelText(/编辑片段/);
+    const textarea = await screen.findByLabelText(/编辑转录片段/);
     fireEvent.change(textarea, { target: { value: "确认阶段二验收口径。" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() =>
-      expect(screen.getByText(/下游纪要、待办、决策、风险与 RAG chunk 已标记为 STALE/)).toBeInTheDocument(),
+      expect(screen.getByText(/下游纪要、待办、决策、风险与知识片段已标记为待更新/)).toBeInTheDocument(),
     );
   });
 
@@ -77,7 +77,7 @@ describe("TranscriptPage", () => {
     const segmentRow = await screen.findByText("今天先确认阶段二验收范围。");
     const article = segmentRow.closest("article")!;
     fireEvent.click(within(article).getByRole("button", { name: "编辑" }));
-    fireEvent.change(await screen.findByLabelText(/编辑片段/), { target: { value: "其它内容" } });
+    fireEvent.change(await screen.findByLabelText(/编辑转录片段/), { target: { value: "其它内容" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() =>

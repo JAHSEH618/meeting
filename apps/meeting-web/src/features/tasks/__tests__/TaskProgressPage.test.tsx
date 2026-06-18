@@ -39,9 +39,9 @@ describe("TaskProgressPage", () => {
 
     expect(container.querySelector(".page--workbench")).toBeInTheDocument();
     expect(container.querySelector(".page-hero--workbench")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("WORKER_DAG_RUNNING")).toBeInTheDocument());
-    expect(screen.getByText("ASR")).toBeInTheDocument();
-    expect(screen.getAllByText("RUNNING").length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByText("音频处理")).toBeInTheDocument());
+    expect(screen.getByText("语音识别")).toBeInTheDocument();
+    expect(screen.getAllByText("处理中").length).toBeGreaterThan(0);
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe("TaskProgressPage", () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText("轮询")).toBeInTheDocument(), { timeout: 4000 });
-    await waitFor(() => expect(screen.getAllByText("SUCCEEDED").length).toBeGreaterThan(0), { timeout: 6000 });
+    await waitFor(() => expect(screen.getAllByText("已完成").length).toBeGreaterThan(0), { timeout: 6000 });
     await waitFor(() => expect(screen.getByText("已结束")).toBeInTheDocument());
 
     const callsAtTerminal = callCount;

@@ -24,7 +24,7 @@ export function SpeakerProfilesPage() {
 
   const handleCreate = async () => {
     if (!createPersonId.trim() || !createDisplayName.trim()) {
-      setFormError("请填写 personId 和显示名");
+      setFormError("请填写人员编号和显示名");
       return;
     }
     setFormError(null);
@@ -46,9 +46,9 @@ export function SpeakerProfilesPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">VOICEPRINTS</span>
+          <span className="page-hero__label">声纹档案</span>
           <h1 className="page-hero__title">声纹档案</h1>
-          <p className="page-hero__subtitle">{profiles.length} 个档案 · 声纹向量已用 KMS 信封加密存储</p>
+          <p className="page-hero__subtitle">{profiles.length} 个档案 · 声纹向量已加密存储</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to="/meetings">会议</Link>
@@ -69,14 +69,14 @@ export function SpeakerProfilesPage() {
         <section className="glass-panel stack" aria-label="新建档案表单">
           <strong>新建声纹档案</strong>
           <div className="field">
-            <label className="field__label" htmlFor="speaker-person-id">Person ID</label>
+            <label className="field__label" htmlFor="speaker-person-id">人员编号</label>
             <input
               id="speaker-person-id"
               name="personId"
               autoComplete="off"
               value={createPersonId}
               onChange={(e) => setCreatePersonId(e.target.value)}
-              placeholder="alice"
+              placeholder="例：员工编号或用户名"
             />
           </div>
           <div className="field">

@@ -1,13 +1,13 @@
 import type { AudioUploadSession } from "@shared/api/types";
+import { formatUploadStatus } from "@shared/utils/formatters";
 
 interface Props {
   file: File | null;
   session: AudioUploadSession | null;
   status: string;
-  uploadId?: string;
 }
 
-export function AudioUploadSummary({ file, session, status, uploadId }: Props) {
+export function AudioUploadSummary({ file, session, status }: Props) {
   if (!file && !session) return null;
   return (
     <div className="upload-summary">
@@ -30,8 +30,8 @@ export function AudioUploadSummary({ file, session, status, uploadId }: Props) {
       {session ? (
         <>
           <div>
-            <span className="page-subtitle">上传 ID</span>
-            <strong translate="no">{uploadId ?? session.uploadId}</strong>
+            <span className="page-subtitle">上传会话</span>
+            <strong>已建立</strong>
           </div>
           <div>
             <span className="page-subtitle">过期时间</span>
@@ -39,7 +39,7 @@ export function AudioUploadSummary({ file, session, status, uploadId }: Props) {
           </div>
           <div>
             <span className="page-subtitle">状态</span>
-            <strong>{status}</strong>
+            <strong>{formatUploadStatus(status)}</strong>
           </div>
         </>
       ) : null}

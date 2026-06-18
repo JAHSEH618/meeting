@@ -6,7 +6,7 @@ import type { ApiClientError } from "@shared/api/client";
 
 export function StartTaskPanel({ meetingId }: { meetingId: string }) {
   const navigate = useNavigate();
-  const [audioFileId, setAudioFileId] = useState("audio_fixture_01");
+  const [audioFileId, setAudioFileId] = useState("");
   const start = useStartTask(meetingId);
 
   const errorMsg = start.error
@@ -29,7 +29,7 @@ export function StartTaskPanel({ meetingId }: { meetingId: string }) {
     <section className="glass-panel glass-panel--compact stack">
       <div>
         <strong>处理任务</strong>
-        <p className="page-subtitle">提交音频文件 ID 启动 MEETING_FULL_PIPELINE。</p>
+        <p className="page-subtitle">提交已上传的音频源文件编号，启动完整处理流程。</p>
       </div>
       {errorMsg ? (
         <div className="banner banner--danger" role="alert">
@@ -37,13 +37,14 @@ export function StartTaskPanel({ meetingId }: { meetingId: string }) {
         </div>
       ) : null}
       <div className="field" style={{ maxWidth: 420 }}>
-        <label className="field__label" htmlFor="audio-file-id">音频文件 ID</label>
+        <label className="field__label" htmlFor="audio-file-id">音频源文件编号</label>
         <input
           id="audio-file-id"
           name="audioFileId"
           autoComplete="off"
           value={audioFileId}
           onChange={(e) => setAudioFileId(e.target.value)}
+          placeholder="例：后台上传后生成的音频文件编号"
         />
       </div>
       <button
@@ -52,7 +53,7 @@ export function StartTaskPanel({ meetingId }: { meetingId: string }) {
         disabled={start.isPending}
         onClick={handleStart}
       >
-        {start.isPending ? "启动中…" : "启动 MEETING_FULL_PIPELINE"}
+        {start.isPending ? "启动中…" : "启动完整处理流程"}
       </button>
     </section>
   );

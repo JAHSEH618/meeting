@@ -14,6 +14,7 @@ import {
 } from "@shared/api/client";
 import type { ApiClientError } from "@shared/api/client";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { formatItemStatus, formatPriority, formatStaleStatus } from "@shared/utils/formatters";
 
 type Acceptance = "DRAFT" | "ACCEPTED" | "REJECTED" | "NEEDS_REVIEW" | string;
 
@@ -81,9 +82,9 @@ export function ItemsPage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">ITEMS</span>
+          <span className="page-hero__label">事项</span>
           <h1 className="page-hero__title">事项</h1>
-          <p className="page-hero__subtitle">{meetingId}</p>
+          <p className="page-hero__subtitle">待办、决策与风险复核</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -111,8 +112,8 @@ export function ItemsPage() {
             acceptanceStatus={item.acceptanceStatus}
             staleStatus={item.staleStatus}
             badges={[
-              item.priority ? `优先级 ${item.priority}` : null,
-              `状态 ${item.status}`,
+              item.priority ? `优先级 ${formatPriority(item.priority)}` : null,
+              `状态 ${formatItemStatus(item.status)}`,
               item.ownerRawText ? `负责人 ${item.ownerRawText}` : null,
             ]}
             kind="action-items"
@@ -138,7 +139,7 @@ export function ItemsPage() {
             evidence={item.evidence}
             acceptanceStatus={item.acceptanceStatus}
             staleStatus={item.staleStatus}
-            badges={[`状态 ${item.status}`]}
+            badges={[`状态 ${formatItemStatus(item.status)}`]}
             kind="decisions"
             pending={pendingId === item.id}
             onAccept={handleAccept}
@@ -163,8 +164,8 @@ export function ItemsPage() {
             acceptanceStatus={item.acceptanceStatus}
             staleStatus={item.staleStatus}
             badges={[
-              item.severity ? `严重度 ${item.severity}` : null,
-              `状态 ${item.status}`,
+              item.severity ? `严重度 ${formatPriority(item.severity)}` : null,
+              `状态 ${formatItemStatus(item.status)}`,
             ]}
             kind="risks"
             pending={pendingId === item.id}
@@ -202,7 +203,7 @@ function ItemCard({ id, title, description, evidence, acceptanceStatus, staleSta
       <div className="toolbar">
         <strong>{title}</strong>
         <span className={`pill ${tone}`} data-acceptance={acceptanceStatus}>{acceptanceLabel(acceptanceStatus)}</span>
-        {staleStatus && staleStatus !== "ACTIVE" ? <span className="pill pill--warn">{staleStatus}</span> : null}
+        {staleStatus && staleStatus !== "ACTIVE" ? <span className="pill pill--warn">{formatStaleStatus(staleStatus)}</span> : null}
         {badges.filter(Boolean).map((label) => (
           <span key={label} className="page-subtitle">{label}</span>
         ))}
@@ -212,7 +213,7 @@ function ItemCard({ id, title, description, evidence, acceptanceStatus, staleSta
         <ul className="evidence-list">
           {evidence.map((ev, idx) => (
             <li key={idx}>
-              <span className="link">{ev.segmentId ?? "片段"}</span>
+              <span className="link">引用片段 {idx + 1}</span>
               {typeof ev.startMs === "number" && typeof ev.endMs === "number" ? (
                 <span className="muted"> {formatMs(ev.startMs)} - {formatMs(ev.endMs)} </span>
               ) : null}
@@ -249,7 +250,7 @@ function acceptanceLabel(status: Acceptance): string {
     case "ACCEPTED": return "已确认";
     case "REJECTED": return "已拒绝";
     case "NEEDS_REVIEW": return "待复核";
-    default: return status;
+    default: return "未知状态";
   }
 }
 

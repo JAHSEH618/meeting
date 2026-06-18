@@ -3,6 +3,7 @@ import { useMeetingQuery } from "./queries";
 import { MeetingOverviewTab } from "./MeetingOverviewTab";
 import { MeetingTabBar } from "./MeetingTabBar";
 import { getUserMessage } from "@shared/utils/error-mapper";
+import { formatLanguage } from "@shared/utils/formatters";
 import type { ApiClientError } from "@shared/api/client";
 
 export function MeetingDetailPage() {
@@ -27,10 +28,10 @@ export function MeetingDetailPage() {
         <>
           <header className="page-hero page-hero--workbench">
             <div>
-              <span className="page-hero__label">MEETING</span>
+              <span className="page-hero__label">会议</span>
               <h1 className="page-hero__title">{meeting.title}</h1>
               <p className="page-hero__subtitle">
-                <span translate="no">{meeting.meetingId}</span> · {meeting.language}
+                会议语言：{formatLanguage(meeting.language)}
               </p>
             </div>
             <div className="page-hero__actions">

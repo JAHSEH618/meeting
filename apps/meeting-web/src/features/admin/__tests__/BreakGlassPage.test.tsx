@@ -13,8 +13,11 @@ describe("BreakGlassPage", () => {
     fireEvent.change(screen.getByTestId("bg-reason"), { target: { value: "incident response" } });
     fireEvent.click(screen.getByTestId("bg-create-submit"));
 
-    const scopeCell = await screen.findByText(scopeId);
-    const row = scopeCell.closest("tr");
+    const table = await screen.findByTestId("bg-table");
+    await waitFor(() => expect(within(table).getAllByText("待审批").length).toBeGreaterThan(0));
+    const approveButton = within(table).getAllByRole("button", { name: "批准" })[0];
+    if (!approveButton) throw new Error(`pending request row not found for ${scopeId}`);
+    const row = approveButton.closest("tr");
     expect(row).not.toBeNull();
     return row as HTMLTableRowElement;
   }
@@ -42,7 +45,7 @@ describe("BreakGlassPage", () => {
     fireEvent.click(screen.getByTestId("bg-create-submit"));
 
     await waitFor(() => expect(screen.getByTestId("bg-table")).toBeInTheDocument());
-    expect(screen.getByText("mtg_bg_create")).toBeInTheDocument();
+    expect(screen.getAllByText("目标已记录").length).toBeGreaterThan(0);
     expect(screen.getByText("待审批")).toBeInTheDocument();
     expect(screen.getAllByText(/批准|拒绝/).length).toBeGreaterThan(0);
   });
@@ -90,7 +93,7 @@ describe("BreakGlassPage", () => {
 
     expect(confirmSpy).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "批准紧急访问" });
-    expect(within(dialog).getByText(/mtg_bg_approve_cancel/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/目标编号已记录/)).toBeInTheDocument();
     const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
     if (!cancelButton) throw new Error("cancel button not found in dialog");
     fireEvent.click(cancelButton);

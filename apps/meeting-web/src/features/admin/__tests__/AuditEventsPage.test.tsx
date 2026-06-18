@@ -12,9 +12,9 @@ describe("AuditEventsPage", () => {
     );
     const table = await screen.findByTestId("audit-table");
     const tableBody = within(table);
-    expect(tableBody.getByText("LEGAL_HOLD_PLACE")).toBeInTheDocument();
-    expect(tableBody.getByText("DELETION_REQUEST")).toBeInTheDocument();
-    expect(tableBody.getByText("lh_mock_01")).toBeInTheDocument();
+    expect(tableBody.getByText("放置法定保全")).toBeInTheDocument();
+    expect(tableBody.getByText("申请删除")).toBeInTheDocument();
+    expect(tableBody.getAllByText("资源编号已记录").length).toBeGreaterThan(0);
   });
 
   it("filters by action via the dropdown", async () => {
@@ -33,8 +33,8 @@ describe("AuditEventsPage", () => {
     await waitFor(() => {
       const table = screen.getByTestId("audit-table");
       const body = within(table);
-      expect(body.getByText("LEGAL_HOLD_PLACE")).toBeInTheDocument();
-      expect(body.queryByText("DELETION_REQUEST")).not.toBeInTheDocument();
+      expect(body.getByText("放置法定保全")).toBeInTheDocument();
+      expect(body.queryByText("申请删除")).not.toBeInTheDocument();
     });
   });
 
@@ -72,8 +72,8 @@ describe("AuditEventsPage", () => {
     await waitFor(() => {
       const table = screen.getByTestId("audit-table");
       const body = within(table);
-      expect(body.getByText("DELETION_REQUEST")).toBeInTheDocument();
-      expect(body.queryByText("LEGAL_HOLD_PLACE")).not.toBeInTheDocument();
+      expect(body.getByText("申请删除")).toBeInTheDocument();
+      expect(body.queryByText("放置法定保全")).not.toBeInTheDocument();
     });
   });
 });

@@ -65,7 +65,7 @@ describe("DeletionJobsPage", () => {
 
     expect(confirmSpy).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "确认删除任务" });
-    expect(within(dialog).getByText(/mtg_dj_abort_01/)).toBeInTheDocument();
+    expect(within(dialog).getByText("已记录")).toBeInTheDocument();
     expect(within(dialog).getByText(/regulator/)).toBeInTheDocument();
     const cancelButton = within(dialog).getAllByRole("button", { name: "取消" })[0];
     if (!cancelButton) throw new Error("cancel button not found in dialog");
@@ -95,7 +95,7 @@ describe("DeletionJobsPage", () => {
       }),
     );
     await waitFor(() => expect(screen.getByTestId("dj-table")).toBeInTheDocument());
-    expect(screen.getByText("mtg_dj_create_01")).toBeInTheDocument();
+    expect(screen.getAllByText("目标已记录").length).toBeGreaterThan(0);
     expect(screen.getByText("排队中")).toBeInTheDocument();
     confirmSpy.mockRestore();
   });
@@ -154,7 +154,7 @@ describe("DeletionJobsPage", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "确认提交" }));
 
-    await waitFor(() => expect(screen.getByText("tenant_dj_create_01")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("目标已记录").length).toBeGreaterThan(0));
     expect(screen.getByText("整租户（高危）")).toBeInTheDocument();
     promptSpy.mockRestore();
   });

@@ -15,7 +15,7 @@ describe("DocumentsPage", () => {
 
     await waitFor(() => expect(screen.getByText("Roadmap.pdf")).toBeInTheDocument());
     expect(screen.getByText("PDF")).toBeInTheDocument();
-    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+    expect(screen.getByText("可用")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新索引" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
   });
@@ -33,7 +33,7 @@ describe("DocumentsPage", () => {
     fireEvent.change(screen.getByPlaceholderText("例：2026 Q2 路线图"), {
       target: { value: "测试文档" },
     });
-    fireEvent.change(screen.getByPlaceholderText("例：file_doc_abc"), {
+    fireEvent.change(screen.getByPlaceholderText("例：后台上传后生成的文件编号"), {
       target: { value: "file_test" },
     });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
@@ -41,7 +41,7 @@ describe("DocumentsPage", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "提交" })).not.toBeInTheDocument());
   });
 
-  it("rejects empty title or fileId in the create form", async () => {
+  it("rejects empty title or source file id in the create form", async () => {
     render(
       <TestRouter>
         <DocumentsPage />
@@ -53,7 +53,7 @@ describe("DocumentsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("请填写文档标题和 fileId"),
+      expect(screen.getByRole("alert")).toHaveTextContent("请填写文档标题和源文件编号"),
     );
   });
 

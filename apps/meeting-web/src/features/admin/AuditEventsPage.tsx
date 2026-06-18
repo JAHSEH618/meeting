@@ -27,6 +27,47 @@ const ACTION_OPTIONS = [
 
 const RESULT_OPTIONS = ["SUCCESS", "FAILURE", "BLOCKED", "DENIED"] as const;
 
+const ACTION_LABELS: Record<string, string> = {
+  CREATE: "创建",
+  READ: "读取",
+  UPDATE: "更新",
+  DELETE: "删除",
+  EXPORT: "导出",
+  LOGIN: "登录",
+  LOGOUT: "退出登录",
+  LEGAL_HOLD_PLACE: "放置法定保全",
+  LEGAL_HOLD_RELEASE: "释放法定保全",
+  DELETION_REQUEST: "申请删除",
+  DELETION_EXECUTE: "执行删除",
+  BREAK_GLASS_REQUEST: "申请应急访问",
+  BREAK_GLASS_APPROVE: "批准应急访问",
+  BREAK_GLASS_REJECT: "拒绝应急访问",
+  BREAK_GLASS_ACCESS: "应急访问",
+};
+
+const RESULT_LABELS: Record<string, string> = {
+  SUCCESS: "成功",
+  FAILURE: "失败",
+  BLOCKED: "已阻断",
+  DENIED: "已拒绝",
+};
+
+const RESOURCE_LABELS: Record<string, string> = {
+  MEETING: "会议",
+  DOCUMENT: "文档",
+  LEGAL_HOLD: "法定保全",
+  EXPORT: "导出任务",
+  DELETION_JOB: "删除任务",
+  BREAK_GLASS: "应急访问",
+  SPEAKER_PROFILE: "声纹档案",
+  TENANT: "租户",
+  USER: "用户",
+};
+
+const RESOURCE_QUERY_ALIASES: Record<string, string> = Object.fromEntries(
+  Object.entries(RESOURCE_LABELS).map(([value, label]) => [label, value]),
+);
+
 function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
@@ -36,6 +77,12 @@ function formatTimestamp(iso: string | null | undefined): string {
   ).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(
     date.getMinutes(),
   ).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatAuditReason(reason: string | null | undefined): string {
+  if (!reason) return "";
+  if (reason === "blocked by legal hold") return "被法定保全阻断";
+  return reason;
 }
 
 export function AuditEventsPage() {
@@ -70,9 +117,10 @@ export function AuditEventsPage() {
   }, [fetchAt]);
 
   const handleFilter = useCallback(() => {
+    const normalizedResourceType = resourceType.trim();
     void fetchAt({
       actorUserId: actorUserId.trim() || undefined,
-      resourceType: resourceType.trim() || undefined,
+      resourceType: (RESOURCE_QUERY_ALIASES[normalizedResourceType] ?? normalizedResourceType) || undefined,
       action: action || undefined,
       result: result || undefined,
       from: from ? `${from}T00:00:00Z` : undefined,
@@ -85,10 +133,10 @@ export function AuditEventsPage() {
     <main className="page page--dense">
       <header className="page-hero page-hero--compact">
         <div>
-          <span className="page-hero__label">AUDIT TRAIL</span>
+          <span className="page-hero__label">审计日志</span>
           <h1 className="page-hero__title">审计事件</h1>
           <p className="page-hero__subtitle">
-            查询合规相关写操作（legal-hold、deletion、break-glass、export）的审计日志。
+            查询合规相关写操作（法定保全、删除、应急访问、导出）的审计日志。
             时间窗最大 90 天。
           </p>
         </div>
@@ -98,12 +146,12 @@ export function AuditEventsPage() {
         <h2 className="card-title">筛选</h2>
         <div className="form-grid">
           <label>
-            操作人 ID
+            操作人编号
             <input
               type="text"
               value={actorUserId}
               onChange={(e) => setActorUserId(e.target.value)}
-              placeholder="例：user_admin"
+              placeholder="例：管理员账号"
               data-testid="audit-actor-input"
             />
           </label>
@@ -113,7 +161,7 @@ export function AuditEventsPage() {
               type="text"
               value={resourceType}
               onChange={(e) => setResourceType(e.target.value)}
-              placeholder="例：MEETING / LEGAL_HOLD / EXPORT"
+              placeholder="例：会议 / 法定保全 / 导出"
               data-testid="audit-resource-type-input"
             />
           </label>
@@ -126,7 +174,7 @@ export function AuditEventsPage() {
             >
               <option value="">（全部）</option>
               {ACTION_OPTIONS.map((a) => (
-                <option key={a} value={a}>{a}</option>
+                <option key={a} value={a}>{ACTION_LABELS[a]}</option>
               ))}
             </select>
           </label>
@@ -139,7 +187,7 @@ export function AuditEventsPage() {
             >
               <option value="">（全部）</option>
               {RESULT_OPTIONS.map((r) => (
-                <option key={r} value={r}>{r}</option>
+                <option key={r} value={r}>{RESULT_LABELS[r]}</option>
               ))}
             </select>
           </label>
@@ -198,25 +246,25 @@ export function AuditEventsPage() {
               {events.map((event) => (
                 <tr key={event.auditEventId} data-testid={`audit-row-${event.auditEventId}`}>
                   <td className="muted">{formatTimestamp(event.createdAt)}</td>
-                  <td>{event.actorUserId ?? "system"}</td>
+                  <td>{event.actorUserId ? "已记录" : "系统"}</td>
                   <td>
-                    <code>{event.action}</code>
+                    {ACTION_LABELS[event.action] ?? "其他操作"}
                   </td>
                   <td>
-                    <strong>{event.resourceType}</strong>
+                    <strong>{RESOURCE_LABELS[event.resourceType] ?? "资源"}</strong>
                     {event.resourceId && (
                       <>
                         <br />
-                        <span className="muted">{event.resourceId}</span>
+                        <span className="muted">资源编号已记录</span>
                       </>
                     )}
                   </td>
                   <td>
                     <span className={`status-badge status-${event.result.toLowerCase()}`}>
-                      {event.result}
+                      {RESULT_LABELS[event.result] ?? "未知结果"}
                     </span>
                   </td>
-                  <td className="muted">{event.reason ?? ""}</td>
+                  <td className="muted">{formatAuditReason(event.reason)}</td>
                 </tr>
               ))}
             </tbody>

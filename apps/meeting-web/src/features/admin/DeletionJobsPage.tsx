@@ -100,7 +100,7 @@ export function DeletionJobsPage() {
 
   const openCreateConfirmation = useCallback(() => {
     if (!scopeId.trim() || !reason.trim()) {
-      setCreateError("请填写 scopeId 和原因");
+      setCreateError("请填写目标编号和原因");
       return;
     }
     setCreateError(null);
@@ -150,10 +150,10 @@ export function DeletionJobsPage() {
     <main className="page page--dense">
       <header className="page-hero page-hero--compact">
         <div>
-          <span className="page-hero__label">DATA RETENTION</span>
+          <span className="page-hero__label">数据留存</span>
           <h1 className="page-hero__title">数据删除任务</h1>
           <p className="page-hero__subtitle">
-            异步删除会议、文档、声纹档案等数据。完成后生成 deletion certificate 作为审计证明。
+            异步删除会议、文档、声纹档案等数据。完成后生成删除证明作为审计依据。
           </p>
         </div>
         <div className="page-hero__actions">
@@ -177,7 +177,7 @@ export function DeletionJobsPage() {
         <section className="glass-panel glass-panel--compact stack" data-testid="dj-create-form">
           <h2 className="card-title">新建删除任务</h2>
           <p className="muted">
-            提交后系统将先检查法定保全；命中保全的任务会立即标记为 BLOCKED_BY_LEGAL_HOLD 并写入审计。
+            提交后系统将先检查法定保全；命中保全的任务会立即标记为被法定保全阻断并写入审计。
           </p>
           <div className="form-grid">
             <label>
@@ -193,12 +193,12 @@ export function DeletionJobsPage() {
               </select>
             </label>
             <label>
-              范围 ID
+              目标编号
               <input
                 type="text"
                 value={scopeId}
                 onChange={(e) => setScopeId(e.target.value)}
-                placeholder="例：mtg_xxx / doc_xxx / u_xxx"
+                placeholder="例：需要删除的目标编号"
                 data-testid="dj-scope-id"
               />
             </label>
@@ -208,7 +208,7 @@ export function DeletionJobsPage() {
                 type="text"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="例：GDPR Article 17 数据擦除请求"
+                placeholder="例：用户发起的数据擦除请求"
                 data-testid="dj-reason"
               />
             </label>
@@ -239,7 +239,7 @@ export function DeletionJobsPage() {
           <table className="data-table" data-testid="dj-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>任务</th>
                 <th>范围</th>
                 <th>状态</th>
                 <th>申请人</th>
@@ -250,11 +250,11 @@ export function DeletionJobsPage() {
             <tbody>
               {sortedJobs.map((job) => (
                 <tr key={job.deletionJobId} data-testid={`dj-row-${job.deletionJobId}`}>
-                  <td className="muted">{job.deletionJobId}</td>
+                  <td className="muted">任务已记录</td>
                   <td>
                     <strong>{SCOPE_LABELS[job.scopeType]}</strong>
                     <br />
-                    <span className="muted">{job.scopeId}</span>
+                    <span className="muted">目标已记录</span>
                   </td>
                   <td>
                     <span className={`status-badge status-${job.status.toLowerCase()}`}>
@@ -310,8 +310,8 @@ export function DeletionJobsPage() {
                 <dd>{SCOPE_LABELS[confirmTarget.scopeType]}</dd>
               </div>
               <div>
-                <dt className="muted">scopeId</dt>
-                <dd><code translate="no">{confirmTarget.scopeId}</code></dd>
+                <dt className="muted">目标编号</dt>
+                <dd>已记录</dd>
               </div>
               <div>
                 <dt className="muted">原因</dt>

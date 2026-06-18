@@ -12,7 +12,7 @@ describe("SpeakerProfilesPage", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Alice 张")).toBeInTheDocument());
-    expect(screen.getByText("ACTIVE")).toBeInTheDocument();
+    expect(screen.getByText("已授权")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "撤销授权" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除档案" })).toBeInTheDocument();
   });
@@ -27,10 +27,10 @@ describe("SpeakerProfilesPage", () => {
     await screen.findByText("Alice 张");
     fireEvent.click(screen.getByRole("button", { name: "新建档案" }));
 
-    expect(screen.getByPlaceholderText("alice")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("例：员工编号或用户名")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("例如 Alice 张")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("alice"), { target: { value: "bob" } });
+    fireEvent.change(screen.getByPlaceholderText("例：员工编号或用户名"), { target: { value: "bob" } });
     fireEvent.change(screen.getByPlaceholderText("例如 Alice 张"), { target: { value: "Bob 李" } });
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 

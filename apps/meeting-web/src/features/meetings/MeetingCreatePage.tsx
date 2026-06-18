@@ -44,7 +44,7 @@ export function MeetingCreatePage() {
     <main className="page page--workbench">
       <header className="page-hero page-hero--workbench">
         <div>
-          <span className="page-hero__label">MEETING</span>
+          <span className="page-hero__label">会议</span>
           <h1 className="page-hero__title">新建会议</h1>
           <p className="page-hero__subtitle">创建后可在详情页启动处理任务。</p>
         </div>
@@ -72,7 +72,7 @@ export function MeetingCreatePage() {
               onChange={(event) => setLanguage(event.target.value)}
             >
               <option value="zh">中文</option>
-              <option value="en">English</option>
+              <option value="en">英文</option>
             </select>
           </div>
           <div className="field">

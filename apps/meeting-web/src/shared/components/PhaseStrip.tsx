@@ -1,8 +1,8 @@
 import type { ProcessingTaskPhase } from "@shared/api/types";
 
 const SEGMENTS = [
-  { key: "WORKER_DAG", label: "worker DAG" },
-  { key: "JAVA_LLM", label: "Java LLM" },
+  { key: "WORKER_DAG", label: "音频处理" },
+  { key: "JAVA_LLM", label: "内容生成" },
   { key: "TERMINAL", label: "完成" },
 ] as const;
 

@@ -9,7 +9,7 @@ export function DesignShowcasePage() {
   return (
     <div className="page page--workbench">
       <HeroSection
-        label="VISUAL DIRECTION"
+        label="视觉方向"
         title="会议工作台视觉方案"
         subtitle="浅色玻璃、强标题、12 列业务模块。模块只表达职责和数据关系，不再放独立装饰标识。"
         actions={
@@ -31,7 +31,7 @@ export function DesignShowcasePage() {
       <section className="meeting-modules grid-12" aria-label="视觉模块预览">
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">ENTRY / HERO</p>
+            <p className="module-card__eyebrow">入口 / 首屏</p>
             <h2>入口页负责定调</h2>
             <p>使用大标题、黑色主按钮和宽玻璃面板建立第一印象，内容直接指向会议创建与继续处理。</p>
           </div>
@@ -45,31 +45,31 @@ export function DesignShowcasePage() {
 
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">WORKBENCH / FLOW</p>
+            <p className="module-card__eyebrow">工作台 / 流程</p>
             <h2>工作页负责推进</h2>
-            <p>上传、转录、纪要、RAG 等页面保留操作密度，玻璃只承担分区和焦点，不制造额外装饰。</p>
+            <p>上传、转录、纪要、知识问答等页面保留操作密度，玻璃只承担分区和焦点，不制造额外装饰。</p>
           </div>
           <div className="module-card__meta">
             <span>8/4 主侧栏</span>
             <span>长内容列表</span>
-            <span>低位移 hover</span>
+            <span>轻微悬停反馈</span>
           </div>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">DENSE</p>
+          <p className="module-card__eyebrow">密集</p>
           <h2>合规页收敛高度</h2>
           <p>表格首屏必须露出，标题和卡片更紧凑，主按钮不泛滥。</p>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">TYPE</p>
+          <p className="module-card__eyebrow">文字</p>
           <h2>中文标题不拉字距</h2>
           <p>大字号靠字重和留白建立冲击，不用装饰性字距模拟科技感。</p>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">SURFACE</p>
+          <p className="module-card__eyebrow">层级</p>
           <h2>玻璃只做层级</h2>
           <p>没有圆形图标、品牌徽章或装饰标识，模块靠内容职责区分。</p>
         </article>
