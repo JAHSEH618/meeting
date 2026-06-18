@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# ai-worker API + workstation web Background Process Controller
+# ai-worker (Apple Silicon Mac) Background Process Controller
 # ─────────────────────────────────────────────────────────────────────────────
 # This script manages the background runtime lifecycle of the native
-# Apple Silicon ai-worker API and its Vite workstation frontend.
+# Apple Silicon ai-worker process.
 #
 # Commands:
-#   start     - Start api/web/all in the background
-#   stop      - Stop api/web/all gracefully
-#   restart   - Restart api/web/all
-#   status    - Check process, port, and health status
-#   logs      - Follow output logs
+#   start     - Start ai-worker in the background (using nohup and a PID file)
+#   stop      - Stop the background ai-worker process gracefully
+#   restart   - Restart the background ai-worker process
+#   status    - Check if the process is running, its uptime, and its health
+#   logs      - Follow the output logs
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -18,7 +18,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_FILE="${REPO_ROOT}/deploy/ai-worker.pid"
 LOG_FILE="${REPO_ROOT}/deploy/ai-worker.log"
 RUN_SCRIPT="${REPO_ROOT}/deploy/ai-worker-apple-silicon.sh"
-WEB_SCRIPT="${REPO_ROOT}/deploy/ai-worker-web-control.sh"
 
 # Color helpers
 log()  { printf '\033[1;36m▸\033[0m %s\n' "$*"; }
@@ -27,27 +26,19 @@ err()  { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; }
 
 usage() {
     cat <<EOF
-Usage: $0 {start|stop|restart|status|logs} [api|web|all] [env_type]
+Usage: $0 {start|stop|restart|status|logs} [env_type]
 
 Commands:
-  start     Start api/web/all in the background.
-  stop      Stop api/web/all.
-  restart   Restart api/web/all.
-  status    Display process, port, and health status.
-  logs      Follow api/web logs.
+  start     Start ai-worker in the background. If 'centos' is passed as the
+            second argument, it uses deploy/.ai-worker-apple-silicon.env.centos,
+            otherwise it uses deploy/.ai-worker-apple-silicon.env.
+  stop      Stop the background ai-worker process.
+  restart   Restart the background ai-worker process.
+  status    Display whether the process is active, its PID, and port listening status.
+  logs      Follow the background log file (deploy/ai-worker.log).
 
 Options:
-  api       FastAPI ai-worker backend on :8090. Default for backward compatibility.
-  web       Vite ai-worker-web workstation frontend on :5174.
-  all       Start/stop/restart/status/logs for api + web.
   env_type  Optional: 'local' (default) or 'centos' (to connect to remote Java).
-
-Examples:
-  $0 start                 # Backward-compatible: start api local
-  $0 start centos          # Backward-compatible: start api centos
-  $0 start api centos      # Explicit api mode
-  $0 start web centos      # Start workstation frontend with remote Java /api proxy
-  $0 start all centos      # Start backend and frontend
 EOF
 }
 
@@ -62,7 +53,7 @@ is_running() {
     return 1
 }
 
-start_api() {
+start_worker() {
     local env_type="${1:-local}"
     local env_file="${REPO_ROOT}/deploy/.ai-worker-apple-silicon.env"
     
@@ -138,7 +129,7 @@ start_api() {
     fi
 }
 
-stop_api() {
+stop_worker() {
     if ! is_running; then
         warn "ai-worker is not running (no active PID)."
         rm -f "${PID_FILE}"
@@ -196,7 +187,7 @@ stop_api() {
     log "ai-worker stopped."
 }
 
-status_api() {
+status_worker() {
     if is_running; then
         local pid
         pid=$(cat "${PID_FILE}")
@@ -239,88 +230,29 @@ follow_logs() {
 }
 
 main() {
-    local cmd="${1:-}"
-    if [ -z "${cmd}" ]; then
-        usage >&2
-        exit 64
-    fi
-    if [ "${cmd}" = "-h" ] || [ "${cmd}" = "--help" ] || [ "${cmd}" = "help" ]; then
-        usage
-        return 0
-    fi
-    shift || true
-
-    local mode="${1:-api}"
-    local env_type="${2:-local}"
-    case "${mode}" in
-        api|web|all)
-            ;;
-        local|centos|"")
-            env_type="${mode:-local}"
-            mode="api"
-            ;;
-        *)
-            err "Invalid mode: '${mode}'. Expected api, web, all, local, or centos."
-            usage >&2
-            exit 64
-            ;;
-    esac
-
-    case "${cmd}" in
+    case "${1:-}" in
         start)
-            if [ "${mode}" = "api" ]; then
-                start_api "${env_type}"
-            elif [ "${mode}" = "web" ]; then
-                "${WEB_SCRIPT}" start "${env_type}"
-            else
-                start_api "${env_type}"
-                "${WEB_SCRIPT}" start "${env_type}"
-            fi
+            shift
+            start_worker "${1:-local}"
             ;;
         stop)
-            if [ "${mode}" = "api" ]; then
-                stop_api
-            elif [ "${mode}" = "web" ]; then
-                "${WEB_SCRIPT}" stop
-            else
-                "${WEB_SCRIPT}" stop
-                stop_api
-            fi
+            stop_worker
             ;;
         restart)
-            if [ "${mode}" = "api" ]; then
-                stop_api
-                sleep 1
-                start_api "${env_type}"
-            elif [ "${mode}" = "web" ]; then
-                "${WEB_SCRIPT}" restart "${env_type}"
-            else
-                "${WEB_SCRIPT}" stop
-                stop_api
-                sleep 1
-                start_api "${env_type}"
-                "${WEB_SCRIPT}" start "${env_type}"
-            fi
+            shift
+            local env_type="${1:-local}"
+            stop_worker
+            sleep 1
+            start_worker "${env_type}"
             ;;
         status)
-            if [ "${mode}" = "api" ]; then
-                status_api
-            elif [ "${mode}" = "web" ]; then
-                "${WEB_SCRIPT}" status
-            else
-                status_api
-                "${WEB_SCRIPT}" status
-            fi
+            status_worker
             ;;
         logs)
-            if [ "${mode}" = "api" ]; then
-                follow_logs
-            elif [ "${mode}" = "web" ]; then
-                "${WEB_SCRIPT}" logs
-            else
-                log "Following api log. For web logs run: ${WEB_SCRIPT} logs"
-                follow_logs
-            fi
+            follow_logs
+            ;;
+        -h|--help|help)
+            usage
             ;;
         *)
             usage >&2

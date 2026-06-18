@@ -68,6 +68,7 @@ skills-lock.json
 todo.md
 *.log
 *.pid
+.run/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

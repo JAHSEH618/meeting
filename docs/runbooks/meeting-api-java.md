@@ -390,7 +390,8 @@ scp deploy/.ai-worker-apple-silicon.env.centos user@<apple-mac-ip-or-vpn-ip>:/Us
 ```bash
 # (在 Mac 设备上运行)
 mv deploy/.ai-worker-apple-silicon.env.centos deploy/.ai-worker-apple-silicon.env
-./deploy/ai-worker-control.sh start
+cd apps/ai-worker
+./start.sh api local
 ```
 
 ---
@@ -419,7 +420,7 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 | 现象 | 原因分析 | 处理策略 |
 |------|----------|----------|
 | **Java 启动门禁被阻断，报错：ProdProfileValidator failed** | 在开启 `SPRING_PROFILES_ACTIVE=prod` 后，出于安全要求，系统会阻断带有 Demo 默认值或 localhost 路由的配置 | 1. 确保配置项中没有 `localhost`、`127.0.0.1` 填充在外部地址。<br>2. 确保 `KMS_MASTER_KEY_ID` 不是 `dev-kms-master-key`，且 `AI_WORKER_*_HMAC_SECRET` 两组互不相同。 |
-| **Java 聚合健康度中 `aiWorker` 显示 DOWN** | 1. 物理防火墙拦截了 `8090` 端口。<br>2. Mac 端的 AI Worker 进程挂掉或根本未启动。 | 1. 在 CentOS 上运行 `telnet <mac-ip> 8090`，排查路由器/物理 VPN 拦截。<br>2. 去 Mac 终端运行 `./deploy/ai-worker-control.sh status` 确认 Python 推理进程在线。 |
+| **Java 聚合健康度中 `aiWorker` 显示 DOWN** | 1. 物理防火墙拦截了 `8090` 端口。<br>2. Mac 端的 AI Worker 进程挂掉或根本未启动。 | 1. 在 CentOS 上运行 `telnet <mac-ip> 8090`，排查路由器/物理 VPN 拦截。<br>2. 去 Mac 终端运行 `cd apps/ai-worker && ./status.sh api` 确认 Python 推理进程在线。 |
 | **Outbox 队列消费堵塞，后台日志出现大量的 HMAC 拒签** | Java 的密钥与 Worker 密钥发生了漂移或人工配置错乱 | 检查 CentOS 的 `.meeting-api-prod.env` 与 Mac 的 `.ai-worker-apple-silicon.env`。检查 `AI_WORKER_CALLBACK_HMAC_SECRET` 和 `AI_WORKER_INTERNAL_API_HMAC_SECRET` 四个密钥，两两严格一致。 |
 | **OSS 音频操作失败，提示 403 / SignatureDoesNotMatch** | 阿里云 OSS endpoint 配置或 AK/SK 有误，导致服务端签名失败 | 1. 确认 `STORAGE_BUCKET_*` 填写的名称在阿里云控制台确实存在且拼写正确。<br>2. 检查 `OSS_ENDPOINT` 在公网下是否填成了内网 `-internal` 地址。对于两机不在同地域 VPC 时，必须统一使用公网 Endpoint 进行上传测试。 |
 
