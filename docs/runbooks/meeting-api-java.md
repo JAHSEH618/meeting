@@ -391,7 +391,7 @@ scp deploy/.ai-worker-apple-silicon.env.centos user@<apple-mac-ip-or-vpn-ip>:/Us
 # (在 Mac 设备上运行)
 mv deploy/.ai-worker-apple-silicon.env.centos deploy/.ai-worker-apple-silicon.env
 cd apps/ai-worker
-./start.sh api local
+./api-start.sh
 ```
 
 ---

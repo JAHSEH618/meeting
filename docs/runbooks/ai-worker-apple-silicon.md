@@ -27,7 +27,7 @@ graph TD
 
     subgraph id2 ["AI Worker 机器 (Apple Silicon Mac)"]
         worker["ai-worker-api native"]
-        control["ai-worker-control.sh"]
+        control["api/web/all-*.sh"]
     end
 
     subgraph id3 ["云资源 (阿里云)"]
@@ -198,7 +198,7 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 
 ## 2. 后台守护进程控制脚本 (`apps/ai-worker/*.sh`)
 
-为了方便快速启动、停止和重启服务，不再占用前台终端，Python 端在 `apps/ai-worker/` 下提供和 Java 端同风格的根脚本：`start.sh`、`stop.sh`、`restart.sh`、`status.sh`、`logs.sh`。默认同时管理 Python API/BFF 和 `apps/ai-worker-web` 工作站前端。
+为了方便快速启动、停止和重启服务，不再占用前台终端，Python 端在 `apps/ai-worker/` 下提供和 Java 端同风格的命名脚本：`api-start.sh`、`web-start.sh`、`all-start.sh` 以及对应的 `*-stop.sh`、`*-restart.sh`。脚本名固定服务和环境，不再通过命令尾部追加 `api local` 这类参数。`status.sh`、`logs.sh` 继续用于查看状态和日志。
 
 ### 2.1 控制脚本命令矩阵
 
@@ -206,12 +206,14 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 
 | 操作 | 运行命令 | 场景说明 |
 |------|----------|----------|
-| **启动 API + 前端** | `cd apps/ai-worker && ./start.sh` | 默认同时启动 Python API/BFF (`:8090`) 和工作站前端 (`:5174/workstation/`) |
-| **启动 API (本地模式)** | `cd apps/ai-worker && ./start.sh api local` | 用于单机 localhost 测试，读取 `deploy/.ai-worker-apple-silicon.env`；不存在则使用 ai-worker 默认 fake 配置 |
-| **启动 API (联调模式)** | `cd apps/ai-worker && ./start.sh api centos` | 用于两机部署联调，读取 `deploy/.ai-worker-apple-silicon.env.centos` |
-| **启动工作站前端** | `cd apps/ai-worker && ./start.sh web [local/centos]` | 启动 `apps/ai-worker-web` Vite dev server，默认监听 `127.0.0.1:5174/workstation/`；如需局域网访问，设置 `AI_WORKER_WEB_HOST=0.0.0.0` |
-| **停止服务** | `cd apps/ai-worker && ./stop.sh [api/web/all]` | 安全、优雅地杀掉对应后台进程 |
-| **重启服务** | `cd apps/ai-worker && ./restart.sh [api/web/all] [local/centos]` | 一键平滑重启服务并重新加载对应环境参数 |
+| **启动 API + 前端** | `cd apps/ai-worker && ./all-start.sh` | 默认同时启动 Python API/BFF (`:8090`) 和工作站前端 (`:5174/workstation/`) |
+| **启动 API (本地模式)** | `cd apps/ai-worker && ./api-start.sh` | 用于单机 localhost 测试，读取 `deploy/.ai-worker-apple-silicon.env`；不存在则使用 ai-worker 默认 fake 配置 |
+| **启动 API (联调模式)** | `cd apps/ai-worker && ./api-centos-start.sh` | 用于两机部署联调，读取 `deploy/.ai-worker-apple-silicon.env.centos` |
+| **启动工作站前端 (本地模式)** | `cd apps/ai-worker && ./web-start.sh` | 启动 `apps/ai-worker-web` Vite dev server，默认监听 `127.0.0.1:5174/workstation/`；如需局域网访问，设置 `AI_WORKER_WEB_HOST=0.0.0.0` |
+| **启动工作站前端 (联调模式)** | `cd apps/ai-worker && ./web-centos-start.sh` | 启动前端并将 `/api` 代理到远端 Java URL |
+| **停止服务** | `cd apps/ai-worker && ./api-stop.sh` / `./web-stop.sh` / `./all-stop.sh` | 安全、优雅地杀掉对应后台进程；`*-centos-stop.sh` 也可用，行为一致 |
+| **重启服务** | `cd apps/ai-worker && ./api-restart.sh` / `./web-restart.sh` / `./all-restart.sh` | 一键平滑重启本地模式服务 |
+| **重启联调服务** | `cd apps/ai-worker && ./api-centos-restart.sh` / `./web-centos-restart.sh` / `./all-centos-restart.sh` | 一键平滑重启并重新加载联调环境参数 |
 | **查看状态** | `cd apps/ai-worker && ./status.sh [api/web/all]` | 查看进程运行状态、端口监听情况和健康响应 |
 | **查看日志** | `cd apps/ai-worker && ./logs.sh [api/web/all]` | 实时追踪后台输出流，Ctrl-C 退出跟踪但不停止后台服务 |
 
@@ -223,7 +225,7 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 cd apps/ai-worker
 
 # 1. 以后台守护进程模式启动 API + 工作站前端，连接 CentOS 机器
-./start.sh all centos
+./all-centos-start.sh
 
 # 2. 检查后台进程状态、端口监听与 API readiness
 ./status.sh
@@ -294,7 +296,7 @@ Stage 1 已把 CAM++ 接入 `Settings` / registry / warmup / worker 默认构造
 ```bash
 # 1. 停止后台 AI Worker 进程
 cd apps/ai-worker
-./stop.sh
+./all-stop.sh
 
 # 2. 清理临时环境文件 (保留 centos 配置文件副本)
 cd ../..

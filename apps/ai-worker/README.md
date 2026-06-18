@@ -15,13 +15,13 @@ uv run ai-worker-api  # FastAPI 启动，监听 :8090
 
 ```bash
 cd apps/ai-worker
-./start.sh              # 启动 Python API + ai-worker-web
-./start.sh api local    # 只启动 Python API / BFF
-./start.sh web local    # 只启动 ai-worker-web (:5174/workstation/)
-./start.sh all centos   # API + 前端，连接远端 Java
+./all-start.sh          # 启动 Python API + ai-worker-web
+./api-start.sh          # 只启动 Python API / BFF
+./web-start.sh          # 只启动 ai-worker-web (:5174/workstation/)
+./all-centos-start.sh   # API + 前端，连接远端 Java
 ./status.sh
-./restart.sh
-./stop.sh
+./all-restart.sh
+./all-stop.sh
 ```
 
 ### 测试与验证（每个阶段完成后必跑）
