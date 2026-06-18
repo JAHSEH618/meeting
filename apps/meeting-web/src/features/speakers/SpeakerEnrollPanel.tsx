@@ -214,22 +214,22 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
         </div>
       ) : null}
 
-      <div className="speaker-enroll-panel__tabs">
+      <div className="speaker-enroll-panel__tabs" role="group" aria-label="参考音频添加方式">
         <button
           type="button"
-          className={`button${tab === "record" ? " button--primary" : ""}`}
+          className={`speaker-enroll-panel__tab${tab === "record" ? " is-active" : ""}`}
           onClick={() => setTab("record")}
           disabled={enrolling || !!pollingEnrollmentId}
         >
-          🎙️ 当场录音
+          当场录音
         </button>
         <button
           type="button"
-          className={`button${tab === "upload" ? " button--primary" : ""}`}
+          className={`speaker-enroll-panel__tab${tab === "upload" ? " is-active" : ""}`}
           onClick={() => setTab("upload")}
           disabled={enrolling || !!pollingEnrollmentId}
         >
-          📁 上传文件
+          上传文件
         </button>
       </div>
 
@@ -238,7 +238,7 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
           <span className="speaker-enroll-panel__spinner" aria-hidden="true" />
           <div className="stack" style={{ gap: 4 }}>
             <span className="speaker-enroll-panel__progress-title">
-              🎙️ 音频上传成功，后端正在提取并注册声纹…
+              音频上传成功，后端正在提取并注册声纹…
             </span>
             <span className="page-subtitle">
               正在等待机器学习特征匹配完成，完成后将自动在页面内提示。
@@ -250,37 +250,37 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
           {tab === "record" ? (
             <div className="stack">
               <div className="sample-text-card stack">
-                <div className="toolbar" style={{ justifyContent: "space-between" }}>
+                <div className="control-row control-row--between">
                   <span className="page-subtitle">请大声朗读以下文本（声音需清晰自然）：</span>
                   <button
                     type="button"
-                    className="button button--ghost"
+                    className="button button--subtle button--compact"
                     onClick={handleNextText}
                     disabled={recording || enrolling}
                   >
-                    换一句 🔄
+                    换一句
                   </button>
                 </div>
                 <p className="sample-text-card__body">「{SAMPLE_TEXTS[sampleTextIdx]}」</p>
               </div>
 
-              <div className="toolbar">
+              <div className="control-row">
                 {recording ? (
                   <button
                     type="button"
-                    className="button button--danger speaker-recorder__pulse"
+                    className="button button--danger button--compact speaker-recorder__pulse"
                     onClick={stopRecording}
                   >
-                    🛑 停止录音 ({formatDuration(recordDuration)})
+                    停止录音 ({formatDuration(recordDuration)})
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="button button--primary"
+                    className="button button--accent button--compact"
                     onClick={startRecording}
                     disabled={enrolling}
                   >
-                    🎙️ 开始录音
+                    开始录音
                   </button>
                 )}
                 {recordedBlob && !recording ? (
@@ -305,7 +305,6 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
                   className="upload-dropzone__input"
                   name="speakerEnrollmentAudio"
                 />
-                <span className="upload-dropzone__icon">📁</span>
                 <span className="upload-dropzone__label">
                   {uploadFile ? uploadFile.name : "点击选择音频文件 (MP3, WAV, M4A)"}
                 </span>
@@ -325,10 +324,10 @@ export function SpeakerEnrollPanel({ profileId, onEnrollSuccess, setError }: Pro
             </div>
           ) : null}
 
-          <div className="toolbar">
+          <div className="control-row">
             <button
               type="button"
-              className="button button--primary"
+              className="button button--accent button--compact"
               disabled={
                 enrolling
                 || (tab === "record" && !recordedBlob)

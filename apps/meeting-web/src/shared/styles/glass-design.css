@@ -123,6 +123,193 @@ body::before {
   align-items: center;
 }
 
+.control-panel {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.control-row--between {
+  justify-content: space-between;
+}
+
+.control-row--end {
+  justify-content: flex-end;
+}
+
+.control-row--tight {
+  gap: var(--space-2);
+}
+
+.control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.control-label--compact {
+  min-height: 0;
+}
+
+.control-input,
+.field input,
+.field select,
+.field textarea,
+.control-label input[type="number"] {
+  min-height: 44px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-m);
+  box-shadow: 0 0 0 1px var(--line-2) inset;
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.control-input:hover:not(:disabled):not(:focus),
+.field input:hover:not(:disabled):not(:focus),
+.field select:hover:not(:disabled):not(:focus),
+.field textarea:hover:not(:disabled):not(:focus),
+.control-label input[type="number"]:hover:not(:disabled):not(:focus) {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.96);
+}
+
+.control-input:focus-visible,
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible,
+.control-label input[type="number"]:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.95);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 4px var(--accent-light);
+}
+
+.control-label input[type="number"] {
+  width: 76px;
+  text-align: center;
+}
+
+.control-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.disclosure {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.disclosure > summary,
+.disclosure-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0;
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  list-style: none;
+  cursor: pointer;
+}
+
+.disclosure > summary::-webkit-details-marker,
+.disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::before,
+.disclosure-summary::before {
+  content: "▸";
+  display: inline-flex;
+  width: 12px;
+  color: currentColor;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.disclosure[open] > summary::before,
+.disclosure[open] .disclosure-summary::before {
+  content: "▾";
+}
+
+.disclosure-summary__meta {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.scope-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.scope-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5);
+  background: rgba(255, 255, 255, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-l);
+  box-shadow: 0 0 0 1px var(--line-2) inset;
+}
+
+.scope-fieldset legend {
+  padding: 0 var(--space-2);
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+  font-weight: 800;
+}
+
+.scope-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) 0;
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.scope-option__content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.scope-option__id {
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .glass-panel,
 .card {
   background: var(--glass-card);
@@ -239,6 +426,34 @@ body::before {
 
 .button--ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.92);
+}
+
+.button--accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.button--accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.button--accent:active:not(:disabled) {
+  background: var(--accent-active);
+  border-color: var(--accent-active);
+}
+
+.button--subtle {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: none;
+}
+
+.button--compact {
+  min-height: 40px;
+  padding: 0 var(--space-4);
 }
 
 .button.danger,
@@ -542,15 +757,16 @@ body::before {
 
 .meeting-modules {
   align-items: stretch;
+  gap: var(--space-5);
 }
 
 .module-card {
-  min-height: 230px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: var(--space-8);
-  padding: var(--space-9);
+  min-height: 204px;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: start;
+  gap: var(--space-6);
+  padding: var(--space-6);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.64)),
     rgba(255, 255, 255, 0.68);
@@ -562,11 +778,11 @@ body::before {
 }
 
 .module-card--wide {
-  min-height: 280px;
+  min-height: 230px;
 }
 
 .module-card__eyebrow {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-3);
   color: var(--accent-ink);
   font-size: var(--text-xs);
   font-weight: 850;
@@ -585,7 +801,7 @@ body::before {
 }
 
 .module-card p:not(.module-card__eyebrow) {
-  margin: var(--space-5) 0 0;
+  margin: var(--space-4) 0 0;
   max-width: 48ch;
   color: var(--text-light);
   font-size: var(--text-base);
@@ -596,7 +812,7 @@ body::before {
 .module-card__meta {
   display: grid;
   gap: var(--space-2);
-  padding-top: var(--space-5);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--line-2);
 }
 
@@ -699,6 +915,21 @@ body::before {
   .glass-panel--table {
     padding: 0;
     overflow-x: auto;
+  }
+
+  .control-row,
+  .control-row--between,
+  .control-row--end {
+    align-items: stretch;
+  }
+
+  .control-row > *,
+  .control-label {
+    width: 100%;
+  }
+
+  .scope-grid {
+    grid-template-columns: 1fr;
   }
 
   .button {

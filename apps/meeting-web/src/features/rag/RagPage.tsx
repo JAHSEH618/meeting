@@ -122,7 +122,7 @@ export function RagPage() {
         <div className="error" role="alert">{error}</div>
       ) : null}
 
-      <section className="glass-panel stack">
+      <section className="glass-panel control-panel">
         <div className="field">
           <label className="field__label" htmlFor="rag-question">问题</label>
           <textarea
@@ -137,48 +137,56 @@ export function RagPage() {
         </div>
 
         <details
+          className="disclosure"
           open={scopeOpen}
           onToggle={(e) => setScopeOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>
-            范围：<span className="page-subtitle">{scopeSummary}</span>
+            <span>范围</span>
+            <span className="disclosure-summary__meta">{scopeSummary}</span>
           </summary>
           {scopeLoadError ? (
             <div className="error" role="alert">{scopeLoadError}</div>
           ) : null}
-          <div className="grid">
-            <fieldset className="stack">
+          <div className="scope-grid">
+            <fieldset className="scope-fieldset stack">
               <legend>会议</legend>
               {meetings.length === 0 ? (
                 <p className="page-subtitle">暂无可选会议</p>
               ) : (
                 meetings.map((mtg) => (
-                  <label key={mtg.meetingId} className="toolbar">
+                  <label key={mtg.meetingId} className="scope-option">
                     <input
+                      className="control-checkbox"
                       type="checkbox"
                       checked={selectedMeetings.has(mtg.meetingId)}
                       onChange={() => setSelectedMeetings((s) => toggle(s, mtg.meetingId))}
                     />
-                    <span>{mtg.title}</span>
-                    <span className="page-subtitle" translate="no">{mtg.meetingId}</span>
+                    <span className="scope-option__content">
+                      <span>{mtg.title}</span>
+                      <span className="scope-option__id" translate="no">{mtg.meetingId}</span>
+                    </span>
                   </label>
                 ))
               )}
             </fieldset>
-            <fieldset className="stack">
+            <fieldset className="scope-fieldset stack">
               <legend>文档</legend>
               {documents.length === 0 ? (
                 <p className="page-subtitle">暂无可选文档</p>
               ) : (
                 documents.map((doc) => (
-                  <label key={doc.documentId} className="toolbar">
+                  <label key={doc.documentId} className="scope-option">
                     <input
+                      className="control-checkbox"
                       type="checkbox"
                       checked={selectedDocuments.has(doc.documentId)}
                       onChange={() => setSelectedDocuments((s) => toggle(s, doc.documentId))}
                     />
-                    <span>{doc.title}</span>
-                    <span className="page-subtitle" translate="no">{doc.documentId}</span>
+                    <span className="scope-option__content">
+                      <span>{doc.title}</span>
+                      <span className="scope-option__id" translate="no">{doc.documentId}</span>
+                    </span>
                   </label>
                 ))
               )}
@@ -186,10 +194,11 @@ export function RagPage() {
           </div>
         </details>
 
-        <div className="toolbar">
-          <label className="toolbar">
+        <div className="control-row">
+          <label className="control-label">
             <span>topN</span>
             <input
+              className="control-input"
               type="number"
               min={MIN_TOP_N}
               max={MAX_TOP_N}
@@ -203,8 +212,9 @@ export function RagPage() {
               aria-label="topN"
             />
           </label>
-          <label className="toolbar">
+          <label className="control-label">
             <input
+              className="control-checkbox"
               type="checkbox"
               checked={includeStale}
               onChange={(e) => setIncludeStale(e.target.checked)}

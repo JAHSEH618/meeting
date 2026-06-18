@@ -55,7 +55,10 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
         <span className="page-subtitle" translate="no">{profile.personId}</span>
       </div>
 
-      <details onToggle={(e) => setEnrollmentsOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <details
+        className="disclosure"
+        onToggle={(e) => setEnrollmentsOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
         <summary>参考音频 {enrollments ? `(${enrollments.length})` : ""}</summary>
         {enrollmentsQuery.isPending && enrollmentsOpen ? (
           <p className="page-subtitle" aria-live="polite">加载中…</p>
@@ -64,9 +67,11 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
           <div className="stack">
             {enrollments.length === 0 ? <p className="page-subtitle">暂无参考音频</p> : null}
             {enrollments.map((enrollment) => (
-              <article className="stack" key={enrollment.enrollmentId}>
-                <div className="toolbar">
-                  <span translate="no">{enrollment.sourceAudioFileId}</span>
+              <article className="reference-audio-card" key={enrollment.enrollmentId}>
+                <div className="control-row control-row--tight">
+                  <span className="reference-audio-card__id" translate="no">
+                    {enrollment.sourceAudioFileId}
+                  </span>
                   <span
                     className={`pill ${
                       enrollment.enrollmentStatus === "SUCCEEDED"
@@ -79,7 +84,7 @@ export function SpeakerProfileCard({ profile, setError }: Props) {
                     {enrollment.enrollmentStatus}
                   </span>
                   {typeof enrollment.qualityScore === "number" ? (
-                    <span className="page-subtitle">
+                    <span className="reference-audio-card__meta">
                       质量 {Math.round(enrollment.qualityScore * 100)}%
                     </span>
                   ) : null}
