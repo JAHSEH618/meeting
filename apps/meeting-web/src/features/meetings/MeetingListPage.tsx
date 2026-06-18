@@ -17,15 +17,18 @@ const STATUS_TONE: Record<string, string> = {
 export function MeetingListPage() {
   const [params, setParams] = useSearchParams();
   const keyword = params.get("q") ?? "";
+  const statusFilter = params.get("status") ?? "";
 
   const { data, isPending, error } = useMeetingsQuery();
   const meetings = data?.items ?? [];
 
   const filtered = useMemo(() => {
     return meetings.filter((m) => {
-      return m.title.toLowerCase().includes(keyword.trim().toLowerCase());
+      const matchesKeyword = m.title.toLowerCase().includes(keyword.trim().toLowerCase());
+      const matchesStatus = !statusFilter || m.status === statusFilter;
+      return matchesKeyword && matchesStatus;
     });
-  }, [meetings, keyword]);
+  }, [meetings, keyword, statusFilter]);
 
   function update(next: Record<string, string>) {
     const merged = new URLSearchParams(params);
@@ -47,6 +50,14 @@ export function MeetingListPage() {
     processing: meetings.filter(m => m.status === 'PROCESSING').length,
     ready: meetings.filter(m => m.status === 'SUCCEEDED').length,
   };
+  const latestMeeting = [...meetings].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )[0];
+  const pendingMeetings = meetings
+    .filter((meeting) => meeting.status === "CREATED")
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const nextPendingMeeting = pendingMeetings[0];
+  const currentStatusLabel = statusFilter ? formatMeetingStatus(statusFilter) : "";
 
   return (
     <div className="page page--hero">
@@ -67,64 +78,122 @@ export function MeetingListPage() {
       </header>
 
       <section className="stats-grid" aria-label="会议概览">
-        <div className="stat-card">
+        <button
+          type="button"
+          className="stat-card stat-card--button"
+          aria-label={`全部会议，总会议数 ${stats.total} 个`}
+          aria-pressed={!statusFilter}
+          data-active={!statusFilter}
+          onClick={() => update({ status: "" })}
+        >
           <div className="stat-card__value">{stats.total}</div>
           <div className="stat-card__label">总会议数</div>
-        </div>
-        <div className="stat-card">
+        </button>
+        <button
+          type="button"
+          className="stat-card stat-card--button"
+          aria-label={`处理中会议 ${stats.processing} 个`}
+          aria-pressed={statusFilter === "PROCESSING"}
+          data-active={statusFilter === "PROCESSING"}
+          onClick={() => update({ status: "PROCESSING" })}
+        >
           <div className="stat-card__value">{stats.processing}</div>
           <div className="stat-card__label">处理中</div>
-        </div>
-        <div className="stat-card">
+        </button>
+        <button
+          type="button"
+          className="stat-card stat-card--button"
+          aria-label={`已完成会议 ${stats.ready} 个`}
+          aria-pressed={statusFilter === "SUCCEEDED"}
+          data-active={statusFilter === "SUCCEEDED"}
+          onClick={() => update({ status: "SUCCEEDED" })}
+        >
           <div className="stat-card__value">{stats.ready}</div>
           <div className="stat-card__label">已完成</div>
-        </div>
+        </button>
       </section>
 
       <section className="meeting-modules grid-12" aria-label="会议工作流模块">
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">01 / 流程</p>
-            <h2>处理链路</h2>
-            <p>从音频上传、转录、纪要到行动项确认，按会议生命周期组织状态，不再用孤立功能入口堆叠页面。</p>
+            <p className="module-card__eyebrow">会议动态</p>
+            <h2>最近会议</h2>
+            {latestMeeting ? (
+              <p>
+                {latestMeeting.title} · {formatMeetingStatus(latestMeeting.status)} · {formatDate(latestMeeting.createdAt)}
+              </p>
+            ) : isPending ? (
+              <p>正在加载最近会议…</p>
+            ) : (
+              <p>还没有会议记录，可先创建一场会议。</p>
+            )}
           </div>
-          <div className="module-card__rail" aria-label="处理链路阶段">
-            <span>上传</span>
-            <span>转录</span>
-            <span>纪要</span>
-            <span>复核</span>
+          <div className="module-card__actions">
+            {latestMeeting ? (
+              <Link className="button button--compact" to={`/meetings/${latestMeeting.meetingId}`}>
+                打开最近会议
+              </Link>
+            ) : isPending ? (
+              <Link className="button button--compact" to="/meetings">
+                打开最近会议
+              </Link>
+            ) : (
+              <Link className="button button--compact" to="/meetings/new">
+                新建会议
+              </Link>
+            )}
           </div>
         </article>
 
         <article className="module-card module-card--wide span-6">
           <div>
-            <p className="module-card__eyebrow">02 / 知识</p>
-            <h2>知识沉淀</h2>
-            <p>会议、文档和问答共享同一套本地知识索引，入口保持克制，重点放在可追溯内容和引用上下文。</p>
+            <p className="module-card__eyebrow">待办</p>
+            <h2>待启动处理</h2>
+            {nextPendingMeeting ? (
+              <p>
+                {pendingMeetings.length} 场会议还未启动音频处理，下一场是 {nextPendingMeeting.title}。
+              </p>
+            ) : (
+              <p>当前没有待启动处理的会议。</p>
+            )}
           </div>
-          <div className="module-card__meta">
-            <span>会议记录</span>
-            <span>文档库</span>
-            <span>知识问答</span>
+          <div className="module-card__actions">
+            {nextPendingMeeting ? (
+              <Link className="button button--compact" to={`/meetings/${nextPendingMeeting.meetingId}/audio`}>
+                进入处理
+              </Link>
+            ) : (
+              <Link className="button button--compact" to="/meetings/new">
+                新建会议
+              </Link>
+            )}
           </div>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">03 / 合规</p>
-          <h2>合规留痕</h2>
-          <p>法律保留、删除任务、应急访问和审计事件统一成低噪音表格工作流。</p>
+          <p className="module-card__eyebrow">入口</p>
+          <h2>快捷入口</h2>
+          <div className="module-card__link-list" aria-label="快捷入口">
+            <Link to="/meetings/new">新建会议</Link>
+            <Link to="/speaker-profiles">声纹档案</Link>
+            <Link to="/documents">文档库</Link>
+          </div>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">04 / 索引</p>
+          <p className="module-card__eyebrow">检索</p>
           <h2>会议索引</h2>
-          <p>列表先服务查找和继续处理，状态、语言、创建时间保留稳定扫描节奏。</p>
+          <p>{filtered.length} 条记录符合当前条件，列表可继续按标题和状态缩小范围。</p>
         </article>
 
         <article className="module-card span-4">
-          <p className="module-card__eyebrow">05 / 本地</p>
-          <h2>本地工作台</h2>
-          <p>浅色玻璃背景只承担层级表达，不把每个模块做成独立品牌块。</p>
+          <p className="module-card__eyebrow">知识</p>
+          <h2>知识内容</h2>
+          <div className="module-card__link-list" aria-label="知识入口">
+            <Link to="/rag">知识问答</Link>
+            <Link to="/documents">文档库</Link>
+            <Link to="/admin/audit-events">审计事件</Link>
+          </div>
         </article>
       </section>
 
@@ -142,6 +211,18 @@ export function MeetingListPage() {
               onChange={(e) => update({ q: e.target.value })}
             />
           </div>
+          {statusFilter ? (
+            <div className="filter-chip" aria-live="polite">
+              <span>当前筛选：{currentStatusLabel}</span>
+              <button
+                type="button"
+                className="button button--subtle button--compact"
+                onClick={() => update({ status: "" })}
+              >
+                清除筛选
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {isPending ? <p className="page-subtitle" aria-live="polite">加载中…</p> : null}

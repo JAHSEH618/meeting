@@ -553,9 +553,115 @@
   color: var(--ink-3);
 }
 
+.empty-state--compact {
+  padding: var(--space-5);
+  text-align: left;
+}
+
 .empty-state__icon {
   font-size: 32px;
   opacity: 0.5;
+}
+
+.participant-picker {
+  padding: var(--space-5);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-l);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.participant-picker__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.participant-picker__header > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.participant-picker__header strong,
+.participant-create-panel > strong {
+  color: var(--ink-1);
+  font-size: var(--text-base);
+  font-weight: 850;
+}
+
+.participant-picker__header span,
+.participant-picker__summary,
+.participant-option__main span {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.participant-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.participant-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 72px;
+  padding: var(--space-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-m);
+  background: rgba(255, 255, 255, 0.62);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.participant-option:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 102, 255, 0.18);
+}
+
+.participant-option[data-selected="true"] {
+  border-color: rgba(0, 102, 255, 0.34);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.participant-option[data-disabled="true"] {
+  opacity: 0.6;
+}
+
+.participant-option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.participant-option__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.participant-option__main strong {
+  overflow: hidden;
+  color: var(--ink-1);
+  font-size: var(--text-sm);
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participant-picker__summary {
+  font-weight: 750;
+}
+
+.participant-create-panel,
+.participant-created-card {
+  padding: var(--space-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-l);
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .drawer {
