@@ -227,8 +227,8 @@ export function AudioUploadPage() {
       <header className="page-hero page-hero--workbench">
         <div>
           <span className="page-hero__label">音频</span>
-          <h1 className="page-hero__title">音频上传</h1>
-          <p className="page-hero__subtitle">为当前会议上传音频文件</p>
+          <h1 className="page-hero__title">上传并处理</h1>
+          <p className="page-hero__subtitle">上传完成后会自动启动处理任务</p>
         </div>
         <div className="page-hero__actions">
           <Link className="button" to={`/meetings/${meetingId}`}>返回会议</Link>
@@ -393,7 +393,7 @@ function buttonText(status: string): string {
   if (status === "uploading") return "上传中…";
   if (status === "completing") return "完成中…";
   if (status === "completed") return "已完成";
-  return "开始上传";
+  return "上传并处理";
 }
 
 function hasActiveSession(state: { session: AudioUploadSession | null; status: string }): boolean {

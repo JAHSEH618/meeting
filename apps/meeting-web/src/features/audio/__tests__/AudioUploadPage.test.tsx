@@ -32,9 +32,10 @@ describe("AudioUploadPage", () => {
   it("uploads a small audio file and navigates to task progress", async () => {
     renderPage();
 
+    expect(screen.getByText("上传完成后会自动启动处理任务")).toBeInTheDocument();
     const file = new File([new Uint8Array([1, 2, 3, 4])], "standup.wav", { type: "audio/wav" });
     fireEvent.change(screen.getByLabelText("音频文件"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "开始上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "上传并处理" }));
 
     await waitFor(() => expect(screen.getByText("task progress loaded")).toBeInTheDocument());
   });
@@ -88,7 +89,7 @@ describe("AudioUploadPage", () => {
     // a 3 GiB file without actually allocating 3 GiB of bytes.
     Object.defineProperty(file, "size", { value: 3 * 1024 * 1024 * 1024 });
     fireEvent.change(screen.getByLabelText("音频文件"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "开始上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "上传并处理" }));
 
     await waitFor(() =>
       expect(screen.getByText("音频文件超过 2 GiB 单 PUT 上限")).toBeInTheDocument(),
