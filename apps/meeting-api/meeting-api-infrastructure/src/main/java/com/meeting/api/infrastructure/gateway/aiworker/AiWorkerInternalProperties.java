@@ -24,6 +24,7 @@ public record AiWorkerInternalProperties(
     Integer connectTimeoutMs
 ) {
     public AiWorkerInternalProperties {
+        baseUrl = stripTrailingSlash(baseUrl);
         if (rerankTimeoutMs == null || rerankTimeoutMs <= 0) {
             rerankTimeoutMs = 3000;
         }
@@ -39,5 +40,16 @@ public record AiWorkerInternalProperties(
         if (connectTimeoutMs == null || connectTimeoutMs <= 0) {
             connectTimeoutMs = 1000;
         }
+    }
+
+    private static String stripTrailingSlash(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value;
+        while (stripped.endsWith("/") && !stripped.endsWith("://")) {
+            stripped = stripped.substring(0, stripped.length() - 1);
+        }
+        return stripped;
     }
 }

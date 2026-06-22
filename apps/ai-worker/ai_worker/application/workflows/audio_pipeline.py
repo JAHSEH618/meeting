@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import asdict
 import json
 from pathlib import Path
@@ -58,9 +59,22 @@ class LocalAudioPipelineEngine:
         self._asr_runtime = asr_runtime or DeterministicAsrRuntime()
         self._diarization_runtime = diarization_runtime or SingleSpeakerDiarizationRuntime()
         self._speaker_embedding_runtime = speaker_embedding_runtime or DeterministicSpeakerEmbeddingRuntime()
+        self._speaker_reference_supplier = speaker_reference_supplier
         self._speaker_matcher = speaker_matcher or AuthorizedScopeMatcher(
             reference_supplier=speaker_reference_supplier
         )
+
+    async def close(self) -> None:
+        if self._speaker_reference_supplier is None:
+            return
+        close = getattr(self._speaker_reference_supplier, "close", None)
+        if close is None:
+            close = getattr(self._speaker_reference_supplier, "aclose", None)
+        if close is None:
+            return
+        result = close()
+        if inspect.isawaitable(result):
+            await result
 
     async def run_pipeline(self, task: TaskMessage) -> PipelineArtifact:
         context = self.start_pipeline(task)

@@ -1,9 +1,13 @@
 """WorkerRuntime port and local phase 2 runtime implementation."""
 
+import asyncio
+import hashlib
+import inspect
+import json
 import logging
-import uuid
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
 
+from ai_worker.common.config import settings
 from ai_worker.application.workflows.audio_pipeline import LocalAudioPipelineEngine, WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore, workflow_state_store
 from ai_worker.application.workflows.text_embedding import (
@@ -95,6 +99,7 @@ class MvpWorkerRuntime:
         self.embedding_workflow = embedding_workflow or TextEmbeddingWorkflow(
             state_store, get_bge_m3()
         )
+        self.heartbeat_interval_seconds = settings.callback_heartbeat_interval_seconds
         self._running = False
 
     async def start(self) -> None:
@@ -102,6 +107,20 @@ class MvpWorkerRuntime:
 
     async def stop(self) -> None:
         self._running = False
+        await self._close_resource(self.callback_client)
+        await self._close_resource(self.workflow_engine)
+        await self._close_resource(self.embedding_workflow)
+
+    @staticmethod
+    async def _close_resource(resource: Any) -> None:
+        close = getattr(resource, "aclose", None)
+        if close is None:
+            close = getattr(resource, "close", None)
+        if close is None:
+            return
+        result = close()
+        if inspect.isawaitable(result):
+            await result
 
     async def consume_message(self, raw_message: dict[str, Any]) -> TaskMessage | None:
         task = await consume_and_validate(raw_message, self.callback_client)
@@ -219,21 +238,20 @@ class MvpWorkerRuntime:
                 await self._fail_for_writeback(task, step_name, "step start callback failed")
                 return task
 
-            try:
-                await self.embedding_workflow.run_step(context, step_name)
-            except WorkerPipelineError as exc:
-                self.state_store.update_step(task.task_id, step_name, "FAILED", 100, exc.error_code)
-                await self._fail_for_pipeline_result(
-                    task,
-                    StepResult(
-                        step_name=exc.step_name,
-                        status="FAILED",
-                        progress=100,
-                        error_code=exc.error_code,
-                        error_message=str(exc),
-                        retryable=exc.retryable,
-                    ),
-                )
+            if await self._heartbeat(task, step_name, 50) is False:
+                await self._fail_for_writeback(task, step_name, "step heartbeat callback failed")
+                return task
+
+            pipeline_result, heartbeat_error = await self._run_with_heartbeat(
+                task,
+                step_name,
+                lambda: self.embedding_workflow.run_step(context, step_name),
+            )
+            if heartbeat_error is not None:
+                await self._fail_for_writeback(task, step_name, heartbeat_error)
+                return task
+            if pipeline_result is not None:
+                await self._fail_for_pipeline_result(task, pipeline_result)
                 return task
 
             succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
@@ -274,7 +292,7 @@ class MvpWorkerRuntime:
     ) -> CallbackResponse:
         expected = task.expected_input_version if isinstance(task.expected_input_version, dict) else {}
         chunk_strategy_version = expected.get("chunkStrategyVersion") or "default-zh-v1"
-        embedding_batch_id = f"embed_batch_{task.task_id}_{task.attempt_no}_{uuid.uuid4().hex[:12]}"
+        embedding_batch_id = self._embedding_batch_id(task, embeddings, chunk_strategy_version)
         source_type = "DOCUMENT" if task.document_id else "PRIMARY_TRANSCRIPT"
 
         return await self.callback_client.submit_embeddings(
@@ -289,6 +307,29 @@ class MvpWorkerRuntime:
             trace_id=task.trace_id,
         )
 
+    @staticmethod
+    def _embedding_batch_id(
+        task: TaskMessage,
+        embeddings: list[EmbeddingItem],
+        chunk_strategy_version: str,
+    ) -> str:
+        expected = task.expected_input_version if isinstance(task.expected_input_version, dict) else {}
+        seed = {
+            "tenantId": task.tenant_id,
+            "taskId": task.task_id,
+            "taskType": task.task_type,
+            "attemptNo": task.attempt_no,
+            "meetingId": task.meeting_id or "",
+            "documentId": task.document_id or "",
+            "chunkStrategyVersion": chunk_strategy_version,
+            "embeddingModelVersion": expected.get("embeddingModelVersion") or "",
+            "chunkIds": [embedding.chunk_id for embedding in embeddings],
+        }
+        digest = hashlib.sha256(
+            json.dumps(seed, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:12]
+        return f"embed_batch_{task.task_id}_{task.attempt_no}_{digest}"
+
     async def execute_step(self, task: TaskMessage, step_name: str, context: Any | None = None) -> StepResult:
         started = await self._update_step(task, step_name, "RUNNING", 0)
         if not started.accepted:
@@ -297,25 +338,51 @@ class MvpWorkerRuntime:
         if await self._heartbeat(task, step_name, 50) is False:
             return self._writeback_failed(step_name, "step heartbeat callback failed")
 
-        try:
-            if context is not None and hasattr(self.workflow_engine, "run_step"):
-                await self.workflow_engine.run_step(context, step_name)
-        except WorkerPipelineError as exc:
-            self.state_store.update_step(task.task_id, step_name, "FAILED", 100, exc.error_code)
-            return StepResult(
-                step_name=exc.step_name,
-                status="FAILED",
-                progress=100,
-                error_code=exc.error_code,
-                error_message=str(exc),
-                retryable=exc.retryable,
-            )
+        pipeline_result, heartbeat_error = await self._run_with_heartbeat(
+            task,
+            step_name,
+            lambda: self._run_audio_step(context, step_name),
+        )
+        if heartbeat_error is not None:
+            return self._writeback_failed(step_name, heartbeat_error)
+        if pipeline_result is not None:
+            return pipeline_result
 
         succeeded = await self._update_step(task, step_name, "SUCCEEDED", 100)
         if not succeeded.accepted:
             return self._writeback_failed(step_name, "step success callback failed")
 
         return StepResult(step_name=step_name, status="SUCCEEDED", progress=100)
+
+    async def _run_audio_step(self, context: Any | None, step_name: str) -> None:
+        if context is not None and hasattr(self.workflow_engine, "run_step"):
+            await self.workflow_engine.run_step(context, step_name)
+
+    async def _run_with_heartbeat(
+        self,
+        task: TaskMessage,
+        step_name: str,
+        run_step: Callable[[], Awaitable[None]],
+    ) -> tuple[StepResult | None, str | None]:
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(task, step_name))
+        pipeline_result: StepResult | None = None
+        heartbeat_error: str | None = None
+        try:
+            try:
+                await run_step()
+            except WorkerPipelineError as exc:
+                self.state_store.update_step(task.task_id, step_name, "FAILED", 100, exc.error_code)
+                pipeline_result = StepResult(
+                    step_name=exc.step_name,
+                    status="FAILED",
+                    progress=100,
+                    error_code=exc.error_code,
+                    error_message=str(exc),
+                    retryable=exc.retryable,
+                )
+        finally:
+            heartbeat_error = await self._stop_heartbeat_loop(heartbeat_task)
+        return pipeline_result, heartbeat_error
 
     async def _update_step(
         self,
@@ -352,6 +419,23 @@ class MvpWorkerRuntime:
         if response.accepted:
             self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
         return response.accepted
+
+    async def _heartbeat_loop(self, task: TaskMessage, step_name: str) -> str | None:
+        while True:
+            await asyncio.sleep(self.heartbeat_interval_seconds)
+            if await self._heartbeat(task, step_name, 50) is False:
+                return "step heartbeat callback failed"
+
+    @staticmethod
+    async def _stop_heartbeat_loop(heartbeat_task: asyncio.Task[str | None]) -> str | None:
+        if heartbeat_task.done():
+            return heartbeat_task.result()
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            return None
+        return heartbeat_task.result()
 
     async def _fail_for_writeback(self, task: TaskMessage, failed_step: str, message: str) -> None:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)

@@ -76,6 +76,7 @@ public class ProcessingTaskCallbackController {
     ) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         StepStatus status = StepStatus.valueOf(requiredString(payload, "status"));
         int progress = optionalInt(payload, "progress", 0);
         ProcessingStep step = ProcessingStep.valueOf(stepName);
@@ -115,6 +116,7 @@ public class ProcessingTaskCallbackController {
     ) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         metrics.callbackCounter("complete", "WORKER_DAG").increment();
         return ApiResponse.ok(callbackApplicationService.completeWorkerPhase(new CompleteWorkerPhaseCommand(
             metadata,
@@ -140,6 +142,7 @@ public class ProcessingTaskCallbackController {
     ) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         @SuppressWarnings("unchecked")
         Map<String, Object> error = (Map<String, Object>) payload.get("error");
         ErrorCode code = ErrorCode.valueOf(String.valueOf(error.get("code")));
@@ -161,6 +164,8 @@ public class ProcessingTaskCallbackController {
     @PostMapping("/artifacts")
     public ApiResponse<Map<String, Object>> artifacts(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
+        Map<String, Object> payload = parseBody(rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "ARTIFACTS"), metadata.requestId(), metadata.traceId());
     }
 
@@ -168,6 +173,7 @@ public class ProcessingTaskCallbackController {
     public ApiResponse<ProcessingTaskDTO> transcript(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         Map<String, Object> payload = parseBody(rawBody);
         CallbackMetadata metadata = metadata(request, rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         metrics.callbackCounter("transcript", "TRANSCRIPT_MERGE").increment();
         return ApiResponse.ok(callbackApplicationService.writeTranscript(new TranscriptCallbackCommand(
             metadata,
@@ -186,15 +192,15 @@ public class ProcessingTaskCallbackController {
     public ApiResponse<Map<String, Object>> speakerCandidates(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
         Map<String, Object> payload = parseBody(rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         String tenantId = optionalString(payload, "tenantId");
         String meetingId = optionalString(payload, "meetingId");
-        int attemptNo = optionalInt(payload, "attemptNo", metadata.attemptNo());
         speakerCallbackApplicationService.writeCandidates(new SpeakerCandidatesCallbackCommand(
             metadata,
             tenantId,
             meetingId,
             taskId,
-            attemptNo,
+            metadata.attemptNo(),
             parseSpeakerCandidates(payload.get("speakerCandidates"))
         ));
         return ApiResponse.ok(Map.of("accepted", true, "taskId", taskId, "callback", "SPEAKER_CANDIDATES"), metadata.requestId(), metadata.traceId());
@@ -204,12 +210,13 @@ public class ProcessingTaskCallbackController {
     public ApiResponse<Map<String, Object>> speakerEnrollment(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
         Map<String, Object> payload = parseBody(rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         metrics.callbackCounter("speaker_enrollment", "SPEAKER_EMBEDDING").increment();
         var result = speakerEnrollmentCallbackApplicationService.writeEnrollment(new SpeakerEnrollmentCallbackCommand(
             metadata,
             requiredString(payload, "tenantId"),
             taskId,
-            optionalInt(payload, "attemptNo", metadata.attemptNo()),
+            metadata.attemptNo(),
             requiredString(payload, "speakerProfileId"),
             requiredString(payload, "speakerEnrollmentId"),
             requiredString(payload, "audioFileId"),
@@ -233,12 +240,13 @@ public class ProcessingTaskCallbackController {
     public ApiResponse<Map<String, Object>> embeddings(@PathVariable String taskId, @RequestBody String rawBody, HttpServletRequest request) {
         CallbackMetadata metadata = metadata(request, rawBody);
         Map<String, Object> payload = parseBody(rawBody);
+        requireRequestIdentity(payload, taskId, metadata);
         metrics.callbackCounter("embeddings", "RAG_INDEXING").increment();
         var result = embeddingsCallbackApplicationService.writeEmbeddings(new EmbeddingsCallbackCommand(
             metadata,
             requiredString(payload, "tenantId"),
             taskId,
-            optionalInt(payload, "attemptNo", metadata.attemptNo()),
+            metadata.attemptNo(),
             requiredString(payload, "embeddingBatchId"),
             requiredString(payload, "sourceType"),
             requiredString(payload, "embeddingModelVersion"),
@@ -302,6 +310,11 @@ public class ProcessingTaskCallbackController {
         } catch (Exception e) {
             throw new IllegalArgumentException("invalid callback body", e);
         }
+    }
+
+    private static void requireRequestIdentity(Map<String, Object> payload, String taskId, CallbackMetadata metadata) {
+        CallbackRequestIdentityValidator.requireTaskIdMatchesPath(payload, taskId);
+        CallbackRequestIdentityValidator.requireAttemptNoMatchesHeader(payload, metadata.attemptNo());
     }
 
     private static CallbackMetadata metadata(HttpServletRequest request, String rawBody) {

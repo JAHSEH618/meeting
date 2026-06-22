@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.application.workflows.text_embedding import (
+    EmbeddingItem,
     TextEmbeddingWorkflow,
     is_embedding_task,
     to_callback_items,
 )
+from ai_worker.domain.task import PipelineArtifact
 from ai_worker.domain.task import TaskMessage
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
@@ -85,8 +90,6 @@ async def test_workflow_embeds_each_chunk_with_fake_runtime(state_store, fake_ru
 
 @pytest.mark.asyncio
 async def test_workflow_rejects_empty_chunks(state_store, fake_runtime) -> None:
-    from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
-
     workflow = TextEmbeddingWorkflow(state_store, fake_runtime)
     task = _embed_task(meeting_id="mtg_01", chunks=[])
 
@@ -196,6 +199,67 @@ def _callback_stub() -> AsyncMock:
     return client
 
 
+class SlowEmbeddingWorkflow:
+    def __init__(self, state_store: InMemoryWorkflowStateStore, *, fail: bool = False) -> None:
+        self._state_store = state_store
+        self._fail = fail
+
+    def start_pipeline(self, task: TaskMessage):
+        self._state_store.start(
+            task_id=task.task_id,
+            task_type=task.task_type,
+            tenant_id=task.tenant_id,
+            attempt_no=task.attempt_no,
+            trace_id=task.trace_id,
+            steps=list(task.pipeline_steps),
+        )
+        return SimpleNamespace(
+            task=task,
+            embeddings=[],
+            model_version="test-embedding-model",
+            skipped_steps=[],
+        )
+
+    async def run_step(self, context, step_name: str) -> None:
+        await asyncio.sleep(0.035)
+        if self._fail:
+            raise RuntimeError("embedding exploded")
+        context.embeddings.append(EmbeddingItem(
+            chunk_id="c1",
+            content="chunk",
+            values=(0.1, 0.2),
+            dimension=2,
+        ))
+
+    async def complete_pipeline(self, context) -> PipelineArtifact:
+        return PipelineArtifact(
+            task_id=context.task.task_id,
+            transcript_segments=[],
+            artifact_manifest_id=None,
+            terminal_status="SUCCEEDED",
+        )
+
+
+def _raw_embedding_message(task_id: str = "task_runtime_emb") -> dict:
+    return {
+        "taskId": task_id,
+        "taskType": "TEXT_EMBEDDING",
+        "tenantId": "tenant_01",
+        "documentId": "doc_01",
+        "attemptNo": 1,
+        "pipelineSteps": ["RAG_INDEXING"],
+        "expectedInputVersion": {
+            "chunkStrategyVersion": "default-zh-v1",
+            "embeddingModelVersion": "bge-m3-v1",
+        },
+        "options": {
+            "enableRagIndexing": True,
+            "chunks": _chunks(("c1", "片段一")),
+        },
+        "traceId": f"trace_{task_id}",
+    }
+
+
 @pytest.mark.asyncio
 async def test_runtime_routes_text_embedding_task_through_embed_workflow(state_store, fake_runtime) -> None:
     workflow = TextEmbeddingWorkflow(state_store, fake_runtime)
@@ -242,6 +306,68 @@ async def test_runtime_routes_text_embedding_task_through_embed_workflow(state_s
     complete_kwargs = callback_client.complete_worker_phase.await_args.kwargs
     assert complete_kwargs["status"] == "SUCCEEDED"
     assert complete_kwargs["completed_steps"] == ["RAG_INDEXING"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_stable_embedding_batch_id_for_same_attempt_redelivery(fake_runtime) -> None:
+    raw_message = _raw_embedding_message("task_redelivered_emb")
+
+    async def consume_once() -> str:
+        callback_client = _callback_stub()
+        runtime = MvpWorkerRuntime(
+            callback_client=callback_client,
+            embedding_workflow=TextEmbeddingWorkflow(InMemoryWorkflowStateStore(), fake_runtime),
+            state_store=InMemoryWorkflowStateStore(),
+        )
+
+        await runtime.consume_message(raw_message)
+
+        callback_client.submit_embeddings.assert_awaited_once()
+        return callback_client.submit_embeddings.await_args.kwargs["embedding_batch_id"]
+
+    first_batch_id = await consume_once()
+    second_batch_id = await consume_once()
+
+    assert first_batch_id == second_batch_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_sends_periodic_heartbeats_while_text_embedding_runs(state_store) -> None:
+    callback_client = _callback_stub()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        embedding_workflow=SlowEmbeddingWorkflow(state_store),
+        state_store=state_store,
+    )
+    runtime.heartbeat_interval_seconds = 0.01
+
+    task = await runtime.consume_message(_raw_embedding_message("task_slow_emb"))
+
+    assert task is not None
+    heartbeat_calls = [
+        call for call in callback_client.update_step.await_args_list
+        if call.kwargs["status"] == "RUNNING" and call.kwargs["progress"] > 0
+    ]
+    assert len(heartbeat_calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_stops_text_embedding_heartbeats_when_unexpected_error_bubbles(state_store) -> None:
+    callback_client = _callback_stub()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        embedding_workflow=SlowEmbeddingWorkflow(state_store, fail=True),
+        state_store=state_store,
+    )
+    runtime.heartbeat_interval_seconds = 0.01
+
+    with pytest.raises(RuntimeError, match="embedding exploded"):
+        await runtime.consume_message(_raw_embedding_message("task_exploding_emb"))
+
+    calls_after_error = callback_client.update_step.await_count
+    await asyncio.sleep(0.035)
+
+    assert callback_client.update_step.await_count == calls_after_error
 
 
 @pytest.mark.asyncio

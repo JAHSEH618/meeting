@@ -101,7 +101,7 @@ meeting:
     max-size-seconds: 120
     overlap-seconds: 0.5
   task:
-    lease-duration-seconds: 300
+    lease-duration-seconds: 120
     max-attempts: 3
     orphan-scan-interval-seconds: 60
   lease-scanner:

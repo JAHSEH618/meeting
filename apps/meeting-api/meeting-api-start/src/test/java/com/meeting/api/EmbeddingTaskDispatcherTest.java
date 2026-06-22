@@ -64,10 +64,10 @@ class EmbeddingTaskDispatcherTest {
         assertThat(task.taskType()).isEqualTo("TEXT_EMBEDDING");
         assertThat(task.tenantId()).isEqualTo("tenant_01");
         assertThat(task.meetingId()).isEqualTo("mtg_01");
-        assertThat(task.status()).isIn(ProcessingTaskStatus.QUEUED, ProcessingTaskStatus.RUNNING);
+        assertThat(task.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
         assertThat(task.attemptNo()).isEqualTo(1);
-        assertThat(task.leaseOwner()).isNotNull();
-        assertThat(task.leaseExpiresAt()).isNotNull();
+        assertThat(task.leaseOwner()).isNull();
+        assertThat(task.leaseExpiresAt()).isNull();
         assertThat(task.taskId()).startsWith("task_");
 
         assertThat(fx.publisher.events).hasSize(1);

@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     worker_id: str = "worker_dev_001"
     meeting_api_base_url: str = "http://localhost:8080"
     callback_hmac_secret: str = "dev-secret"
+    callback_heartbeat_interval_seconds: float = 15.0
     internal_api_hmac_secret: str = "dev-internal-secret"
     rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672

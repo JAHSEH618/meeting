@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import wave
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -261,6 +262,31 @@ async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path
             ],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_audio_pipeline_close_closes_owned_speaker_reference_supplier(tmp_path: Path) -> None:
+    class ReferenceSupplier:
+        def __init__(self) -> None:
+            self.close = AsyncMock()
+
+        async def reference_embedding(self, tenant_id: str, participant_id: str, dimension: int):
+            return ReferenceEmbedding(
+                person_id=participant_id,
+                speaker_profile_id="profile_alice_01",
+                values=[1.0, 0.0],
+            )
+
+    supplier = ReferenceSupplier()
+    engine = LocalAudioPipelineEngine(
+        InMemoryWorkflowStateStore(),
+        artifact_store=LocalArtifactStore(tmp_path / "objects"),
+        speaker_reference_supplier=supplier,
+    )
+
+    await engine.close()
+
+    supplier.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio

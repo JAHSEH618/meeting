@@ -218,7 +218,7 @@ class CompleteWorkerPhaseRequest(BaseModel):
     skippedSteps: Optional[List[SkippedStep]] = None
     speakerEnrollmentId: Optional[str] = None
     artifactManifestId: Optional[str] = None
-    finishedAt: datetime
+    finishedAt: Optional[datetime] = None
 
 
 class FailTaskRequest(BaseModel):
@@ -229,4 +229,4 @@ class FailTaskRequest(BaseModel):
     failedStep: ProcessingStep
     error: ErrorInfo
     artifactManifestId: Optional[str] = None
-    failedAt: datetime
+    failedAt: Optional[datetime] = None

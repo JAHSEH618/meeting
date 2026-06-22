@@ -67,6 +67,7 @@ class RabbitMqTaskConsumer:
             self._channel.stop_consuming()
         if self._connection and self._connection.is_open:
             self._connection.close()
+        asyncio.run(self.runtime.stop())
 
     def _on_message(self, channel: Any, method: Any, _properties: Any, body: bytes) -> None:
         try:

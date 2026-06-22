@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +39,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final SpeakerEnrollmentRepository speakerEnrollmentRepository;
     private final Clock clock;
+    private final long leaseDurationSeconds;
 
     @Autowired
     public ProcessingTaskCallbackApplicationService(
@@ -48,9 +50,10 @@ public class ProcessingTaskCallbackApplicationService {
         CallbackSecurityVerifier securityVerifier,
         TranscriptRepository transcriptRepository,
         ApplicationEventPublisher applicationEventPublisher,
-        SpeakerEnrollmentRepository speakerEnrollmentRepository
+        SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        @Value("${meeting.task.lease-duration-seconds:120}") long leaseDurationSeconds
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, Clock.systemUTC());
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, Clock.systemUTC(), leaseDurationSeconds);
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -62,7 +65,7 @@ public class ProcessingTaskCallbackApplicationService {
         ApplicationEventPublisher applicationEventPublisher,
         Clock clock
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, clock);
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, clock, 120L);
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -75,6 +78,20 @@ public class ProcessingTaskCallbackApplicationService {
         SpeakerEnrollmentRepository speakerEnrollmentRepository,
         Clock clock
     ) {
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, clock, 120L);
+    }
+    public ProcessingTaskCallbackApplicationService(
+        ProcessingTaskRepository taskRepository,
+        CallbackEventRepository callbackEventRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        CallbackSecurityVerifier securityVerifier,
+        TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        Clock clock,
+        long leaseDurationSeconds
+    ) {
         this.taskRepository = taskRepository;
         this.callbackEventRepository = callbackEventRepository;
         this.messagePublisher = messagePublisher;
@@ -84,6 +101,7 @@ public class ProcessingTaskCallbackApplicationService {
         this.applicationEventPublisher = applicationEventPublisher;
         this.speakerEnrollmentRepository = speakerEnrollmentRepository;
         this.clock = clock;
+        this.leaseDurationSeconds = leaseDurationSeconds;
     }
     public ProcessingTaskDTO updateStep(StepCallbackCommand command) {
         securityVerifier.verify(
@@ -115,7 +133,7 @@ public class ProcessingTaskCallbackApplicationService {
                 task.claimLease(
                     command.metadata().workerId(),
                     command.metadata().leaseOwner(),
-                    now.plusSeconds(120),
+                    leaseExpiresAt(now),
                     now
                 );
             }
@@ -157,10 +175,14 @@ public class ProcessingTaskCallbackApplicationService {
                 command.attemptNo(),
                 command.metadata().leaseOwner(),
                 command.heartbeatAt(),
-                command.heartbeatAt().plusSeconds(120)
+                leaseExpiresAt(command.heartbeatAt())
             );
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
+    }
+
+    private OffsetDateTime leaseExpiresAt(OffsetDateTime from) {
+        return from.plusSeconds(leaseDurationSeconds);
     }
     public ProcessingTaskDTO completeWorkerPhase(CompleteWorkerPhaseCommand command) {
         securityVerifier.verify(

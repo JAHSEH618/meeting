@@ -131,12 +131,6 @@ public class EmbeddingTaskDispatcher {
                 now
             );
             task.enqueue(now);
-            task.claimLease(
-                "worker_dev_001",
-                "worker_dev_001:" + task.taskId() + ":" + task.attemptNo(),
-                now.plusMinutes(5),
-                now
-            );
             ProcessingTask saved = taskRepository.save(task);
             taskIds.add(saved.taskId());
 

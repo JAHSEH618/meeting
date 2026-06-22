@@ -167,9 +167,17 @@ async def test_5xx_retries_then_gives_up(client: JavaSpeakerReferenceClient, mon
         call_count["n"] += 1
         return httpx.Response(503, json={"success": False, "error": {"code": "DEPENDENCY_UNAVAILABLE", "message": "", "retryable": True}, "requestId": "", "traceId": ""})
 
-    # Patch sleep so the retry backoff isn't real seconds.
     import ai_worker.infrastructure.speaker.reference_client as mod
-    monkeypatch.setattr(mod.time, "sleep", lambda _seconds: None)
+
+    def blocking_sleep(_seconds: float) -> None:
+        raise AssertionError("async retry path must not call time.sleep")
+
+    monkeypatch.setattr(mod.time, "sleep", blocking_sleep)
+    if hasattr(mod, "asyncio"):
+        async def no_async_sleep(_seconds: float) -> None:
+            return None
+
+        monkeypatch.setattr(mod.asyncio, "sleep", no_async_sleep)
 
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     try:

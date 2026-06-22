@@ -74,7 +74,7 @@ class TestConsumeAndValidate:
         )
 
     @pytest.mark.asyncio
-    async def test_invalid_message_uses_defaults(self, callback_client: MagicMock) -> None:
+    async def test_invalid_message_without_attempt_no_rejects_without_fail_callback(self, callback_client: MagicMock) -> None:
         raw_message = {
             "taskId": "task_02",
             "tenantId": "tenant_02",
@@ -87,16 +87,7 @@ class TestConsumeAndValidate:
             result = await consume_and_validate(raw_message, callback_client)
 
         assert result is None
-        callback_client.fail_task.assert_awaited_once_with(
-            task_id="task_02",
-            tenant_id="tenant_02",
-            attempt_no=1,
-            failed_step="AUDIO_PREPROCESS",
-            error_code="INVALID_TASK_MESSAGE",
-            error_message="bad message",
-            retryable=False,
-            trace_id="fail-fast-task_02",
-        )
+        callback_client.fail_task.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_invalid_speaker_enrollment_uses_speaker_embedding_as_failed_step(self, callback_client: MagicMock) -> None:
@@ -104,6 +95,7 @@ class TestConsumeAndValidate:
             "taskId": "task_spk",
             "taskType": "SPEAKER_ENROLLMENT",
             "tenantId": "tenant_03",
+            "attemptNo": 1,
             "speakerEnrollmentId": "se_01",
         }
 

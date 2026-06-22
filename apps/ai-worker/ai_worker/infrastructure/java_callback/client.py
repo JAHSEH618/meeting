@@ -27,6 +27,17 @@ class JavaCallbackClient:
         self.base_url = (base_url or settings.meeting_api_base_url).rstrip("/")
         self.worker_id = settings.worker_id
         self.hmac_secret = settings.callback_hmac_secret.encode()
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(timeout=30)
+        return self._http_client
+
+    async def aclose(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     def _generate_nonce(self) -> str:
         return secrets.token_hex(16)
@@ -91,27 +102,26 @@ class JavaCallbackClient:
                 task_id, attempt_no, trace_id, idempotency_key,
             )
             try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    response = await client.request(method, url, content=body_str, headers=headers)
-                    if response.status_code == 409:
-                        return CallbackResponse(
-                            http_status=409,
-                            accepted=False,
-                            error_code="CALLBACK_IDEMPOTENCY_CONFLICT",
-                        )
-                    if response.status_code == 401:
-                        return CallbackResponse(
-                            http_status=401,
-                            accepted=False,
-                            error_code="CALLBACK_AUTH_FAILED",
-                        )
-                    if response.status_code < 400:
-                        return CallbackResponse(
-                            http_status=response.status_code,
-                            accepted=True,
-                            body=response.json(),
-                        )
-                    last_error = f"HTTP {response.status_code}"
+                response = await self._client().request(method, url, content=body_str, headers=headers)
+                if response.status_code == 409:
+                    return CallbackResponse(
+                        http_status=409,
+                        accepted=False,
+                        error_code="CALLBACK_IDEMPOTENCY_CONFLICT",
+                    )
+                if response.status_code == 401:
+                    return CallbackResponse(
+                        http_status=401,
+                        accepted=False,
+                        error_code="CALLBACK_AUTH_FAILED",
+                    )
+                if response.status_code < 400:
+                    return CallbackResponse(
+                        http_status=response.status_code,
+                        accepted=True,
+                        body=response.json(),
+                    )
+                last_error = f"HTTP {response.status_code}"
             except Exception as e:
                 last_error = str(e)
             if attempt_index < max_retries - 1:
@@ -316,7 +326,6 @@ class JavaCallbackClient:
             "status": status,
             "completedSteps": completed_steps,
             "skippedSteps": skipped_steps or [],
-            "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
@@ -347,7 +356,6 @@ class JavaCallbackClient:
                 "message": error_message,
                 "retryable": retryable,
             },
-            "failedAt": datetime.now(timezone.utc).isoformat(),
         }
         if meeting_id:
             body["meetingId"] = meeting_id

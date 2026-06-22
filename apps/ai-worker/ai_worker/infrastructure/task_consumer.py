@@ -28,6 +28,19 @@ def _first_step_for_task_type(task_type: str) -> str:
     return "AUDIO_PREPROCESS"
 
 
+def _callback_identity(raw_message: dict) -> tuple[str, str, int] | None:
+    task_id = raw_message.get("taskId")
+    tenant_id = raw_message.get("tenantId")
+    attempt_no = raw_message.get("attemptNo")
+    if not isinstance(task_id, str) or not task_id.strip():
+        return None
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        return None
+    if isinstance(attempt_no, bool) or not isinstance(attempt_no, int) or attempt_no < 1:
+        return None
+    return task_id, tenant_id, attempt_no
+
+
 def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | None, list[str]]:
     """Validate raw message dict and return a TaskMessage if valid.
 
@@ -87,15 +100,18 @@ async def consume_and_validate(
     if task_msg is not None:
         return task_msg
 
-    task_id = raw_message.get("taskId", "unknown")
-    attempt_no = raw_message.get("attemptNo", 1)
-    trace_id = raw_message.get("traceId", f"fail-fast-{task_id}")
-
     logger.error(
         "INVALID_TASK_MESSAGE: task_id=%s errors=%s",
-        task_id,
+        raw_message.get("taskId", "unknown"),
         errors,
     )
+
+    identity = _callback_identity(raw_message)
+    if identity is None:
+        logger.error("INVALID_TASK_MESSAGE: missing callback identity; rejecting without Java fail callback")
+        return None
+    task_id, tenant_id, attempt_no = identity
+    trace_id = raw_message.get("traceId", f"fail-fast-{task_id}")
 
     # Map task type to the first expected pipeline step for accurate failure reporting.
     task_type = raw_message.get("taskType", "MEETING_FULL_PIPELINE")
@@ -103,7 +119,7 @@ async def consume_and_validate(
 
     kwargs = {
         "task_id": task_id,
-        "tenant_id": raw_message.get("tenantId", "unknown"),
+        "tenant_id": tenant_id,
         "attempt_no": attempt_no,
         "failed_step": first_step,
         "error_code": "INVALID_TASK_MESSAGE",

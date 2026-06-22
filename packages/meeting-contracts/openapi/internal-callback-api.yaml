@@ -522,7 +522,7 @@ components:
         artifactManifestId: {type: [string, 'null']}
     CompleteWorkerPhaseRequest:
       type: object
-      required: [tenantId, taskId, attemptNo, phase, status, completedSteps, finishedAt]
+      required: [tenantId, taskId, attemptNo, phase, status, completedSteps]
       properties:
         tenantId: {type: string}
         meetingId: {type: [string, 'null']}
@@ -549,7 +549,7 @@ components:
         finishedAt: {type: string, format: date-time}
     FailTaskRequest:
       type: object
-      required: [tenantId, taskId, attemptNo, failedStep, error, failedAt]
+      required: [tenantId, taskId, attemptNo, failedStep, error]
       properties:
         tenantId: {type: string}
         meetingId: {type: [string, 'null']}

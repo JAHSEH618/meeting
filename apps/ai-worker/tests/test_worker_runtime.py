@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import copy
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 
 from ai_worker.application.workflows.audio_pipeline import WorkerPipelineError
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
-from ai_worker.domain.task import PipelineArtifact
+from ai_worker.domain.task import PipelineArtifact, TaskMessage
 from ai_worker.infrastructure.java_callback.client import CallbackResponse
 from ai_worker.pipeline.speaker.matcher import SpeakerMatchCandidate, SpeakerMatchResult
 from ai_worker.pipeline.speaker.runtime import SpeakerEmbedding
@@ -121,6 +122,19 @@ class StubWorkflowEngine:
         )
 
 
+class SlowWorkflowEngine(StubWorkflowEngine):
+    async def run_step(self, context, step_name: str) -> None:
+        self.ran_steps.append(step_name)
+        await asyncio.sleep(0.035)
+
+
+class ExplodingWorkflowEngine(StubWorkflowEngine):
+    async def run_step(self, context, step_name: str) -> None:
+        self.ran_steps.append(step_name)
+        await asyncio.sleep(0.015)
+        raise RuntimeError("pipeline exploded")
+
+
 class StubSpeakerWorkflowEngine(StubWorkflowEngine):
     def start_pipeline(self, task):
         context = super().start_pipeline(task)
@@ -170,6 +184,98 @@ class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
             "task audioUri is missing",
             retryable=False,
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = SlowWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    runtime.heartbeat_interval_seconds = 0.01
+    task = TaskMessage(
+        task_id="task_slow_01",
+        task_type="MEETING_FULL_PIPELINE",
+        tenant_id="tenant_01",
+        meeting_id="mtg_01",
+        attempt_no=1,
+        pipeline_steps=("ASR",),
+        trace_id="trace_slow_01",
+    )
+    context = engine.start_pipeline(task)
+
+    result = await runtime.execute_step(task, "ASR", context)
+
+    assert result.status == "SUCCEEDED"
+    heartbeat_calls = [
+        call for call in callback_client.update_step.await_args_list
+        if call.kwargs["status"] == "RUNNING" and call.kwargs["progress"] > 0
+    ]
+    assert len(heartbeat_calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_execute_step_stops_heartbeat_loop_when_unexpected_error_bubbles(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = ExplodingWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    runtime.heartbeat_interval_seconds = 0.01
+    task = TaskMessage(
+        task_id="task_exploding_01",
+        task_type="MEETING_FULL_PIPELINE",
+        tenant_id="tenant_01",
+        meeting_id="mtg_01",
+        attempt_no=1,
+        pipeline_steps=("ASR",),
+        trace_id="trace_exploding_01",
+    )
+    context = engine.start_pipeline(task)
+
+    with pytest.raises(RuntimeError, match="pipeline exploded"):
+        await runtime.execute_step(task, "ASR", context)
+
+    calls_after_error = callback_client.update_step.await_count
+    await asyncio.sleep(0.035)
+
+    assert callback_client.update_step.await_count == calls_after_error
+
+
+@pytest.mark.asyncio
+async def test_stop_closes_callback_client_pool(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=StubWorkflowEngine(state_store),
+        state_store=state_store,
+    )
+
+    await runtime.stop()
+
+    callback_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_closes_workflow_resources(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubWorkflowEngine(state_store)
+    engine.close = AsyncMock()
+
+    class ClosableEmbeddingWorkflow:
+        def __init__(self) -> None:
+            self.close = AsyncMock()
+
+    embedding_workflow = ClosableEmbeddingWorkflow()
+
+    runtime = MvpWorkerRuntime(
+        callback_client=callback_client,
+        workflow_engine=engine,
+        embedding_workflow=embedding_workflow,
+        state_store=state_store,
+    )
+
+    await runtime.stop()
+
+    engine.close.assert_awaited_once()
+    embedding_workflow.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio

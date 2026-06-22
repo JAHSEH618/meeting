@@ -106,6 +106,58 @@ class TestBuildHeaders:
 
 class TestUpdateStep:
     @pytest.mark.asyncio
+    async def test_reuses_http_client_for_multiple_callbacks(self, monkeypatch) -> None:
+        constructed_clients: list[object] = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self) -> dict:
+                return {"success": True, "data": {"accepted": True}, "error": None}
+
+        class FakeAsyncClient:
+            def __init__(self, timeout: int) -> None:
+                self.timeout = timeout
+                constructed_clients.append(self)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            async def request(self, method, url, content, headers):
+                return FakeResponse()
+
+            async def aclose(self) -> None:
+                return None
+
+        monkeypatch.setattr(
+            "ai_worker.infrastructure.java_callback.client.httpx.AsyncClient",
+            FakeAsyncClient,
+        )
+        callback_client = JavaCallbackClient(base_url="http://localhost:8080")
+
+        await callback_client.update_step(
+            task_id="task_pool",
+            tenant_id="tenant_01",
+            step_name="ASR",
+            attempt_no=1,
+            status="RUNNING",
+            progress=0,
+        )
+        await callback_client.update_step(
+            task_id="task_pool",
+            tenant_id="tenant_01",
+            step_name="ASR",
+            attempt_no=1,
+            status="SUCCEEDED",
+            progress=100,
+        )
+
+        assert len(constructed_clients) == 1
+
+    @pytest.mark.asyncio
     async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
@@ -354,7 +406,29 @@ class TestCompleteWorkerPhase:
         assert captured_body["taskId"] == "task_1"
         assert captured_body["phase"] == "WORKER_DAG"
         assert captured_body["status"] == "SUCCEEDED"
-        assert "finishedAt" in captured_body
+        assert "finishedAt" not in captured_body
+
+    @pytest.mark.asyncio
+    async def test_terminal_complete_body_is_stable_for_idempotent_replay(self, client: JavaCallbackClient) -> None:
+        captured_bodies: list[dict] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_bodies.append(dict(body))
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            for _ in range(2):
+                await client.complete_worker_phase(
+                    task_id="task_1",
+                    tenant_id="tenant_1",
+                    meeting_id="mtg_1",
+                    attempt_no=1,
+                    status="SUCCEEDED",
+                    completed_steps=["ASR"],
+                )
+
+        assert captured_bodies[0] == captured_bodies[1]
+        assert "finishedAt" not in captured_bodies[0]
 
     @pytest.mark.asyncio
     async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
@@ -426,8 +500,30 @@ class TestFailTask:
         assert captured_body["error"]["code"] == "GPU_OOM"
         assert captured_body["error"]["message"] == "Out of memory"
         assert captured_body["error"]["retryable"] is True
-        assert "failedAt" in captured_body
+        assert "failedAt" not in captured_body
         assert result.accepted is True
+
+    @pytest.mark.asyncio
+    async def test_terminal_fail_body_is_stable_for_idempotent_replay(self, client: JavaCallbackClient) -> None:
+        captured_bodies: list[dict] = []
+
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+            captured_bodies.append(dict(body))
+            return CallbackResponse(http_status=200, accepted=True)
+
+        with patch.object(JavaCallbackClient, "_request", mock_request):
+            for _ in range(2):
+                await client.fail_task(
+                    task_id="task_fail",
+                    tenant_id="tenant_01",
+                    attempt_no=2,
+                    failed_step="ASR",
+                    error_code="GPU_OOM",
+                    error_message="Out of memory",
+                )
+
+        assert captured_bodies[0] == captured_bodies[1]
+        assert "failedAt" not in captured_bodies[0]
 
     @pytest.mark.asyncio
     async def test_retryable_defaults_to_true(self, client: JavaCallbackClient) -> None:
