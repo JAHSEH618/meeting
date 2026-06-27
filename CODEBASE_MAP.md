@@ -44,5 +44,5 @@ Use this file as a lightweight table of contents for humans and AI coding agents
 
 ## Update policy
 
-This file is refreshed by `.claude/scripts/update_repo_context.py`, usually through `.githooks/post-commit`.
+This file is refreshed by `.claude/scripts/update_repo_context.py`, usually through `.git-hooks/post-commit`.
 Add manual notes outside the auto-generated markers.
