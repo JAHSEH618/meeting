@@ -285,7 +285,18 @@ public class ProcessingTaskCallbackController {
                 floats = new float[list.size()];
                 for (int i = 0; i < list.size(); i++) {
                     Object v = list.get(i);
-                    floats[i] = v instanceof Number n ? n.floatValue() : 0f;
+                    // Reject non-numeric values rather than silently coercing to
+                    // 0f — a malformed value used to corrupt the embedding into a
+                    // partial zero vector with no signal, quietly degrading RAG
+                    // retrieval. The contract is an all-numeric FLOAT32_ARRAY, so
+                    // a non-number here is a real error the worker must see.
+                    if (!(v instanceof Number n)) {
+                        throw new IllegalArgumentException(
+                            "embeddings item embedding.values must be all numbers; got "
+                                + (v == null ? "null" : v.getClass().getSimpleName())
+                                + " at index " + i);
+                    }
+                    floats[i] = n.floatValue();
                 }
             }
             if (floats == null) {
