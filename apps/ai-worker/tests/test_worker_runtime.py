@@ -265,6 +265,29 @@ async def test_consume_message_sends_fail_task_on_unexpected_error(callback_clie
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_rejection_does_not_fail_task(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+
+    def update_step_side_effect(**kwargs):
+        # Reject only heartbeat-channel calls (RUNNING + progress=50); step start
+        # (progress=0) and success (progress=100) still succeed. Heartbeats are
+        # best-effort — a rejected one must not abort the task.
+        accepted = not (kwargs.get("status") == "RUNNING" and kwargs.get("progress") == 50)
+        return CallbackResponse(http_status=200 if accepted else 503, accepted=accepted)
+
+    callback_client.update_step.side_effect = update_step_side_effect
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_not_awaited()
+    callback_client.complete_worker_phase.assert_awaited_once()
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None and snapshot.status == "SUCCEEDED"
+
+
+@pytest.mark.asyncio
 async def test_stop_closes_callback_client_pool(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
     runtime = MvpWorkerRuntime(

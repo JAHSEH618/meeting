@@ -239,17 +239,13 @@ class MvpWorkerRuntime:
                 return task
 
             if await self._heartbeat(task, step_name, 50) is False:
-                await self._fail_for_writeback(task, step_name, "step heartbeat callback failed")
-                return task
+                self._log_heartbeat_rejected(task, step_name)
 
-            pipeline_result, heartbeat_error = await self._run_with_heartbeat(
+            pipeline_result = await self._run_with_heartbeat(
                 task,
                 step_name,
                 lambda: self.embedding_workflow.run_step(context, step_name),
             )
-            if heartbeat_error is not None:
-                await self._fail_for_writeback(task, step_name, heartbeat_error)
-                return task
             if pipeline_result is not None:
                 await self._fail_for_pipeline_result(task, pipeline_result)
                 return task
@@ -336,15 +332,13 @@ class MvpWorkerRuntime:
             return self._writeback_failed(step_name, "step start callback failed")
 
         if await self._heartbeat(task, step_name, 50) is False:
-            return self._writeback_failed(step_name, "step heartbeat callback failed")
+            self._log_heartbeat_rejected(task, step_name)
 
-        pipeline_result, heartbeat_error = await self._run_with_heartbeat(
+        pipeline_result = await self._run_with_heartbeat(
             task,
             step_name,
             lambda: self._run_audio_step(context, step_name),
         )
-        if heartbeat_error is not None:
-            return self._writeback_failed(step_name, heartbeat_error)
         if pipeline_result is not None:
             return pipeline_result
 
@@ -363,10 +357,9 @@ class MvpWorkerRuntime:
         task: TaskMessage,
         step_name: str,
         run_step: Callable[[], Awaitable[None]],
-    ) -> tuple[StepResult | None, str | None]:
+    ) -> StepResult | None:
         heartbeat_task = asyncio.create_task(self._heartbeat_loop(task, step_name))
         pipeline_result: StepResult | None = None
-        heartbeat_error: str | None = None
         try:
             try:
                 await run_step()
@@ -399,8 +392,8 @@ class MvpWorkerRuntime:
                     retryable=True,
                 )
         finally:
-            heartbeat_error = await self._stop_heartbeat_loop(heartbeat_task)
-        return pipeline_result, heartbeat_error
+            await self._stop_heartbeat_loop(heartbeat_task)
+        return pipeline_result
 
     async def _update_step(
         self,
@@ -438,22 +431,32 @@ class MvpWorkerRuntime:
             self.state_store.update_step(task.task_id, step_name, "RUNNING", progress)
         return response.accepted
 
-    async def _heartbeat_loop(self, task: TaskMessage, step_name: str) -> str | None:
+    @staticmethod
+    def _log_heartbeat_rejected(task: TaskMessage, step_name: str) -> None:
+        # Heartbeats are best-effort liveness signals (latest-wins on the Java
+        # side). A rejected heartbeat must NOT fail the task — the Java lease TTL
+        # governs liveness, so a transient blip should never abort a long step.
+        logger.warning(
+            "heartbeat_rejected task_id=%s step=%s (continuing; lease TTL governs liveness)",
+            task.task_id,
+            step_name,
+        )
+
+    async def _heartbeat_loop(self, task: TaskMessage, step_name: str) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_interval_seconds)
             if await self._heartbeat(task, step_name, 50) is False:
-                return "step heartbeat callback failed"
+                self._log_heartbeat_rejected(task, step_name)
 
     @staticmethod
-    async def _stop_heartbeat_loop(heartbeat_task: asyncio.Task[str | None]) -> str | None:
+    async def _stop_heartbeat_loop(heartbeat_task: asyncio.Task[None]) -> None:
         if heartbeat_task.done():
-            return heartbeat_task.result()
+            return
         heartbeat_task.cancel()
         try:
             await heartbeat_task
         except asyncio.CancelledError:
-            return None
-        return heartbeat_task.result()
+            return
 
     async def _fail_for_writeback(self, task: TaskMessage, failed_step: str, message: str) -> None:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)
