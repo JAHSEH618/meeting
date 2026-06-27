@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from collections import deque
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -65,19 +65,38 @@ class EmbedResponse(BaseModel):
 
 
 # ── Nonce replay protection ──────────────────────────────────────────────────
-# In-memory LRU for recently-seen nonces. Sized for ~5min of traffic at
-# moderate throughput. In a multi-instance deployment this must be backed
-# by Redis or a distributed cache.
-_MAX_NONCE_CACHE = 10_000
-_seen_nonces: deque[str] = deque(maxlen=_MAX_NONCE_CACHE)
+# A nonce only needs to be remembered for the timestamp-skew window: anything
+# older is already rejected by the skew check, so we evict by TTL rather than by
+# a fixed count. This closes the failure mode of the previous
+# ``deque(maxlen=10_000)`` — a burst of >10k distinct nonces inside the window
+# used to evict still-valid entries and reopen the replay surface.
+#
+# NOTE: this cache is per-process. A multi-replica deployment still needs a
+# shared store (e.g. Redis) so a replay can't simply be aimed at a different
+# pod; wire that here when it lands.
+_seen_nonces: "OrderedDict[str, float]" = OrderedDict()
 
 
-def _is_nonce_replayed(nonce: str) -> bool:
-    """Return True if the nonce has been seen before."""
+def _check_and_record_nonce(nonce: str, now_epoch: float, ttl_seconds: int) -> bool:
+    """Return True if ``nonce`` was already seen within its TTL (a replay).
+
+    A constant TTL means insertion order equals expiry order, so expired entries
+    are evicted from the front in amortized O(1) — no full-dict scan per call.
+    """
+    while _seen_nonces:
+        _oldest_nonce, oldest_expiry = next(iter(_seen_nonces.items()))
+        if oldest_expiry > now_epoch:
+            break
+        _seen_nonces.popitem(last=False)
     if nonce in _seen_nonces:
         return True
-    _seen_nonces.append(nonce)
+    _seen_nonces[nonce] = now_epoch + ttl_seconds
     return False
+
+
+def reset_nonce_cache() -> None:
+    """Clear the in-process nonce cache. Test-only."""
+    _seen_nonces.clear()
 
 
 def verify_hmac_signature(
@@ -97,14 +116,15 @@ def verify_hmac_signature(
     ).hexdigest()
     if not hmac.compare_digest(f"hmac-sha256={expected}", signature):
         return False
+    now = datetime.now(timezone.utc)
     try:
         ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        skew = abs((datetime.now(timezone.utc) - ts).total_seconds())
+        skew = abs((now - ts).total_seconds())
         if skew > max_skew_seconds:
             return False
     except (ValueError, TypeError):
         return False
     # Replay protection: nonce must be unique within the time-skew window.
-    if _is_nonce_replayed(nonce):
+    if _check_and_record_nonce(nonce, now.timestamp(), max_skew_seconds):
         return False
     return True

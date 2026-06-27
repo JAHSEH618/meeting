@@ -88,3 +88,34 @@ class TestVerifyHmacSignature:
             ).hexdigest()
             signature = f"hmac-sha256={expected}"
             assert verify_hmac_signature(method, path, body, now, nonce, signature) is True
+
+
+class TestNonceCache:
+    def test_nonce_evicted_after_ttl(self) -> None:
+        from ai_worker.infrastructure.internal_api.auth import (
+            _check_and_record_nonce,
+            reset_nonce_cache,
+        )
+
+        reset_nonce_cache()
+        assert _check_and_record_nonce("n1", 1000.0, 300) is False
+        # Within TTL -> replay rejected.
+        assert _check_and_record_nonce("n1", 1100.0, 300) is True
+        # After TTL -> the stale entry is evicted and the nonce is accepted again.
+        assert _check_and_record_nonce("n1", 1400.0, 300) is False
+
+    def test_burst_does_not_evict_unexpired_nonce(self) -> None:
+        # Regression for the old deque(maxlen=10_000): a flood of distinct
+        # nonces inside the window must not push out a still-valid nonce and
+        # reopen the replay surface.
+        from ai_worker.infrastructure.internal_api.auth import (
+            _check_and_record_nonce,
+            reset_nonce_cache,
+        )
+
+        reset_nonce_cache()
+        assert _check_and_record_nonce("victim", 1000.0, 300) is False
+        for i in range(20_000):
+            _check_and_record_nonce(f"flood_{i}", 1000.0, 300)
+        # Still within the window, so the original nonce is still remembered.
+        assert _check_and_record_nonce("victim", 1000.0, 300) is True
