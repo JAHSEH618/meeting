@@ -1,8 +1,9 @@
 # Prometheus alerting rules for the meeting-api stack (Phase 8.2).
 #
 # Loaded by docker-compose's prometheus service via the rule_files entry
-# in prometheus.yml; in K8s the same file is mounted via the PrometheusRule
-# CRD (see infra/meeting-infra/k8s/base/meeting-api/servicemonitor.yaml).
+# in prometheus.yml. NOTE: the K8s wiring is not in place yet — there is no
+# PrometheusRule/ServiceMonitor under k8s/base/meeting-api (only deployment.yaml
+# and service.yaml), so these alerts currently fire only in the local stack.
 #
 # Metric names use the underscore form Prometheus exposes for Micrometer
 # meters (dots become underscores; tags become labels; _total suffix is
