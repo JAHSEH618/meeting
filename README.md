@@ -53,7 +53,7 @@ flowchart TB
         direction LR
         PG[("PostgreSQL 15<br/>+ pgvector<br/>+ RLS / FORCE RLS")]
         MQ{{"RabbitMQ<br/>audio-cpu / gpu-asr / gpu-diar /<br/>gpu-speaker / embed / llm / export"}}
-        TOS["TOS (生产) / MinIO (本地)<br/>音频 · 中间产物 · 导出"]
+        TOS["OSS / TOS<br/>音频 · 中间产物 · 导出"]
         Vault["KMS (生产) / Vault-dev (本地)<br/>声纹 embedding 信封加密"]
         LLM["DashScope<br/>OpenAI-compatible · 经 llm-gateway 审计"]
     end
@@ -286,7 +286,7 @@ openssl rand -hex 32   # → AI_WORKER_INTERNAL_API_HMAC_SECRET
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
-会拉起 PostgreSQL 15 + pgvector、RabbitMQ（含 seed 好的 7 个队列）、MinIO（TOS 替代）、Vault-dev（KMS 替代）。要带监控就再加 `--profile observability`，会同时拉起 Prometheus + Grafana。
+会拉起 PostgreSQL 15 + pgvector、RabbitMQ（含 seed 好的 7 个队列）、Vault-dev（KMS 替代）。要带监控就再加 `--profile observability`，会同时拉起 Prometheus + Grafana。对象存储（音频 / 中间产物 / 导出）走 OSS / TOS（由 `MEETING_STORAGE_TYPE` 选择，需配置真实 endpoint 与密钥）——本地 compose 不内置 MinIO，ai-worker 本地默认用文件系统（`AI_WORKER_STORAGE_BACKEND=local`）。
 
 健康检查样例：
 
@@ -296,7 +296,6 @@ COMPOSE="docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml
 $COMPOSE exec postgres pg_isready
 curl -s -u meeting:meeting_dev http://localhost:15672/api/queues/%2f | jq '.[].name'
 # 应能看到 audio-cpu-queue / gpu-asr-queue / gpu-diar-queue / gpu-speaker-queue / embed-queue / llm-queue / export-queue
-curl -fs http://localhost:9000/minio/health/live              # MinIO
 curl -s http://localhost:8200/v1/sys/health | jq -r '.sealed' # Vault 应为 false
 ```
 
