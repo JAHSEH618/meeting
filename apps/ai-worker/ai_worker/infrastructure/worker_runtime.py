@@ -380,6 +380,24 @@ class MvpWorkerRuntime:
                     error_message=str(exc),
                     retryable=exc.retryable,
                 )
+            except Exception as exc:  # noqa: BLE001 — never let an unexpected error escape
+                # An unhandled exception here would propagate out of
+                # consume_message and die in the broker's DLQ with no terminal
+                # callback, leaving the Java task stuck RUNNING until lease
+                # expiry. Convert it into a retryable terminal step failure so
+                # Java always learns the outcome (and can re-dispatch).
+                logger.exception(
+                    "worker_step_unexpected_error task_id=%s step=%s", task.task_id, step_name
+                )
+                self.state_store.update_step(task.task_id, step_name, "FAILED", 100, "WORKER_UNEXPECTED_ERROR")
+                pipeline_result = StepResult(
+                    step_name=step_name,
+                    status="FAILED",
+                    progress=100,
+                    error_code="WORKER_UNEXPECTED_ERROR",
+                    error_message=str(exc),
+                    retryable=True,
+                )
         finally:
             heartbeat_error = await self._stop_heartbeat_loop(heartbeat_task)
         return pipeline_result, heartbeat_error
