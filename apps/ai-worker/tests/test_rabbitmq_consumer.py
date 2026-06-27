@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
@@ -64,6 +65,51 @@ def test_on_message_rejects_invalid_json_without_requeue() -> None:
     runtime.consume_message.assert_not_called()
     assert channel.acked == []
     assert channel.rejected == [("delivery_01", False)]
+
+
+def test_on_message_reuses_one_event_loop_across_messages() -> None:
+    # Regression for the per-message asyncio.run(): all messages must run on a
+    # single long-lived loop so module-level asyncio primitives (inference
+    # semaphores, pooled clients) stay bound to one loop.
+    runtime = AsyncMock()
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+
+    consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t1"}).encode())
+    loop_after_first = consumer._loop
+    consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t2"}).encode())
+
+    assert loop_after_first is not None
+    assert consumer._loop is loop_after_first
+    assert not loop_after_first.is_closed()
+
+    consumer.stop()
+    assert loop_after_first.is_closed()
+
+
+def test_stop_drains_pending_background_tasks() -> None:
+    # A fire-and-forget background task created during message handling (e.g. a
+    # TOS artifact backup) must be drained on stop, not silently destroyed.
+    completed = {"done": False}
+
+    async def slow_background() -> None:
+        await asyncio.sleep(0)
+        completed["done"] = True
+
+    async def consume(_msg: dict) -> None:
+        asyncio.get_running_loop().create_task(slow_background())
+
+    runtime = AsyncMock()
+    runtime.consume_message.side_effect = consume
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+
+    consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t1"}).encode())
+    assert completed["done"] is False  # not awaited inline
+
+    consumer.stop()
+    assert completed["done"] is True
+    assert channel.acked == ["delivery_01"]
 
 
 def test_stop_closes_runtime_after_rabbitmq_connection() -> None:

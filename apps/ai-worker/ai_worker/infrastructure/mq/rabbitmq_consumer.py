@@ -38,6 +38,7 @@ class RabbitMqTaskConsumer:
         self.config = config or RabbitMqConsumerConfig()
         self._connection: pika.BlockingConnection | None = None
         self._channel: Any | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def start_consuming(self) -> None:
         credentials = pika.PlainCredentials(self.config.username, self.config.password)
@@ -62,17 +63,40 @@ class RabbitMqTaskConsumer:
         logger.info("RabbitMQ task consumer started for queues=%s", self.config.queues)
         channel.start_consuming()
 
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        # One long-lived event loop for the consumer's lifetime. asyncio.run()
+        # created and closed a fresh loop per message, which left module-level
+        # asyncio primitives bound to a dead loop — the per-device inference
+        # semaphores (model_runtime.concurrency) and any pooled httpx client
+        # would then raise "bound to a different event loop" on the next task.
+        # Reusing one loop keeps them valid and lets fire-and-forget background
+        # tasks (e.g. TOS artifact backups) survive between messages.
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+        return self._loop
+
     def stop(self) -> None:
         if self._channel and self._channel.is_open:
             self._channel.stop_consuming()
         if self._connection and self._connection.is_open:
             self._connection.close()
-        asyncio.run(self.runtime.stop())
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            loop.run_until_complete(self.runtime.stop())
+            # Drain fire-and-forget background tasks (e.g. TOS backups) before
+            # tearing the loop down so they are not silently destroyed.
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+            self._loop = None
+        else:
+            asyncio.run(self.runtime.stop())
 
     def _on_message(self, channel: Any, method: Any, _properties: Any, body: bytes) -> None:
         try:
             raw_message = json.loads(body.decode("utf-8"))
-            asyncio.run(self.runtime.consume_message(raw_message))
+            self._ensure_loop().run_until_complete(self.runtime.consume_message(raw_message))
             channel.basic_ack(delivery_tag=method.delivery_tag)
         except json.JSONDecodeError:
             logger.exception("invalid JSON task message; rejecting without requeue")
