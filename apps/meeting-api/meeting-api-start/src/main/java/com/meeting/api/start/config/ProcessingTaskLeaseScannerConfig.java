@@ -3,7 +3,7 @@ package com.meeting.api.start.config;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.app.task.ProcessingTaskLeaseScanner;
-import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.util.List;
@@ -26,7 +26,7 @@ public class ProcessingTaskLeaseScannerConfig {
 
     public ProcessingTaskLeaseScannerConfig(
         ProcessingTaskRepository taskRepository,
-        MessagePublisher messagePublisher,
+        OrphanedTaskRepublisher republisher,
         TenantScopedTransaction tenantScopedTransaction,
         MeetingApiMetrics metrics,
         @Value("${meeting.lease-scanner.batch-size:50}") int batchSize,
@@ -35,7 +35,7 @@ public class ProcessingTaskLeaseScannerConfig {
     ) {
         this.scanner = new ProcessingTaskLeaseScanner(
             taskRepository,
-            messagePublisher,
+            republisher,
             tenantScopedTransaction,
             Clock.systemUTC(),
             batchSize

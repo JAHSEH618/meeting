@@ -4,15 +4,13 @@ import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
-import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTask;
-import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,14 +18,14 @@ public class ProcessingTaskLeaseScanner {
     private static final Logger LOG = LoggerFactory.getLogger(ProcessingTaskLeaseScanner.class);
 
     private final ProcessingTaskRepository taskRepository;
-    private final MessagePublisher messagePublisher;
+    private final OrphanedTaskRepublisher republisher;
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
     private final int batchSize;
 
     public ProcessingTaskLeaseScanner(
         ProcessingTaskRepository taskRepository,
-        MessagePublisher messagePublisher,
+        OrphanedTaskRepublisher republisher,
         TenantScopedTransaction tenantScopedTransaction,
         Clock clock,
         int batchSize
@@ -36,7 +34,7 @@ public class ProcessingTaskLeaseScanner {
             throw new IllegalArgumentException("batchSize must be positive");
         }
         this.taskRepository = taskRepository;
-        this.messagePublisher = messagePublisher;
+        this.republisher = republisher;
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.clock = clock;
         this.batchSize = batchSize;
@@ -108,22 +106,9 @@ public class ProcessingTaskLeaseScanner {
                     previousLeaseOwner
                 );
 
-                // Attempt to requeue
+                // Bump the attempt (may exhaust the retry budget).
                 try {
                     task.requeueOrphaned(now);
-                    taskRepository.save(task);
-
-                    // Republish to MQ
-                    // Note: We don't have access to the original message payload here.
-                    // In a real implementation, we'd need to reconstruct it from the task.
-                    // For now, we'll just log that it should be republished.
-                    LOG.info(
-                        "task_requeued task= tenant={} newAttempt={} (MQ republish required)",
-                        task.taskId(),
-                        task.tenantId(),
-                        task.attemptNo()
-                    );
-                    return new TransitionResult(true, true, false, false);
                 } catch (IllegalStateException e) {
                     if (e.getMessage() != null && e.getMessage().contains("retry exhausted")) {
                         // Max retries exceeded, mark as FAILED
@@ -143,6 +128,29 @@ public class ProcessingTaskLeaseScanner {
                     }
                     throw e;
                 }
+
+                // Re-dispatch the worker message FIRST, then persist the requeue,
+                // so the bumped attempt number and the queued message commit
+                // together in this transaction. If the original payload can't be
+                // recovered, leave the task untouched so the next scan retries.
+                boolean republished = republisher.republish(task.tenantId(), task.taskId(), task.attemptNo());
+                if (!republished) {
+                    LOG.warn(
+                        "task_requeue_republish_failed task={} tenant={} newAttempt={} (left for next scan)",
+                        task.taskId(),
+                        task.tenantId(),
+                        task.attemptNo()
+                    );
+                    return new TransitionResult(true, false, false, false);
+                }
+                taskRepository.save(task);
+                LOG.info(
+                    "task_requeued task={} tenant={} newAttempt={}",
+                    task.taskId(),
+                    task.tenantId(),
+                    task.attemptNo()
+                );
+                return new TransitionResult(true, true, false, false);
             }
         );
     }
