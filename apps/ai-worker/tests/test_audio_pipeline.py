@@ -290,13 +290,30 @@ async def test_audio_pipeline_close_closes_owned_speaker_reference_supplier(tmp_
 
 
 @pytest.mark.asyncio
-async def test_audio_pipeline_fails_required_steps_that_are_not_implemented() -> None:
+@pytest.mark.parametrize("marker_step", ["ALIGNMENT", "RAG_INDEXING"])
+async def test_audio_pipeline_marker_steps_are_passthrough(marker_step: str) -> None:
+    # ALIGNMENT (forced alignment not enabled in phase 1) and RAG_INDEXING
+    # (transcript indexing is Java-owned) are no-op marker steps: they must
+    # complete without raising so MEETING_FULL_PIPELINE can close its worker
+    # phase with the step set Java enqueued.
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
-    context = engine.start_pipeline(_task_with_steps("tos://meeting-audio-auska/raw.wav", ("ALIGNMENT",)))
+    context = engine.start_pipeline(
+        _task_with_steps("tos://meeting-audio-auska/raw.wav", (marker_step,))
+    )
+
+    await engine.run_step(context, marker_step)
+
+
+@pytest.mark.asyncio
+async def test_audio_pipeline_fails_unknown_step() -> None:
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
+    context = engine.start_pipeline(
+        _task_with_steps("tos://meeting-audio-auska/raw.wav", ("DEFINITELY_NOT_A_STEP",))
+    )
 
     with pytest.raises(WorkerPipelineError) as exc_info:
-        await engine.run_step(context, "ALIGNMENT")
+        await engine.run_step(context, "DEFINITELY_NOT_A_STEP")
 
-    assert exc_info.value.step_name == "ALIGNMENT"
+    assert exc_info.value.step_name == "DEFINITELY_NOT_A_STEP"
     assert exc_info.value.error_code == "WORKER_STEP_NOT_IMPLEMENTED"
     assert not exc_info.value.retryable

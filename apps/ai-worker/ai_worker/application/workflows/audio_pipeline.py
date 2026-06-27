@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import asdict
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,8 @@ from ai_worker.pipeline.speaker.runtime import (
     SpeakerEmbeddingRuntimeError,
 )
 from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerPipelineError(Exception):
@@ -98,6 +101,8 @@ class LocalAudioPipelineEngine:
             await self._run_audio_preprocess(context)
         elif step_name == "ASR":
             await self._run_asr(context)
+        elif step_name == "ALIGNMENT":
+            await self._run_alignment(context)
         elif step_name == "DIARIZATION":
             await self._run_diarization(context)
         elif step_name == "SPEAKER_EMBEDDING":
@@ -106,6 +111,8 @@ class LocalAudioPipelineEngine:
             await self._run_speaker_matching(context)
         elif step_name == "TRANSCRIPT_MERGE":
             await self._run_transcript_merge(context)
+        elif step_name == "RAG_INDEXING":
+            await self._run_rag_indexing(context)
         else:
             raise WorkerPipelineError(
                 step_name,
@@ -182,6 +189,18 @@ class LocalAudioPipelineEngine:
             },
         )
         context.artifacts.append(_artifact_dict("ASR_RAW", ref.uri, ref.sha256, ref.size_bytes))
+
+    async def _run_alignment(self, context: "_PipelineContext") -> None:
+        # Forced alignment is a phase-later/optional refinement — no FA model
+        # ships in phase 1. ASR already emits per-segment timestamps and
+        # TRANSCRIPT_MERGE consumes ``context.asr_segments`` directly, so
+        # ALIGNMENT is an explicit pass-through marker (reported SUCCEEDED)
+        # rather than a non-retryable WORKER_STEP_NOT_IMPLEMENTED failure that
+        # would kill the whole MEETING_FULL_PIPELINE at step 3.
+        logger.info(
+            "alignment_passthrough task_id=%s reason=FORCED_ALIGNMENT_NOT_ENABLED_PHASE1",
+            context.task.task_id,
+        )
 
     async def _run_diarization(self, context: "_PipelineContext") -> None:
         preprocess = _required_preprocess(context)
@@ -274,6 +293,21 @@ class LocalAudioPipelineEngine:
             {"segments": context.transcript_segments},
         )
         context.artifacts.append(_artifact_dict("TRANSCRIPT_MERGE", ref.uri, ref.sha256, ref.size_bytes))
+
+    async def _run_rag_indexing(self, context: "_PipelineContext") -> None:
+        # Transcript RAG indexing is Java-owned and cannot run inline here:
+        # Java chunks the transcript and dispatches a SEPARATE TEXT_EMBEDDING
+        # task (ChunkingApplicationService -> EmbeddingTaskDispatcher), and the
+        # embeddings callback only fills vectors into chunks Java already
+        # persisted (EmbeddingsCallbackApplicationService.markEmbeddings). The
+        # audio DAG holds no chunkIds at this point, so RAG_INDEXING is a no-op
+        # marker step in this engine — it exists only to close the worker phase
+        # with the step set Java enqueued. (Wiring transcript auto-indexing on
+        # the Java side is tracked separately and is out of scope here.)
+        logger.info(
+            "rag_indexing_noop task_id=%s reason=TRANSCRIPT_INDEXING_OWNED_BY_JAVA",
+            context.task.task_id,
+        )
 
     async def _write_manifest(self, context: "_PipelineContext") -> Any:
         task = context.task
