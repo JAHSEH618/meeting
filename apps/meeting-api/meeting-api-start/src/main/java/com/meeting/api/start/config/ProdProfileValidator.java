@@ -33,6 +33,7 @@ public class ProdProfileValidator {
     private final String aiWorkerBaseUrl;
     private final String chunkStrategyVersion;
     private final String kmsMasterKeyId;
+    private final String adminJwtSecret;
     private final boolean flywayBaselineOnMigrate;
     private final String authMode;
     private final String tenantsActive;
@@ -43,6 +44,7 @@ public class ProdProfileValidator {
         @Value("${meeting.security.ai-worker.base-url:}") String aiWorkerBaseUrl,
         @Value("${meeting.chunk.strategy-version:}") String chunkStrategyVersion,
         @Value("${meeting.kms.master-key-id:}") String kmsMasterKeyId,
+        @Value("${meeting.admin-jwt.secret:}") String adminJwtSecret,
         @Value("${spring.flyway.baseline-on-migrate:false}") boolean flywayBaselineOnMigrate,
         @Value("${meeting.auth.mode:in-memory}") String authMode,
         @Value("${meeting.tenants.active:}") String tenantsActive
@@ -52,6 +54,7 @@ public class ProdProfileValidator {
         this.aiWorkerBaseUrl = aiWorkerBaseUrl;
         this.chunkStrategyVersion = chunkStrategyVersion;
         this.kmsMasterKeyId = kmsMasterKeyId;
+        this.adminJwtSecret = adminJwtSecret;
         this.flywayBaselineOnMigrate = flywayBaselineOnMigrate;
         this.authMode = authMode;
         this.tenantsActive = tenantsActive;
@@ -108,6 +111,14 @@ public class ProdProfileValidator {
                     + mask(kmsMasterKeyId) + "')"
             );
         }
+        if (isBlankOrDemo(adminJwtSecret)) {
+            failures.add(
+                "meeting.admin-jwt.secret must be set to a non-demo value (was '"
+                    + mask(adminJwtSecret) + "') — the default 'dev-admin-secret-*' is"
+                    + " publicly known and would let anyone forge ADMIN tokens for the"
+                    + " ai-worker admin API"
+            );
+        }
         if (flywayBaselineOnMigrate) {
             failures.add(
                 "spring.flyway.baseline-on-migrate must be false in prod — silent baselining hides schema drift"
@@ -145,6 +156,7 @@ public class ProdProfileValidator {
         String trimmed = value.trim();
         return KNOWN_DEMO_VALUES.contains(trimmed)
             || trimmed.toLowerCase().startsWith("change-me")
+            || trimmed.toLowerCase().startsWith("dev-admin-secret")
             || trimmed.toLowerCase().contains("fallback");
     }
 
