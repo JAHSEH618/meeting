@@ -9,16 +9,20 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * 8.1.3 — fail-fast on prod boot when required secrets / configs are
+ * 8.1.3 — fail-fast on deployed boot when required secrets / configs are
  * missing, still set to dev demo values, or in obviously unsafe states
  * (e.g. Flyway baseline-on-migrate true).
  *
- * <p>Activates only with the {@code prod} Spring profile. Throws a
+ * <p>Activates for any explicit deployment profile ({@code prod},
+ * {@code staging}, …) but NOT for local/dev/test/default runs — gating on
+ * the literal {@code prod} profile alone meant a mistyped or unset profile
+ * (e.g. {@code staging}) silently disabled every check and let the app boot
+ * with the {@code change-me-*} demo secrets. Throws a
  * {@link BeanCreationException} listing every violation so ops see all
  * problems in one shot instead of fixing them one boot at a time.
  */
 @Component
-@Profile("prod")
+@Profile("!default & !dev & !test & !local")
 public class ProdProfileValidator {
 
     private static final List<String> KNOWN_DEMO_VALUES = List.of(
