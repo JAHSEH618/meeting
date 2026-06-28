@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ApiError } from "@/shared/api/client";
 import { createPerson } from "@/shared/api/endpoints";
 import type { CreatePersonRequest, PersonDTO } from "@/shared/api/types";
@@ -79,7 +80,12 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
     }
   };
 
-  return (
+  // Render through a portal to document.body. The modal is otherwise a DOM
+  // descendant of a `.card` section, and `.card` uses `backdrop-filter`, which
+  // makes it both a stacking context and the containing block for fixed-position
+  // descendants — trapping the modal's `z-index` below later sibling cards so
+  // they intercept clicks on its buttons. Portaling escapes that ancestor.
+  return createPortal(
     <div className="modal" role="presentation">
       <section className="modal__panel stack" role="dialog" aria-modal="true" aria-labelledby="person-create-title">
         <header className="page-header">
@@ -177,7 +183,8 @@ export function PersonCreateModal({ open, onClose, onCreated, createFn = createP
           </button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
