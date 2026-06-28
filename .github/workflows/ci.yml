@@ -289,8 +289,19 @@ jobs:
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Boot full-stack (postgres + rabbit + minio + meeting-api)
+      - name: Boot full-stack (postgres + rabbit + meeting-api)
         working-directory: .
+        # meeting.storage.type defaults to "oss", so AliyunOssObjectStorageGateway
+        # is wired and its constructor fail-fasts unless endpoint + credentials are
+        # present — otherwise the meeting-api container never reaches readiness.
+        # The E2E suite skips all audio-upload/storage scenarios here (they are
+        # gated on E2E_AUDIO_FIXTURE, which CI does not set), so supply syntactically
+        # valid dummy OSS values purely so the app boots; OSSClientBuilder.build()
+        # does no network I/O at construction and the gateway is never called.
+        env:
+          OSS_ENDPOINT: https://oss-cn-hangzhou.aliyuncs.com
+          OSS_ACCESS_KEY_ID: e2e-dummy-access-key-id
+          OSS_ACCESS_KEY_SECRET: e2e-dummy-access-key-secret
         run: |
           docker compose --profile full-stack \
               -f infra/meeting-infra/docker/compose/docker-compose.yml \
