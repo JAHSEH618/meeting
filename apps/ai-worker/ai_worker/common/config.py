@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     callback_hmac_secret: str = "dev-secret"
     callback_heartbeat_interval_seconds: float = 15.0
     internal_api_hmac_secret: str = "dev-internal-secret"
+    # Replay-nonce store. Unset (default) → per-process in-memory TTL cache,
+    # fine for single-replica dev/CI. Multi-replica prod MUST set this to a
+    # shared Redis (e.g. "redis://nonce-redis:6379/0") so a replay aimed at a
+    # different pod is still caught. On a Redis outage the check degrades to the
+    # in-memory cache rather than failing internal calls.
+    nonce_redis_url: str | None = None
+    nonce_redis_key_prefix: str = "ai-worker:nonce:"
     rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
     rabbitmq_username: str = "meeting"

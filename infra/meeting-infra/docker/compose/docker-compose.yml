@@ -127,6 +127,20 @@ services:
       start_period: 60s
       retries: 3
 
+  # Shared replay-nonce store for ai-worker's inbound internal-API HMAC auth.
+  # Required once ai-worker runs >1 replica so a replay can't be aimed at a
+  # different pod; ai-worker degrades to its in-process cache if this is down.
+  nonce-redis:
+    image: redis:7-alpine
+    container_name: meeting-nonce-redis
+    profiles: ["workstation"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   # ── ai-worker (Phase 9 P6 / E1.7) ──────────────────────────────
   # CPU fake-mode build of ai-worker that also serves the workstation
   # SPA at /workstation/* and the BFF at /admin/*. Bring up the full
@@ -148,7 +162,10 @@ services:
         condition: service_healthy
       meeting-api:
         condition: service_healthy
+      nonce-redis:
+        condition: service_healthy
     environment:
+      AI_WORKER_NONCE_REDIS_URL: ${AI_WORKER_NONCE_REDIS_URL:-redis://nonce-redis:6379/0}
       AI_WORKER_USE_FAKE_RUNTIME: "true"
       AI_WORKER_USE_FAKE_ASR_RUNTIME: "true"
       AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME: "true"

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -11,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 from ai_worker.common.config import settings
+from ai_worker.infrastructure.internal_api.nonce_store import build_nonce_store
 
 SourceType = Literal[
     "PRIMARY_TRANSCRIPT",
@@ -66,37 +66,21 @@ class EmbedResponse(BaseModel):
 
 # ── Nonce replay protection ──────────────────────────────────────────────────
 # A nonce only needs to be remembered for the timestamp-skew window: anything
-# older is already rejected by the skew check, so we evict by TTL rather than by
-# a fixed count. This closes the failure mode of the previous
-# ``deque(maxlen=10_000)`` — a burst of >10k distinct nonces inside the window
-# used to evict still-valid entries and reopen the replay surface.
-#
-# NOTE: this cache is per-process. A multi-replica deployment still needs a
-# shared store (e.g. Redis) so a replay can't simply be aimed at a different
-# pod; wire that here when it lands.
-_seen_nonces: "OrderedDict[str, float]" = OrderedDict()
+# older is already rejected by the skew check, so the store evicts by TTL.
+# Backend is chosen by config: a shared Redis when AI_WORKER_NONCE_REDIS_URL is
+# set (required for multi-replica, so a replay can't be aimed at a different
+# pod), otherwise a per-process in-memory TTL cache. See nonce_store.py.
+_nonce_store = build_nonce_store(settings.nonce_redis_url, settings.nonce_redis_key_prefix)
 
 
 def _check_and_record_nonce(nonce: str, now_epoch: float, ttl_seconds: int) -> bool:
-    """Return True if ``nonce`` was already seen within its TTL (a replay).
-
-    A constant TTL means insertion order equals expiry order, so expired entries
-    are evicted from the front in amortized O(1) — no full-dict scan per call.
-    """
-    while _seen_nonces:
-        _oldest_nonce, oldest_expiry = next(iter(_seen_nonces.items()))
-        if oldest_expiry > now_epoch:
-            break
-        _seen_nonces.popitem(last=False)
-    if nonce in _seen_nonces:
-        return True
-    _seen_nonces[nonce] = now_epoch + ttl_seconds
-    return False
+    """Return True if ``nonce`` was already seen within its TTL (a replay)."""
+    return _nonce_store.check_and_record(nonce, now_epoch, ttl_seconds)
 
 
 def reset_nonce_cache() -> None:
-    """Clear the in-process nonce cache. Test-only."""
-    _seen_nonces.clear()
+    """Clear the nonce cache. Test-only."""
+    _nonce_store.reset()
 
 
 def verify_hmac_signature(
