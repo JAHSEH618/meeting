@@ -213,7 +213,8 @@ class MeetingFinalizeFlowIT {
             progress,
             taskRepository,
             minutesService,
-            extractionService
+            extractionService,
+            event -> { }
         );
         return new ProcessingTaskApplicationService(
             taskRepository,
