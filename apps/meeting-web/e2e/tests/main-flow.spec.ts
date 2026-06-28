@@ -73,7 +73,10 @@ test("login → create meeting → transcript / exports pages render", async ({ 
   await expect(page.getByRole("heading", { name: /转录|transcript/i })).toBeVisible();
 
   await page.goto(meetingUrl + "/exports");
-  await expect(page.getByRole("heading", { name: /导出|export/i })).toBeVisible();
+  // Scope to the page-hero <h1>: the exports page also has card <h2>s
+  // ("创建导出", "导出历史") that match /导出/, which would otherwise trip
+  // Playwright's strict-mode (locator resolved to 3 elements).
+  await expect(page.getByRole("heading", { name: /导出|export/i, level: 1 })).toBeVisible();
 });
 
 test("upload → SSE → transcript → RAG → PDF export", async ({ page }) => {

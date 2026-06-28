@@ -94,7 +94,10 @@ test("admin legal hold blocks user delete with 423; release lets it through", as
 
   expect(placeResp.ok()).toBeTruthy();
   const placed = (await placeResp.json()).data;
-  const holdId: string = placed.holdId ?? placed.id;
+  // LegalHoldDTO exposes the id as `legalHoldId` (see LegalHoldController /
+  // LegalHoldDTO); `holdId`/`id` were never returned, so the release call
+  // below was hitting /api/legal-holds/undefined/release → 404.
+  const holdId: string = placed.legalHoldId ?? placed.holdId ?? placed.id;
 
   // ── 3. User DELETE returns 423 LEGAL_HOLD_BLOCKED ──────────
   const blockedResp = await userCtx.delete(
