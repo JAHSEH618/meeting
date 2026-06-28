@@ -24,3 +24,16 @@ meeting:
   export:
     consumer:
       enabled: false   # tests drive ExportQueueConsumer via onMessage() directly
+  # The full @SpringBootTest context (AuthRefreshFlowIT, CallbackNonceRepositoryIT)
+  # wires an ObjectStorageGateway. meeting.storage.type defaults to "oss"
+  # (application.yml), and AliyunOssObjectStorageGateway's constructor requires
+  # endpoint + credentials or it fails context load. These ITs never touch object
+  # storage, so supply syntactically-valid dummy values — OSSClientBuilder.build()
+  # performs no network I/O at construction time.
+  storage:
+    type: oss
+    oss:
+      endpoint: https://oss-cn-hangzhou.aliyuncs.com
+      region: cn-hangzhou
+      access-key-id: test-access-key-id
+      access-key-secret: test-access-key-secret
