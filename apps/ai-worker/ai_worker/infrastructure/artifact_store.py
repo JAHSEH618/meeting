@@ -11,6 +11,13 @@ from ai_worker.common.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Strong references to in-flight fire-and-forget TOS backup tasks. Without this,
+# asyncio only keeps a weak reference to a bare create_task() result, so a backup
+# could be garbage-collected mid-flight ("Task was destroyed but it is pending!").
+# The consumer also drains these on stop() (see RabbitMqTaskConsumer.stop), so a
+# backup enqueued on the last message before shutdown still completes.
+_background_backup_tasks: set[asyncio.Task[Any]] = set()
+
 
 @dataclass
 class ArtifactRef:
@@ -90,7 +97,9 @@ class LocalArtifactStore:
             content_type=content_type,
         )
         if settings.enable_tos_backup:
-            asyncio.create_task(_backup_to_tos_async(bucket, key, data, content_type))
+            task = asyncio.create_task(_backup_to_tos_async(bucket, key, data, content_type))
+            _background_backup_tasks.add(task)
+            task.add_done_callback(_background_backup_tasks.discard)
         return ref
 
     async def upload_json(self, bucket: str, key: str, payload: dict[str, Any]) -> ArtifactRef:

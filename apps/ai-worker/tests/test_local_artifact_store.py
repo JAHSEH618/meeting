@@ -127,3 +127,31 @@ async def test_creates_parent_directories(tmp_path: Path):
     local_path = store.local_path(ref.uri)
     assert local_path.exists()
     assert local_path.read_bytes() == data
+
+@pytest.mark.asyncio
+async def test_tos_backup_task_is_tracked_and_drains(tmp_path: Path, monkeypatch):
+    """PY-6: the fire-and-forget TOS backup keeps a strong task reference (so it
+    can't be GC'd mid-flight) and the done-callback removes it on completion."""
+    import asyncio
+    import ai_worker.infrastructure.artifact_store as mod
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_backup(bucket, key, data, content_type):
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(mod, "_backup_to_tos_async", fake_backup)
+    monkeypatch.setattr(mod.settings, "enable_tos_backup", True)
+    mod._background_backup_tasks.clear()
+
+    store = mod.LocalArtifactStore(root=tmp_path)
+    await store.upload("b", "k", b"data", "application/json")
+
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    assert len(mod._background_backup_tasks) == 1  # handle retained while pending
+
+    release.set()
+    await asyncio.gather(*list(mod._background_backup_tasks))
+    assert len(mod._background_backup_tasks) == 0  # discarded by done-callback
