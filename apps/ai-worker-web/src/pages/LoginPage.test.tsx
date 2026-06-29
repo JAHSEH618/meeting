@@ -42,6 +42,8 @@ describe("LoginPage", () => {
       </MemoryRouter>,
     );
 
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "admin123" } });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await waitFor(() => expect(screen.getByText("new meeting page")).toBeInTheDocument());
