@@ -4,6 +4,7 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 
+import pytest
 
 from ai_worker.infrastructure.internal_api.auth import verify_hmac_signature
 
@@ -119,3 +120,52 @@ class TestNonceCache:
             _check_and_record_nonce(f"flood_{i}", 1000.0, 300)
         # Still within the window, so the original nonce is still remembered.
         assert _check_and_record_nonce("victim", 1000.0, 300) is True
+
+
+class TestSecurityConfigGuard:
+    """validate_security_config must hard-fail on shipped-default secrets unless
+    AI_WORKER_ALLOW_INSECURE_SECRETS is set."""
+
+    def test_allows_when_insecure_secrets_permitted(self, monkeypatch) -> None:
+        from ai_worker.common.config import settings, validate_security_config
+
+        monkeypatch.setattr(settings, "allow_insecure_secrets", True)
+        validate_security_config()  # must not raise
+
+    def test_raises_on_default_secrets(self, monkeypatch) -> None:
+        from ai_worker.common.config import (
+            InsecureConfigError,
+            settings,
+            validate_security_config,
+        )
+
+        monkeypatch.setattr(settings, "allow_insecure_secrets", False)
+        with pytest.raises(InsecureConfigError):
+            validate_security_config(require_admin=False)
+
+    def test_passes_with_strong_secrets(self, monkeypatch) -> None:
+        from ai_worker.common.config import settings, validate_security_config
+
+        monkeypatch.setattr(settings, "allow_insecure_secrets", False)
+        monkeypatch.setattr(settings, "internal_api_hmac_secret", "a" * 40)
+        monkeypatch.setattr(settings, "callback_hmac_secret", "b" * 40)
+        validate_security_config(require_admin=False)  # must not raise
+
+    def test_admin_secret_required_when_admin_enabled(self, monkeypatch) -> None:
+        from ai_worker.common.config import (
+            InsecureConfigError,
+            Settings,
+            settings,
+            validate_security_config,
+        )
+
+        monkeypatch.setattr(settings, "allow_insecure_secrets", False)
+        monkeypatch.setattr(settings, "internal_api_hmac_secret", "a" * 40)
+        monkeypatch.setattr(settings, "callback_hmac_secret", "b" * 40)
+        # Pin admin_jwt_secret to its shipped default (the admin test package
+        # sets a strong override via env, so don't rely on ambient state).
+        monkeypatch.setattr(
+            settings, "admin_jwt_secret", Settings.model_fields["admin_jwt_secret"].default
+        )
+        with pytest.raises(InsecureConfigError, match="ADMIN_JWT_SECRET"):
+            validate_security_config(require_admin=True)

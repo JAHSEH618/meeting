@@ -148,7 +148,60 @@ class Settings(BaseSettings):
     # configured, the SPA uses its own /workstation/login page and posts to
     # Java /api/auth/login through the same-origin /api path.
     auth_login_url: str | None = None
+    # Escape hatch for dev / CI / tests so they can run with the shipped default
+    # secrets. Production must leave this false; validate_security_config() then
+    # hard-fails at startup if any required secret is still its default or too
+    # short. Secure-by-default with an explicit, greppable opt-out.
+    allow_insecure_secrets: bool = False
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")
 
 
 settings = Settings()
+
+
+class InsecureConfigError(RuntimeError):
+    """Raised at startup when a required secret is still its shipped default."""
+
+
+_MIN_SECRET_LEN = 32
+
+
+def validate_security_config(
+    settings_obj: "Settings | None" = None,
+    *,
+    require_admin: bool | None = None,
+) -> None:
+    """Fail fast if a required secret is still its shipped default or too short.
+
+    Called from the API (`create_app`) and the consumer entrypoint. The admin
+    JWT secret is only required when the workstation BFF is enabled
+    (`java_api_base_url` set), unless ``require_admin`` overrides the detection.
+    A default HMAC secret lets anyone forge internal-API signatures or mint a
+    valid admin JWT, so this is a hard stop rather than a warning.
+    """
+    s = settings_obj or settings
+    if s.allow_insecure_secrets:
+        return
+
+    problems: list[str] = []
+
+    def _check(field_name: str, value: str, env_name: str) -> None:
+        default = Settings.model_fields[field_name].default
+        if value == default:
+            problems.append(f"{env_name} is still the shipped default")
+        elif len(value) < _MIN_SECRET_LEN:
+            problems.append(f"{env_name} must be at least {_MIN_SECRET_LEN} bytes")
+
+    _check("internal_api_hmac_secret", s.internal_api_hmac_secret, "AI_WORKER_INTERNAL_API_HMAC_SECRET")
+    _check("callback_hmac_secret", s.callback_hmac_secret, "AI_WORKER_CALLBACK_HMAC_SECRET")
+
+    admin_enabled = require_admin if require_admin is not None else bool(s.java_api_base_url)
+    if admin_enabled:
+        _check("admin_jwt_secret", s.admin_jwt_secret, "AI_WORKER_ADMIN_JWT_SECRET")
+
+    if problems:
+        raise InsecureConfigError(
+            "refusing to start with insecure secrets: "
+            + "; ".join(problems)
+            + " (set AI_WORKER_ALLOW_INSECURE_SECRETS=true only for dev/CI/tests)"
+        )

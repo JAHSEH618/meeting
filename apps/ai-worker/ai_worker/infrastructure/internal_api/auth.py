@@ -109,6 +109,11 @@ def verify_hmac_signature(
     except (ValueError, TypeError):
         return False
     # Replay protection: nonce must be unique within the time-skew window.
-    if _check_and_record_nonce(nonce, now.timestamp(), max_skew_seconds):
+    # A request signed at ``ts`` stays valid for real-time in
+    # ``[ts - max_skew, ts + max_skew]`` (abs() skew above), a 2*max_skew-wide
+    # window. Remember the nonce for the whole window — a TTL of only max_skew
+    # would forget a future-dated request's nonce while it was still
+    # signature/timestamp-valid, reopening the replay surface.
+    if _check_and_record_nonce(nonce, now.timestamp(), 2 * max_skew_seconds):
         return False
     return True

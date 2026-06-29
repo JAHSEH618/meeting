@@ -12,6 +12,10 @@ import pytest
 # bge-m3 / bge-reranker weights. The `real_models` pytest marker is the
 # explicit opt-in for tests that need real weights.
 os.environ.setdefault("AI_WORKER_USE_FAKE_RUNTIME", "true")
+# Tests run with the shipped default secrets; opt out of the production
+# startup secret guard (validate_security_config). Set before any ai_worker
+# import so the Settings singleton picks it up.
+os.environ.setdefault("AI_WORKER_ALLOW_INSECURE_SECRETS", "true")
 
 
 @pytest.fixture(autouse=True)

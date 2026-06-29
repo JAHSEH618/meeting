@@ -47,8 +47,25 @@ class AdminClaims:
     expires_at: int
 
 
+# Small allowance for clock skew between meeting-api (token minter) and the
+# worker when checking the not-before claim.
+_CLOCK_SKEW_LEEWAY_SECONDS = 60
+
+
 class JwtValidationError(Exception):
     """Raised when a token fails any structural / signature / claim check."""
+
+
+def _has_required_role(required: str, roles: tuple[str, ...]) -> bool:
+    """Case-insensitive role check shared by the primary and legacy paths.
+
+    Previously the primary path compared case-sensitively while the legacy path
+    lower-cased, so the same role string could pass one path and fail the other.
+    """
+    if not required:
+        return True
+    required_lower = required.lower()
+    return any(role.lower() == required_lower for role in roles)
 
 
 def _b64url_decode(data: str) -> bytes:
@@ -108,6 +125,13 @@ def decode_admin_token(token: str, *, now: int | None = None) -> AdminClaims:
     if current >= exp:
         raise JwtValidationError("token expired")
 
+    nbf = payload.get("nbf")
+    if nbf is not None:
+        if not isinstance(nbf, int):
+            raise JwtValidationError("nbf claim must be an int")
+        if current + _CLOCK_SKEW_LEEWAY_SECONDS < nbf:
+            raise JwtValidationError("token not yet valid (nbf)")
+
     roles_value = payload.get("roles") or []
     if isinstance(roles_value, str):
         roles_tuple: tuple[str, ...] = (roles_value,)
@@ -117,7 +141,7 @@ def decode_admin_token(token: str, *, now: int | None = None) -> AdminClaims:
         raise JwtValidationError("roles claim must be a string or list")
 
     required = settings.admin_jwt_required_role
-    if required and required not in roles_tuple:
+    if not _has_required_role(required, roles_tuple):
         raise JwtValidationError(f"missing required role: {required}")
 
     subject = payload.get("sub")
@@ -182,7 +206,7 @@ def _decode_legacy_java_session(
         roles_tuple = ()
 
     required = settings.admin_jwt_required_role
-    if required and required.lower() not in {role.lower() for role in roles_tuple}:
+    if not _has_required_role(required, roles_tuple):
         raise JwtValidationError(f"missing required role: {required}")
     if not isinstance(subject, str) or not subject:
         raise JwtValidationError("legacy token userId missing")
@@ -219,23 +243,28 @@ def admin_claims_dependency(
     try:
         return decode_admin_token(token)
     except JwtValidationError as exc:
-        try:
-            return _decode_legacy_java_session(
-                token,
-                request_id=x_request_id or "",
-                trace_id=x_trace_id or "",
-            )
-        except JwtValidationError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "code": "UNAUTHENTICATED",
-                    "message": str(exc),
-                    "retryable": False,
-                    "requestId": x_request_id or "",
-                    "traceId": x_trace_id or "",
-                },
-            )
+        # Only the explicit legacy session shape triggers the outbound
+        # /api/auth/me verification. A malformed/forged HS256 token is terminal
+        # 401 — it must not fall through to the legacy network path.
+        if token.startswith("mvp0_"):
+            try:
+                return _decode_legacy_java_session(
+                    token,
+                    request_id=x_request_id or "",
+                    trace_id=x_trace_id or "",
+                )
+            except JwtValidationError:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "UNAUTHENTICATED",
+                "message": str(exc),
+                "retryable": False,
+                "requestId": x_request_id or "",
+                "traceId": x_trace_id or "",
+            },
+        )
 
 
 def admin_unauthenticated_response(message: str, request_id: str, trace_id: str) -> JSONResponse:

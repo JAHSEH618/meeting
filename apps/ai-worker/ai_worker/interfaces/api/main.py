@@ -592,6 +592,12 @@ def _mount_admin_ui(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
+    # Hard-fail at startup if the internal-API / admin-JWT secrets are still the
+    # shipped defaults (unless AI_WORKER_ALLOW_INSECURE_SECRETS is set for dev).
+    from ai_worker.common.config import validate_security_config
+
+    validate_security_config()
+
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False)

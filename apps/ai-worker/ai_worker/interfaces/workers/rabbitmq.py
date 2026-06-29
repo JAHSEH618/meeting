@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from ai_worker.application.workflows.state import workflow_state_store
+from ai_worker.common.config import validate_security_config
 from ai_worker.infrastructure.mq.rabbitmq_consumer import RabbitMqTaskConsumer
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
 
 def run() -> None:
+    # The consumer signs outbound callbacks with callback_hmac_secret; refuse to
+    # start with the shipped default (admin JWT not required for the consumer).
+    validate_security_config(require_admin=False)
     runtime = MvpWorkerRuntime(state_store=workflow_state_store)
     RabbitMqTaskConsumer(runtime).start_consuming()

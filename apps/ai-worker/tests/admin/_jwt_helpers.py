@@ -24,6 +24,7 @@ def make_admin_token(
     aud: str | None = None,
     iss: str | None = None,
     exp_offset_seconds: int = 3600,
+    nbf_offset_seconds: int | None = None,
     alg: str = "HS256",
     secret: str | None = None,
 ) -> str:
@@ -38,6 +39,8 @@ def make_admin_token(
         "exp": int(time.time()) + exp_offset_seconds,
         "iat": int(time.time()),
     }
+    if nbf_offset_seconds is not None:
+        payload["nbf"] = int(time.time()) + nbf_offset_seconds
     header_b64 = b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
