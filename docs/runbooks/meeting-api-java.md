@@ -388,10 +388,9 @@ scp deploy/.ai-worker-apple-silicon.env.centos user@<apple-mac-ip-or-vpn-ip>:/Us
 
 在 Mac 侧接收到该配置后，重命名并启动服务（详见 `ai-worker-apple-silicon.md`）：
 ```bash
-# (在 Mac 设备上运行)
+# (在 Mac 设备上运行，仓库根目录)
 mv deploy/.ai-worker-apple-silicon.env.centos deploy/.ai-worker-apple-silicon.env
-cd apps/ai-worker
-./api-start.sh
+./scripts/ai-worker-start.sh
 ```
 
 ---

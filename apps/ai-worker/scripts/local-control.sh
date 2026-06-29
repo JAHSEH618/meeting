@@ -23,27 +23,28 @@ err() { printf '[ai-worker] ERROR: %s\n' "$*" >&2; }
 
 usage() {
     cat <<EOF
-Usage: run one of the named scripts from apps/ai-worker
+local-control.sh — ai-worker / ai-worker-web 控制引擎。
+
+通常无需直接调用：请使用仓库根目录 scripts/ 下的无参脚本（它们委派到本引擎）：
 
 Local mode:
-  ./all-start.sh       Start Python API + ai-worker-web locally.
-  ./api-start.sh       Start only Python API locally.
-  ./web-start.sh       Start only ai-worker-web locally.
-  ./all-restart.sh     Restart Python API + ai-worker-web locally.
-  ./all-stop.sh        Stop Python API + ai-worker-web.
+  ./scripts/ai-worker-start.sh         Start only Python API locally.
+  ./scripts/ai-worker-web-start.sh     Start only ai-worker-web locally.
+  ./scripts/ai-worker-restart.sh       Restart Python API locally.
+  ./scripts/ai-worker-stop.sh          Stop Python API.
+  (ai-worker-web-{restart,stop}.sh 同理)
 
 CentOS integration mode:
-  ./all-centos-start.sh    Start API + web using deploy/.ai-worker-apple-silicon.env.centos.
-  ./api-centos-start.sh    Start only API using CentOS integration env.
-  ./web-centos-start.sh    Start only web and proxy /api to the remote Java URL.
-  ./all-centos-restart.sh  Restart API + web using CentOS integration env.
-  ./all-centos-stop.sh     Stop API + web.
+  ./scripts/ai-worker-centos-start.sh      Start API using deploy/.ai-worker-apple-silicon.env.centos.
+  ./scripts/ai-worker-web-centos-start.sh  Start web and proxy /api to the remote Java URL.
+  (对应的 -stop / -restart 同理)
 
-Status and logs:
+Status and logs (run from apps/ai-worker):
   ./status.sh [api|web|all]
   ./logs.sh [api|web|all]
 
-The named start/stop/restart scripts reject extra tail arguments.
+Direct engine usage:
+  scripts/local-control.sh <start|stop|restart|status|logs> [api|web|all] [local|centos]
 EOF
 }
 
