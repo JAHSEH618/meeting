@@ -352,7 +352,7 @@ async def test_runtime_sends_periodic_heartbeats_while_text_embedding_runs(state
 
 
 @pytest.mark.asyncio
-async def test_runtime_stops_text_embedding_heartbeats_when_unexpected_error_bubbles(state_store) -> None:
+async def test_runtime_reports_text_embedding_unexpected_error_to_java(state_store) -> None:
     callback_client = _callback_stub()
     runtime = MvpWorkerRuntime(
         callback_client=callback_client,
@@ -361,12 +361,19 @@ async def test_runtime_stops_text_embedding_heartbeats_when_unexpected_error_bub
     )
     runtime.heartbeat_interval_seconds = 0.01
 
-    with pytest.raises(RuntimeError, match="embedding exploded"):
-        await runtime.consume_message(_raw_embedding_message("task_exploding_emb"))
+    # The unexpected error must be reported to Java as a terminal failure rather
+    # than bubbling out of consume_message into the broker's DLQ.
+    await runtime.consume_message(_raw_embedding_message("task_exploding_emb"))
 
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["error_code"] == "WORKER_UNEXPECTED_ERROR"
+    assert fail_kwargs["retryable"] is True
+    callback_client.complete_worker_phase.assert_not_awaited()
+
+    # The heartbeat loop must have stopped — no further update_step calls.
     calls_after_error = callback_client.update_step.await_count
     await asyncio.sleep(0.035)
-
     assert callback_client.update_step.await_count == calls_after_error
 
 

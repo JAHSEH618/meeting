@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from collections import deque
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -11,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 from ai_worker.common.config import settings
+from ai_worker.infrastructure.internal_api.nonce_store import build_nonce_store
 
 SourceType = Literal[
     "PRIMARY_TRANSCRIPT",
@@ -65,19 +65,22 @@ class EmbedResponse(BaseModel):
 
 
 # ── Nonce replay protection ──────────────────────────────────────────────────
-# In-memory LRU for recently-seen nonces. Sized for ~5min of traffic at
-# moderate throughput. In a multi-instance deployment this must be backed
-# by Redis or a distributed cache.
-_MAX_NONCE_CACHE = 10_000
-_seen_nonces: deque[str] = deque(maxlen=_MAX_NONCE_CACHE)
+# A nonce only needs to be remembered for the timestamp-skew window: anything
+# older is already rejected by the skew check, so the store evicts by TTL.
+# Backend is chosen by config: a shared Redis when AI_WORKER_NONCE_REDIS_URL is
+# set (required for multi-replica, so a replay can't be aimed at a different
+# pod), otherwise a per-process in-memory TTL cache. See nonce_store.py.
+_nonce_store = build_nonce_store(settings.nonce_redis_url, settings.nonce_redis_key_prefix)
 
 
-def _is_nonce_replayed(nonce: str) -> bool:
-    """Return True if the nonce has been seen before."""
-    if nonce in _seen_nonces:
-        return True
-    _seen_nonces.append(nonce)
-    return False
+def _check_and_record_nonce(nonce: str, now_epoch: float, ttl_seconds: int) -> bool:
+    """Return True if ``nonce`` was already seen within its TTL (a replay)."""
+    return _nonce_store.check_and_record(nonce, now_epoch, ttl_seconds)
+
+
+def reset_nonce_cache() -> None:
+    """Clear the nonce cache. Test-only."""
+    _nonce_store.reset()
 
 
 def verify_hmac_signature(
@@ -97,14 +100,15 @@ def verify_hmac_signature(
     ).hexdigest()
     if not hmac.compare_digest(f"hmac-sha256={expected}", signature):
         return False
+    now = datetime.now(timezone.utc)
     try:
         ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        skew = abs((datetime.now(timezone.utc) - ts).total_seconds())
+        skew = abs((now - ts).total_seconds())
         if skew > max_skew_seconds:
             return False
     except (ValueError, TypeError):
         return False
     # Replay protection: nonce must be unique within the time-skew window.
-    if _is_nonce_replayed(nonce):
+    if _check_and_record_nonce(nonce, now.timestamp(), max_skew_seconds):
         return False
     return True

@@ -20,7 +20,7 @@ observability/          # Prometheus / Grafana / Loki 看板
 ### 前置要求
 
 - Docker Engine 24+ + Docker Compose v2
-- 至少 4GB 可用内存（PostgreSQL + pgvector + RabbitMQ + MinIO + Vault）
+- 至少 4GB 可用内存（PostgreSQL + pgvector + RabbitMQ + Vault）
 
 ### 1. 启动全栈
 
@@ -40,10 +40,6 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml exec pos
 # RabbitMQ Management
 curl -s -u meeting:meeting_dev http://localhost:15672/api/overview | jq -r '.rabbitmq_version'
 # 预期输出: 3.13.x
-
-# MinIO
-curl -s http://localhost:9000/minio/health/live
-# 预期输出: (HTTP 200, 空 body)
 
 # Vault-dev
 curl -s http://localhost:8200/v1/sys/health | jq -r '.sealed'
@@ -68,8 +64,6 @@ curl -s -u meeting:meeting_dev http://localhost:15672/api/queues/%2f | jq '.[].n
 | PostgreSQL | `localhost:5432` | `meeting` / `meeting_dev` |
 | RabbitMQ AMQP | `localhost:5672` | `meeting` / `meeting_dev` |
 | RabbitMQ Management | http://localhost:15672 | `meeting` / `meeting_dev` |
-| MinIO Console | http://localhost:9001 | `minioadmin` / `minioadmin` |
-| MinIO S3 API | `localhost:9000` | `minioadmin` / `minioadmin` |
 | Vault | http://localhost:8200 | `root` (dev mode) |
 | Prometheus | http://localhost:9090 | 无 |
 | Grafana | http://localhost:3000 | `admin` / `admin` |
@@ -100,12 +94,6 @@ docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml down -v
 - **症状**: `/api/queues` 看不到 `audio-cpu-queue` 等队列
 - **排查**: `docker logs meeting-rabbitmq`
 - **常见原因**: `definitions.json` 未正确挂载；检查 compose 中的 volume 映射
-
-### MinIO 连接拒绝
-
-- **症状**: `localhost:9000` 连接被拒绝
-- **排查**: `docker ps | grep minio`
-- **常见原因**: MinIO 启动较慢；等待 10–15 秒后重试
 
 ### 端口冲突
 

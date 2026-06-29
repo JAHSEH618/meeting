@@ -214,7 +214,7 @@ async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_c
 
 
 @pytest.mark.asyncio
-async def test_execute_step_stops_heartbeat_loop_when_unexpected_error_bubbles(callback_client) -> None:
+async def test_execute_step_converts_unexpected_error_to_terminal_failure(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
     engine = ExplodingWorkflowEngine(state_store)
     runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
@@ -230,13 +230,61 @@ async def test_execute_step_stops_heartbeat_loop_when_unexpected_error_bubbles(c
     )
     context = engine.start_pipeline(task)
 
-    with pytest.raises(RuntimeError, match="pipeline exploded"):
-        await runtime.execute_step(task, "ASR", context)
+    # An unexpected (non-WorkerPipelineError) error must NOT bubble out — it is
+    # converted to a retryable terminal step failure so consume_message can
+    # report it to Java instead of dying silently in the DLQ.
+    result = await runtime.execute_step(task, "ASR", context)
+    assert result.status == "FAILED"
+    assert result.error_code == "WORKER_UNEXPECTED_ERROR"
+    assert result.retryable is True
+    assert result.step_name == "ASR"
 
+    # The heartbeat loop must have stopped — no further update_step calls.
     calls_after_error = callback_client.update_step.await_count
     await asyncio.sleep(0.035)
-
     assert callback_client.update_step.await_count == calls_after_error
+
+
+@pytest.mark.asyncio
+async def test_consume_message_sends_fail_task_on_unexpected_error(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = ExplodingWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    runtime.heartbeat_interval_seconds = 0.01
+
+    await runtime.consume_message(_valid_message())
+
+    # Java must learn the terminal outcome rather than the task hanging RUNNING.
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["error_code"] == "WORKER_UNEXPECTED_ERROR"
+    assert fail_kwargs["retryable"] is True
+    callback_client.complete_worker_phase.assert_not_awaited()
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None and snapshot.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_rejection_does_not_fail_task(callback_client) -> None:
+    state_store = InMemoryWorkflowStateStore()
+    engine = StubWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+
+    def update_step_side_effect(**kwargs):
+        # Reject only heartbeat-channel calls (RUNNING + progress=50); step start
+        # (progress=0) and success (progress=100) still succeed. Heartbeats are
+        # best-effort — a rejected one must not abort the task.
+        accepted = not (kwargs.get("status") == "RUNNING" and kwargs.get("progress") == 50)
+        return CallbackResponse(http_status=200 if accepted else 503, accepted=accepted)
+
+    callback_client.update_step.side_effect = update_step_side_effect
+
+    await runtime.consume_message(_valid_message())
+
+    callback_client.fail_task.assert_not_awaited()
+    callback_client.complete_worker_phase.assert_awaited_once()
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None and snapshot.status == "SUCCEEDED"
 
 
 @pytest.mark.asyncio

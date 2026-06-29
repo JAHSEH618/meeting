@@ -9,6 +9,7 @@ import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -77,6 +78,35 @@ public class OutboxEventStore {
             this::mapRecord,
             tenantId,
             batchSize
+        );
+    }
+
+    /**
+     * Return the payload JSON of the most recent event of {@code eventType} for
+     * an aggregate. Outbox rows are retained after publishing (status flips to
+     * PUBLISHED, the row is not deleted), so the original creation payload stays
+     * recoverable — used to re-dispatch orphaned tasks without persisting a copy
+     * of the message on the task itself.
+     */
+    public Optional<String> findLatestPayloadJson(
+        String tenantId,
+        String aggregateType,
+        String aggregateId,
+        String eventType
+    ) {
+        return jdbcTemplate.query(
+            """
+            SELECT payload_json::text
+              FROM domain_events_outbox
+             WHERE tenant_id = ? AND aggregate_type = ? AND aggregate_id = ? AND event_type = ?
+             ORDER BY sequence_no DESC
+             LIMIT 1
+            """,
+            rs -> rs.next() ? Optional.of(rs.getString(1)) : Optional.<String>empty(),
+            tenantId,
+            aggregateType,
+            aggregateId,
+            eventType
         );
     }
 

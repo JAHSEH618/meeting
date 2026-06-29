@@ -1,12 +1,19 @@
-"""High-level orchestrator that submits speaker candidates and ALWAYS clears plaintext.
+"""High-level orchestrator that submits speaker candidates and clears plaintext.
 
-This wrapper enforces the invariant that the plaintext embedding lives only as long
-as the callback attempt. Whether the callback succeeds, fails with a non-retryable
-error, or exhausts its own retry budget, the SpeakerEmbedding.values buffer is
-zeroized in a finally block before this function returns.
+This wrapper flushes the plaintext embedding as soon as the callback attempt is
+over. Whether the callback succeeds, fails with a non-retryable error, or
+exhausts its own retry budget, the SpeakerEmbedding.values buffer (and the
+serialized payload's values list) are overwritten with zeros in a finally block
+before this function returns.
+
+Note this is best-effort, not a cryptographic guarantee: the embedding was
+already serialized into the HTTP request body before this point, so any copy the
+HTTP client still holds (or any other holder of the same list reference) is not
+reached. The intent is to flush the working buffers so retries don't surface
+stale data and so a core dump can't trivially recover the values.
 
 The wrapper does NOT retry on its own — the underlying JavaCallbackClient already
-runs a bounded retry loop. We only guarantee one thing on top: zeroization.
+runs a bounded retry loop. We only add one thing on top: this zeroization.
 """
 
 from __future__ import annotations

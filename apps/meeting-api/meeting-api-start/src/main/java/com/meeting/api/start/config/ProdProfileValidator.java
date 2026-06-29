@@ -9,16 +9,20 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * 8.1.3 — fail-fast on prod boot when required secrets / configs are
+ * 8.1.3 — fail-fast on deployed boot when required secrets / configs are
  * missing, still set to dev demo values, or in obviously unsafe states
  * (e.g. Flyway baseline-on-migrate true).
  *
- * <p>Activates only with the {@code prod} Spring profile. Throws a
+ * <p>Activates for any explicit deployment profile ({@code prod},
+ * {@code staging}, …) but NOT for local/dev/test/default runs — gating on
+ * the literal {@code prod} profile alone meant a mistyped or unset profile
+ * (e.g. {@code staging}) silently disabled every check and let the app boot
+ * with the {@code change-me-*} demo secrets. Throws a
  * {@link BeanCreationException} listing every violation so ops see all
  * problems in one shot instead of fixing them one boot at a time.
  */
 @Component
-@Profile("prod")
+@Profile("!default & !dev & !test & !local")
 public class ProdProfileValidator {
 
     private static final List<String> KNOWN_DEMO_VALUES = List.of(
@@ -33,6 +37,7 @@ public class ProdProfileValidator {
     private final String aiWorkerBaseUrl;
     private final String chunkStrategyVersion;
     private final String kmsMasterKeyId;
+    private final String adminJwtSecret;
     private final boolean flywayBaselineOnMigrate;
     private final String authMode;
     private final String tenantsActive;
@@ -43,6 +48,7 @@ public class ProdProfileValidator {
         @Value("${meeting.security.ai-worker.base-url:}") String aiWorkerBaseUrl,
         @Value("${meeting.chunk.strategy-version:}") String chunkStrategyVersion,
         @Value("${meeting.kms.master-key-id:}") String kmsMasterKeyId,
+        @Value("${meeting.admin-jwt.secret:}") String adminJwtSecret,
         @Value("${spring.flyway.baseline-on-migrate:false}") boolean flywayBaselineOnMigrate,
         @Value("${meeting.auth.mode:in-memory}") String authMode,
         @Value("${meeting.tenants.active:}") String tenantsActive
@@ -52,6 +58,7 @@ public class ProdProfileValidator {
         this.aiWorkerBaseUrl = aiWorkerBaseUrl;
         this.chunkStrategyVersion = chunkStrategyVersion;
         this.kmsMasterKeyId = kmsMasterKeyId;
+        this.adminJwtSecret = adminJwtSecret;
         this.flywayBaselineOnMigrate = flywayBaselineOnMigrate;
         this.authMode = authMode;
         this.tenantsActive = tenantsActive;
@@ -108,6 +115,14 @@ public class ProdProfileValidator {
                     + mask(kmsMasterKeyId) + "')"
             );
         }
+        if (isBlankOrDemo(adminJwtSecret)) {
+            failures.add(
+                "meeting.admin-jwt.secret must be set to a non-demo value (was '"
+                    + mask(adminJwtSecret) + "') — the default 'dev-admin-secret-*' is"
+                    + " publicly known and would let anyone forge ADMIN tokens for the"
+                    + " ai-worker admin API"
+            );
+        }
         if (flywayBaselineOnMigrate) {
             failures.add(
                 "spring.flyway.baseline-on-migrate must be false in prod — silent baselining hides schema drift"
@@ -145,6 +160,7 @@ public class ProdProfileValidator {
         String trimmed = value.trim();
         return KNOWN_DEMO_VALUES.contains(trimmed)
             || trimmed.toLowerCase().startsWith("change-me")
+            || trimmed.toLowerCase().startsWith("dev-admin-secret")
             || trimmed.toLowerCase().contains("fallback");
     }
 

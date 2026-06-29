@@ -109,7 +109,8 @@ class JavaLlmPhaseOrchestratorTest {
             new TaskStepProgressService(tasks, TenantScopedTransaction.immediate(), clock),
             tasks,
             minutes,
-            extraction
+            extraction,
+            event -> { }
         );
     }
 

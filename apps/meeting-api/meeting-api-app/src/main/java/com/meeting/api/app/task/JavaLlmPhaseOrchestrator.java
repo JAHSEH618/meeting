@@ -3,6 +3,7 @@ package com.meeting.api.app.task;
 import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.extraction.ExtractionApplicationService;
 import com.meeting.api.app.minutes.MinutesApplicationService;
+import com.meeting.api.app.rag.TranscriptIndexFallbackEvent;
 import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
@@ -10,6 +11,7 @@ import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -25,17 +27,20 @@ public class JavaLlmPhaseOrchestrator {
     private final ProcessingTaskRepository taskRepository;
     private final MinutesApplicationService minutesApplicationService;
     private final ExtractionApplicationService extractionApplicationService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public JavaLlmPhaseOrchestrator(
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository,
         MinutesApplicationService minutesApplicationService,
-        ExtractionApplicationService extractionApplicationService
+        ExtractionApplicationService extractionApplicationService,
+        ApplicationEventPublisher applicationEventPublisher
     ) {
         this.taskStepProgressService = taskStepProgressService;
         this.taskRepository = taskRepository;
         this.minutesApplicationService = minutesApplicationService;
         this.extractionApplicationService = extractionApplicationService;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     public ProcessingTaskDTO run(String tenantId, String taskId) {
@@ -78,6 +83,10 @@ public class JavaLlmPhaseOrchestrator {
             taskStepProgressService.markStepFailed(tenantId, taskId, ProcessingStep.SUMMARY, errorCode(ex));
             markExtractionFailedIfPending(tenantId, taskId);
             taskStepProgressService.completeJavaPhase(tenantId, taskId);
+            // Minutes never generated, so MinutesGeneratedRagIndexer won't index
+            // the transcript. Fire a best-effort fallback to index it directly,
+            // after the failure transitions above have committed.
+            applicationEventPublisher.publishEvent(new TranscriptIndexFallbackEvent(tenantId, meetingId));
             throw ex;
         }
     }

@@ -45,6 +45,13 @@
 
 ## 二、基础设施组件
 
+> ⚠️ **存储说明（重要，本指南后文未全部更新）**：MinIO / `LocalObjectStorageGateway` /
+> `meeting.storage.endpoint` 已随 TOS/OSS 迁移**移除**——当前 meeting-api 只实现了
+> `oss`（`AliyunOssObjectStorageGateway`）与 `tos`（`VolcengineTosObjectStorageGateway`）
+> 两种对象存储网关，本地 compose 也不再内置 MinIO。请通过 `MEETING_STORAGE_TYPE=oss|tos`
+> 加对应 endpoint / 密钥来配置对象存储。下表及后文的 MinIO 部署步骤（Helm chart、端口
+> 9000/9001、`MINIO_*` 变量等）均已过时，待整体改写。
+
 | 组件 | 本地 (Docker) | 生产 (K8s/AWS) | 用途 |
 |------|-------------|----------------|------|
 | **PostgreSQL 15 + pgvector** | `pgvector/pgvector:pg15` | RDS PostgreSQL 15.5 + pgvector 扩展 | 业务数据库 + 向量检索 |

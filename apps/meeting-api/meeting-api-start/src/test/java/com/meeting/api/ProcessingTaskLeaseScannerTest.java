@@ -6,8 +6,7 @@ import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
-import com.meeting.api.domain.common.DomainEvent;
-import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.ProcessingTaskStep;
@@ -32,10 +31,11 @@ class ProcessingTaskLeaseScannerTest {
         ProcessingTask expired = runningTaskWithLease("task_expired", NOW.minusMinutes(2));
         ProcessingTask fresh = runningTaskWithLease("task_fresh", NOW.plusMinutes(2));
         InMemoryTaskRepository tasks = new InMemoryTaskRepository(List.of(expired, fresh));
+        RecordingRepublisher republisher = new RecordingRepublisher(true);
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
-            event -> {},
+            republisher,
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -49,6 +49,31 @@ class ProcessingTaskLeaseScannerTest {
         assertThat(tasks.byId("task_expired").status()).isEqualTo(ProcessingTaskStatus.QUEUED);
         assertThat(tasks.byId("task_expired").attemptNo()).isEqualTo(2);
         assertThat(tasks.byId("task_fresh").status()).isEqualTo(ProcessingTaskStatus.RUNNING);
+        // The orphan must actually be re-dispatched, carrying the bumped attempt.
+        assertThat(republisher.calls).containsExactly(new RecordingRepublisher.Call("tenant_01", "task_expired", 2));
+    }
+
+    @Test
+    void leavesTaskForNextScanWhenRepublishCannotRecoverPayload() {
+        ProcessingTask expired = runningTaskWithLease("task_expired", NOW.minusMinutes(2));
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository(List.of(expired));
+        RecordingRepublisher republisher = new RecordingRepublisher(false);
+
+        ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
+            tasks,
+            republisher,
+            TenantScopedTransaction.immediate(),
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
+            10
+        );
+
+        ProcessingTaskLeaseScanner.ScanReport report = scanner.scanOnce(List.of("tenant_01"));
+
+        // Republish was attempted but found no payload — the task must NOT count
+        // as requeued so the next scan retries.
+        assertThat(report.orphaned()).isEqualTo(1);
+        assertThat(report.requeued()).isZero();
+        assertThat(republisher.calls).hasSize(1);
     }
 
     @Test
@@ -63,7 +88,7 @@ class ProcessingTaskLeaseScannerTest {
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
-            event -> {},
+            (tenantId, taskId, attemptNo) -> true,
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -82,7 +107,7 @@ class ProcessingTaskLeaseScannerTest {
 
         ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
             tasks,
-            event -> {},
+            (tenantId, taskId, attemptNo) -> true,
             TenantScopedTransaction.immediate(),
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
             10
@@ -142,6 +167,23 @@ class ProcessingTaskLeaseScannerTest {
             NOW.minusMinutes(1),
             List.of(step)
         );
+    }
+
+    private static final class RecordingRepublisher implements OrphanedTaskRepublisher {
+        record Call(String tenantId, String taskId, int attemptNo) {}
+
+        private final boolean result;
+        final List<Call> calls = new ArrayList<>();
+
+        RecordingRepublisher(boolean result) {
+            this.result = result;
+        }
+
+        @Override
+        public boolean republish(String tenantId, String taskId, int newAttemptNo) {
+            calls.add(new Call(tenantId, taskId, newAttemptNo));
+            return result;
+        }
     }
 
     private static class InMemoryTaskRepository implements ProcessingTaskRepository {
