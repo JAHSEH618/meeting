@@ -169,7 +169,11 @@ class BgeM3Runtime:
         from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-not-found]
 
         target = str(self._models_dir) if self._models_dir else "BAAI/bge-m3"
-        self._model = BGEM3FlagModel(target, use_fp16=self._use_fp16, device=self._device)
+        # FlagEmbedding >=1.3 takes ``devices`` (str | list), not ``device``.
+        # Passing the old ``device`` kwarg lands in **kwargs and is ignored, so
+        # the model silently auto-selects a device (e.g. CPU instead of the
+        # requested mps/cuda). Mirrors FlagReranker(..., devices=...).
+        self._model = BGEM3FlagModel(target, use_fp16=self._use_fp16, devices=self._device)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one 1024-dim vector per input text.
