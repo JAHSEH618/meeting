@@ -10,9 +10,10 @@
 
 | 工作区 | 技术栈 | 角色 |
 |---|---|---|
-| [`apps/meeting-api`](apps/meeting-api/) | Java 17 · Spring Boot 3.3 · COLA-V5 多模块 Maven | 公开 API、SSE、内部回调接收、业务事实来源、任务编排 |
-| [`apps/ai-worker`](apps/ai-worker/) | Python 3.11 · FastAPI · `uv` | GPU AI Pipeline（ASR / 分人 / 声纹 / Embedding / Rerank） |
-| [`apps/meeting-web`](apps/meeting-web/) | Node 20 · React 18 · Vite · TypeScript strict | SPA 前端，仅消费公开 API + SSE |
+| [`apps/meeting-api`](apps/meeting-api/) | Java 17 · Spring Boot 3.3 · COLA-V5 多模块 Maven | 公开 API、SSE、内部回调接收、业务事实来源、任务编排（`:8080`） |
+| [`apps/ai-worker`](apps/ai-worker/) | Python 3.11 · FastAPI · `uv` | GPU AI Pipeline（ASR / 分人 / 声纹 / Embedding / Rerank）+ 运维端 Workstation BFF（`:8090`） |
+| [`apps/meeting-web`](apps/meeting-web/) | Node 20 · React 18 · Vite · TypeScript strict | 用户端 SPA，仅消费公开 API + SSE（`:5173`） |
+| [`apps/ai-worker-web`](apps/ai-worker-web/) | Node 20 · React 18 · Vite · TypeScript strict | 运维端 Workstation SPA，由 ai-worker 挂载于 `/workstation/`（dev `:5174`） |
 | [`packages/meeting-contracts`](packages/meeting-contracts/) | OpenAPI · JSON Schema · YAML 枚举 / 错误码 | 跨工程契约唯一事实源，驱动多语言 codegen |
 | [`infra/meeting-infra`](infra/meeting-infra/) | Docker Compose · K8s · Terraform | 本地 + 部署定义，含可观测性栈 |
 
@@ -91,6 +92,10 @@ flowchart TB
     class PG,MQ,TOS,Vault,LLM store;
     class OTel obs;
 ```
+
+**两个前端**：`meeting-web` 是用户端 SPA，只消费 meeting-api 的公开 REST + SSE；`ai-worker-web` 是运维端
+Workstation，采用双后端模式——`/admin/*` 走 ai-worker 的 Admin BFF、`/api/*` 透传到 Java 公开 API，
+认证用 Java 签发、ai-worker 校验的 JWT（`aud=ai-worker-admin`），构建产物挂载在 ai-worker 的 `/workstation/`。
 
 更完整的逻辑视图（业务域 / 队列 / 模型层细分）见 [`docs/structure.md`](docs/structure.md)。
 
@@ -216,11 +221,13 @@ meeting/
 │   │   ├── meeting-api-infrastructure/       #   Repo / MQ / KMS / TOS / DashScope
 │   │   │   └── src/main/resources/db/migration/  # Flyway: 运行时 schema 事实源
 │   │   └── meeting-api-client/               #   对外契约 + codegen 输出
-│   ├── ai-worker/                            # Python 3.11 · FastAPI · uv
-│   │   ├── ai_worker/                        #   应用代码
+│   ├── ai-worker/                            # Python 3.11 · FastAPI · uv（GPU Pipeline + Workstation BFF）
+│   │   ├── ai_worker/                        #   应用代码（含 admin/ Workstation BFF）
 │   │   ├── ai_worker/generated/              #   契约 codegen（勿手改）
 │   │   └── tests/                            #   pytest
-│   └── meeting-web/                          # React 18 · Vite · TS strict
+│   ├── meeting-web/                          # 用户端 SPA · React 18 · Vite · TS strict
+│   │   └── src/shared/api/types.gen.ts       #   契约 codegen（勿手改）
+│   └── ai-worker-web/                        # 运维端 Workstation SPA · 挂载于 /workstation/
 │       └── src/shared/api/types.gen.ts       #   契约 codegen（勿手改）
 ├── packages/
 │   └── meeting-contracts/                    # 跨工程契约唯一事实源
@@ -231,11 +238,15 @@ meeting/
 │   ├── docker/compose/                       # 本地一键栈
 │   ├── k8s/ · terraform/                     # 部署定义
 │   └── observability/                        # Prom / Grafana 看板 / Loki
+├── scripts/                                  # 各工程 start/stop/restart 统一无参入口（见 scripts/README.md）
+├── deploy/                                   # 生产部署脚本 + DEPLOY.md
 └── docs/
-    ├── spec.md                               # 一期可执行规格
     ├── structure.md                          # 完整逻辑视图（详细 mermaid）
     ├── app-api-contracts.md                  # 跨工程 API / MQ / 回调契约
     ├── model-registry.md                     # 模型注册与版本
+    ├── 本地会议智能系统技术方案文档-优化版.md   # 完整技术方案
+    ├── runbooks/                             # 运维 / 验收 runbook
+    ├── decisions/                            # 架构决策记录（ADR）
     └── ddls/                                 # PostgreSQL DDL 评审快照（非运行时事实源）
 ```
 
@@ -286,7 +297,7 @@ openssl rand -hex 32   # → AI_WORKER_INTERNAL_API_HMAC_SECRET
 docker compose -f infra/meeting-infra/docker/compose/docker-compose.yml up -d
 ```
 
-会拉起 PostgreSQL 15 + pgvector、RabbitMQ（含 seed 好的 7 个队列）、Vault-dev（KMS 替代）。要带监控就再加 `--profile observability`，会同时拉起 Prometheus + Grafana。对象存储（音频 / 中间产物 / 导出）走 OSS / TOS（由 `MEETING_STORAGE_TYPE` 选择，需配置真实 endpoint 与密钥）——本地 compose 不内置 MinIO，ai-worker 本地默认用文件系统（`AI_WORKER_STORAGE_BACKEND=local`）。
+会拉起 PostgreSQL 15 + pgvector、RabbitMQ（含 seed 好的 7 个队列）、Vault-dev（KMS 替代）。要带监控就再加 `--profile observability`，会同时拉起 Prometheus + Grafana。对象存储（音频 / 中间产物 / 导出）走 OSS / TOS（由 `STORAGE_TYPE=oss|tos` 选择，需配置真实 endpoint 与密钥）——本地 compose 不内置 MinIO，ai-worker 本地默认用文件系统（`AI_WORKER_STORAGE_BACKEND=local`）。
 
 健康检查样例：
 
@@ -301,7 +312,18 @@ curl -s http://localhost:8200/v1/sys/health | jq -r '.sealed' # Vault 应为 fal
 
 排障细则见 [`infra/meeting-infra/README.md`](infra/meeting-infra/README.md)。
 
-### 3 启动三个应用
+### 3 启动应用
+
+**统一入口（推荐）**：`scripts/` 下每个工程一组固定命名、无需参数的启停脚本，详见
+[`scripts/README.md`](scripts/README.md)。
+
+```bash
+./scripts/all-start.sh         # 一键启动全部：meeting-api → ai-worker → ai-worker-web → meeting-web
+./scripts/all-stop.sh          # 一键停止全部（按相反顺序）
+# 或单独控制：./scripts/meeting-api-start.sh / ai-worker-start.sh / meeting-web-restart.sh ...
+```
+
+**手动启动（开发调试）**：
 
 ```bash
 # 业务层（:8080）—— 启动时 Flyway 自动应用 schema 迁移
@@ -309,13 +331,18 @@ cd apps/meeting-api
 ./mvnw -pl meeting-api-start -am install -DskipTests
 java -jar meeting-api-start/target/meeting-api-start-0.1.0-SNAPSHOT.jar
 
-# 计算层（:8090）
+# 计算层（:8090）—— GPU Pipeline + 运维端 Workstation BFF
 cd apps/ai-worker
 uv sync --extra dev
 uv run ai-worker-api
 
-# 前端（:5173，开发服务器代理 /api → :8080）
+# 用户端前端（:5173，开发服务器代理 /api → :8080）
 cd apps/meeting-web
+npm install
+npm run dev
+
+# 运维端 Workstation 前端（:5174，base /workstation/）
+cd apps/ai-worker-web
 npm install
 npm run dev
 ```
@@ -331,6 +358,7 @@ npm run dev
 | `apps/meeting-api` | `./mvnw verify -q` | 全量 + Testcontainers 集成（JDK 17） | **是** |
 | `apps/ai-worker` | `uv run pytest tests/` + `uv run pyright ai_worker/` | 单元 + 类型 | 否 |
 | `apps/meeting-web` | `npm test` + `npx tsc --noEmit` + `npm run lint` | Vitest + 类型 + ESLint | 否 |
+| `apps/ai-worker-web` | `npm run type-check && npm test && npm run build` | TS strict + Vitest + 构建（CI 门禁） | 否 |
 | `packages/meeting-contracts` | `npm run check` + `npm run codegen:check-temp` | 契约一致性 + 无副作用 drift 检查（Java codegen 需 JDK 17） | 否 |
 
 ### 5 改了契约之后
@@ -351,7 +379,7 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 ## 关键设计约束（跨文件不可见的不变量）
 
-下面这些约束在单个文件里看不出来，但改动时必须心里有数。完整说明在 [`CLAUDE.md`](CLAUDE.md)。
+下面这些约束在单个文件里看不出来，但改动时必须心里有数。背景与完整技术方案见 [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md)。
 
 1. **Java 管业务，Python 管计算**：ai-worker 不持业务库凭证、不判权限、不调第三方 LLM。
 2. **AI 产物 ≠ 业务事实**：纪要 / 待办 / 决策 / 风险默认是建议；重生成时给出 diff，不会静默覆盖用户已确认的字段。
@@ -387,7 +415,7 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 **不做**：实时字幕 · 在线协同编辑 · 飞书 / 企微 / Jira 集成 · OCR · 全公司声纹搜索 · 会议安全分级（Phase K 移除）· 本地大模型。
 
-详见 [`docs/spec.md`](docs/spec.md)。
+完整技术方案见 [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md)。
 
 ---
 
@@ -395,17 +423,17 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 | 文档 | 内容 |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | 给 AI 协作者的工程上下文：命令、架构、跨文件不变量 |
-| [`docs/spec.md`](docs/spec.md) | 一期可执行规格：API、数据模型、RAG、验收、错误码、默认配置 |
+| [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md) | 完整技术方案：术语、目标、架构、选型、Pipeline、安全、部署 |
 | [`docs/structure.md`](docs/structure.md) | 完整逻辑视图（详细业务域 + 队列 + 模型层 mermaid） |
 | [`docs/app-api-contracts.md`](docs/app-api-contracts.md) | 跨工程契约：Public API、Internal Callback、RabbitMQ、TOS URI、幂等、版本 |
 | [`docs/model-registry.md`](docs/model-registry.md) | AI 模型注册与版本策略 |
-| [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md) | 完整技术方案：术语、目标、架构、选型、Pipeline、安全、部署 |
-| [`apps/meeting-api/SPEC.md`](apps/meeting-api/SPEC.md) | Java 后端工程规格 |
-| [`apps/ai-worker/SPEC.md`](apps/ai-worker/SPEC.md) | Python AI Worker 工程规格 |
-| [`apps/meeting-web/SPEC.md`](apps/meeting-web/SPEC.md) | 前端工程规格 |
-| [`packages/meeting-contracts/SPEC.md`](packages/meeting-contracts/SPEC.md) | 跨工程契约规格 |
-| [`infra/meeting-infra/SPEC.md`](infra/meeting-infra/SPEC.md) | 基础设施工程规格 |
+| [`docs/runbooks/`](docs/runbooks/) | 运维 / 验收 runbook（Apple Silicon、备份恢复、legal hold、阶段验收） |
+| [`docs/decisions/`](docs/decisions/) | 架构决策记录（ADR） |
+| [`docs/ddls/`](docs/ddls/) | PostgreSQL DDL 评审快照（非运行时事实源） |
+| [`deploy/DEPLOY.md`](deploy/DEPLOY.md) | 生产部署手册（脚本 + 流程） |
+| [`scripts/README.md`](scripts/README.md) | 各工程统一启停脚本说明 |
+| [`RELEASE-NOTES-v1.1.0.md`](RELEASE-NOTES-v1.1.0.md) | v1.1.0 发布说明（TOS 迁移 + Phase K） |
+| 各工程 `README.md` | [`meeting-api`](apps/meeting-api/) · [`ai-worker`](apps/ai-worker/) · [`meeting-web`](apps/meeting-web/) · [`ai-worker-web`](apps/ai-worker-web/) · [`meeting-contracts`](packages/meeting-contracts/) · [`meeting-infra`](infra/meeting-infra/) |
 
 ---
 

@@ -30,6 +30,11 @@ coverage/
 .eslintcache
 *.tsbuildinfo
 
+# Playwright (e2e run artifacts)
+test-results/
+playwright-report/
+.playwright/
+
 # Python
 .venv/
 __pycache__/

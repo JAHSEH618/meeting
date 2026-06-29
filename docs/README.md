@@ -1,23 +1,15 @@
 # Docs
 
-文档入口：
+文档入口（仅列出仓库内实际跟踪的文档；`spec.md` / `SPEC.md` 系列为本地开发文件，已在 `.gitignore` 中忽略，不随仓库分发）：
 
-- `spec.md`: 一期可执行规格
-- `../apps/meeting-web/SPEC.md`: 前端工程规格
-- `../apps/meeting-api/SPEC.md`: Java 后端工程规格
-- `../apps/ai-worker/SPEC.md`: Python AI Worker 工程规格
-- `../packages/meeting-contracts/SPEC.md`: 跨工程契约规格
-- `../infra/meeting-infra/SPEC.md`: 基础设施工程规格
-- `structure.md`: 架构图
+- `本地会议智能系统技术方案文档-优化版.md`: 完整技术方案（术语、目标、架构、选型、Pipeline、安全、部署）
+- `structure.md`: 完整逻辑视图（详细业务域 + 队列 + 模型层 mermaid）
 - `app-api-contracts.md`: 应用间 API、消息、回调和 JSON 契约
-- `ddls/`: PostgreSQL 数据表 DDL 源稿
-- `本地会议智能系统技术方案文档-优化版.md`: 完整技术方案
+- `model-registry.md`: AI 模型注册与版本策略
+- `runbooks/`: 运维 / 验收 runbook（Apple Silicon、备份恢复、legal hold、阶段验收）
+- `decisions/`: 架构决策记录（ADR）
+- `ddls/`: PostgreSQL 数据表 DDL 评审快照（非运行时事实源；运行时 schema 以 meeting-api Flyway 迁移为准）
 
-`meeting-api` 内部 COLA-V5 子项目规格：
-
-- `../apps/meeting-api/meeting-api-start/SPEC.md`: 启动、配置、profile、健康检查
-- `../apps/meeting-api/meeting-api-client/SPEC.md`: DTO、Command、Query、Result、Facade、枚举、错误码
-- `../apps/meeting-api/meeting-api-adapter/SPEC.md`: REST、SSE、internal callback、BFF 适配
-- `../apps/meeting-api/meeting-api-app/SPEC.md`: 用例编排、事务、权限、outbox、幂等
-- `../apps/meeting-api/meeting-api-domain/SPEC.md`: 聚合、实体、值对象、领域服务、领域事件和端口
-- `../apps/meeting-api/meeting-api-infrastructure/SPEC.md`: PostgreSQL、TOS、RabbitMQ、DashScope、KMS、导出实现
+跨工程契约的唯一事实源在 [`../packages/meeting-contracts/`](../packages/meeting-contracts/)。
+各工程工程说明见其各自的 `README.md`（`apps/*`、`packages/meeting-contracts`、`infra/meeting-infra`）。
+部署见 [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md)；本地启停脚本见 [`../scripts/README.md`](../scripts/README.md)。
