@@ -37,8 +37,8 @@ function normalizeRedirect(raw: string | null): string {
 export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

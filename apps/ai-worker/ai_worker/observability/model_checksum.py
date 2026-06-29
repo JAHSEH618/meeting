@@ -21,6 +21,37 @@ logger = logging.getLogger(__name__)
 WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt", ".pth", ".gguf", ".onnx")
 
 
+# Process-wide memoization of computed checksums, keyed by models_dir.
+# Model weights are immutable once staged (a new version ships under a new
+# version subdir), so hashing a directory once per process is safe and lets
+# the readiness/models endpoints avoid re-hashing multi-GB weight sets on
+# every kubelet probe (which previously pegged disk+CPU and timed the probe
+# out). Call :func:`reset_checksum_cache` in tests that restage weights.
+_checksum_cache: dict[str, str | None] = {}
+
+
+def compute_checksum_cached(models_dir: str | None) -> str | None:
+    """Memoized :func:`compute_checksum`. Hashes a given dir at most once.
+
+    The readiness probe and ``/internal/models`` call this on every request;
+    without the cache a real-model pod re-hashes ~10GB of weights every
+    ``periodSeconds`` and the probe times out. Keyed by path because staged
+    weights never mutate in place.
+    """
+    if not models_dir:
+        return None
+    if models_dir in _checksum_cache:
+        return _checksum_cache[models_dir]
+    value = compute_checksum(models_dir)
+    _checksum_cache[models_dir] = value
+    return value
+
+
+def reset_checksum_cache() -> None:
+    """Clear the memoized checksums. Test-only (weights are immutable in prod)."""
+    _checksum_cache.clear()
+
+
 def compute_checksum(models_dir: str | None) -> str | None:
     if not models_dir:
         return None

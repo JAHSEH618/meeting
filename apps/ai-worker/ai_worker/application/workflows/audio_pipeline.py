@@ -36,6 +36,18 @@ from ai_worker.pipeline.speaker.submit import SpeakerCandidateSubmission
 logger = logging.getLogger(__name__)
 
 
+# Preprocess failures that are transient/environmental rather than bad input:
+#   * AUDIO_OBJECT_NOT_FOUND — object-store read-after-write lag; the object may
+#     appear on a later attempt.
+#   * AUDIO_PREPROCESS_RUNTIME_MISSING — ffmpeg/ffprobe absent; a retry on a
+#     correctly-provisioned pod can succeed.
+# Everything else (corrupt / too-long / low-sample-rate / unsupported codec) is
+# deterministic bad input and must stay non-retryable.
+_RETRYABLE_PREPROCESS_CODES = frozenset(
+    {"AUDIO_OBJECT_NOT_FOUND", "AUDIO_PREPROCESS_RUNTIME_MISSING"}
+)
+
+
 class WorkerPipelineError(Exception):
     def __init__(self, step_name: str, error_code: str, message: str, retryable: bool = True) -> None:
         super().__init__(message)
@@ -141,7 +153,8 @@ class LocalAudioPipelineEngine:
                 context.task.channel_map,
             )
         except AudioPreprocessError as exc:
-            raise WorkerPipelineError("AUDIO_PREPROCESS", exc.error_code, str(exc), retryable=False) from exc
+            retryable = exc.error_code in _RETRYABLE_PREPROCESS_CODES
+            raise WorkerPipelineError("AUDIO_PREPROCESS", exc.error_code, str(exc), retryable=retryable) from exc
         except OSError as exc:
             raise WorkerPipelineError("AUDIO_PREPROCESS", "AUDIO_OBJECT_NOT_FOUND", str(exc), retryable=True) from exc
 
@@ -211,8 +224,18 @@ class LocalAudioPipelineEngine:
                 await ensure_loaded()
             except DiarizationRuntimeError as exc:
                 raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
+        # Thread the task's speaker-count bounds (required by MEETING_FULL_PIPELINE)
+        # into diarization. Only pass them when present so runtimes/stubs without
+        # the kwargs keep working.
+        diar_kwargs: dict[str, int] = {}
+        if context.task.min_speakers is not None:
+            diar_kwargs["min_speakers"] = context.task.min_speakers
+        if context.task.max_speakers is not None:
+            diar_kwargs["max_speakers"] = context.task.max_speakers
         try:
-            context.speaker_turns = await self._diarization_runtime.diarize(audio_path, preprocess.metadata)
+            context.speaker_turns = await self._diarization_runtime.diarize(
+                audio_path, preprocess.metadata, **diar_kwargs
+            )
         except DiarizationRuntimeError as exc:
             raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
         if not context.speaker_turns:

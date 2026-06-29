@@ -186,6 +186,17 @@ class NonRetryableFailingWorkflowEngine(StubWorkflowEngine):
         )
 
 
+class PostStepExplodingWorkflowEngine(StubWorkflowEngine):
+    """All steps succeed, but the post-step phase (complete_pipeline) raises.
+
+    Exercises the catch-all in consume_message: an exception outside the
+    per-step guard must still produce a terminal fail_task, not escape.
+    """
+
+    async def complete_pipeline(self, context) -> PipelineArtifact:
+        raise RuntimeError("manifest write blew up")
+
+
 @pytest.mark.asyncio
 async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
@@ -260,6 +271,27 @@ async def test_consume_message_sends_fail_task_on_unexpected_error(callback_clie
     assert fail_kwargs["error_code"] == "WORKER_UNEXPECTED_ERROR"
     assert fail_kwargs["retryable"] is True
     callback_client.complete_worker_phase.assert_not_awaited()
+    snapshot = state_store.get("task_runtime_01")
+    assert snapshot is not None and snapshot.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_consume_message_sends_fail_task_on_post_step_error(callback_client) -> None:
+    # Regression: an exception in the post-step phase (complete_pipeline,
+    # speaker/transcript/complete callbacks) must not escape consume_message —
+    # it must become a retryable terminal fail_task so Java doesn't hang.
+    state_store = InMemoryWorkflowStateStore()
+    engine = PostStepExplodingWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+
+    result = await runtime.consume_message(_valid_message())
+
+    assert result is not None  # did not raise
+    callback_client.complete_worker_phase.assert_not_awaited()
+    callback_client.fail_task.assert_awaited_once()
+    fail_kwargs = callback_client.fail_task.await_args.kwargs
+    assert fail_kwargs["error_code"] == "WORKER_UNEXPECTED_ERROR"
+    assert fail_kwargs["retryable"] is True
     snapshot = state_store.get("task_runtime_01")
     assert snapshot is not None and snapshot.status == "FAILED"
 

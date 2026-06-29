@@ -54,13 +54,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Phase 9 — points FastAPI's StaticFiles mount at the COPYed dist.
     AI_WORKER_ADMIN_UI_DIST_PATH=/app/admin-ui
 
+# ffmpeg/ffprobe are REQUIRED at runtime: the audio pipeline shells out to
+# ``ffprobe`` in AUDIO_PREPROCESS (pipeline/audio/preprocess.py) and funasr /
+# pyannote decode compressed audio through ffmpeg. Without it every audio task
+# fails with AUDIO_PREPROCESS_RUNTIME_MISSING.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
          python3.11 python3.11-venv python3-pip \
-         curl ca-certificates \
+         curl ca-certificates ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.11 /usr/local/bin/python
+    && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+    && ffprobe -version >/dev/null
 
 # uv is the documented dependency manager; install it pinned.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \

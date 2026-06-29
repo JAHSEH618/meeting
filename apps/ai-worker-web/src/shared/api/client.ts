@@ -141,7 +141,16 @@ export async function apiUpload(
     redirectToLogin();
     throw new ApiError(401, { code: "UNAUTHENTICATED", message: "session expired", retryable: false }, "", "");
   }
-  const payload = (await response.json()) as { success: boolean; data?: unknown; error?: ErrorInfo };
+  let payload: { success: boolean; data?: unknown; error?: ErrorInfo };
+  try {
+    payload = (await response.json()) as { success: boolean; data?: unknown; error?: ErrorInfo };
+  } catch {
+    throw new ApiError(response.status, {
+      code: "UPSTREAM_INVALID_RESPONSE",
+      message: `non-JSON ${response.status} response`,
+      retryable: response.status >= 500,
+    }, "", "");
+  }
   if (!response.ok || payload.success === false || payload.error) {
     throw new ApiError(
       response.status,
@@ -204,9 +213,14 @@ export function subscribeEventStream<T = unknown>(
             if (data) {
               const event = JSON.parse(data) as T;
               handlers.onEvent(event);
-              // I3: Close on terminal state
+              // I3: Close on terminal state. Keep this set in sync with the
+              // page-level TERMINAL_STATUSES — PARTIAL_SUCCEEDED is terminal too,
+              // so a partial completion must close the stream here as well.
               const eventStatus = (event as { status?: unknown }).status;
-              if (typeof eventStatus === "string" && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(eventStatus)) {
+              if (
+                typeof eventStatus === "string" &&
+                ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"].includes(eventStatus)
+              ) {
                 controller.abort();
                 return;
               }

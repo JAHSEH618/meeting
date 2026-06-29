@@ -566,3 +566,68 @@ class TestFailTask:
             )
 
         assert captured_body["speakerEnrollmentId"] == "se_01"
+
+
+class TestRequestRetryClassification:
+    """The retry loop in _request must treat permanent 4xx as terminal (no
+    retry) while still retrying transient 5xx / 408 / 429."""
+
+    class _FakeResp:
+        def __init__(self, code: int) -> None:
+            self.status_code = code
+
+        def json(self) -> dict:
+            return {}
+
+    class _CountingClient:
+        def __init__(self, code: int) -> None:
+            self.code = code
+            self.calls = 0
+
+        async def request(self, *args, **kwargs):
+            self.calls += 1
+            return TestRequestRetryClassification._FakeResp(self.code)
+
+    @pytest.mark.asyncio
+    async def test_4xx_is_terminal_and_not_retried(self) -> None:
+        fake = self._CountingClient(404)
+        client = JavaCallbackClient(base_url="http://localhost:8080")
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.update_step(
+            task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
+            status="RUNNING", progress=0,
+        )
+
+        assert resp.accepted is False
+        assert resp.error_code == "CALLBACK_REJECTED"
+        assert fake.calls == 1  # no retries on a permanent rejection
+
+    @pytest.mark.asyncio
+    async def test_5xx_is_retried_then_writeback_failed(self) -> None:
+        fake = self._CountingClient(503)
+        client = JavaCallbackClient(base_url="http://localhost:8080")
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.update_step(
+            task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
+            status="RUNNING", progress=0,
+        )
+
+        assert resp.accepted is False
+        assert resp.error_code == "WRITEBACK_FAILED"
+        assert fake.calls == 3  # default max_retries
+
+    @pytest.mark.asyncio
+    async def test_429_is_retried(self) -> None:
+        fake = self._CountingClient(429)
+        client = JavaCallbackClient(base_url="http://localhost:8080")
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.update_step(
+            task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
+            status="RUNNING", progress=0,
+        )
+
+        assert resp.accepted is False
+        assert fake.calls == 3  # 429 is transient → retried

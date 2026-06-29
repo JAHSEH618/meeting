@@ -49,10 +49,28 @@ def test_on_message_dispatches_json_to_runtime_and_acks() -> None:
     channel = _Channel()
 
     consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "task_01"}).encode())
+    consumer.wait_idle()
 
     runtime.consume_message.assert_awaited_once_with({"taskId": "task_01"})
     assert channel.acked == ["delivery_01"]
     assert channel.rejected == []
+    consumer.stop()
+
+
+def test_on_message_rejects_when_task_raises() -> None:
+    # A failure that escapes consume_message must reject (not ack) so the task
+    # is not silently lost.
+    runtime = AsyncMock()
+    runtime.consume_message.side_effect = RuntimeError("boom")
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+
+    consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "task_01"}).encode())
+    consumer.wait_idle()
+
+    assert channel.acked == []
+    assert channel.rejected == [("delivery_01", False)]
+    consumer.stop()
 
 
 def test_on_message_rejects_invalid_json_without_requeue() -> None:
@@ -78,6 +96,7 @@ def test_on_message_reuses_one_event_loop_across_messages() -> None:
     consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t1"}).encode())
     loop_after_first = consumer._loop
     consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t2"}).encode())
+    consumer.wait_idle()
 
     assert loop_after_first is not None
     assert consumer._loop is loop_after_first

@@ -16,6 +16,16 @@ from ai_worker.infrastructure.task_validator import validate_task_message, valid
 logger = logging.getLogger(__name__)
 
 
+class UnroutableTaskMessage(Exception):
+    """A message failed validation AND lacks the identity (taskId/tenantId/
+    attemptNo) needed to send a Java fail callback.
+
+    Raised so the consumer rejects it (no requeue → DLQ) instead of acking it:
+    acking would silently drop the poison message with no failure record
+    anywhere. The DLQ preserves it for inspection.
+    """
+
+
 def _first_step_for_task_type(task_type: str) -> str:
     """Return the first expected pipeline step for a task type.
 
@@ -108,8 +118,10 @@ async def consume_and_validate(
 
     identity = _callback_identity(raw_message)
     if identity is None:
-        logger.error("INVALID_TASK_MESSAGE: missing callback identity; rejecting without Java fail callback")
-        return None
+        logger.error("INVALID_TASK_MESSAGE: missing callback identity; rejecting to DLQ")
+        raise UnroutableTaskMessage(
+            f"task message missing taskId/tenantId/attemptNo; errors={errors}"
+        )
     task_id, tenant_id, attempt_no = identity
     trace_id = raw_message.get("traceId", f"fail-fast-{task_id}")
 

@@ -153,7 +153,7 @@ async def test_audio_pipeline_allows_runtime_injection(tmp_path: Path) -> None:
     class DiarizationRuntime:
         model_version = "test-diar"
 
-        async def diarize(self, audio_path: Path, metadata: AudioMetadata):
+        async def diarize(self, audio_path: Path, metadata: AudioMetadata, **kwargs):
             return [SpeakerTurn(speaker_label="SPEAKER_03", start_ms=0, end_ms=900, confidence=0.77)]
 
     engine = LocalAudioPipelineEngine(
@@ -208,7 +208,7 @@ async def test_audio_pipeline_runs_speaker_embedding_and_matching(tmp_path: Path
     class DiarizationRuntime:
         model_version = "test-diar"
 
-        async def diarize(self, audio_path: Path, metadata: AudioMetadata):
+        async def diarize(self, audio_path: Path, metadata: AudioMetadata, **kwargs):
             return [SpeakerTurn(speaker_label="SPEAKER_00", start_ms=0, end_ms=900, confidence=0.77)]
 
     class SpeakerRuntime:

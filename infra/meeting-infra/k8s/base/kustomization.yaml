@@ -7,3 +7,4 @@ resources:
   - meeting-api/service.yaml
   - meeting-web/deployment.yaml
   - ai-worker/statefulset.yaml
+  - ai-worker/consumer-deployment.yaml

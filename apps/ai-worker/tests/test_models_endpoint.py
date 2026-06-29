@@ -485,6 +485,63 @@ def test_warmup_rejects_unknown_capability() -> None:
     assert body["error"]["code"] == "WARMUP_UNKNOWN_CAPABILITY"
 
 
+def test_ready_probe_does_not_hash_weights_without_expected_checksum(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: the readiness probe must not re-hash weight files when no
+    expected checksum is configured. Previously every probe (periodSeconds)
+    re-read multi-GB weights and timed the probe out."""
+    from ai_worker.observability import model_checksum
+
+    weight_dir = _stage_weight(tmp_path, "bge-m3/v1")
+    monkeypatch.setattr(settings, "bge_m3_models_dir", str(weight_dir))
+    registry.reset_for_tests()
+    model_checksum.reset_checksum_cache()
+
+    calls = {"n": 0}
+    real = model_checksum.compute_checksum
+
+    def _counting(models_dir):
+        calls["n"] += 1
+        return real(models_dir)
+
+    monkeypatch.setattr(model_checksum, "compute_checksum", _counting)
+
+    client = TestClient(create_app())
+    for _ in range(3):
+        assert client.get("/internal/ready").status_code == 200
+    assert calls["n"] == 0
+
+
+def test_models_endpoint_hashes_each_dir_at_most_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Even the operator-facing /internal/models surface (which does echo the
+    hash) must hash a given dir once per process, not on every call."""
+    from ai_worker.observability import model_checksum
+
+    weight_dir = _stage_weight(tmp_path, "bge-m3/v1")
+    monkeypatch.setattr(settings, "bge_m3_models_dir", str(weight_dir))
+    registry.reset_for_tests()
+    model_checksum.reset_checksum_cache()
+
+    calls = {"n": 0}
+    real = model_checksum.compute_checksum
+
+    def _counting(models_dir):
+        calls["n"] += 1
+        return real(models_dir)
+
+    monkeypatch.setattr(model_checksum, "compute_checksum", _counting)
+
+    client = TestClient(create_app())
+    for _ in range(3):
+        resp = client.get("/internal/models", headers=_auth_headers("GET", "/internal/models", b""))
+        assert resp.status_code == 200
+    # bge-m3 dir is the only existing weight dir; it is hashed exactly once.
+    assert calls["n"] == 1
+
+
 def test_ready_endpoint_fails_when_real_mode_dep_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -71,6 +71,23 @@ def test_wrong_issuer_is_rejected():
         decode_admin_token(token)
 
 
+def test_not_yet_valid_nbf_token_is_rejected():
+    # nbf well beyond the clock-skew leeway → not yet valid.
+    token = make_admin_token(nbf_offset_seconds=3600)
+
+    with pytest.raises(JwtValidationError, match="not yet valid"):
+        decode_admin_token(token)
+
+
+def test_lowercase_role_satisfies_required_role():
+    # Role comparison is case-insensitive and consistent across paths.
+    token = make_admin_token(roles=["admin"])
+
+    claims = decode_admin_token(token)
+
+    assert claims.tenant_id == "tenant_01"
+
+
 def test_non_hs256_alg_is_rejected():
     # Crafted token with alg=none — sometimes used in CVE-style attacks.
     token = make_admin_token(alg="none")

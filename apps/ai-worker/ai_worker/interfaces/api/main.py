@@ -34,7 +34,7 @@ from ai_worker.model_runtime.rerank import (
 )
 from ai_worker.model_runtime.speaker import CamPlusPlusRuntime
 from ai_worker.observability.gpu_metrics import refresh_gpu_metrics
-from ai_worker.observability.model_checksum import compute_checksum
+from ai_worker.observability.model_checksum import compute_checksum_cached
 
 
 RuntimeLike = (
@@ -130,7 +130,7 @@ def _package_importable(name: str) -> bool:
         return False
 
 
-def _model_info(runtime: RuntimeLike, name: str) -> dict:
+def _model_info(runtime: RuntimeLike, name: str, *, compute_actual_checksum: bool = True) -> dict:
     """Project a runtime into ``ModelInfo`` per ai-worker-internal-api.yaml.
 
     Three layered concerns (later wins):
@@ -150,8 +150,19 @@ def _model_info(runtime: RuntimeLike, name: str) -> dict:
          the pod would Ready, accept work, and crash on first inference.
     """
     models_dir = _models_dir_for(runtime)
-    actual = compute_checksum(models_dir)
     expected = _expected_checksum_for(runtime)
+    # Hash on-disk weights only when the value is actually needed:
+    #   * an expected checksum is configured (the J4 guard must compare), or
+    #   * the caller wants the hash echoed (the /internal/models surface).
+    # The readiness probe passes ``compute_actual_checksum=False`` so a deploy
+    # with no expected checksums never hashes multi-GB weights on the probe
+    # hot path. ``compute_checksum_cached`` memoizes so even when we do hash,
+    # it happens once per process rather than every probe.
+    actual = (
+        compute_checksum_cached(models_dir)
+        if compute_actual_checksum or expected is not None
+        else None
+    )
 
     status = runtime.status
     last_error = runtime.last_error
@@ -182,13 +193,13 @@ def _model_info(runtime: RuntimeLike, name: str) -> dict:
     }
 
 
-def _all_model_infos() -> list[dict]:
+def _all_model_infos(*, compute_actual_checksum: bool = True) -> list[dict]:
     return [
-        _model_info(get_bge_m3(), "bge-m3"),
-        _model_info(get_bge_reranker(), "bge-reranker-v2-m3"),
-        _model_info(get_asr_runtime(), "qwen3-asr"),
-        _model_info(get_diarization_runtime(), "pyannote-diarization"),
-        _model_info(get_speaker_runtime(), "cam++-speaker"),
+        _model_info(get_bge_m3(), "bge-m3", compute_actual_checksum=compute_actual_checksum),
+        _model_info(get_bge_reranker(), "bge-reranker-v2-m3", compute_actual_checksum=compute_actual_checksum),
+        _model_info(get_asr_runtime(), "qwen3-asr", compute_actual_checksum=compute_actual_checksum),
+        _model_info(get_diarization_runtime(), "pyannote-diarization", compute_actual_checksum=compute_actual_checksum),
+        _model_info(get_speaker_runtime(), "cam++-speaker", compute_actual_checksum=compute_actual_checksum),
     ]
 
 
@@ -581,6 +592,12 @@ def _mount_admin_ui(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
+    # Hard-fail at startup if the internal-API / admin-JWT secrets are still the
+    # shipped defaults (unless AI_WORKER_ALLOW_INSECURE_SECRETS is set for dev).
+    from ai_worker.common.config import validate_security_config
+
+    validate_security_config()
+
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False)
@@ -628,7 +645,11 @@ def create_app() -> FastAPI:
         don't want a cold runtime to block kubelet from routing traffic
         that will trigger the first lazy load.
         """
-        models = _all_model_infos()
+        # Readiness must be cheap: it never echoes the checksum (see body
+        # below), and only needs the on-disk hash for models that have an
+        # expected checksum configured. Passing compute_actual_checksum=False
+        # keeps a no-expected-checksum deploy from hashing weights here.
+        models = _all_model_infos(compute_actual_checksum=False)
         failed = [m for m in models if m["status"] == "ERROR"]
         ok = not failed
         body = {
@@ -982,6 +1003,12 @@ app = create_app()
 
 
 def run() -> None:
+    import os
     import uvicorn
 
-    uvicorn.run("ai_worker.interfaces.api.main:app", host="0.0.0.0", port=8090, reload=False)
+    # Honour AI_WORKER_API_PORT (the local-control / compose scripts pass it
+    # and then health-check that port). Falls back to 8090, the documented
+    # default and the k8s containerPort.
+    port = int(os.environ.get("AI_WORKER_API_PORT", "8090"))
+    host = os.environ.get("AI_WORKER_API_HOST", "0.0.0.0")
+    uvicorn.run("ai_worker.interfaces.api.main:app", host=host, port=port, reload=False)
