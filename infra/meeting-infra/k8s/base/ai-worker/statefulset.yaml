@@ -75,6 +75,12 @@ spec:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15
+            # /internal/ready no longer re-hashes weights every probe, but the
+            # very first probe may still hash once if an expected checksum is
+            # configured. Give it generous headroom over the k8s 1s default so
+            # a cold checksum doesn't flap readiness.
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /internal/health

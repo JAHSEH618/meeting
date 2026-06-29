@@ -65,6 +65,12 @@ ensure_deps() {
     if ! python3 -c 'import sys; assert sys.version_info[:2] == (3, 11)' 2>/dev/null; then
         warn "System python3 is not 3.11 — uv will manage its own interpreter via .tool-versions."
     fi
+    command -v ffprobe >/dev/null 2>&1 || {
+        err "ffprobe/ffmpeg not found. The audio pipeline's AUDIO_PREPROCESS step shells"
+        err "out to ffprobe and funasr/pyannote decode audio via ffmpeg. Install via:"
+        err "  brew install ffmpeg"
+        exit 1
+    }
 }
 
 stage_mock_weights() {
@@ -447,12 +453,16 @@ run_api() {
     export AI_WORKER_USE_FAKE_RUNTIME=false
     export AI_WORKER_USE_FAKE_ASR_RUNTIME=false
     export AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME=false
+    # The "weights" step downloads the CAM++ speaker model, so run it real too
+    # (otherwise this "full real-models path" silently keeps speaker on fake).
+    export AI_WORKER_USE_FAKE_SPEAKER_RUNTIME=false
     export AI_WORKER_BGE_M3_DEVICE=mps
     export AI_WORKER_BGE_RERANKER_DEVICE=mps
     export AI_WORKER_BGE_M3_DTYPE=fp32
     export AI_WORKER_BGE_RERANKER_DTYPE=fp32
     export AI_WORKER_ASR_DEVICE=cpu
     export AI_WORKER_DIARIZATION_DEVICE=cpu
+    export AI_WORKER_SPEAKER_DEVICE=cpu
 
     # Pin model dirs to the staged location (version subdirs already
     # created by stage/weights step).
@@ -460,6 +470,7 @@ run_api() {
     export AI_WORKER_BGE_RERANKER_MODELS_DIR="${MODELS_DIR}/bge-reranker-v2-m3/v1"
     export AI_WORKER_QWEN3_ASR_MODELS_DIR="${MODELS_DIR}/qwen3-asr-1.7b/v2026.05.1"
     export AI_WORKER_PYANNOTE_MODELS_DIR="${MODELS_DIR}/pyannote/v3.1"
+    export AI_WORKER_CAM_PLUS_MODELS_DIR="${MODELS_DIR}/cam-plus/v1"
 
     # Force offline mode AFTER the weights step has finished; if a user
     # hits `run` without downloading first, drop offline so HF can lazy-

@@ -1,0 +1,79 @@
+# ai-worker RabbitMQ consumer.
+#
+# The StatefulSet next to this file runs the image's default ENTRYPOINT
+# (`ai-worker-api`) — the FastAPI server that serves /internal/embed,
+# /internal/rerank and the workstation BFF. That process does NOT consume the
+# task queues, so without this Deployment the whole async pipeline
+# (AUDIO_PREPROCESS → ASR → DIARIZATION → SPEAKER → TRANSCRIPT_MERGE) and the
+# TEXT_EMBEDDING / RAG_REINDEX batch path never run.
+#
+# This Deployment overrides the entrypoint to `ai-worker-consumer`
+# (project.scripts in pyproject.toml → ai_worker.interfaces.workers.rabbitmq:run)
+# and binds the queues it should serve. It reuses the same image, model PVC and
+# config/secret as the API. It is a separate process, so it loads its own model
+# singletons — keep the API on the embedding/rerank models and the consumer on
+# the audio models via AI_WORKER_RABBITMQ_TASK_QUEUES so a single GPU box does
+# not load every model twice. Split into more queue-scoped Deployments (e.g. a
+# CPU-only embed consumer) per environment as throughput requires.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-worker-consumer
+  labels:
+    app.kubernetes.io/name: ai-worker-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-worker-consumer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-worker-consumer
+    spec:
+      securityContext:
+        fsGroup: 1001
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: ai-worker-consumer
+          image: ai-worker:cuda
+          imagePullPolicy: IfNotPresent
+          command: ["uv", "run", "ai-worker-consumer"]
+          envFrom:
+            - configMapRef:
+                name: ai-worker-config
+            - secretRef:
+                name: ai-worker-secret
+          env:
+            # Audio pipeline queues. The embed queue can be peeled off into a
+            # separate CPU-only consumer Deployment if/when embedding batch
+            # volume warrants it.
+            - name: AI_WORKER_RABBITMQ_TASK_QUEUES
+              value: "audio-cpu-queue,gpu-asr-queue,gpu-diar-queue,gpu-speaker-queue,embed-queue"
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "4000m"
+              memory: "16Gi"
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: models
+              mountPath: /opt/models
+              readOnly: true
+            - name: artifacts
+              mountPath: /app/.artifacts
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ai-worker-models
+        - name: artifacts
+          emptyDir:
+            sizeLimit: 20Gi
