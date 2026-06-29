@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import secrets
 import asyncio
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -121,11 +122,24 @@ class JavaCallbackClient:
                         accepted=True,
                         body=response.json(),
                     )
+                # 4xx other than 408 (timeout) / 429 (rate limit) are permanent:
+                # the same signed payload will be rejected again, so retrying only
+                # burns attempts and hammers a possibly-recovering API. Return a
+                # terminal result immediately instead of looping.
+                if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
+                    return CallbackResponse(
+                        http_status=response.status_code,
+                        accepted=False,
+                        error_code="CALLBACK_REJECTED",
+                    )
                 last_error = f"HTTP {response.status_code}"
             except Exception as e:
                 last_error = str(e)
             if attempt_index < max_retries - 1:
-                await asyncio.sleep(0.05 * (2 ** attempt_index))
+                # Exponential backoff with full jitter so a fleet of workers
+                # retrying a recovering API don't synchronise into a thundering herd.
+                base = 0.05 * (2 ** attempt_index)
+                await asyncio.sleep(base + random.uniform(0.0, base))
 
         return CallbackResponse(
             http_status=0,

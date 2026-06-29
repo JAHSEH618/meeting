@@ -126,10 +126,21 @@ class MvpWorkerRuntime:
         task = await consume_and_validate(raw_message, self.callback_client)
         if task is None:
             return None
+        try:
+            if is_embedding_task(task):
+                return await self._consume_embedding_message(task)
+            return await self._consume_audio_message(task)
+        except Exception as exc:  # noqa: BLE001 — no failure may escape without a terminal callback
+            # The per-step body is guarded by _run_with_heartbeat, but the
+            # post-step phase (complete_pipeline, speaker/transcript/complete
+            # callbacks, manifest I/O) was not: an exception there used to escape
+            # to the broker, get rejected without requeue, and leave the Java
+            # task stuck RUNNING until lease expiry. Convert any stray error into
+            # a retryable terminal fail_task so Java always learns the outcome.
+            await self._fail_for_unexpected(task, exc)
+            return task
 
-        if is_embedding_task(task):
-            return await self._consume_embedding_message(task)
-
+    async def _consume_audio_message(self, task: TaskMessage) -> TaskMessage:
         context = self.workflow_engine.start_pipeline(task)
         for step_name in task.pipeline_steps:
             if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
@@ -457,6 +468,41 @@ class MvpWorkerRuntime:
             await heartbeat_task
         except asyncio.CancelledError:
             return
+
+    async def _fail_for_unexpected(self, task: TaskMessage, exc: Exception) -> None:
+        """Catch-all terminal failure for errors outside the per-step guard.
+
+        Best-effort: it logs, marks the workflow FAILED, and tries a retryable
+        ``fail_task`` so Java re-dispatches. If even ``fail_task`` fails we still
+        return (the consumer acks); Java's lease expiry is the final backstop.
+        """
+        failed_step = task.pipeline_steps[-1] if task.pipeline_steps else "WORKER_DAG"
+        logger.exception(
+            "worker_unexpected_error task_id=%s step=%s", task.task_id, failed_step
+        )
+        try:
+            self.state_store.fail(task.task_id, "WORKER_UNEXPECTED_ERROR", str(exc))
+        except Exception:  # noqa: BLE001 — state bookkeeping must not mask the callback
+            logger.exception("state_store.fail raised during unexpected-error handling")
+        kwargs = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": failed_step,
+            "error_code": "WORKER_UNEXPECTED_ERROR",
+            "error_message": str(exc),
+            "retryable": True,
+            "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        try:
+            await self.callback_client.fail_task(**kwargs)
+        except Exception:  # noqa: BLE001 — lease expiry is the backstop
+            logger.exception(
+                "fail_task raised during unexpected-error handling task_id=%s", task.task_id
+            )
 
     async def _fail_for_writeback(self, task: TaskMessage, failed_step: str, message: str) -> None:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)

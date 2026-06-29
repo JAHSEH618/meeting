@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
@@ -65,9 +66,19 @@ class WorkflowSnapshot:
 
 
 class InMemoryWorkflowStateStore:
-    def __init__(self) -> None:
+    """In-process workflow snapshots, bounded by an LRU cap.
+
+    ``complete()``/``fail()`` only flip status — they never delete — so without
+    a cap the long-lived consumer process accumulated one snapshot per task it
+    ever handled (a steady memory leak). The cap evicts the oldest entries once
+    exceeded; recent tasks (and anything still RUNNING within the window) stay
+    queryable via ``/internal/workflows/{taskId}``.
+    """
+
+    def __init__(self, max_entries: int = 2048) -> None:
         self._lock = RLock()
-        self._workflows: dict[str, WorkflowSnapshot] = {}
+        self._workflows: "OrderedDict[str, WorkflowSnapshot]" = OrderedDict()
+        self._max_entries = max_entries
 
     def start(
         self,
@@ -97,6 +108,9 @@ class InMemoryWorkflowStateStore:
         )
         with self._lock:
             self._workflows[task_id] = snapshot
+            self._workflows.move_to_end(task_id)
+            while len(self._workflows) > self._max_entries:
+                self._workflows.popitem(last=False)
         return snapshot
 
     def update_step(

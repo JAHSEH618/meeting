@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ai_worker.domain.task import TaskMessage
-from ai_worker.infrastructure.task_consumer import consume_and_validate
+from ai_worker.infrastructure.task_consumer import UnroutableTaskMessage, consume_and_validate
 
 
 @pytest.fixture
@@ -74,7 +74,9 @@ class TestConsumeAndValidate:
         )
 
     @pytest.mark.asyncio
-    async def test_invalid_message_without_attempt_no_rejects_without_fail_callback(self, callback_client: MagicMock) -> None:
+    async def test_invalid_message_without_attempt_no_raises_unroutable(self, callback_client: MagicMock) -> None:
+        # No callback identity → no way to tell Java. Must raise so the consumer
+        # rejects to the DLQ rather than acking (and silently dropping) it.
         raw_message = {
             "taskId": "task_02",
             "tenantId": "tenant_02",
@@ -84,9 +86,9 @@ class TestConsumeAndValidate:
             "ai_worker.infrastructure.task_consumer.validate_and_parse_task_message",
             return_value=(None, ["bad message"]),
         ):
-            result = await consume_and_validate(raw_message, callback_client)
+            with pytest.raises(UnroutableTaskMessage):
+                await consume_and_validate(raw_message, callback_client)
 
-        assert result is None
         callback_client.fail_task.assert_not_awaited()
 
     @pytest.mark.asyncio
