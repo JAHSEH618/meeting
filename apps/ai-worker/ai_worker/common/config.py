@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     rabbitmq_password: str = "meeting_dev"
     rabbitmq_virtual_host: str = "/"
     rabbitmq_task_queues: str = "audio-cpu-queue,gpu-asr-queue,gpu-diar-queue,gpu-speaker-queue,embed-queue"
+    # Max unacked messages the broker delivers concurrently. Each in-flight
+    # message runs as a coroutine on the consumer's worker event loop while the
+    # pika I/O thread stays free to send AMQP heartbeats. Default 1 preserves
+    # at-most-one-in-flight behaviour; raise it to pipeline CPU (embed) work
+    # behind long GPU (ASR/diar) work. Per-device semaphores still gate GPU
+    # concurrency, so raising this never over-subscribes the GPU.
+    rabbitmq_prefetch_count: int = 1
     callback_max_retries: int = 3
     artifact_store_root: str = ".artifacts"
     # ── Model deployment profile controls ───────────────────────────────

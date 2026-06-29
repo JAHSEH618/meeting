@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import time
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +24,7 @@ class RabbitMqConsumerConfig:
     username: str = settings.rabbitmq_username
     password: str = settings.rabbitmq_password
     virtual_host: str = settings.rabbitmq_virtual_host
+    prefetch_count: int = settings.rabbitmq_prefetch_count
     queues: tuple[str, ...] = tuple(
         queue.strip()
         for queue in settings.rabbitmq_task_queues.split(",")
@@ -29,6 +33,23 @@ class RabbitMqConsumerConfig:
 
 
 class RabbitMqTaskConsumer:
+    """Blocking-pika consumer that runs task work off the I/O thread.
+
+    pika's ``BlockingConnection`` cannot send AMQP heartbeats while a message
+    callback is blocked. A multi-minute ASR/diarization task therefore used to
+    stall the connection until the broker dropped it, and the subsequent
+    ``basic_ack`` failed and the message was redelivered forever.
+
+    Here the I/O thread only parses the message and hands the coroutine to a
+    long-lived worker event loop running on a dedicated thread. The I/O thread
+    returns immediately and keeps the connection alive; when the task finishes,
+    the ack/reject is scheduled back onto the I/O thread via
+    ``add_callback_threadsafe`` (the only thread-safe way to touch a pika
+    channel). A single shared loop keeps module-level asyncio primitives (the
+    per-device inference semaphores, pooled httpx clients) valid across
+    messages.
+    """
+
     def __init__(
         self,
         runtime: MvpWorkerRuntime,
@@ -39,6 +60,43 @@ class RabbitMqTaskConsumer:
         self._connection: pika.BlockingConnection | None = None
         self._channel: Any | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread: threading.Thread | None = None
+        self._inflight: set[Future] = set()
+        self._inflight_lock = threading.Lock()
+
+    # ── worker event loop (dedicated thread) ────────────────────────────────
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+            self._loop_thread = threading.Thread(
+                target=self._run_loop,
+                name="ai-worker-consumer-loop",
+                daemon=True,
+            )
+            self._loop_thread.start()
+        return self._loop
+
+    def _run_loop(self) -> None:
+        assert self._loop is not None
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def wait_idle(self, timeout: float = 30.0) -> None:
+        """Block until all in-flight task futures have settled (ack/reject ran).
+
+        Used by tests and graceful shutdown; not on the hot path.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._inflight_lock:
+                if not self._inflight:
+                    return
+            if time.monotonic() >= deadline:
+                raise TimeoutError("in-flight consumer tasks did not settle in time")
+            time.sleep(0.005)
+
+    # ── lifecycle ───────────────────────────────────────────────────────────
 
     def start_consuming(self) -> None:
         credentials = pika.PlainCredentials(self.config.username, self.config.password)
@@ -53,54 +111,109 @@ class RabbitMqTaskConsumer:
         self._connection = pika.BlockingConnection(parameters)
         channel = self._connection.channel()
         self._channel = channel
-        channel.basic_qos(prefetch_count=1)
+        channel.basic_qos(prefetch_count=self.config.prefetch_count)
         for queue in self.config.queues:
             channel.basic_consume(
                 queue=queue,
                 on_message_callback=self._on_message,
                 auto_ack=False,
             )
-        logger.info("RabbitMQ task consumer started for queues=%s", self.config.queues)
+        self._ensure_loop()
+        logger.info(
+            "RabbitMQ task consumer started for queues=%s prefetch=%d",
+            self.config.queues,
+            self.config.prefetch_count,
+        )
         channel.start_consuming()
 
-    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
-        # One long-lived event loop for the consumer's lifetime. asyncio.run()
-        # created and closed a fresh loop per message, which left module-level
-        # asyncio primitives bound to a dead loop — the per-device inference
-        # semaphores (model_runtime.concurrency) and any pooled httpx client
-        # would then raise "bound to a different event loop" on the next task.
-        # Reusing one loop keeps them valid and lets fire-and-forget background
-        # tasks (e.g. TOS artifact backups) survive between messages.
-        if self._loop is None or self._loop.is_closed():
-            self._loop = asyncio.new_event_loop()
-        return self._loop
-
     def stop(self) -> None:
-        if self._channel and self._channel.is_open:
+        if self._channel is not None and getattr(self._channel, "is_open", False):
             self._channel.stop_consuming()
-        if self._connection and self._connection.is_open:
-            self._connection.close()
+
         loop = self._loop
         if loop is not None and not loop.is_closed():
-            loop.run_until_complete(self.runtime.stop())
-            # Drain fire-and-forget background tasks (e.g. TOS backups) before
-            # tearing the loop down so they are not silently destroyed.
-            pending = asyncio.all_tasks(loop)
-            if pending:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            loop.close()
+            # Let in-flight tasks finish (and their acks settle), then drain any
+            # fire-and-forget background tasks (e.g. TOS backups) and close the
+            # runtime ON the loop they were created on.
+            try:
+                self.wait_idle()
+            except TimeoutError:
+                logger.warning("consumer stop: in-flight tasks did not settle; proceeding")
+            try:
+                asyncio.run_coroutine_threadsafe(self._shutdown_loop(), loop).result(timeout=30)
+            except Exception:  # noqa: BLE001 — shutdown must not raise
+                logger.exception("consumer loop shutdown failed")
+            loop.call_soon_threadsafe(loop.stop)
+            if self._loop_thread is not None:
+                self._loop_thread.join(timeout=10)
+            if not loop.is_closed():
+                loop.close()
             self._loop = None
+            self._loop_thread = None
+            self._close_connection()
         else:
+            self._close_connection()
             asyncio.run(self.runtime.stop())
 
+    async def _shutdown_loop(self) -> None:
+        current = asyncio.current_task()
+        pending = [t for t in asyncio.all_tasks() if t is not current]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        await self.runtime.stop()
+
+    def _close_connection(self) -> None:
+        if self._connection is not None and getattr(self._connection, "is_open", False):
+            # Flush any ack/reject callbacks scheduled via add_callback_threadsafe
+            # before tearing the connection down so a just-finished task isn't
+            # left unacked (and redelivered).
+            try:
+                self._connection.process_data_events(time_limit=1)
+            except Exception:  # noqa: BLE001
+                pass
+            self._connection.close()
+
+    # ── message handling ─────────────────────────────────────────────────────
+
     def _on_message(self, channel: Any, method: Any, _properties: Any, body: bytes) -> None:
+        # Runs on the pika I/O thread — keep it cheap. Parse here (so malformed
+        # JSON is rejected synchronously) and offload the actual work.
         try:
             raw_message = json.loads(body.decode("utf-8"))
-            self._ensure_loop().run_until_complete(self.runtime.consume_message(raw_message))
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             logger.exception("invalid JSON task message; rejecting without requeue")
             channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
-        except Exception:
-            logger.exception("task message failed; rejecting without requeue")
-            channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
+            return
+
+        loop = self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            self.runtime.consume_message(raw_message), loop
+        )
+        with self._inflight_lock:
+            self._inflight.add(future)
+
+        def _on_done(fut: Future) -> None:
+            # Runs on the worker loop thread when the task completes.
+            self._settle(channel, method, fut)
+            with self._inflight_lock:
+                self._inflight.discard(fut)
+
+        future.add_done_callback(_on_done)
+
+    def _settle(self, channel: Any, method: Any, fut: Future) -> None:
+        def _ack_or_reject() -> None:
+            try:
+                fut.result()
+                channel.basic_ack(delivery_tag=method.delivery_tag)
+            except Exception:  # noqa: BLE001 — terminal: never requeue blindly
+                logger.exception("task message failed; rejecting without requeue")
+                channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
+
+        # A pika channel may only be touched from the I/O thread; hop back onto
+        # it via add_callback_threadsafe. With no live connection (unit tests /
+        # already shutting down) settle inline.
+        conn = self._connection
+        if conn is not None and getattr(conn, "is_open", False):
+            conn.add_callback_threadsafe(_ack_or_reject)
+        else:
+            _ack_or_reject()
