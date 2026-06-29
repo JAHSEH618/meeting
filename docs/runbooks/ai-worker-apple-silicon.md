@@ -196,24 +196,24 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 
 ---
 
-## 2. 后台守护进程控制脚本 (`apps/ai-worker/*.sh`)
+## 2. 后台守护进程控制脚本 (`scripts/*.sh`)
 
-为了方便快速启动、停止和重启服务，不再占用前台终端，Python 端在 `apps/ai-worker/` 下提供和 Java 端同风格的命名脚本：`api-start.sh`、`web-start.sh`、`all-start.sh` 以及对应的 `*-stop.sh`、`*-restart.sh`。脚本名固定服务和环境，不再通过命令尾部追加 `api local` 这类参数。`status.sh`、`logs.sh` 继续用于查看状态和日志。
+为了方便快速启动、停止和重启服务，不再占用前台终端，仓库根 `scripts/` 下提供和 Java 端同风格的命名脚本：`ai-worker-start.sh`、`ai-worker-web-start.sh` 以及对应的 `*-stop.sh`、`*-restart.sh`，联调（两机）模式则用 `*-centos-*` 变体。脚本名固定服务和环境，不再通过命令尾部追加 `api local` 这类参数；它们都委派到 `apps/ai-worker/scripts/local-control.sh` 引擎。状态与日志仍用 `apps/ai-worker/status.sh`、`apps/ai-worker/logs.sh` 查看。
 
 ### 2.1 控制脚本命令矩阵
 
-在 Mac 侧，使用以下命令对服务进行管理：
+在 Mac 侧（仓库根目录），使用以下命令对服务进行管理：
 
 | 操作 | 运行命令 | 场景说明 |
 |------|----------|----------|
-| **启动 API + 前端** | `cd apps/ai-worker && ./all-start.sh` | 默认同时启动 Python API/BFF (`:8090`) 和工作站前端 (`:5174/workstation/`) |
-| **启动 API (本地模式)** | `cd apps/ai-worker && ./api-start.sh` | 用于单机 localhost 测试，读取 `deploy/.ai-worker-apple-silicon.env`；不存在则使用 ai-worker 默认 fake 配置 |
-| **启动 API (联调模式)** | `cd apps/ai-worker && ./api-centos-start.sh` | 用于两机部署联调，读取 `deploy/.ai-worker-apple-silicon.env.centos` |
-| **启动工作站前端 (本地模式)** | `cd apps/ai-worker && ./web-start.sh` | 启动 `apps/ai-worker-web` Vite dev server，默认监听 `127.0.0.1:5174/workstation/`；如需局域网访问，设置 `AI_WORKER_WEB_HOST=0.0.0.0` |
-| **启动工作站前端 (联调模式)** | `cd apps/ai-worker && ./web-centos-start.sh` | 启动前端并将 `/api` 代理到远端 Java URL |
-| **停止服务** | `cd apps/ai-worker && ./api-stop.sh` / `./web-stop.sh` / `./all-stop.sh` | 安全、优雅地杀掉对应后台进程；`*-centos-stop.sh` 也可用，行为一致 |
-| **重启服务** | `cd apps/ai-worker && ./api-restart.sh` / `./web-restart.sh` / `./all-restart.sh` | 一键平滑重启本地模式服务 |
-| **重启联调服务** | `cd apps/ai-worker && ./api-centos-restart.sh` / `./web-centos-restart.sh` / `./all-centos-restart.sh` | 一键平滑重启并重新加载联调环境参数 |
+| **启动 API + 前端** | `./scripts/ai-worker-start.sh && ./scripts/ai-worker-web-start.sh` | 分别启动 Python API/BFF (`:8090`) 和工作站前端 (`:5174/workstation/`) |
+| **启动 API (本地模式)** | `./scripts/ai-worker-start.sh` | 用于单机 localhost 测试，读取 `deploy/.ai-worker-apple-silicon.env`；不存在则使用 ai-worker 默认 fake 配置 |
+| **启动 API (联调模式)** | `./scripts/ai-worker-centos-start.sh` | 用于两机部署联调，读取 `deploy/.ai-worker-apple-silicon.env.centos` |
+| **启动工作站前端 (本地模式)** | `./scripts/ai-worker-web-start.sh` | 启动 `apps/ai-worker-web` Vite dev server，默认监听 `127.0.0.1:5174/workstation/`；如需局域网访问，设置 `AI_WORKER_WEB_HOST=0.0.0.0` |
+| **启动工作站前端 (联调模式)** | `./scripts/ai-worker-web-centos-start.sh` | 启动前端并将 `/api` 代理到远端 Java URL |
+| **停止服务** | `./scripts/ai-worker-stop.sh` / `./scripts/ai-worker-web-stop.sh` | 安全、优雅地杀掉对应后台进程；`*-centos-stop.sh` 也可用，行为一致 |
+| **重启服务** | `./scripts/ai-worker-restart.sh` / `./scripts/ai-worker-web-restart.sh` | 一键平滑重启本地模式服务 |
+| **重启联调服务** | `./scripts/ai-worker-centos-restart.sh` / `./scripts/ai-worker-web-centos-restart.sh` | 一键平滑重启并重新加载联调环境参数 |
 | **查看状态** | `cd apps/ai-worker && ./status.sh [api/web/all]` | 查看进程运行状态、端口监听情况和健康响应 |
 | **查看日志** | `cd apps/ai-worker && ./logs.sh [api/web/all]` | 实时追踪后台输出流，Ctrl-C 退出跟踪但不停止后台服务 |
 
@@ -222,13 +222,12 @@ AI_WORKER_OSS_ACCESS_KEY_SECRET=<worker 专用 OSS 只读 RAM SK>
 ### 2.2 启动与运行管理示例
 
 ```bash
-cd apps/ai-worker
-
-# 1. 以后台守护进程模式启动 API + 工作站前端，连接 CentOS 机器
-./all-centos-start.sh
+# 1. 以后台守护进程模式启动 API + 工作站前端，连接 CentOS 机器（仓库根目录运行）
+./scripts/ai-worker-centos-start.sh
+./scripts/ai-worker-web-centos-start.sh
 
 # 2. 检查后台进程状态、端口监听与 API readiness
-./status.sh
+cd apps/ai-worker && ./status.sh
 
 # 3. 追踪启动日志，观察 Python 推理环境初始化
 ./logs.sh api
@@ -294,12 +293,11 @@ Stage 1 已把 CAM++ 接入 `Settings` / registry / warmup / worker 默认构造
 如果在演示或排产验证完毕后需要清理 Mac 本地环境，运行以下命令：
 
 ```bash
-# 1. 停止后台 AI Worker 进程
-cd apps/ai-worker
-./all-stop.sh
+# 1. 停止后台 AI Worker 进程（仓库根目录运行）
+./scripts/ai-worker-stop.sh
+./scripts/ai-worker-web-stop.sh
 
 # 2. 清理临时环境文件 (保留 centos 配置文件副本)
-cd ../..
 rm -f deploy/.ai-worker-apple-silicon.env
 rm -f deploy/.ai-worker-apple-silicon.env.checksums
 
@@ -313,4 +311,4 @@ rm -rf "$HOME/meeting-models"
 相关参考文档：
 - `docs/runbooks/meeting-api-java.md` (Java 部署与阿里云 OSS 权限设置)
 - `deploy/DEPLOY.md`
-- `apps/ai-worker/start.sh`
+- `scripts/README.md` (各工程统一启动/停止/重启脚本)

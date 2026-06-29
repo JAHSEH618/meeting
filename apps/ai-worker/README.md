@@ -11,17 +11,20 @@ uv sync --extra dev   # 一次性安装依赖
 uv run ai-worker-api  # FastAPI 启动，监听 :8090
 ```
 
-后台控制脚本：
+后台控制脚本已统一收敛到仓库根 `scripts/`，全部为无参脚本（委派到
+`apps/ai-worker/scripts/local-control.sh` 引擎）：
 
 ```bash
-cd apps/ai-worker
-./all-start.sh          # 启动 Python API + ai-worker-web
-./api-start.sh          # 只启动 Python API / BFF
-./web-start.sh          # 只启动 ai-worker-web (:5174/workstation/)
-./all-centos-start.sh   # API + 前端，连接远端 Java
-./status.sh
-./all-restart.sh
-./all-stop.sh
+# 在仓库根目录运行
+./scripts/ai-worker-start.sh             # 启动 Python API / BFF (:8090)
+./scripts/ai-worker-web-start.sh         # 启动 ai-worker-web (:5174/workstation/)
+./scripts/ai-worker-centos-start.sh      # 联调：API 连接远端 Java
+./scripts/ai-worker-web-centos-start.sh  # 联调：前端将 /api 代理到远端 Java
+./scripts/ai-worker-restart.sh           # 重启 API（*-stop.sh / *-restart.sh 同理）
+./scripts/ai-worker-stop.sh              # 停止 API
+
+# 状态 / 日志仍在 apps/ai-worker 下
+cd apps/ai-worker && ./status.sh && ./logs.sh
 ```
 
 ### 测试与验证（每个阶段完成后必跑）

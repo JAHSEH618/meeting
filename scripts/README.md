@@ -13,6 +13,16 @@
 | **ai-worker** (Python) | 本地 uv（Python API/BFF，默认 `:8090`） | `ai-worker-start.sh` | `ai-worker-stop.sh` | `ai-worker-restart.sh` |
 | **ai-worker-web** (前端) | 本地 vite dev（默认 `:5174/workstation/`） | `ai-worker-web-start.sh` | `ai-worker-web-stop.sh` | `ai-worker-web-restart.sh` |
 
+### 联调（两机 / CentOS）
+
+ai-worker 连接远端 CentOS Java 时使用 `*-centos-*` 变体（同样无参，读取
+`deploy/.ai-worker-apple-silicon.env.centos`；停止逻辑与本地一致）：
+
+| 工程 | 启动 | 停止 | 重启 |
+|---|---|---|---|
+| **ai-worker** (联调) | `ai-worker-centos-start.sh` | `ai-worker-centos-stop.sh` | `ai-worker-centos-restart.sh` |
+| **ai-worker-web** (联调) | `ai-worker-web-centos-start.sh` | `ai-worker-web-centos-stop.sh` | `ai-worker-web-centos-restart.sh` |
+
 ## 一键全部
 
 | 操作 | 脚本 | 顺序 |
@@ -52,10 +62,12 @@
   或仓库根目录的 `./status.sh` / `./logs.sh`。
 - ai-worker / ai-worker-web：`apps/ai-worker/status.sh`、`apps/ai-worker/logs.sh`。
 
-## 与 `apps/ai-worker/` 下脚本的关系
+## 与 `apps/ai-worker/` 的关系
 
-`apps/ai-worker/` 下仍保留 `api-*.sh` / `web-*.sh` / `all-*.sh` 及其 `*-centos-*`
-联调变体——它们由单元测试 `tests/test_local_control_scripts.py` 固定校验、并被
-`docs/runbooks/ai-worker-apple-silicon.md` 引用（含两机 CentOS 联调流程），故予以保留。
-本目录的 `ai-worker-*` / `ai-worker-web-*` 与它们调用同一个 `local-control.sh` 引擎，
-只是把 4 个工程的本地入口统一收敛到仓库根 `scripts/` 下。
+`apps/ai-worker/` 下原有的 `api-*.sh` / `web-*.sh` / `all-*.sh` 及 `*-centos-*`
+封装脚本已被本目录取代并删除。引擎 `apps/ai-worker/scripts/local-control.sh` 保留——
+本目录的 `ai-worker-*` 系列都是它的薄封装；`apps/ai-worker/status.sh`、
+`apps/ai-worker/logs.sh` 也保留用于查看状态与日志。
+
+单元测试 `apps/ai-worker/tests/test_local_control_scripts.py` 已同步改为校验本目录的
+无参入口，并断言旧的 `apps/ai-worker/*.sh` 封装不再存在。
