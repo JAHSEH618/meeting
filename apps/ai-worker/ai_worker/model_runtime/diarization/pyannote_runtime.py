@@ -143,20 +143,35 @@ class PyannoteDiarizationRuntime:
     # ── inference ───────────────────────────────────────────────
 
     async def diarize(
-        self, audio_path: Path, metadata: AudioMetadata
+        self,
+        audio_path: Path,
+        metadata: AudioMetadata,
+        *,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
     ) -> list[SpeakerTurn]:
         """Per-device semaphore wraps the call so DIAR + ASR + embed/rerank
         share a single-GPU host predictably; see qwen3_asr_runtime for the
-        same pattern."""
+        same pattern.
+
+        ``min_speakers``/``max_speakers`` come from the task message
+        (MEETING_FULL_PIPELINE requires them); per-call values win over the
+        instance defaults so the operator-supplied bounds actually reach
+        pyannote instead of being silently ignored.
+        """
         from ai_worker.model_runtime.concurrency import get_device_semaphore
 
         if metadata.duration_ms <= 0:
             raise PyannoteDiarizationRuntimeError(
                 "DIARIZATION_EMPTY_TURNS", "audio duration is empty"
             )
+        effective_min = min_speakers if min_speakers is not None else self._min_speakers
+        effective_max = max_speakers if max_speakers is not None else self._max_speakers
         async with get_device_semaphore(self._device):
             if self._use_fake:
-                return await self._fake.diarize(audio_path, metadata)
+                return await self._fake.diarize(
+                    audio_path, metadata, min_speakers=min_speakers, max_speakers=max_speakers
+                )
             if self._status != "READY" or self._pipeline is None:
                 raise PyannoteDiarizationRuntimeError(
                     "DIARIZATION_FAILED",
@@ -164,15 +179,20 @@ class PyannoteDiarizationRuntime:
                 )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, self._diarize_blocking, audio_path
+                None, self._diarize_blocking, audio_path, effective_min, effective_max
             )
 
-    def _diarize_blocking(self, audio_path: Path) -> list[SpeakerTurn]:
+    def _diarize_blocking(
+        self,
+        audio_path: Path,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
+    ) -> list[SpeakerTurn]:
         kwargs: dict[str, Any] = {}
-        if self._min_speakers is not None:
-            kwargs["min_speakers"] = self._min_speakers
-        if self._max_speakers is not None:
-            kwargs["max_speakers"] = self._max_speakers
+        if min_speakers is not None:
+            kwargs["min_speakers"] = min_speakers
+        if max_speakers is not None:
+            kwargs["max_speakers"] = max_speakers
         try:
             annotation = self._pipeline(str(audio_path), **kwargs)
         except Exception as exc:

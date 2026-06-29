@@ -32,10 +32,35 @@ def merge_transcript_segments(
 
 
 def _speaker_for_segment(segment: AsrSegment, speaker_turns: list[SpeakerTurn]) -> SpeakerTurn | None:
+    """Assign the diarization turn that best matches an ASR segment.
+
+    Picks the turn with the largest temporal overlap with the segment (ties
+    broken by earlier start). Midpoint-containment (the previous approach)
+    mis-assigned overlapping/cross-talk turns and silently blamed turn[0] for
+    any segment falling in a gap. When nothing overlaps (segment in a gap or
+    spanning a boundary) we fall back to the nearest turn by time rather than
+    the first one in the list.
+    """
     if not speaker_turns:
         return None
-    midpoint = segment.start_ms + max(0, segment.end_ms - segment.start_ms) // 2
+    seg_start = segment.start_ms
+    seg_end = max(segment.start_ms, segment.end_ms)
+
+    best_turn: SpeakerTurn | None = None
+    best_overlap = 0
     for turn in speaker_turns:
-        if turn.start_ms <= midpoint <= turn.end_ms:
-            return turn
-    return speaker_turns[0]
+        overlap = min(seg_end, turn.end_ms) - max(seg_start, turn.start_ms)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_turn = turn
+    if best_turn is not None:
+        return best_turn
+
+    def _gap(turn: SpeakerTurn) -> int:
+        if seg_end <= turn.start_ms:
+            return turn.start_ms - seg_end
+        if seg_start >= turn.end_ms:
+            return seg_start - turn.end_ms
+        return 0
+
+    return min(speaker_turns, key=_gap)

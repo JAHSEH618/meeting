@@ -224,8 +224,18 @@ class LocalAudioPipelineEngine:
                 await ensure_loaded()
             except DiarizationRuntimeError as exc:
                 raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
+        # Thread the task's speaker-count bounds (required by MEETING_FULL_PIPELINE)
+        # into diarization. Only pass them when present so runtimes/stubs without
+        # the kwargs keep working.
+        diar_kwargs: dict[str, int] = {}
+        if context.task.min_speakers is not None:
+            diar_kwargs["min_speakers"] = context.task.min_speakers
+        if context.task.max_speakers is not None:
+            diar_kwargs["max_speakers"] = context.task.max_speakers
         try:
-            context.speaker_turns = await self._diarization_runtime.diarize(audio_path, preprocess.metadata)
+            context.speaker_turns = await self._diarization_runtime.diarize(
+                audio_path, preprocess.metadata, **diar_kwargs
+            )
         except DiarizationRuntimeError as exc:
             raise WorkerPipelineError("DIARIZATION", exc.error_code, str(exc), retryable=True) from exc
         if not context.speaker_turns:

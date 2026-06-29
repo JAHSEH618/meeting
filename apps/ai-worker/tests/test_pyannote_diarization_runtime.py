@@ -82,3 +82,39 @@ def test_model_version_flips_with_use_fake():
     assert fake.model_version == PyannoteDiarizationRuntime.FAKE_MODEL_VERSION
     assert real.model_version == PyannoteDiarizationRuntime.REAL_MODEL_VERSION
     assert real.status == "NOT_LOADED"
+
+
+@pytest.mark.asyncio
+async def test_min_max_speakers_passed_through_to_pipeline() -> None:
+    """The task's speaker-count bounds must reach the pyannote pipeline call
+    (previously they were parsed but never forwarded)."""
+    from pathlib import Path
+
+    from ai_worker.pipeline.audio.preprocess import AudioMetadata
+
+    runtime = PyannoteDiarizationRuntime(use_fake=False)
+    runtime._status = "READY"  # type: ignore[attr-defined]
+
+    captured: dict = {}
+
+    class _Turn:
+        start = 0.0
+        end = 1.0
+
+    class _Annotation:
+        def itertracks(self, yield_label: bool = False):
+            yield _Turn(), "track", "SPEAKER_00"
+
+    def _fake_pipeline(path, **kwargs):
+        captured.update(kwargs)
+        return _Annotation()
+
+    runtime._pipeline = _fake_pipeline  # type: ignore[attr-defined]
+    metadata = AudioMetadata(
+        duration_ms=1000, sample_rate_hz=16000, channels=1,
+        codec="pcm_s16le", bitrate=256000, format_name="wav",
+    )
+
+    await runtime.diarize(Path("/tmp/x.wav"), metadata, min_speakers=2, max_speakers=5)
+
+    assert captured == {"min_speakers": 2, "max_speakers": 5}
