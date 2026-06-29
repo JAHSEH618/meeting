@@ -155,9 +155,14 @@ class Qwen3AsrRuntime:
             )
         from funasr import AutoModel  # type: ignore[import-not-found]
 
+        # FunASR added Qwen3-ASR (0.6B/1.7B) support on 2026-05-20. Loading it
+        # requires trust_remote_code=True so funasr can pull in the model's
+        # custom code; without it the load fails. models_dir is a locally staged
+        # path, so no hub fetch is needed.
         self._model = AutoModel(
             model=str(self._models_dir),
             disable_update=True,
+            trust_remote_code=True,
             device=self._device,
         )
 

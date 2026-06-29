@@ -156,25 +156,50 @@ class CamPlusPlusRuntime:
         metadata: AudioMetadata,
         speaker_turn: SpeakerTurn,
     ) -> SpeakerEmbedding:
-        """Synchronous embedding extraction."""
+        """Synchronous embedding extraction for a single diarization turn.
+
+        Two correctness fixes over the previous implementation:
+          * Use the documented ModelScope speaker-verification call —
+            ``pipeline([input], output_emb=True)`` returns the embedding under
+            ``result['embs']``. The old ``model(audio_in=..., audio_fs=...)``
+            call is the *ASR* pipeline convention and does not return ``embs``.
+          * Embed the speaker's segment, not the whole meeting: slice
+            ``[start_ms, end_ms]`` out of the audio and feed that. Passing a
+            file path lets the pipeline resample to the model's 16 kHz itself.
+        """
+        import hashlib
+        import os
+        import tempfile
+
+        sample_rate = metadata.sample_rate_hz or 16000
+        start_frame = max(0, int(round(speaker_turn.start_ms / 1000 * sample_rate)))
+        stop_frame = max(start_frame + 1, int(round(speaker_turn.end_ms / 1000 * sample_rate)))
+
+        tmp_path: str | None = None
         try:
-            # Extract segment audio and compute embedding
-            result = self._model(
-                audio_in=str(audio_path),
-                audio_fs=metadata.sample_rate_hz,
+            import soundfile as sf  # type: ignore[import-not-found]  # real-speaker extra
+
+            segment, file_sr = sf.read(
+                str(audio_path),
+                start=start_frame,
+                stop=stop_frame,
+                dtype="float32",
+                always_2d=True,
             )
+            mono = segment[:, 0]
+            fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            sf.write(tmp_path, mono, file_sr, format="WAV", subtype="PCM_16")
 
-            embedding_values = result["embs"][0].tolist()
+            result = self._model([tmp_path], output_emb=True)
+            embedding_values = list(result["embs"][0].tolist())
 
-            # Ensure correct dimension
             if len(embedding_values) != self.EMBEDDING_DIM:
                 raise CamPlusPlusRuntimeError(
                     "SPEAKER_EMBEDDING_FAILED",
                     f"Expected {self.EMBEDDING_DIM} dims, got {len(embedding_values)}",
                 )
 
-            # Compute checksum
-            import hashlib
             checksum = hashlib.sha256(
                 ",".join(f"{v:.6f}" for v in embedding_values).encode("utf-8")
             ).hexdigest()
@@ -187,11 +212,19 @@ class CamPlusPlusRuntime:
                 checksum=checksum,
                 quality_score=float(speaker_turn.confidence),
             )
+        except CamPlusPlusRuntimeError:
+            raise
         except Exception as exc:
             raise CamPlusPlusRuntimeError(
                 "SPEAKER_EMBEDDING_FAILED",
                 f"CAM++ inference failed: {exc}",
             ) from exc
+        finally:
+            if tmp_path is not None:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
 
 # Protocol contract check.
