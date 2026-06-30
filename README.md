@@ -377,6 +377,105 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 
 ---
 
+## 部署手册
+
+> 本节是**面向部署的速查手册**：部署形态、统一入口、生产前置、关键配置（含多副本/可靠性可调项）、上线核对清单。
+> 逐步流程、K8s 清单细节、Terraform、平台分流（Linux GPU / Apple Silicon / WSL2）、故障排查见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)；
+> 各阶段验收 runbook 见 [`docs/runbooks/`](docs/runbooks/)。
+
+### 1 部署形态
+
+三种形态共用同一份镜像与契约，区别只在编排方式：
+
+| 形态 | 适用 | 入口 | 说明 |
+|---|---|---|---|
+| **本地 Docker Compose** | 开发 / 联调 / smoke | `./deploy/deploy.sh local` | 拉起 PostgreSQL+pgvector、RabbitMQ（7 队列 + DLQ）、Vault-dev；ai-worker 默认 fake runtime |
+| **Docker 镜像** | 自建主机 / 单机 GPU | `./deploy/deploy.sh build` → `push` | `meeting-api`、`meeting-web`、`ai-worker`（CPU/fake）与 `ai-worker:cuda`（真实模型）四类镜像 |
+| **Kubernetes（kustomize）** | staging / 生产 | `./deploy/deploy.sh k8s-deps <env>` → `k8s-dev` / `k8s-prod` | `infra/meeting-infra/k8s/{base,overlays/{dev,prod}}`；meeting-api 走 Deployment+HPA，ai-worker 走 GPU StatefulSet |
+
+边界不变量同样约束部署：**Java 持业务库 / KMS / LLM 凭证，ai-worker 只持两份 HMAC 密钥 + 只读对象存储凭证**（见下方「关键设计约束」）。
+
+### 2 统一部署入口：`deploy/deploy.sh`
+
+| 子命令 | 作用 |
+|---|---|
+| `local` / `local-down` / `local-status` / `clean` | 本地全栈起停 / 状态 / 清卷 |
+| `build` / `push <registry> <tag>` | 构建 / 推送镜像（生产 ai-worker 推 `ai-worker:cuda-<tag>`，prod overlay 引用的就是这个 tag） |
+| `health` / `logs <svc>` | 健康检查 / 跟日志 |
+| `db-migrate <env>` | 触发 Flyway（重启 meeting-api，启动时自动迁移） |
+| `k8s-deps <env>` | 命名空间内依赖（PostgreSQL+pgvector / RabbitMQ+definitions / 对象存储）—— **apply overlay 之前必须先跑** |
+| `k8s-dev` / `k8s-prod` / `k8s-status <env>` / `k8s-destroy <env>` | 应用层部署 / 状态 / 销毁 |
+| `terraform-plan <env>` / `terraform-apply <env>` | 云基础设施（RDS / S3 / KMS） |
+
+平台专用一站式脚本：`deploy/meeting-api-java.sh`（JDK17/Flyway 三路径）、`deploy/ai-worker-apple-silicon.sh`（arm64 全量真实模型）。
+
+### 3 生产前置（缺一即起不来）
+
+1. **JDK 17 构建 meeting-api**：Maven enforcer 锁 `[17,18)`，JDK 21 直接构建失败（`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`）。
+2. **ai-worker 走 CUDA 镜像**：`docker build --build-arg UV_EXTRAS=real-models -f apps/ai-worker/Dockerfile .`；CPU/fake 镜像不含 FlagEmbedding/funasr/pyannote，首个真实任务会 crash。
+3. **模型权重按版本目录落盘** PVC（checksum guard 依赖版本子目录）：`/opt/models/bge-m3/v1/`、`/opt/models/bge-reranker-v2-m3/v1/`、`/opt/models/qwen3-asr-1.7b/v2026.05.1/`、`/opt/models/pyannote/v3.1/`，并设 `AI_WORKER_*_EXPECTED_CHECKSUM=sha256:...`。
+4. **两份独立 HMAC 密钥**（≥32 字节、互不相同）：`openssl rand -hex 32` 各生成一份；生产不要设 `AI_WORKER_ALLOW_INSECURE_SECRETS`（默认 false 时启动会对默认/过短密钥 fail-fast）。
+5. **meeting-api prod profile**：prod overlay 注入 `SPRING_PROFILES_ACTIVE=prod`，`ProdProfileValidator` 会校验 HMAC 双密钥、`AI_WORKER_BASE_URL` 不含 localhost、`KMS_MASTER_KEY_ID` 非 demo 值、`SPRING_FLYWAY_BASELINE_ON_MIGRATE=false`（详见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md) §5.7）。
+6. **对象存储**：`STORAGE_TYPE=oss|tos` + 对应 endpoint/密钥（已无 MinIO）；ai-worker 读路径用只读 RAM 凭证（`AI_WORKER_STORAGE_BACKEND=tos`）。
+
+### 4 关键配置项
+
+完整清单见 `.env.example` 与 `apps/ai-worker/ai_worker/common/config.py`（前缀 `AI_WORKER_`）/ `apps/meeting-api/.../application.yml`。最常调整的：
+
+**meeting-api（Java）**
+
+| 变量 | 用途 |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | 生产置 `prod` 触发 `ProdProfileValidator` |
+| `POSTGRES_HOST/PORT/DB`、`RABBITMQ_HOST/PORT` | 依赖端点（托管服务在 overlay 覆盖） |
+| `STORAGE_TYPE` + `OSS_*` / TOS endpoint | 对象存储后端 |
+| `DASHSCOPE_API_KEY` | LLM（经 llm-gateway 审计） |
+| `KMS_MASTER_KEY_ID`、`MEETING_KMS_MASTER_KEY_BASE64` | 声纹 embedding 信封加密主密钥（本地实现不设则重启即失能） |
+| `AI_WORKER_BASE_URL` | rerank 同步调用目标 |
+| `AI_WORKER_CALLBACK_HMAC_SECRET` / `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 两份 HMAC（绑定到 `meeting.callback.hmac-secret` / `meeting.ai-worker.hmac-secret`，方向见上方「双向 HMAC 密钥」表） |
+
+**ai-worker（Python，前缀 `AI_WORKER_`）**
+
+| 变量 | 默认 | 用途 |
+|---|---|---|
+| `CALLBACK_HMAC_SECRET` / `INTERNAL_API_HMAC_SECRET` | dev 占位 | 回调出站签名 / 内部 API 入站验签（与 Java 反向配对） |
+| `MEETING_API_BASE_URL` | `http://localhost:8080` | 回调目标 |
+| `RABBITMQ_HOST/PORT/...`、`RABBITMQ_TASK_QUEUES` | localhost / 5 队列 | 任务消费 |
+| `USE_FAKE_RUNTIME` / `USE_FAKE_ASR_RUNTIME` / `USE_FAKE_DIARIZATION_RUNTIME` / `USE_FAKE_SPEAKER_RUNTIME` | `true` | **生产必须全置 `false`** |
+| `*_MODELS_DIR` / `*_EXPECTED_CHECKSUM` | unset | 权重路径 + checksum guard |
+| `STORAGE_BACKEND` + `TOS_*` | `local` | 读路径对象存储 |
+| `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | — | 生产置 `1`，禁止运行时下载 |
+
+### 5 多副本与可靠性可调项（本轮审查新增/收口）
+
+| 变量 / 机制 | 默认 | 说明 |
+|---|---|---|
+| `AI_WORKER_NONCE_REDIS_URL` | unset（进程内） | **多副本生产必设**为共享 Redis，否则针对不同 Pod 的回放攻击不会被识破；Redis 抖动时降级为内存检查（不拒请求），且校验已移出事件循环 |
+| `AI_WORKER_RABBITMQ_PREFETCH_COUNT` | `1` | 提到 >1 可让 CPU(embed) 任务在长 GPU(ASR/diar) 任务后流水线化；GPU 并发仍由各 `*_MAX_CONCURRENCY` 信号量限制 |
+| `AI_WORKER_CALLBACK_MAX_RETRIES` | `3` | 回调重试上限（已按错误信封 `retryable` 标志区分瞬时/终态：401 时钟偏移、409 版本/租约冲突会重试，幂等回放为终态） |
+| `AI_WORKER_MODEL_LOAD_TIMEOUT_SECONDS` | `600` | 模型加载超时（现已在每个 runtime 的 `ensure_loaded()` 生效） |
+| `AI_WORKER_ASR_INFERENCE_TIMEOUT_{BASE,PER_AUDIO_MINUTE}_SECONDS` | `300` / `120` | ASR 推理超时按音频时长伸缩；卡死的步骤转为可重试终态而非永久 RUNNING |
+| `AI_WORKER_DIARIZATION_INFERENCE_TIMEOUT_{BASE,PER_AUDIO_MINUTE}_SECONDS` | `300` / `120` | 分人推理超时 |
+| `AI_WORKER_FFPROBE_TIMEOUT_SECONDS` | `30` | ffprobe 元数据探测超时（超时杀子进程） |
+| `AI_WORKER_SPEAKER_MIN_CONFIDENCE` / `AI_WORKER_SPEAKER_TOP_K` | `0.35` / `5` | 声纹匹配阈值与候选数，换模型时按操作点调（此前写死，现可配） |
+
+> 优雅停机：消费者已注册 SIGTERM/SIGINT，收到信号后排空在途 ack、等 TOS 备份上传完、关闭 httpx 连接——K8s `terminationGracePeriodSeconds` 给足（默认 30s 通常够；长任务在飞时可适当调大）。
+> 发布可靠性：meeting-api 的 RabbitMQ 发布器启用了 publisher confirms + ReturnListener，发布失败/不可路由会标 `OUTBOX_PUBLISH_FAILED` 重试而非静默丢弃。
+
+### 6 上线核对清单
+
+- [ ] 两份 HMAC 密钥已生成、互不相同、≥32 字节；`AI_WORKER_ALLOW_INSECURE_SECRETS` 未设。
+- [ ] meeting-api `SPRING_PROFILES_ACTIVE=prod` 且 `ProdProfileValidator` 全绿（KMS id 非 demo、`MEETING_KMS_MASTER_KEY_BASE64` 已固定、Flyway baseline=false）。
+- [ ] ai-worker `USE_FAKE_*_RUNTIME=false`、`HF_HUB_OFFLINE=1`、模型权重 + `*_EXPECTED_CHECKSUM` 就位，`GET /internal/ready` 返回 200。
+- [ ] 对象存储 `STORAGE_TYPE` + endpoint/密钥配好；ai-worker 用只读凭证。
+- [ ] 多副本部署：`AI_WORKER_NONCE_REDIS_URL` 指向共享 Redis。
+- [ ] RabbitMQ 7 队列 + DLQ 已 seed（`k8s-deps` 注入 `definitions.json`）。
+- [ ] 依赖（PG / MQ / 对象存储 / Ingress / 模型 PVC）先于 overlay 就绪（`k8s-deps` 或托管服务 overlay 覆盖）。
+- [ ] `kubectl rollout status` 三个工作负载全部 Ready；`GET /internal/health`、`/internal/hardware` 正常。
+- [ ] 可观测性：`--profile observability`（本地）或托管 Prometheus/Grafana 已接 metrics/logs。
+
+---
+
 ## 关键设计约束（跨文件不可见的不变量）
 
 下面这些约束在单个文件里看不出来，但改动时必须心里有数。背景与完整技术方案见 [`docs/本地会议智能系统技术方案文档-优化版.md`](docs/本地会议智能系统技术方案文档-优化版.md)。
