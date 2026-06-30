@@ -12,6 +12,7 @@ from ai_worker.common.config import settings
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact, TaskMessage
 from ai_worker.infrastructure.artifact_store import ArtifactStore, LocalArtifactStore
+from ai_worker.infrastructure.speaker.reference_client import SpeakerReferenceUnavailable
 from ai_worker.pipeline.alignment.transcript_merge import merge_transcript_segments
 from ai_worker.pipeline.asr.runtime import AsrModelRuntime, AsrRuntimeError, AsrSegment, DeterministicAsrRuntime
 from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, FfprobeAudioPreprocessor, PreprocessResult
@@ -308,7 +309,7 @@ class LocalAudioPipelineEngine:
             except Exception as exc:  # noqa: BLE001 - map model/reference failures to workflow errors
                 error_code = (
                     "SPEAKER_REFERENCE_UNAVAILABLE"
-                    if exc.__class__.__name__ == "SpeakerReferenceUnavailable"
+                    if isinstance(exc, SpeakerReferenceUnavailable)
                     else "SPEAKER_MATCH_FAILED"
                 )
                 raise WorkerPipelineError("SPEAKER_MATCHING", error_code, str(exc), retryable=True) from exc

@@ -46,7 +46,10 @@ class RerankRequest(BaseModel):
 class RerankResultItem(BaseModel):
     chunkId: str
     rank: int = Field(ge=1)
-    rerankScore: float
+    # Contract bounds rerankScore to [0, 1]; the bge reranker normalizes into
+    # that range and the handler clamps before constructing this, so the bound
+    # documents + guards the contract rather than ever rejecting a live score.
+    rerankScore: float = Field(ge=0.0, le=1.0)
 
 
 class RerankResponse(BaseModel):

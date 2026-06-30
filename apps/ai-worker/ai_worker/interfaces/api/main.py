@@ -48,6 +48,24 @@ RuntimeLike = (
 )
 
 
+def _java_proxy_client(request: Request) -> httpx.AsyncClient:
+    """Return the app-scoped pooled httpx client for the same-origin polling
+    proxies, lazily creating + caching it on app.state.
+
+    The lifespan pre-creates and closes it in production; the lazy fallback keeps
+    the proxies working in contexts where the lifespan didn't run (e.g. a
+    TestClient used without its context manager). Either way callers share one
+    pooled client instead of building a fresh one (new pool + TLS) per request.
+    """
+    client = getattr(request.app.state, "java_proxy_client", None)
+    if client is None:
+        client = httpx.AsyncClient(
+            base_url=settings.java_api_base_url.rstrip("/"), timeout=10.0
+        )
+        request.app.state.java_proxy_client = client
+    return client
+
+
 def _error_response(
     status_code: int,
     code: str,
@@ -292,6 +310,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     admin module isn't mounted and starting a cleanup task would be dead
     weight.
     """
+    # Pooled httpx client for the same-origin polling proxies (login + task
+    # detail) so they reuse one connection pool instead of building a fresh
+    # client (new pool + TLS handshake) per request. The SPA polls task-detail
+    # frequently, so this removes steady connection churn. The long-lived SSE
+    # stream keeps its own per-request client (it needs a much longer timeout).
+    _app.state.java_proxy_client = (
+        httpx.AsyncClient(base_url=settings.java_api_base_url.rstrip("/"), timeout=10.0)
+        if settings.java_api_base_url
+        else None
+    )
     cleanup_started = False
     if settings.java_api_base_url:
         from ai_worker.admin.session_store import enrollment_session_store
@@ -305,6 +333,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             from ai_worker.admin.session_store import enrollment_session_store
 
             await enrollment_session_store.stop_cleanup_loop()
+        proxy_client = getattr(_app.state, "java_proxy_client", None)
+        aclose = getattr(proxy_client, "aclose", None) if proxy_client is not None else None
+        if aclose is not None:
+            await aclose()
 
 
 def _mount_admin_router(app: FastAPI) -> None:
@@ -368,12 +400,9 @@ def _mount_auth_login_proxy(app: FastAPI) -> None:
             headers["X-Request-Id"] = request_id
         if trace_id:
             headers["X-Trace-Id"] = trace_id
+        client = _java_proxy_client(request)
         try:
-            async with httpx.AsyncClient(
-                base_url=settings.java_api_base_url.rstrip("/"),
-                timeout=10.0,
-            ) as client:
-                upstream = await client.post("/api/auth/login", json=payload, headers=headers)
+            upstream = await client.post("/api/auth/login", json=payload, headers=headers)
         except httpx.RequestError as exc:
             return _error_response(
                 status_code=502,
@@ -490,15 +519,12 @@ def _mount_processing_task_proxy(app: FastAPI) -> None:
                 request_id=request_id,
                 trace_id=trace_id,
             )
+        client = _java_proxy_client(request)
         try:
-            async with httpx.AsyncClient(
-                base_url=settings.java_api_base_url.rstrip("/"),
-                timeout=10.0,
-            ) as client:
-                upstream = await client.get(
-                    upstream_path(request),
-                    headers=proxy_headers(request, accept="application/json"),
-                )
+            upstream = await client.get(
+                upstream_path(request),
+                headers=proxy_headers(request, accept="application/json"),
+            )
         except httpx.RequestError as exc:
             return _error_response(
                 status_code=502,
@@ -909,7 +935,9 @@ def create_app() -> FastAPI:
             RerankResultItem(
                 chunkId=cand.chunkId,
                 rank=rank + 1,
-                rerankScore=round(float(score), 4),
+                # Clamp to the contract's [0, 1] range so a model that returns a
+                # marginally out-of-range score can't 500 the response.
+                rerankScore=round(min(1.0, max(0.0, float(score))), 4),
             )
             for rank, (_, (cand, score)) in enumerate(indexed[: rerank_req.topN])
         ]

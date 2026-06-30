@@ -81,6 +81,15 @@ public class RagQueryApplicationService implements RagQueryFacade {
      * non-null — the ai-worker contract requires {@code RerankRequest.modelVersion}.
      */
     private static final String DECLARED_MODEL_VERSION = "bge-reranker-v2-m3-v1";
+    /**
+     * Hard ceiling on the rerank candidate pool. Mirrors {@code RerankRequest.candidates}
+     * {@code maxItems: 50} in {@code ai-worker-internal-api.yaml} (and the Python worker's
+     * {@code max_length=50}). An operator who sets {@code meeting.rag.query.rerank-pool-size}
+     * above this would otherwise make the gateway send >50 candidates and earn a Python
+     * 400 RERANK_CONTRACT_ERROR (a wasted, now-degradable call), so we clamp the effective
+     * pool size to this value regardless of the configured property.
+     */
+    private static final int MAX_RERANK_CANDIDATES = 50;
 
     private final TenantScopedTransaction tenantScopedTransaction;
     private final RagAuthorizationService authorizationService;
@@ -266,8 +275,11 @@ public class RagQueryApplicationService implements RagQueryFacade {
         }
 
         // Bound the pool fed to ai-worker; rerank cost is O(N) on the GPU.
-        List<KnowledgeChunkCandidate> rerankPool = authorized.size() > rerankCandidatePoolSize
-            ? authorized.subList(0, rerankCandidatePoolSize)
+        // Clamp to MAX_RERANK_CANDIDATES so a mis-set rerank-pool-size property can
+        // never push the candidate count past the contract's maxItems:50.
+        int effectivePoolSize = Math.min(rerankCandidatePoolSize, MAX_RERANK_CANDIDATES);
+        List<KnowledgeChunkCandidate> rerankPool = authorized.size() > effectivePoolSize
+            ? authorized.subList(0, effectivePoolSize)
             : authorized;
 
         // No TX: rerank via ai-worker

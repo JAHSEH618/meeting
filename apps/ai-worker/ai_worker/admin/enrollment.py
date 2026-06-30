@@ -11,6 +11,7 @@ heavy 3D-Speaker / bge-m3 weights stay out of the path.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import httpx
 import logging
@@ -38,7 +39,7 @@ async def _default_preview(audio_path: Path, session: EnrollmentSession) -> dict
     a quality_score in [0, 1] derived from the file size. Real production
     replaces this with the 3D-Speaker runtime; that wiring is part of P5.
     """
-    raw = audio_path.read_bytes()
+    raw = await asyncio.get_running_loop().run_in_executor(None, audio_path.read_bytes)
     if not raw:
         return {"quality_score": 0.0, "embedding": [0.0] * 16, "duration_ms": 0}
     seed = sum(raw[:512])
@@ -88,7 +89,10 @@ def build_enrollment_router(
                          request_id=x_request_id, trace_id=x_trace_id)
         session_store.ensure_tmp_dir()
         audio_path = session_store.tmp_dir / f"{session_id}.bin"
-        audio_path.write_bytes(await request.body())
+        # Offload the multi-MB write off the event loop so a large voiceprint
+        # upload doesn't stall other concurrent admin/RAG requests.
+        body = await request.body()
+        await asyncio.get_running_loop().run_in_executor(None, audio_path.write_bytes, body)
         session.touch_audio(audio_path)
         await session_store.replace(session)
         return ok({"sessionId": session_id, "state": session.state, "sizeBytes": audio_path.stat().st_size},
@@ -231,7 +235,9 @@ def build_enrollment_router(
                 trace_id=x_trace_id,
             )
 
-        audio_bytes = session.audio_path.read_bytes()
+        audio_bytes = await asyncio.get_running_loop().run_in_executor(
+            None, session.audio_path.read_bytes
+        )
         file_sha = hashlib.sha256(audio_bytes).hexdigest()
         init = await java_client.request(
             "POST", "/api/files",

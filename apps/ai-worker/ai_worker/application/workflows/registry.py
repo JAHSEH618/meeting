@@ -22,7 +22,3 @@ WORKFLOW_STEPS_BY_TASK_TYPE = {
     "RAG_REINDEX": ("RAG_INDEXING",),
     "SPEAKER_ENROLLMENT": ("SPEAKER_EMBEDDING", "SPEAKER_MATCHING"),
 }
-
-
-def expected_pipeline_steps(task_type: str) -> tuple[str, ...]:
-    return WORKFLOW_STEPS_BY_TASK_TYPE[task_type]
