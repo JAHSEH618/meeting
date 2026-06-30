@@ -47,7 +47,9 @@ public class MeetingControllerAdvice {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("expectedVersion", ex.expectedVersion());
         details.put("actualVersion", ex.actualVersion());
-        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), false, details);
+        // Transcript-version conflicts are transient/recoverable: a bounded retry with the
+        // correct next version can succeed, so signal retryable=true to the worker.
+        return error(HttpStatus.CONFLICT, ErrorCode.VERSION_CONFLICT, ex.getMessage(), true, details);
     }
 
     @ExceptionHandler(ApplicationException.class)

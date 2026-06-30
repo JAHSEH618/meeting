@@ -423,7 +423,7 @@ def test_warmup_capability_filter_selects_asr_only(monkeypatch: pytest.MonkeyPat
     )
 
     client = TestClient(main_module.create_app())
-    headers = _auth_headers("POST", "/internal/models/warmup", b"")
+    headers = _auth_headers("POST", "/internal/models/warmup?capabilities=asr", b"")
     response = client.post(
         "/internal/models/warmup?capabilities=asr", headers=headers
     )
@@ -463,7 +463,7 @@ def test_warmup_capability_filter_selects_speaker_only(monkeypatch: pytest.Monke
     )
 
     client = TestClient(main_module.create_app())
-    headers = _auth_headers("POST", "/internal/models/warmup", b"")
+    headers = _auth_headers("POST", "/internal/models/warmup?capabilities=speaker", b"")
     response = client.post(
         "/internal/models/warmup?capabilities=speaker", headers=headers
     )
@@ -475,7 +475,7 @@ def test_warmup_capability_filter_selects_speaker_only(monkeypatch: pytest.Monke
 
 def test_warmup_rejects_unknown_capability() -> None:
     client = TestClient(create_app())
-    headers = _auth_headers("POST", "/internal/models/warmup", b"")
+    headers = _auth_headers("POST", "/internal/models/warmup?capabilities=quantum", b"")
     response = client.post(
         "/internal/models/warmup?capabilities=quantum", headers=headers
     )

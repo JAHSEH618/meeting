@@ -1,6 +1,8 @@
 package com.meeting.api;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.task.CallbackSecurityVerifier;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.domain.task.CallbackNonceRepository;
 import com.meeting.api.infrastructure.persistence.task.JdbcCallbackNonceRepository;
@@ -113,8 +115,14 @@ class CallbackAuthenticationFuzzIT {
             .build();
 
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("callback signature mismatch");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("callback signature mismatch")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                assertThat(ae.retryable()).isFalse();
+            });
     }
 
     @Test
@@ -124,8 +132,14 @@ class CallbackAuthenticationFuzzIT {
             .build();
 
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("missing callback signature");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("missing callback signature")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                assertThat(ae.retryable()).isFalse();
+            });
     }
 
     @Test
@@ -135,8 +149,14 @@ class CallbackAuthenticationFuzzIT {
             .build();
 
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("missing callback signature");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("missing callback signature")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                assertThat(ae.retryable()).isFalse();
+            });
     }
 
     // ========== Dimension 2: Timestamp Skew (±5 min) ==========
@@ -168,8 +188,15 @@ class CallbackAuthenticationFuzzIT {
             .buildWithValidSignature();
 
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("callback timestamp outside allowed skew");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("callback timestamp outside allowed skew")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                // Clock skew is transient — a retry with a fresh timestamp can succeed.
+                assertThat(ae.retryable()).isTrue();
+            });
     }
 
     @Test
@@ -190,23 +217,37 @@ class CallbackAuthenticationFuzzIT {
             .buildWithValidSignature();
 
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("callback timestamp outside allowed skew");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("callback timestamp outside allowed skew")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                // Clock skew is transient — a retry with a fresh timestamp can succeed.
+                assertThat(ae.retryable()).isTrue();
+            });
     }
 
     // ========== Dimension 3: Nonce Deduplication ==========
 
     @Test
-    void duplicateNonceReturns409() {
+    void duplicateNonceReturns401() {
         CallbackMetadata metadata = validMetadata();
 
         // First call succeeds
         verifier.verify(metadata, TENANT, WORKER, TASK, STEP);
 
-        // Second call with same nonce fails
+        // Second call with same nonce fails: nonce replay is a non-retryable 401
+        // (a retry won't help / the original callback already succeeded once).
         assertThatThrownBy(() -> verifier.verify(metadata, TENANT, WORKER, TASK, STEP))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("callback nonce already used");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("callback nonce already used")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(401);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.CALLBACK_AUTH_FAILED);
+                assertThat(ae.retryable()).isFalse();
+            });
     }
 
     @Test
@@ -341,7 +382,11 @@ class CallbackAuthenticationFuzzIT {
         }
 
         CallbackMetadata buildWithValidSignature() {
-            String signingString = timestamp + "\n"
+            // Seconds-preserving canonical timestamp, matching production
+            // CallbackSecurityVerifier (OffsetDateTime.toString() would drop ':00').
+            String ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+                .withZone(java.time.ZoneOffset.UTC).format(timestamp);
+            String signingString = ts + "\n"
                 + nonce + "\n"
                 + httpMethod + "\n"
                 + urlPathWithQuery + "\n"

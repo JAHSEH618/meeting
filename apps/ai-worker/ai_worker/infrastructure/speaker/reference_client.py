@@ -14,9 +14,7 @@ Cache + redaction:
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
-import hmac
 import logging
 import time
 import uuid
@@ -26,6 +24,7 @@ from typing import Mapping
 import httpx
 
 from ai_worker.common.config import settings
+from ai_worker.common.hmac_signing import compute_signature
 from ai_worker.pipeline.speaker.matcher import ReferenceEmbedding
 
 _log = logging.getLogger(__name__)
@@ -98,6 +97,31 @@ class JavaSpeakerReferenceClient:
                 f"dimension mismatch: expected {dimension} got {len(reference.values)}"
             )
         return reference
+
+    async def reference_embeddings(
+        self, tenant_id: str, participant_ids: list[str], dimension: int
+    ) -> dict[str, ReferenceEmbedding]:
+        """Batched ReferenceEmbeddingSupplier fast-path used by the matcher.
+
+        Resolves the whole authorized scope in ONE request (vs one per id).
+        Missing/omitted persons are simply absent from the result (the matcher
+        skips them — consistent with Java omitting un-enrolled ids); a
+        dimension-mismatched centroid is dropped with a warning so a systemic
+        mismatch is observable without failing the whole matching step.
+        """
+        result = await self.batch(tenant_id, list(participant_ids))
+        if not dimension:
+            return result
+        out: dict[str, ReferenceEmbedding] = {}
+        for pid, ref in result.items():
+            if len(ref.values) == dimension:
+                out[pid] = ref
+            else:
+                _log.warning(
+                    "speaker_reference_dim_mismatch participant=%s expected=%d got=%d",
+                    pid, dimension, len(ref.values),
+                )
+        return out
 
     async def batch(self, tenant_id: str, person_ids: list[str]) -> dict[str, ReferenceEmbedding]:
         if not person_ids:
@@ -206,10 +230,7 @@ class _Retryable(Exception):
 
 
 def _sign(secret: str, method: str, path: str, body: bytes, timestamp: str, nonce: str) -> str:
-    body_hash = hashlib.sha256(body).hexdigest()
-    signing = f"{timestamp}\n{nonce}\n{method}\n{path}\n{body_hash}"
-    mac = hmac.new(secret.encode("utf-8"), signing.encode("utf-8"), hashlib.sha256).hexdigest()
-    return f"hmac-sha256={mac}"
+    return compute_signature(secret, method, path, body, timestamp, nonce)
 
 
 def _utc_iso_now() -> str:
@@ -236,8 +257,3 @@ __all__ = [
     "SpeakerReferenceUnavailable",
     "build_default_client",
 ]
-
-
-# Silence unused import warning while keeping base64 reserved for future
-# embedding-bytes encoding work without re-import churn.
-_ = base64

@@ -275,7 +275,7 @@ public class ProcessingTaskCallbackApplicationService {
             "FAIL_TASK"
         );
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            ProcessingTask task = load(command.tenantId(), command.taskId());
+            ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata(), 200, command.error().code().name())) {
                 return ProcessingTaskAssembler.toDto(task);
@@ -331,7 +331,7 @@ public class ProcessingTaskCallbackApplicationService {
             throw new IllegalArgumentException("meetingId is required for transcript callback");
         }
         return tenantScopedTransaction.execute(command.tenantId(), null, command.metadata().requestId(), () -> {
-            ProcessingTask task = load(command.tenantId(), command.taskId());
+            ProcessingTask task = loadForUpdate(command.tenantId(), command.taskId());
             requireCallbackMeetingMatchesTask(command.meetingId(), task);
             CallbackEventRepository.CallbackEventRecord callbackEvent = callbackEventRecord(
                 command.tenantId(),
@@ -377,11 +377,6 @@ public class ProcessingTaskCallbackApplicationService {
             transcriptRepository.updateMeetingTranscriptVersion(command.tenantId(), command.meetingId(), nextVersion);
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
-    }
-
-    private ProcessingTask load(String tenantId, String taskId) {
-        return taskRepository.findById(tenantId, taskId)
-            .orElseThrow(() -> new IllegalArgumentException("task not found: " + taskId));
     }
 
     private ProcessingTask loadForUpdate(String tenantId, String taskId) {

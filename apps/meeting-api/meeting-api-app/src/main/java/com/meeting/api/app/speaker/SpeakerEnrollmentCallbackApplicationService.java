@@ -1,8 +1,10 @@
 package com.meeting.api.app.speaker;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.task.CallbackSecurityVerifier;
 import com.meeting.api.app.task.ProcessingTaskApplicationService;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.SpeakerEnrollmentCallbackCommand;
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
@@ -95,7 +97,11 @@ public class SpeakerEnrollmentCallbackApplicationService {
                 throw new IllegalStateException("callback attempt does not match current attempt");
             }
             if (!command.metadata().leaseOwner().equals(task.leaseOwner())) {
-                throw new IllegalStateException("callback lease owner does not match current lease");
+                // Transient lease-owner mismatch: a bounded retry can succeed once the lease
+                // settles, so surface a typed retryable 409 rather than a terminal conflict.
+                throw new ApplicationException(
+                    ErrorCode.TASK_LEASE_CONFLICT, 409,
+                    "callback lease owner does not match current lease", true);
             }
             if (!persistCallbackEvent(command.tenantId(), command.taskId(), command.metadata())) {
                 log.info("speaker_enrollment_callback_replay tenant={} task={} enrollment={}",

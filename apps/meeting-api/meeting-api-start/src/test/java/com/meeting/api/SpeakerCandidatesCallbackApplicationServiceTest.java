@@ -255,7 +255,11 @@ class SpeakerCandidatesCallbackApplicationServiceTest {
         String bodyHash = sha256(body);
         OffsetDateTime timestamp = NOW;
         String nonce = "nonce_01";
-        String signingString = timestamp + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
+        // Seconds-preserving canonical timestamp, matching production
+        // CallbackSecurityVerifier (OffsetDateTime.toString() would drop ':00').
+        String ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(java.time.ZoneOffset.UTC).format(timestamp);
+        String signingString = ts + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
         return new CallbackMetadata(
             "worker_01",
             1,

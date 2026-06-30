@@ -116,7 +116,11 @@ class ProcessingTaskCallbackApplicationServiceLeaseTest {
         String method = "PATCH";
         String path = "/internal/processing-tasks/task_01/steps/AUDIO_PREPROCESS";
         String bodyHash = sha256("{}");
-        String signingString = NOW + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
+        // Sign over the seconds-precision timestamp the production
+        // CallbackSecurityVerifier uses; OffsetDateTime.toString() would drop ':00'.
+        String ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(ZoneOffset.UTC).format(NOW);
+        String signingString = ts + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
         return new CallbackMetadata(
             "worker_01",
             1,

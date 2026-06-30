@@ -22,6 +22,19 @@ import org.springframework.stereotype.Component;
  * </pre>
  *
  * Signature header value: {@code hmac-sha256=<hex>}.
+ *
+ * <p><strong>Replay protection — NONE.</strong> The {@code X-Nonce} header is folded
+ * into the signing string only to <em>bind</em> the nonce to the signature; this
+ * verifier does <em>not</em> consult a seen-nonce store, so a captured request can be
+ * replayed verbatim within the timestamp-skew window. Anti-replay here relies solely on
+ * timestamp-skew bounding + TLS, NOT on nonce uniqueness. This is acceptable today only
+ * because every endpoint guarded by this verifier is READ-ONLY (speaker-reference
+ * centroid fetch): a replay merely re-discloses an already-authorized centroid.
+ *
+ * <p><strong>If any endpoint sharing this verifier ever becomes state-mutating, a
+ * bounded nonce-replay cache (TTL = the timestamp-skew window) MUST be added here</strong>
+ * before that endpoint ships, so a captured request cannot be replayed to repeat the
+ * mutation.
  */
 @Component
 public class InternalApiSignatureVerifier {
@@ -41,6 +54,12 @@ public class InternalApiSignatureVerifier {
         this.timestampSkewSeconds = timestampSkewSeconds;
         this.clock = clock;
     }
+    /**
+     * Verifies the HMAC signature, timestamp skew, and body hash. The {@code nonce}
+     * is signature-binding only — see the class Javadoc: this method performs NO
+     * replay check, so callers must keep the guarded endpoints read-only (or add a
+     * nonce-replay cache) before relying on it.
+     */
     public void verify(
         String method,
         String urlPathWithQuery,

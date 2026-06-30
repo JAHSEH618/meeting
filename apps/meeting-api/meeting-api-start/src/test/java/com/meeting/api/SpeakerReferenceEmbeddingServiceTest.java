@@ -1,8 +1,6 @@
 package com.meeting.api;
 
-import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.speaker.SpeakerReferenceEmbeddingService;
-import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
 import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
@@ -21,7 +19,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Workstation D7 — SpeakerReferenceEmbeddingService unit tests (B5.5).
@@ -108,7 +105,10 @@ class SpeakerReferenceEmbeddingServiceTest {
     }
 
     @Test
-    void noActiveEmbeddingsRaisesSpeakerReferenceUnavailable() {
+    void noActiveEmbeddingsOmitsPersonFromItems() {
+        // FIX ⑧: a person whose only embeddings are revoked has no active reference.
+        // Per the contract such person ids are OMITTED from items (not a batch failure);
+        // the worker raises SpeakerReferenceUnavailable for that specific id.
         Fixture f = fixture();
         f.profiles.put("p_d", profile("sp_d", "tenant_01", "p_d"));
         SpeakerEmbeddingRecord revoked = new SpeakerEmbeddingRecord(
@@ -118,10 +118,46 @@ class SpeakerReferenceEmbeddingServiceTest {
         );
         f.embeddings.put("sp_d", List.of(revoked));
 
-        assertThatThrownBy(() -> f.service.batchByPerson("tenant_01", List.of("p_d")))
-            .isInstanceOf(ApplicationException.class)
-            .extracting("errorCode")
-            .isEqualTo(ErrorCode.SPEAKER_REFERENCE_UNAVAILABLE);
+        assertThat(f.service.batchByPerson("tenant_01", List.of("p_d"))).isEmpty();
+    }
+
+    @Test
+    void oneUnenrolledPersonDoesNotFailWholeBatch() {
+        // FIX ⑧: p_revoked has no active embeddings but p_ok does — the batch must still
+        // return p_ok rather than throwing for the whole request.
+        Fixture f = fixture();
+        f.profiles.put("p_ok", profile("sp_ok", "tenant_01", "p_ok"));
+        f.profiles.put("p_revoked", profile("sp_revoked", "tenant_01", "p_revoked"));
+        f.embeddings.put("sp_ok", List.of(record("emb_ok", "sp_ok")));
+        SpeakerEmbeddingRecord revoked = new SpeakerEmbeddingRecord(
+            "emb_rev", "tenant_01", "sp_revoked", "p_revoked",
+            "REVOKED", "key_01", new byte[0], "AES-256-GCM", new byte[0], "hash",
+            null, null, "v1", NOW, null, NOW
+        );
+        f.embeddings.put("sp_revoked", List.of(revoked));
+        f.gateway.queue.put("emb_ok", new float[] {1.0f, 0.0f});
+
+        var result = f.service.batchByPerson("tenant_01", List.of("p_revoked", "p_ok"));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).personId()).isEqualTo("p_ok");
+    }
+
+    @Test
+    void zeroNormCentroidIsOmittedFromItems() {
+        // FIX P3-8: two opposite vectors average to the zero vector (norm 0). The centroid
+        // can never match anything (cosine 0), so the person is OMITTED rather than emitted
+        // as a guaranteed-non-matching item.
+        Fixture f = fixture();
+        f.profiles.put("p_zero", profile("sp_zero", "tenant_01", "p_zero"));
+        f.embeddings.put("sp_zero", List.of(
+            record("emb_pos", "sp_zero"),
+            record("emb_neg", "sp_zero")
+        ));
+        f.gateway.queue.put("emb_pos", new float[] {1.0f, 0.0f});
+        f.gateway.queue.put("emb_neg", new float[] {-1.0f, 0.0f});
+
+        assertThat(f.service.batchByPerson("tenant_01", List.of("p_zero"))).isEmpty();
     }
 
     @Test
@@ -200,6 +236,13 @@ class SpeakerReferenceEmbeddingServiceTest {
         }
         @Override public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) {
             return byProfile.getOrDefault(speakerProfileId, List.of());
+        }
+        @Override public List<SpeakerEmbeddingRecord> findByProfileIds(String tenantId, java.util.Collection<String> speakerProfileIds) {
+            List<SpeakerEmbeddingRecord> out = new ArrayList<>();
+            for (String pid : speakerProfileIds) {
+                out.addAll(byProfile.getOrDefault(pid, List.of()));
+            }
+            return out;
         }
         @Override public int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
         @Override public int deleteForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }

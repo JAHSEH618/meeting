@@ -469,6 +469,32 @@ class MvpWorkerRuntime:
         except asyncio.CancelledError:
             return
 
+    async def _emit_fail(
+        self,
+        task: TaskMessage,
+        failed_step: str,
+        error_code: str,
+        message: str,
+        retryable: bool,
+    ) -> CallbackResponse:
+        """Build the fail_task payload (incl. the optional speaker_enrollment_id)
+        and dispatch it. Single place for the kwargs the fail-path methods used
+        to each rebuild."""
+        kwargs: dict[str, Any] = {
+            "task_id": task.task_id,
+            "tenant_id": task.tenant_id,
+            "attempt_no": task.attempt_no,
+            "failed_step": failed_step,
+            "error_code": error_code,
+            "error_message": message,
+            "retryable": retryable,
+            "trace_id": task.trace_id,
+            "meeting_id": task.meeting_id,
+        }
+        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
+            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
+        return await self.callback_client.fail_task(**kwargs)
+
     async def _fail_for_unexpected(self, task: TaskMessage, exc: Exception) -> None:
         """Catch-all terminal failure for errors outside the per-step guard.
 
@@ -484,21 +510,8 @@ class MvpWorkerRuntime:
             self.state_store.fail(task.task_id, "WORKER_UNEXPECTED_ERROR", str(exc))
         except Exception:  # noqa: BLE001 — state bookkeeping must not mask the callback
             logger.exception("state_store.fail raised during unexpected-error handling")
-        kwargs = {
-            "task_id": task.task_id,
-            "tenant_id": task.tenant_id,
-            "attempt_no": task.attempt_no,
-            "failed_step": failed_step,
-            "error_code": "WORKER_UNEXPECTED_ERROR",
-            "error_message": str(exc),
-            "retryable": True,
-            "trace_id": task.trace_id,
-            "meeting_id": task.meeting_id,
-        }
-        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
-            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
         try:
-            await self.callback_client.fail_task(**kwargs)
+            await self._emit_fail(task, failed_step, "WORKER_UNEXPECTED_ERROR", str(exc), True)
         except Exception:  # noqa: BLE001 — lease expiry is the backstop
             logger.exception(
                 "fail_task raised during unexpected-error handling task_id=%s", task.task_id
@@ -508,20 +521,7 @@ class MvpWorkerRuntime:
         logger.error("WRITEBACK_FAILED: task_id=%s step=%s message=%s", task.task_id, failed_step, message)
         self.state_store.update_step(task.task_id, failed_step, "FAILED", 100, "WRITEBACK_FAILED")
         self.state_store.fail(task.task_id, "WRITEBACK_FAILED", message)
-        kwargs = {
-            "task_id": task.task_id,
-            "tenant_id": task.tenant_id,
-            "attempt_no": task.attempt_no,
-            "failed_step": failed_step,
-            "error_code": "WRITEBACK_FAILED",
-            "error_message": message,
-            "retryable": True,
-            "trace_id": task.trace_id,
-            "meeting_id": task.meeting_id,
-        }
-        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
-            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
-        await self.callback_client.fail_task(**kwargs)
+        await self._emit_fail(task, failed_step, "WRITEBACK_FAILED", message, True)
 
     async def _fail_for_pipeline_result(self, task: TaskMessage, result: StepResult) -> None:
         error_code = result.error_code or "PIPELINE_STEP_FAILED"
@@ -534,20 +534,7 @@ class MvpWorkerRuntime:
             message,
         )
         self.state_store.fail(task.task_id, error_code, message)
-        kwargs = {
-            "task_id": task.task_id,
-            "tenant_id": task.tenant_id,
-            "attempt_no": task.attempt_no,
-            "failed_step": result.step_name,
-            "error_code": error_code,
-            "error_message": message,
-            "retryable": result.retryable,
-            "trace_id": task.trace_id,
-            "meeting_id": task.meeting_id,
-        }
-        if speaker_enrollment_id := _speaker_enrollment_id_for_task(task):
-            kwargs["speaker_enrollment_id"] = speaker_enrollment_id
-        await self.callback_client.fail_task(**kwargs)
+        await self._emit_fail(task, result.step_name, error_code, message, result.retryable)
 
     @staticmethod
     def _writeback_failed(step_name: str, message: str) -> StepResult:

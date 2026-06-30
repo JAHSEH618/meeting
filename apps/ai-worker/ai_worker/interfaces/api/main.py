@@ -3,7 +3,7 @@ from os.path import isdir
 from typing import AsyncIterator
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, Header, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -12,10 +12,12 @@ from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
     EmbedRequest,
     EmbedResponse,
+    HmacAuthError,
     RerankRequest,
     RerankResponse,
     RerankResultItem,
-    verify_hmac_signature,
+    VerifiedInternalRequest,
+    require_hmac,
 )
 from ai_worker.model_runtime.asr import Qwen3AsrRuntime
 from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
@@ -44,6 +46,28 @@ RuntimeLike = (
     | PyannoteDiarizationRuntime
     | CamPlusPlusRuntime
 )
+
+
+def _java_proxy_client(request: Request) -> httpx.AsyncClient:
+    """Return the app-scoped pooled httpx client for the same-origin polling
+    proxies, lazily creating + caching it on app.state.
+
+    The lifespan pre-creates and closes it in production; the lazy fallback keeps
+    the proxies working in contexts where the lifespan didn't run (e.g. a
+    TestClient used without its context manager). Either way callers share one
+    pooled client instead of building a fresh one (new pool + TLS) per request.
+    """
+    base_url = settings.java_api_base_url
+    if not base_url:
+        # Unreachable in practice: every proxy route returns 503
+        # UPSTREAM_NOT_CONFIGURED before calling here. Guard anyway so the
+        # type narrows from `str | None` to `str` for the client below.
+        raise RuntimeError("java_api_base_url is not configured")
+    client = getattr(request.app.state, "java_proxy_client", None)
+    if client is None:
+        client = httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=10.0)
+        request.app.state.java_proxy_client = client
+    return client
 
 
 def _error_response(
@@ -290,6 +314,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     admin module isn't mounted and starting a cleanup task would be dead
     weight.
     """
+    # Pooled httpx client for the same-origin polling proxies (login + task
+    # detail) so they reuse one connection pool instead of building a fresh
+    # client (new pool + TLS handshake) per request. The SPA polls task-detail
+    # frequently, so this removes steady connection churn. The long-lived SSE
+    # stream keeps its own per-request client (it needs a much longer timeout).
+    _app.state.java_proxy_client = (
+        httpx.AsyncClient(base_url=settings.java_api_base_url.rstrip("/"), timeout=10.0)
+        if settings.java_api_base_url
+        else None
+    )
     cleanup_started = False
     if settings.java_api_base_url:
         from ai_worker.admin.session_store import enrollment_session_store
@@ -303,6 +337,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             from ai_worker.admin.session_store import enrollment_session_store
 
             await enrollment_session_store.stop_cleanup_loop()
+        proxy_client = getattr(_app.state, "java_proxy_client", None)
+        aclose = getattr(proxy_client, "aclose", None) if proxy_client is not None else None
+        if aclose is not None:
+            await aclose()
 
 
 def _mount_admin_router(app: FastAPI) -> None:
@@ -366,12 +404,9 @@ def _mount_auth_login_proxy(app: FastAPI) -> None:
             headers["X-Request-Id"] = request_id
         if trace_id:
             headers["X-Trace-Id"] = trace_id
+        client = _java_proxy_client(request)
         try:
-            async with httpx.AsyncClient(
-                base_url=settings.java_api_base_url.rstrip("/"),
-                timeout=10.0,
-            ) as client:
-                upstream = await client.post("/api/auth/login", json=payload, headers=headers)
+            upstream = await client.post("/api/auth/login", json=payload, headers=headers)
         except httpx.RequestError as exc:
             return _error_response(
                 status_code=502,
@@ -488,15 +523,12 @@ def _mount_processing_task_proxy(app: FastAPI) -> None:
                 request_id=request_id,
                 trace_id=trace_id,
             )
+        client = _java_proxy_client(request)
         try:
-            async with httpx.AsyncClient(
-                base_url=settings.java_api_base_url.rstrip("/"),
-                timeout=10.0,
-            ) as client:
-                upstream = await client.get(
-                    upstream_path(request),
-                    headers=proxy_headers(request, accept="application/json"),
-                )
+            upstream = await client.get(
+                upstream_path(request),
+                headers=proxy_headers(request, accept="application/json"),
+            )
         except httpx.RequestError as exc:
             return _error_response(
                 status_code=502,
@@ -600,6 +632,19 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
+    @app.exception_handler(HmacAuthError)
+    async def _hmac_auth_error_handler(_request: Request, exc: HmacAuthError) -> JSONResponse:
+        # Single place that renders the canonical 401 envelope for a failed
+        # internal-API HMAC check (raised by the require_hmac dependency).
+        return _error_response(
+            status_code=401,
+            code=exc.code,
+            message="HMAC signature verification failed",
+            retryable=False,
+            request_id=exc.request_id,
+            trace_id=exc.trace_id,
+        )
+
     @app.get("/", include_in_schema=False)
     def root():
         if settings.admin_ui_dist_path and isdir(settings.admin_ui_dist_path):
@@ -696,39 +741,16 @@ def create_app() -> FastAPI:
 
     @app.get("/internal/models")
     async def models(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("MODELS")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="MODELS_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
                 "data": {"models": _all_model_infos()},
                 "error": None,
-                "requestId": x_request_id,
-                "traceId": x_trace_id,
+                "requestId": ctx.request_id,
+                "traceId": ctx.trace_id,
             },
         )
 
@@ -736,31 +758,10 @@ def create_app() -> FastAPI:
     async def warmup(
         request: Request,
         background_tasks: BackgroundTasks,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("MODELS")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="MODELS_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
-
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
         # Capability-aware warmup. ``?capabilities=asr,diarization`` (comma-
         # separated, case-insensitive) restricts to a subset; absent or
         # ``all`` triggers everything. Embedding + rerank are still the
@@ -810,31 +811,11 @@ def create_app() -> FastAPI:
 
     @app.post("/internal/embed")
     async def embed(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("EMBEDDING")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="EMBEDDING_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
+        body = ctx.body
 
         try:
             embed_req = EmbedRequest.model_validate_json(body)
@@ -895,32 +876,11 @@ def create_app() -> FastAPI:
 
     @app.post("/internal/rerank")
     async def rerank(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("RERANK")),
     ) -> JSONResponse:
-        body = await request.body()
-
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="RERANK_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
+        body = ctx.body
 
         try:
             rerank_req = RerankRequest.model_validate_json(body)
@@ -951,9 +911,14 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        truncated = list(rerank_req.candidates[: rerank_req.topN])
+        # Score the WHOLE candidate pool, not just the first topN. The point of
+        # a cross-encoder reranker is to promote candidates that hybrid/RRF
+        # retrieval ranked low; truncating to topN BEFORE scoring would make
+        # rerank a no-op reordering of the already-top-N RRF results. We slice
+        # to topN only AFTER sorting by rerank score.
+        candidates = list(rerank_req.candidates)
         try:
-            scores = await runtime.arank(rerank_req.query, [c.text for c in truncated])
+            scores = await runtime.arank(rerank_req.query, [c.text for c in candidates])
         except BgeRerankerRuntimeError as exc:
             return _error_response(
                 status_code=503,
@@ -966,16 +931,19 @@ def create_app() -> FastAPI:
 
         # Sort by score desc, breaking ties by original input order so the
         # fake-mode (already-descending) path is a no-op and the real-mode
-        # path produces deterministic ranks when two candidates tie.
-        indexed = list(enumerate(zip(truncated, scores)))
+        # path produces deterministic ranks when two candidates tie. Take the
+        # top `topN` after the full-pool sort.
+        indexed = list(enumerate(zip(candidates, scores)))
         indexed.sort(key=lambda item: (-item[1][1], item[0]))
         ranked = [
             RerankResultItem(
                 chunkId=cand.chunkId,
                 rank=rank + 1,
-                rerankScore=round(float(score), 4),
+                # Clamp to the contract's [0, 1] range so a model that returns a
+                # marginally out-of-range score can't 500 the response.
+                rerankScore=round(min(1.0, max(0.0, float(score))), 4),
             )
-            for rank, (_, (cand, score)) in enumerate(indexed)
+            for rank, (_, (cand, score)) in enumerate(indexed[: rerank_req.topN])
         ]
 
         return JSONResponse(

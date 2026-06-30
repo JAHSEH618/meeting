@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from dataclasses import asdict
 import json
@@ -7,9 +8,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ai_worker.common.config import settings
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
 from ai_worker.domain.task import PipelineArtifact, TaskMessage
 from ai_worker.infrastructure.artifact_store import ArtifactStore, LocalArtifactStore
+from ai_worker.infrastructure.speaker.reference_client import SpeakerReferenceUnavailable
 from ai_worker.pipeline.alignment.transcript_merge import merge_transcript_segments
 from ai_worker.pipeline.asr.runtime import AsrModelRuntime, AsrRuntimeError, AsrSegment, DeterministicAsrRuntime
 from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, FfprobeAudioPreprocessor, PreprocessResult
@@ -76,15 +79,23 @@ class LocalAudioPipelineEngine:
         self._speaker_embedding_runtime = speaker_embedding_runtime or DeterministicSpeakerEmbeddingRuntime()
         self._speaker_reference_supplier = speaker_reference_supplier
         self._speaker_matcher = speaker_matcher or AuthorizedScopeMatcher(
-            reference_supplier=speaker_reference_supplier
+            reference_supplier=speaker_reference_supplier,
+            min_confidence=settings.speaker_min_confidence,
+            top_k=settings.speaker_top_k,
         )
 
     async def close(self) -> None:
-        if self._speaker_reference_supplier is None:
+        # Close every owned resource that exposes (a)close — the speaker
+        # reference client's pooled httpx client AND the artifact store's TOS
+        # connection pool (LocalArtifactStore has neither, so it's a no-op).
+        await self._close_resource(self._speaker_reference_supplier)
+        await self._close_resource(self._artifact_store)
+
+    @staticmethod
+    async def _close_resource(resource: Any) -> None:
+        if resource is None:
             return
-        close = getattr(self._speaker_reference_supplier, "close", None)
-        if close is None:
-            close = getattr(self._speaker_reference_supplier, "aclose", None)
+        close = getattr(resource, "aclose", None) or getattr(resource, "close", None)
         if close is None:
             return
         result = close()
@@ -146,7 +157,12 @@ class LocalAudioPipelineEngine:
     async def _run_audio_preprocess(self, context: "_PipelineContext") -> None:
         audio_uri = _required_audio_uri(context.task)
         try:
-            audio_path = self._artifact_store.local_path(audio_uri)
+            # local_path may download a multi-MB audio object via the blocking
+            # TOS SDK; run it off the consumer event loop so it doesn't freeze
+            # other in-flight tasks' heartbeats. (LocalArtifactStore is trivial.)
+            audio_path = await asyncio.get_running_loop().run_in_executor(
+                None, self._artifact_store.local_path, audio_uri
+            )
             context.preprocess = await self._preprocessor.preprocess(
                 audio_path,
                 audio_uri,
@@ -293,7 +309,7 @@ class LocalAudioPipelineEngine:
             except Exception as exc:  # noqa: BLE001 - map model/reference failures to workflow errors
                 error_code = (
                     "SPEAKER_REFERENCE_UNAVAILABLE"
-                    if exc.__class__.__name__ == "SpeakerReferenceUnavailable"
+                    if isinstance(exc, SpeakerReferenceUnavailable)
                     else "SPEAKER_MATCH_FAILED"
                 )
                 raise WorkerPipelineError("SPEAKER_MATCHING", error_code, str(exc), retryable=True) from exc

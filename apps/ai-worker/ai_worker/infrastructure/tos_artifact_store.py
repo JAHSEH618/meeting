@@ -21,6 +21,7 @@ Design boundary (enforced by IAM credentials, not by this code):
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -86,7 +87,13 @@ class TosArtifactStore:
         content_type: str = "application/octet-stream",
     ) -> ArtifactRef:
         """Upload directly to TOS, bypassing local writer."""
-        self._client.put_object(bucket, key, content=data, content_type=content_type)
+        # The ve-tos SDK is synchronous + blocking; run it in a thread so the
+        # single consumer event loop (and every other in-flight task's heartbeat)
+        # stays responsive instead of stalling on the network round-trip.
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: self._client.put_object(bucket, key, content=data, content_type=content_type),
+        )
         return ArtifactRef(
             uri=f"tos://{bucket}/{key}",
             sha256=hashlib.sha256(data).hexdigest(),
@@ -96,11 +103,23 @@ class TosArtifactStore:
 
     async def download(self, uri: str) -> bytes:
         bucket, key = _parse_tos_uri(uri)
+        # Offload the blocking get_object + read off the event loop (see upload_direct).
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._download_blocking, bucket, key
+        )
+
+    def _download_blocking(self, bucket: str, key: str) -> bytes:
         result = self._client.get_object(bucket, key)
         content = result.read()
         if not isinstance(content, bytes):
             raise TypeError(f"Expected bytes from TOS, got {type(content)}")
         return content
+
+    async def aclose(self) -> None:
+        """Release the pooled TOS HTTP connections on graceful shutdown."""
+        close = getattr(self._client, "close", None)
+        if close is not None:
+            await asyncio.get_running_loop().run_in_executor(None, close)
 
     async def download_json(self, uri: str) -> dict[str, Any]:
         return json.loads((await self.download(uri)).decode("utf-8"))

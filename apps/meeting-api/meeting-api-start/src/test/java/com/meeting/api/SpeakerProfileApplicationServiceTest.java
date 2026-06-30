@@ -357,6 +357,7 @@ class SpeakerProfileApplicationServiceTest {
     private static final class NoOpEmbeddingRepo implements SpeakerEmbeddingRepository {
         @Override public void save(SpeakerEmbeddingRecord record) { }
         @Override public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) { return List.of(); }
+        @Override public List<SpeakerEmbeddingRecord> findByProfileIds(String tenantId, java.util.Collection<String> speakerProfileIds) { return List.of(); }
         @Override public int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
         @Override public int deleteForProfile(String tenantId, String speakerProfileId, OffsetDateTime now) { return 0; }
     }

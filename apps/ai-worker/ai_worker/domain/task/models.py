@@ -1,6 +1,15 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
+
+# Named value sets for the core state machine so a misspelled status / task type
+# is caught by the type checker at the dataclass boundary instead of silently
+# flowing through Any-typed seams. The runtime still accepts the raw strings
+# parsed from JSON (typed Any), so this adds safety without breaking ingestion.
+StepStatus = Literal["RUNNING", "SUCCEEDED", "FAILED", "SKIPPED"]
+TaskType = Literal[
+    "MEETING_FULL_PIPELINE", "TEXT_EMBEDDING", "RAG_REINDEX", "SPEAKER_ENROLLMENT"
+]
 
 
 @dataclass(frozen=True)
@@ -10,7 +19,7 @@ class TaskStepUpdate:
     task_id: str
     step_name: str
     attempt_no: int
-    status: str
+    status: StepStatus
     progress: int
     heartbeat_at: datetime | None = None
 
@@ -18,7 +27,7 @@ class TaskStepUpdate:
 @dataclass(frozen=True)
 class TaskMessage:
     task_id: str
-    task_type: str
+    task_type: TaskType
     tenant_id: str
     attempt_no: int
     pipeline_steps: tuple[str, ...]
@@ -56,7 +65,7 @@ class TaskMessage:
 @dataclass(frozen=True)
 class StepResult:
     step_name: str
-    status: str
+    status: StepStatus
     progress: int = 0
     error_code: str | None = None
     error_message: str | None = None

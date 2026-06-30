@@ -175,8 +175,11 @@ class OutboxPublisherRoutingTest {
     void publishPendingRoutesAllowListedEvents() {
         FakeStore store = new FakeStore(List.of(
             record("ProcessingTaskCreatedEvent", "evt_proc",
+                // TEXT_EMBEDDING is contract-valid only with a meetingId or
+                // documentId (schema allOf[2]); include meetingId so the
+                // preflight validator's per-taskType conditional passes.
                 "{\"taskId\":\"task_x\",\"taskType\":\"TEXT_EMBEDDING\","
-                    + "\"tenantId\":\"tenant_01\","
+                    + "\"tenantId\":\"tenant_01\",\"meetingId\":\"mtg_01\","
                     + "\"attemptNo\":1,\"pipelineSteps\":[\"RAG_INDEXING\"],"
                     + "\"expectedInputVersion\":{\"chunkStrategyVersion\":\"v1\"},"
                     + "\"options\":{},\"traceId\":\"trace_x\"}"),

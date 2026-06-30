@@ -1,7 +1,9 @@
 package com.meeting.api.app.rag;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.task.CallbackSecurityVerifier;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.EmbeddingsCallbackCommand;
 import com.meeting.api.domain.rag.KnowledgeChunkRepository;
@@ -88,10 +90,14 @@ public class EmbeddingsCallbackApplicationService {
         }
 
         // I10: Validate lease owner (防止过期租约写入)
+        // Transient lease-owner mismatch: a bounded retry can succeed once the lease
+        // settles, so surface a typed retryable 409 rather than a terminal conflict.
         if (task.leaseOwner() == null || !task.leaseOwner().equals(command.metadata().leaseOwner())) {
-            throw new IllegalStateException(
+            throw new ApplicationException(
+                ErrorCode.TASK_LEASE_CONFLICT, 409,
                 "callback lease owner does not match current lease: callback=" + command.metadata().leaseOwner()
-                    + " current=" + task.leaseOwner()
+                    + " current=" + task.leaseOwner(),
+                true
             );
         }
 

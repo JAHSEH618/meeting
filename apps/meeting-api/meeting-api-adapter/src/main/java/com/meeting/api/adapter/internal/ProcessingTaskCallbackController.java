@@ -461,7 +461,17 @@ public class ProcessingTaskCallbackController {
                     floatValues = new float[floats.size()];
                     for (int i = 0; i < floats.size(); i++) {
                         Object v = floats.get(i);
-                        floatValues[i] = v instanceof Number number ? number.floatValue() : 0f;
+                        // Reject non-numeric values rather than silently coercing to
+                        // 0f — a malformed value used to corrupt the embedding into a
+                        // partial zero vector with no signal. The contract is an
+                        // all-numeric values array, so a non-number here is a real error.
+                        if (!(v instanceof Number number)) {
+                            throw new IllegalArgumentException(
+                                "speaker candidate embedding.values must be all numbers; got "
+                                    + (v == null ? "null" : v.getClass().getSimpleName())
+                                    + " at index " + i);
+                        }
+                        floatValues[i] = number.floatValue();
                     }
                 }
                 embedding = new SpeakerCandidatesCallbackCommand.PlainEmbedding(
@@ -487,7 +497,18 @@ public class ProcessingTaskCallbackController {
             floatValues = new float[floats.size()];
             for (int i = 0; i < floats.size(); i++) {
                 Object v = floats.get(i);
-                floatValues[i] = v instanceof Number number ? number.floatValue() : 0f;
+                // Reject non-numeric values rather than silently coercing to
+                // 0f — a malformed value used to corrupt the embedding into a
+                // partial zero vector with no signal. The contract
+                // (PlainSpeakerEmbedding.values) is an all-numeric array, so a
+                // non-number here is a real error the worker must see.
+                if (!(v instanceof Number number)) {
+                    throw new IllegalArgumentException(
+                        "speaker embedding.values must be all numbers; got "
+                            + (v == null ? "null" : v.getClass().getSimpleName())
+                            + " at index " + i);
+                }
+                floatValues[i] = number.floatValue();
             }
         }
         if (floatValues == null) {

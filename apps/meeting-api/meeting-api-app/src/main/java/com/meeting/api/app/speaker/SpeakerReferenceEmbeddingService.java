@@ -1,7 +1,5 @@
 package com.meeting.api.app.speaker;
 
-import com.meeting.api.app.common.ApplicationException;
-import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.domain.kms.EmbeddingEnvelopeGateway;
 import com.meeting.api.domain.kms.EncryptedEmbedding;
 import com.meeting.api.domain.speaker.SpeakerEmbeddingRepository;
@@ -81,6 +79,16 @@ public class SpeakerReferenceEmbeddingService {
             .filter(SpeakerProfile::isActive)
             .collect(Collectors.groupingBy(SpeakerProfile::personId, LinkedHashMap::new, Collectors.toList()));
 
+        // FIX ⑨: fetch all embeddings for every active profile in ONE query instead of
+        // one round-trip per profile, then group the rows by profileId in memory.
+        List<String> profileIds = byPerson.values().stream()
+            .flatMap(List::stream)
+            .map(SpeakerProfile::id)
+            .collect(Collectors.toList());
+        List<SpeakerEmbeddingRecord> allRows = embeddingRepository.findByProfileIds(tenantId, profileIds);
+        Map<String, List<SpeakerEmbeddingRecord>> rowsByProfile = allRows.stream()
+            .collect(Collectors.groupingBy(SpeakerEmbeddingRecord::speakerProfileId));
+
         OffsetDateTime now = OffsetDateTime.now(clock);
         List<ReferenceEmbedding> result = new ArrayList<>(byPerson.size());
         for (var entry : byPerson.entrySet()) {
@@ -90,22 +98,40 @@ public class SpeakerReferenceEmbeddingService {
             List<String> sourceEnrollmentIds = new ArrayList<>();
             try {
                 for (SpeakerProfile profile : entry.getValue()) {
-                    List<SpeakerEmbeddingRecord> rows = embeddingRepository.findByProfile(tenantId, profile.id());
+                    List<SpeakerEmbeddingRecord> rows =
+                        rowsByProfile.getOrDefault(profile.id(), List.of());
                     for (SpeakerEmbeddingRecord row : rows) {
                         if (row.revokedAt() != null || row.deletedAt() != null) continue;
                         if (!"ACTIVE".equals(row.consentStatus())) continue;
+                        // Infra (KMS/DB) failures here propagate as-is → mapped to the 503
+                        // SpeakerReferenceUnavailable path for the whole batch, which is correct
+                        // for genuine infrastructure errors.
                         float[] decrypted = envelopeGateway.decrypt(tenantId, toEnvelope(row));
                         plaintextVectors.add(decrypted);
                         sourceEnrollmentIds.add(row.id());
                     }
                 }
+                // FIX ⑧: a person with no active/decryptable embeddings is NOT a batch-wide
+                // failure. The contract says missing/revoked person ids are simply omitted
+                // from `items`; the worker raises SpeakerReferenceUnavailable for that id.
                 if (plaintextVectors.isEmpty()) {
-                    throw new ApplicationException(
-                        ErrorCode.SPEAKER_REFERENCE_UNAVAILABLE, 503,
-                        "no active embeddings for personId=" + personId, true
+                    log.info(
+                        "speaker_reference_omitted_no_embeddings tenant={} personId={}",
+                        tenantId, personId
                     );
+                    continue;
                 }
                 float[] centroid = centroidL2Normalized(plaintextVectors);
+                // FIX P3-8: a zero-norm centroid (degenerate average) can never match anything
+                // (cosine 0). Treat it as a resolution failure and OMIT the person from items —
+                // consistent with ⑧ — rather than emitting a guaranteed-non-matching vector.
+                if (isZeroVector(centroid)) {
+                    log.warn(
+                        "speaker_reference_omitted_zero_norm tenant={} personId={} enrollments={} dim={}",
+                        tenantId, personId, sourceEnrollmentIds.size(), centroid.length
+                    );
+                    continue;
+                }
                 String hash = sha256Of(sourceEnrollmentIds);
                 result.add(new ReferenceEmbedding(personId, speakerProfileId, centroid, centroid.length, hash, now));
                 log.info(
@@ -120,6 +146,13 @@ public class SpeakerReferenceEmbeddingService {
             }
         }
         return result;
+    }
+
+    private static boolean isZeroVector(float[] v) {
+        for (float f : v) {
+            if (f != 0f) return false;
+        }
+        return true;
     }
 
     private static EncryptedEmbedding toEnvelope(SpeakerEmbeddingRecord row) {

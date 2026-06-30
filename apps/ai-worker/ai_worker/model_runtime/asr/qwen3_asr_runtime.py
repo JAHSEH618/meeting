@@ -26,6 +26,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Literal
 
+from ai_worker.common.config import settings
 from ai_worker.pipeline.asr.runtime import (
     AsrModelRuntime,
     AsrRuntimeError,
@@ -127,11 +128,27 @@ class Qwen3AsrRuntime:
                     return
                 self._status = "LOADING"
                 try:
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, self._load_model_blocking
+                    # Bound the blocking load so a stalled funasr import / weight
+                    # load can't hang the step forever. On timeout wait_for
+                    # cancels the await (the executor thread may keep running,
+                    # but the task fails terminally and Java learns the outcome).
+                    await asyncio.wait_for(
+                        asyncio.get_running_loop().run_in_executor(
+                            None, self._load_model_blocking
+                        ),
+                        timeout=settings.model_load_timeout_seconds,
                     )
                     self._status = "READY"
                     self._last_error = None
+                except asyncio.TimeoutError as exc:
+                    self._status = "ERROR"
+                    self._last_error = (
+                        f"load timed out after {settings.model_load_timeout_seconds}s"
+                    )
+                    raise Qwen3AsrRuntimeError(
+                        "ASR_MODEL_TIMEOUT",
+                        f"qwen3-asr load timed out after {settings.model_load_timeout_seconds}s",
+                    ) from exc
                 except Exception as exc:
                     self._status = "ERROR"
                     self._last_error = f"{type(exc).__name__}: {exc}"
@@ -199,15 +216,33 @@ class Qwen3AsrRuntime:
                     "qwen3-asr runtime is not loaded; call await ensure_loaded() first",
                 )
             # funasr's `generate` is sync + CPU-bound (or GPU-bound); push
-            # to an executor so the FastAPI event loop stays responsive.
+            # to an executor so the FastAPI event loop stays responsive, and
+            # bound it with a duration-scaled timeout so a stalled inference
+            # surfaces as a terminal ASR_MODEL_TIMEOUT instead of hanging the
+            # step (heartbeats would otherwise renew the Java lease forever).
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None,
-                self._transcribe_blocking,
-                audio_path,
-                metadata,
-                language,
+            timeout_s = (
+                settings.asr_inference_timeout_base_seconds
+                + max(1.0, metadata.duration_ms / 60_000.0)
+                * settings.asr_inference_timeout_per_audio_minute_seconds
             )
+            try:
+                return await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        self._transcribe_blocking,
+                        audio_path,
+                        metadata,
+                        language,
+                    ),
+                    timeout=timeout_s,
+                )
+            except asyncio.TimeoutError as exc:
+                raise Qwen3AsrRuntimeError(
+                    "ASR_MODEL_TIMEOUT",
+                    f"qwen3-asr inference exceeded {timeout_s:.0f}s budget "
+                    f"for {metadata.duration_ms}ms audio",
+                ) from exc
 
     def _transcribe_blocking(
         self,
