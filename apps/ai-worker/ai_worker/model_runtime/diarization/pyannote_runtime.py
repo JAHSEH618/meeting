@@ -18,6 +18,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Literal
 
+from ai_worker.common.config import settings
 from ai_worker.pipeline.audio.preprocess import AudioMetadata
 from ai_worker.pipeline.diarization.runtime import (
     DiarizationRuntime,
@@ -109,11 +110,25 @@ class PyannoteDiarizationRuntime:
                     return
                 self._status = "LOADING"
                 try:
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, self._load_pipeline_blocking
+                    # Bound the blocking load so a stalled pyannote/torch load
+                    # can't hang the step forever (see qwen3_asr_runtime).
+                    await asyncio.wait_for(
+                        asyncio.get_running_loop().run_in_executor(
+                            None, self._load_pipeline_blocking
+                        ),
+                        timeout=settings.model_load_timeout_seconds,
                     )
                     self._status = "READY"
                     self._last_error = None
+                except asyncio.TimeoutError as exc:
+                    self._status = "ERROR"
+                    self._last_error = (
+                        f"load timed out after {settings.model_load_timeout_seconds}s"
+                    )
+                    raise PyannoteDiarizationRuntimeError(
+                        "DIARIZATION_FAILED",
+                        f"pyannote load timed out after {settings.model_load_timeout_seconds}s",
+                    ) from exc
                 except Exception as exc:
                     self._status = "ERROR"
                     self._last_error = f"{type(exc).__name__}: {exc}"
@@ -178,9 +193,24 @@ class PyannoteDiarizationRuntime:
                     "pyannote runtime is not loaded; call await ensure_loaded() first",
                 )
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None, self._diarize_blocking, audio_path, effective_min, effective_max
+            timeout_s = (
+                settings.diarization_inference_timeout_base_seconds
+                + max(1.0, metadata.duration_ms / 60_000.0)
+                * settings.diarization_inference_timeout_per_audio_minute_seconds
             )
+            try:
+                return await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, self._diarize_blocking, audio_path, effective_min, effective_max
+                    ),
+                    timeout=timeout_s,
+                )
+            except asyncio.TimeoutError as exc:
+                raise PyannoteDiarizationRuntimeError(
+                    "DIARIZATION_FAILED",
+                    f"pyannote inference exceeded {timeout_s:.0f}s budget "
+                    f"for {metadata.duration_ms}ms audio",
+                ) from exc
 
     def _diarize_blocking(
         self,

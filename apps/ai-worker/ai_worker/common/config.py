@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     model_warmup_on_startup: bool = False
     model_warmup_capabilities: str = "embedding,rerank"
     model_load_timeout_seconds: float = 600.0
+    # Per-step timeouts so a hung model load / inference / ffprobe converts into
+    # a terminal (retryable) step failure instead of pinning the task RUNNING
+    # forever while the heartbeat loop keeps renewing the Java lease.
+    # ``model_load_timeout_seconds`` is enforced in every runtime's
+    # ``ensure_loaded()``; inference budgets scale with audio duration (a long
+    # meeting legitimately runs longer) atop a floor for short clips. ffprobe is
+    # a fast metadata probe, so a tight cap is safe.
+    asr_inference_timeout_base_seconds: float = 300.0
+    asr_inference_timeout_per_audio_minute_seconds: float = 120.0
+    diarization_inference_timeout_base_seconds: float = 300.0
+    diarization_inference_timeout_per_audio_minute_seconds: float = 120.0
+    ffprobe_timeout_seconds: float = 30.0
     bge_m3_batch_size: int = 16
     rerank_batch_size: int = 16
     asr_max_concurrency: int = 1

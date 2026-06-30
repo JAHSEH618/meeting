@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from ai_worker.common.config import settings
+
 
 class AudioPreprocessError(Exception):
     def __init__(self, error_code: str, message: str) -> None:
@@ -79,7 +81,21 @@ class FfprobeAudioPreprocessor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=settings.ffprobe_timeout_seconds
+            )
+        except asyncio.TimeoutError as exc:
+            # A hung ffprobe (pathological/truncated input) must not stall the
+            # event loop or the step forever — kill it and fail terminally.
+            # AUDIO_CORRUPTED is a Java-known ErrorCode (a metadata probe that
+            # can't finish in the cap almost always means unreadable input).
+            process.kill()
+            await process.wait()
+            raise AudioPreprocessError(
+                "AUDIO_CORRUPTED",
+                f"ffprobe timed out after {settings.ffprobe_timeout_seconds}s",
+            ) from exc
         if process.returncode != 0:
             message = stderr.decode("utf-8", errors="replace").strip()
             raise AudioPreprocessError("AUDIO_CORRUPTED", message or "ffprobe failed to read audio")

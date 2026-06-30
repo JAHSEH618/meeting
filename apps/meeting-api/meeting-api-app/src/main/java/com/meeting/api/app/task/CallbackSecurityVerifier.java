@@ -7,6 +7,8 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -16,6 +18,16 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CallbackSecurityVerifier {
+    // Canonical timestamp formatter for the HMAC signing string. This MUST stay byte-for-byte
+    // identical to what the Python ai-worker signs over (strftime("%Y-%m-%dT%H:%M:%SZ"), which
+    // ALWAYS emits the seconds field) and to HttpAiWorkerInternalClient.ISO_INSTANT_SECONDS.
+    // We cannot rely on OffsetDateTime.toString() here: when both seconds and nanos are zero it
+    // OMITS the seconds field (e.g. "2026-06-30T12:00Z" instead of "2026-06-30T12:00:00Z"), so
+    // ~1/60 of callbacks would produce a different canonical string than Python signed and the
+    // HMAC would spuriously mismatch.
+    private static final DateTimeFormatter ISO_INSTANT_SECONDS =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
+
     private final String secret;
     private final long timestampSkewSeconds;
     private final Clock clock;
@@ -93,7 +105,11 @@ public class CallbackSecurityVerifier {
     }
 
     private static String signingString(CallbackMetadata metadata) {
-        return metadata.timestamp() + "\n"
+        // Format the timestamp with the fixed canonical formatter (UTC, seconds always present)
+        // rather than OffsetDateTime.toString(), which drops the seconds segment when seconds and
+        // nanos are both zero and would diverge from what Python signed. Convert to UTC first
+        // defensively so the offset is rendered as the literal "Z" suffix in every case.
+        return ISO_INSTANT_SECONDS.format(metadata.timestamp().withOffsetSameInstant(ZoneOffset.UTC)) + "\n"
             + metadata.nonce() + "\n"
             + metadata.httpMethod() + "\n"
             + metadata.urlPathWithQuery() + "\n"

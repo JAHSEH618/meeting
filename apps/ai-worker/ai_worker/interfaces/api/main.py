@@ -951,9 +951,14 @@ def create_app() -> FastAPI:
                 trace_id=x_trace_id,
             )
 
-        truncated = list(rerank_req.candidates[: rerank_req.topN])
+        # Score the WHOLE candidate pool, not just the first topN. The point of
+        # a cross-encoder reranker is to promote candidates that hybrid/RRF
+        # retrieval ranked low; truncating to topN BEFORE scoring would make
+        # rerank a no-op reordering of the already-top-N RRF results. We slice
+        # to topN only AFTER sorting by rerank score.
+        candidates = list(rerank_req.candidates)
         try:
-            scores = await runtime.arank(rerank_req.query, [c.text for c in truncated])
+            scores = await runtime.arank(rerank_req.query, [c.text for c in candidates])
         except BgeRerankerRuntimeError as exc:
             return _error_response(
                 status_code=503,
@@ -966,8 +971,9 @@ def create_app() -> FastAPI:
 
         # Sort by score desc, breaking ties by original input order so the
         # fake-mode (already-descending) path is a no-op and the real-mode
-        # path produces deterministic ranks when two candidates tie.
-        indexed = list(enumerate(zip(truncated, scores)))
+        # path produces deterministic ranks when two candidates tie. Take the
+        # top `topN` after the full-pool sort.
+        indexed = list(enumerate(zip(candidates, scores)))
         indexed.sort(key=lambda item: (-item[1][1], item[0]))
         ranked = [
             RerankResultItem(
@@ -975,7 +981,7 @@ def create_app() -> FastAPI:
                 rank=rank + 1,
                 rerankScore=round(float(score), 4),
             )
-            for rank, (_, (cand, score)) in enumerate(indexed)
+            for rank, (_, (cand, score)) in enumerate(indexed[: rerank_req.topN])
         ]
 
         return JSONResponse(

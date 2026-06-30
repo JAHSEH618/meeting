@@ -20,11 +20,20 @@ import java.util.Set;
  *
  * <p>This validator checks the required top-level fields, the enums
  * Java owns ({@code taskType}, {@code pipelineSteps} including the
- * no-Java-owned-steps invariant), and the
+ * no-Java-owned-steps invariant), the
  * {@code expectedInputVersion.chunkStrategyVersion} requirement that
- * downstream chunkers depend on. A failure leaves the outbox row in
- * PENDING and the call site marks it FAILED with
- * {@code OUTBOX_PUBLISH_FAILED}.
+ * downstream chunkers depend on, and — mirroring the schema's
+ * {@code allOf} if/then blocks — the per-{@code taskType}
+ * conditionally-required fields (e.g. a MEETING_FULL_PIPELINE message
+ * must carry {@code audioFileId} / {@code audioUri} / {@code language}
+ * / etc.). Before this last check existed, a MEETING_FULL_PIPELINE
+ * payload missing those fields passed the top-level gate, was marked
+ * PUBLISHED, and only ai-worker — which validates the full schema
+ * including the per-taskType conditionals — rejected it as
+ * INVALID_TASK_MESSAGE. Enforcing the conditionals here makes that
+ * drift fail fast and diagnosably at the Java publish boundary.
+ * A failure leaves the outbox row in PENDING and the call site marks
+ * it FAILED with {@code OUTBOX_PUBLISH_FAILED}.
  */
 public final class ProcessingTaskMessageValidator {
 
@@ -75,6 +84,103 @@ public final class ProcessingTaskMessageValidator {
         requireExpectedInputVersion(root.get("expectedInputVersion"));
         requireOptionsObject(root.get("options"));
         requireNonBlankString(root, "traceId");
+        requireTaskTypeConditionals(root);
+    }
+
+    /**
+     * Enforce the per-{@code taskType} conditionally-required fields that
+     * the contract schema declares in its {@code allOf} if/then blocks
+     * ({@code processing-task-message.schema.json}). The top-level
+     * {@code required} list does NOT cover these, so without this gate a
+     * MEETING_FULL_PIPELINE message missing {@code audioFileId} /
+     * {@code audioUri} / etc. would pass here and only be rejected by
+     * ai-worker. Each branch below mirrors exactly one schema block.
+     */
+    private static void requireTaskTypeConditionals(JsonNode root) {
+        String taskType = root.get("taskType").asText();
+        switch (taskType) {
+            // schema allOf[0] — if taskType == MEETING_FULL_PIPELINE
+            // then required: meetingId, audioFileId, audioUri, language,
+            // channelMap, knownParticipants, minSpeakers, maxSpeakers.
+            // (then.properties additionally tighten meetingId/audioFileId
+            //  to non-empty strings and audioUri to ^tos://.+ )
+            case "MEETING_FULL_PIPELINE" -> {
+                requireConditionalNonBlankString(root, taskType, "meetingId");
+                requireConditionalNonBlankString(root, taskType, "audioFileId");
+                requireConditionalAudioUri(root, taskType);
+                requireConditionalPresent(root, taskType, "language");
+                requireConditionalPresent(root, taskType, "channelMap");
+                requireConditionalPresent(root, taskType, "knownParticipants");
+                requireConditionalPresent(root, taskType, "minSpeakers");
+                requireConditionalPresent(root, taskType, "maxSpeakers");
+            }
+            // schema allOf[1] — if taskType == SPEAKER_ENROLLMENT
+            // then required: speakerProfileId, speakerEnrollmentId,
+            // audioFileId, audioUri, language.
+            case "SPEAKER_ENROLLMENT" -> {
+                requireConditionalNonBlankString(root, taskType, "speakerProfileId");
+                requireConditionalNonBlankString(root, taskType, "speakerEnrollmentId");
+                requireConditionalNonBlankString(root, taskType, "audioFileId");
+                requireConditionalAudioUri(root, taskType);
+                requireConditionalPresent(root, taskType, "language");
+            }
+            // schema allOf[2] — if taskType in {TEXT_EMBEDDING, RAG_REINDEX}
+            // then anyOf: a non-empty meetingId OR a non-empty documentId.
+            case "TEXT_EMBEDDING", "RAG_REINDEX" -> {
+                if (!isNonBlankString(root.get("meetingId"))
+                    && !isNonBlankString(root.get("documentId"))) {
+                    throw new InvalidPayloadException(
+                        taskType + " requires at least one of [meetingId, documentId]"
+                            + " to be a non-blank string"
+                    );
+                }
+            }
+            default -> { /* taskType already validated against ALLOWED_TASK_TYPES */ }
+        }
+    }
+
+    /** Field must be present (not absent, not JSON null). Mirrors a bare schema {@code required}. */
+    private static void requireConditionalPresent(JsonNode root, String taskType, String field) {
+        JsonNode n = root.get(field);
+        if (n == null || n.isNull()) {
+            throw new InvalidPayloadException(
+                taskType + " requires field " + field + " (missing for taskType " + taskType + ")"
+            );
+        }
+    }
+
+    /**
+     * Field is both required AND (per the schema's then.properties) must be a
+     * non-blank string with minLength 1.
+     */
+    private static void requireConditionalNonBlankString(JsonNode root, String taskType, String field) {
+        JsonNode n = root.get(field);
+        if (n == null || n.isNull() || !n.isTextual() || n.asText().isBlank()) {
+            throw new InvalidPayloadException(
+                taskType + " requires field " + field
+                    + " and it must be a non-blank string (missing or invalid for taskType " + taskType + ")"
+            );
+        }
+    }
+
+    /**
+     * audioUri is required and (per the schema's then.properties) must match
+     * {@code ^tos://.+}. Note the top-level property allows {@code ^(tos://.+)?$}
+     * (empty), but the per-taskType conditional tightens it to a non-empty tos URI.
+     */
+    private static void requireConditionalAudioUri(JsonNode root, String taskType) {
+        JsonNode n = root.get("audioUri");
+        if (n == null || n.isNull() || !n.isTextual() || !n.asText().startsWith("tos://")
+            || n.asText().length() <= "tos://".length()) {
+            throw new InvalidPayloadException(
+                taskType + " requires field audioUri and it must match ^tos://.+ "
+                    + "(missing or invalid for taskType " + taskType + ")"
+            );
+        }
+    }
+
+    private static boolean isNonBlankString(JsonNode n) {
+        return n != null && !n.isNull() && n.isTextual() && !n.asText().isBlank();
     }
 
     private static void requireNonBlankString(JsonNode root, String field) {

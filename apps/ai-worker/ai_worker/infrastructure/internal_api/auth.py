@@ -15,6 +15,7 @@ from ai_worker.infrastructure.internal_api.nonce_store import build_nonce_store
 SourceType = Literal[
     "PRIMARY_TRANSCRIPT",
     "AI_SUMMARY",
+    "MINUTES",
     "DECISION",
     "ACTION_ITEM",
     "RISK",

@@ -16,6 +16,7 @@ import com.meeting.api.client.rag.RagQueryFacade;
 import com.meeting.api.client.rag.RagQueryScope;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
+import com.meeting.api.domain.rag.AiWorkerContractException;
 import com.meeting.api.domain.rag.AiWorkerUnavailableException;
 import com.meeting.api.domain.rag.EmbeddingGateway;
 import com.meeting.api.domain.rag.KnowledgeChunkCandidate;
@@ -73,6 +74,13 @@ public class RagQueryApplicationService implements RagQueryFacade {
     private static final String LLM_TASK_NAME = "rag_answer_zh";
     private static final String DEGRADED_ANSWER_NO_CHUNKS =
         "根据现有信息无法回答：未检索到任何符合权限范围的内容。";
+    /**
+     * Caller-advertised reranker version sent on every {@code /internal/rerank}
+     * call. Mirrors {@code AiWorkerEmbeddingGateway.DECLARED_MODEL_VERSION} and
+     * the runtime's {@code BgeRerankerRuntime.REAL_MODEL_VERSION}. Must be
+     * non-null — the ai-worker contract requires {@code RerankRequest.modelVersion}.
+     */
+    private static final String DECLARED_MODEL_VERSION = "bge-reranker-v2-m3-v1";
 
     private final TenantScopedTransaction tenantScopedTransaction;
     private final RagAuthorizationService authorizationService;
@@ -358,7 +366,7 @@ public class RagQueryApplicationService implements RagQueryFacade {
                 command.question(),
                 rerankInputs,
                 Math.min(command.topN(), pool.size()),
-                null,
+                DECLARED_MODEL_VERSION,
                 command.requestId(),
                 command.traceId()
             ));
@@ -379,6 +387,12 @@ public class RagQueryApplicationService implements RagQueryFacade {
         } catch (AiWorkerUnavailableException ex) {
             log.warn(
                 "rag_rerank_degraded tenant={} user={} reason={} — falling back to RRF order",
+                command.tenantId(), command.userId(), ex.getMessage()
+            );
+            return pool;
+        } catch (AiWorkerContractException ex) {
+            log.warn(
+                "rag_rerank_degraded tenant={} user={} reason=contract:{} — falling back to RRF order",
                 command.tenantId(), command.userId(), ex.getMessage()
             );
             return pool;

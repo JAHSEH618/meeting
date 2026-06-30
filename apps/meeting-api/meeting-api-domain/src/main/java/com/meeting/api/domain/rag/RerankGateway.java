@@ -12,7 +12,10 @@ import java.util.List;
  *
  * <p>When the gateway throws {@link AiWorkerUnavailableException}, callers
  * SHOULD fall back to RRF order and record a degraded-rerank metric.
- * {@link AiWorkerContractException} is non-degradable.
+ * Because rerank only reorders an already-authorized candidate pool, callers
+ * SHOULD also fall back to RRF order on {@link AiWorkerContractException}
+ * rather than failing the whole query — rerank is best-effort, not
+ * authoritative.
  */
 public interface RerankGateway {
     RerankResult rerank(RerankRequest request);

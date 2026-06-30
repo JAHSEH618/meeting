@@ -126,6 +126,23 @@ class RabbitMqTaskConsumer:
         )
         channel.start_consuming()
 
+    def request_stop(self) -> None:
+        """Signal-safe request to stop consuming.
+
+        Safe to call from a signal handler or another thread:
+        ``add_callback_threadsafe`` schedules ``stop_consuming`` on the pika
+        I/O thread (the only thread allowed to touch the channel), which makes
+        the blocking ``start_consuming()`` return so the caller can run the
+        graceful ``stop()`` path. Falls back to a direct call when no live
+        connection exists yet (e.g. signalled during startup).
+        """
+        conn = self._connection
+        channel = self._channel
+        if conn is not None and getattr(conn, "is_open", False) and channel is not None:
+            conn.add_callback_threadsafe(channel.stop_consuming)
+        elif channel is not None and getattr(channel, "is_open", False):
+            channel.stop_consuming()
+
     def stop(self) -> None:
         if self._channel is not None and getattr(self._channel, "is_open", False):
             self._channel.stop_consuming()
