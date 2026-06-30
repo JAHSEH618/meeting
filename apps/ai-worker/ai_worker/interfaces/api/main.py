@@ -57,11 +57,15 @@ def _java_proxy_client(request: Request) -> httpx.AsyncClient:
     TestClient used without its context manager). Either way callers share one
     pooled client instead of building a fresh one (new pool + TLS) per request.
     """
+    base_url = settings.java_api_base_url
+    if not base_url:
+        # Unreachable in practice: every proxy route returns 503
+        # UPSTREAM_NOT_CONFIGURED before calling here. Guard anyway so the
+        # type narrows from `str | None` to `str` for the client below.
+        raise RuntimeError("java_api_base_url is not configured")
     client = getattr(request.app.state, "java_proxy_client", None)
     if client is None:
-        client = httpx.AsyncClient(
-            base_url=settings.java_api_base_url.rstrip("/"), timeout=10.0
-        )
+        client = httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=10.0)
         request.app.state.java_proxy_client = client
     return client
 
