@@ -35,7 +35,7 @@ class TestSign:
         timestamp = "2026-01-01T00:00:00Z"
         nonce = "fix_nonce"
         signing_string = f"{timestamp}\n{nonce}\n{method}\n{path}\n{hashlib.sha256(body.encode()).hexdigest()}"
-        expected = hmac.new(client.hmac_secret, signing_string.encode(), hashlib.sha256).hexdigest()
+        expected = hmac.new(client.hmac_secret.encode(), signing_string.encode(), hashlib.sha256).hexdigest()
         result = client._sign(method, path, body, timestamp, nonce)
         assert result == f"hmac-sha256={expected}"
 

@@ -146,6 +146,10 @@ class SpeakerProfileDeletionExecutorTest {
             return List.of();
         }
 
+        @Override public List<SpeakerEmbeddingRecord> findByProfileIds(String tenantId, java.util.Collection<String> profileIds) {
+            return List.of();
+        }
+
         @Override public int revokeForProfile(String tenantId, String profileId, OffsetDateTime now) {
             return 0;
         }

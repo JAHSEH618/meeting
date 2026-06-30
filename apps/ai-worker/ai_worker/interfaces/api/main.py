@@ -3,7 +3,7 @@ from os.path import isdir
 from typing import AsyncIterator
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, Header, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -12,10 +12,12 @@ from ai_worker.common.config import settings
 from ai_worker.infrastructure.internal_api.auth import (
     EmbedRequest,
     EmbedResponse,
+    HmacAuthError,
     RerankRequest,
     RerankResponse,
     RerankResultItem,
-    verify_hmac_signature,
+    VerifiedInternalRequest,
+    require_hmac,
 )
 from ai_worker.model_runtime.asr import Qwen3AsrRuntime
 from ai_worker.model_runtime.diarization import PyannoteDiarizationRuntime
@@ -600,6 +602,19 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 
+    @app.exception_handler(HmacAuthError)
+    async def _hmac_auth_error_handler(_request: Request, exc: HmacAuthError) -> JSONResponse:
+        # Single place that renders the canonical 401 envelope for a failed
+        # internal-API HMAC check (raised by the require_hmac dependency).
+        return _error_response(
+            status_code=401,
+            code=exc.code,
+            message="HMAC signature verification failed",
+            retryable=False,
+            request_id=exc.request_id,
+            trace_id=exc.trace_id,
+        )
+
     @app.get("/", include_in_schema=False)
     def root():
         if settings.admin_ui_dist_path and isdir(settings.admin_ui_dist_path):
@@ -696,39 +711,16 @@ def create_app() -> FastAPI:
 
     @app.get("/internal/models")
     async def models(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("MODELS")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="MODELS_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
                 "data": {"models": _all_model_infos()},
                 "error": None,
-                "requestId": x_request_id,
-                "traceId": x_trace_id,
+                "requestId": ctx.request_id,
+                "traceId": ctx.trace_id,
             },
         )
 
@@ -736,31 +728,10 @@ def create_app() -> FastAPI:
     async def warmup(
         request: Request,
         background_tasks: BackgroundTasks,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("MODELS")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="MODELS_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
-
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
         # Capability-aware warmup. ``?capabilities=asr,diarization`` (comma-
         # separated, case-insensitive) restricts to a subset; absent or
         # ``all`` triggers everything. Embedding + rerank are still the
@@ -810,31 +781,11 @@ def create_app() -> FastAPI:
 
     @app.post("/internal/embed")
     async def embed(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("EMBEDDING")),
     ) -> JSONResponse:
-        body = await request.body()
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="EMBEDDING_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
+        body = ctx.body
 
         try:
             embed_req = EmbedRequest.model_validate_json(body)
@@ -895,32 +846,11 @@ def create_app() -> FastAPI:
 
     @app.post("/internal/rerank")
     async def rerank(
-        request: Request,
-        x_request_id: str = Header(...),
-        x_trace_id: str = Header(...),
-        x_tenant_id: str = Header(...),
-        x_timestamp: str = Header(...),
-        x_nonce: str = Header(...),
-        x_signature: str = Header(...),
+        ctx: VerifiedInternalRequest = Depends(require_hmac("RERANK")),
     ) -> JSONResponse:
-        body = await request.body()
-
-        if not verify_hmac_signature(
-            method=request.method,
-            path=str(request.url.path),
-            body=body,
-            timestamp=x_timestamp,
-            nonce=x_nonce,
-            signature=x_signature,
-        ):
-            return _error_response(
-                status_code=401,
-                code="RERANK_AUTH_FAILED",
-                message="HMAC signature verification failed",
-                retryable=False,
-                request_id=x_request_id,
-                trace_id=x_trace_id,
-            )
+        x_request_id = ctx.request_id
+        x_trace_id = ctx.trace_id
+        body = ctx.body
 
         try:
             rerank_req = RerankRequest.model_validate_json(body)

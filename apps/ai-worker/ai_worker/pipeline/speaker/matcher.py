@@ -94,13 +94,19 @@ class AuthorizedScopeMatcher:
         if not scope:
             return SpeakerMatchResult(speaker_label=embedding.speaker_label, candidates=[])
 
+        # Resolve the WHOLE authorized scope in one batched call rather than one
+        # HTTP round-trip per participant. The production supplier batches +
+        # caches by the full id-set, so even though match() runs per speaker the
+        # reference fetch collapses to a single request per task.
+        references = await self._resolve_scope(task.tenant_id, scope, embedding.dimension)
+
         scored: list[SpeakerMatchCandidate] = []
         for participant_id in scope:
-            reference = await self._reference_supplier.reference_embedding(
-                tenant_id=task.tenant_id,
-                participant_id=participant_id,
-                dimension=embedding.dimension,
-            )
+            reference = references.get(participant_id)
+            if reference is None:
+                # Participant has no usable reference (un-enrolled / revoked /
+                # omitted by Java). Skip — do not fail the whole match.
+                continue
             confidence = cosine_similarity(embedding.values, reference.values)
             if confidence < self._min_confidence:
                 continue
@@ -117,6 +123,27 @@ class AuthorizedScopeMatcher:
             speaker_label=embedding.speaker_label,
             candidates=scored[: self._top_k],
         )
+
+    async def _resolve_scope(
+        self, tenant_id: str, scope: list[str], dimension: int
+    ) -> dict[str, "ReferenceEmbedding"]:
+        """Resolve every authorized participant's reference embedding.
+
+        Prefers the supplier's batched ``reference_embeddings`` (one HTTP call);
+        falls back to per-id ``reference_embedding`` for simple/local suppliers
+        that don't implement the batch method.
+        """
+        batched = getattr(self._reference_supplier, "reference_embeddings", None)
+        if batched is not None:
+            return await batched(tenant_id, scope, dimension)
+        out: dict[str, ReferenceEmbedding] = {}
+        for participant_id in scope:
+            out[participant_id] = await self._reference_supplier.reference_embedding(
+                tenant_id=tenant_id,
+                participant_id=participant_id,
+                dimension=dimension,
+            )
+        return out
 
 
 @runtime_checkable

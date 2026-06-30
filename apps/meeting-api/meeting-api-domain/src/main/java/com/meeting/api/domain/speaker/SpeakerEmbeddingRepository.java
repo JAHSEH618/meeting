@@ -1,6 +1,7 @@
 package com.meeting.api.domain.speaker;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -11,6 +12,13 @@ public interface SpeakerEmbeddingRepository {
     void save(SpeakerEmbeddingRecord record);
 
     List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId);
+
+    /**
+     * Batched variant of {@link #findByProfile}: fetch all embedding rows for the given
+     * profile ids in a single query (avoids N+1 round-trips). Rows for all requested
+     * profiles are returned together; callers group them by {@code speakerProfileId}.
+     */
+    List<SpeakerEmbeddingRecord> findByProfileIds(String tenantId, Collection<String> speakerProfileIds);
 
     /** Soft-revoke embeddings for a profile (cascade from profile revoke). */
     int revokeForProfile(String tenantId, String speakerProfileId, OffsetDateTime now);

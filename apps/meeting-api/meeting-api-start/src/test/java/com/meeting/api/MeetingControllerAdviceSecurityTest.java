@@ -55,6 +55,8 @@ class MeetingControllerAdviceSecurityTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         var err = response.getBody().error();
         assertThat(err.code()).isEqualTo(ErrorCode.VERSION_CONFLICT);
+        // Transcript-version conflicts are transient/recoverable: the worker should retry.
+        assertThat(err.retryable()).isTrue();
         @SuppressWarnings("unchecked")
         Map<String, Object> details = (Map<String, Object>) err.details();
         assertThat(details).containsEntry("expectedVersion", 3);

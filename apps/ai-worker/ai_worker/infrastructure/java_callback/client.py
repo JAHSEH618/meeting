@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import secrets
 import asyncio
 import random
@@ -13,6 +11,7 @@ import json
 import httpx
 
 from ai_worker.common.config import settings
+from ai_worker.common.hmac_signing import compute_signature
 
 
 @dataclass
@@ -27,7 +26,8 @@ class JavaCallbackClient:
     def __init__(self, base_url: str | None = None) -> None:
         self.base_url = (base_url or settings.meeting_api_base_url).rstrip("/")
         self.worker_id = settings.worker_id
-        self.hmac_secret = settings.callback_hmac_secret.encode()
+        self.hmac_secret = settings.callback_hmac_secret
+        self._max_retries = settings.callback_max_retries
         self._http_client: httpx.AsyncClient | None = None
 
     def _client(self) -> httpx.AsyncClient:
@@ -51,9 +51,7 @@ class JavaCallbackClient:
         timestamp: str,
         nonce: str,
     ) -> str:
-        signing_string = f"{timestamp}\n{nonce}\n{method}\n{path}\n{hashlib.sha256(body.encode()).hexdigest()}"
-        sig = hmac.new(self.hmac_secret, signing_string.encode(), hashlib.sha256).hexdigest()
-        return f"hmac-sha256={sig}"
+        return compute_signature(self.hmac_secret, method, path, body.encode(), timestamp, nonce)
 
     def _build_headers(
         self,
@@ -91,51 +89,55 @@ class JavaCallbackClient:
         attempt_no: int,
         trace_id: str,
         idempotency_key: str,
-        max_retries: int = 3,
+        max_retries: int | None = None,
     ) -> CallbackResponse:
         body_str = json.dumps(body, separators=(",", ":"), sort_keys=True) if body else "{}"
         url = f"{self.base_url}{path}"
+        attempts = max_retries if max_retries is not None else self._max_retries
         last_error: str | None = None
 
-        for attempt_index in range(max_retries):
+        for attempt_index in range(attempts):
             headers = self._build_headers(
                 method, path, body_str,
                 task_id, attempt_no, trace_id, idempotency_key,
             )
             try:
                 response = await self._client().request(method, url, content=body_str, headers=headers)
-                if response.status_code == 409:
+                status = response.status_code
+                if status < 400:
                     return CallbackResponse(
-                        http_status=409,
-                        accepted=False,
-                        error_code="CALLBACK_IDEMPOTENCY_CONFLICT",
-                    )
-                if response.status_code == 401:
-                    return CallbackResponse(
-                        http_status=401,
-                        accepted=False,
-                        error_code="CALLBACK_AUTH_FAILED",
-                    )
-                if response.status_code < 400:
-                    return CallbackResponse(
-                        http_status=response.status_code,
+                        http_status=status,
                         accepted=True,
                         body=response.json(),
                     )
-                # 4xx other than 408 (timeout) / 429 (rate limit) are permanent:
-                # the same signed payload will be rejected again, so retrying only
-                # burns attempts and hammers a possibly-recovering API. Return a
-                # terminal result immediately instead of looping.
-                if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
-                    return CallbackResponse(
-                        http_status=response.status_code,
-                        accepted=False,
-                        error_code="CALLBACK_REJECTED",
-                    )
-                last_error = f"HTTP {response.status_code}"
+                # Honor the server's retryable signal from the error envelope
+                # instead of hardcoding terminal-by-status. Java now returns 401
+                # (retryable on clock skew) for auth and 409 retryable=true for
+                # transient version/lease conflicts; only genuine idempotency
+                # replays / permanent 4xx are terminal. Retrying a terminal 4xx
+                # only burns attempts and hammers a recovering API.
+                retryable, server_code = _parse_error_envelope(response)
+                if not retryable and status not in (408, 429):
+                    if status == 409:
+                        return CallbackResponse(
+                            http_status=409, accepted=False,
+                            error_code=server_code or "CALLBACK_IDEMPOTENCY_CONFLICT",
+                        )
+                    if status == 401:
+                        return CallbackResponse(
+                            http_status=401, accepted=False,
+                            error_code=server_code or "CALLBACK_AUTH_FAILED",
+                        )
+                    if 400 <= status < 500:
+                        return CallbackResponse(
+                            http_status=status, accepted=False,
+                            error_code=server_code or "CALLBACK_REJECTED",
+                        )
+                # Server-flagged retryable, 408/429, or 5xx → fall through to retry.
+                last_error = f"HTTP {status}" + (f" {server_code}" if server_code else "")
             except Exception as e:
                 last_error = str(e)
-            if attempt_index < max_retries - 1:
+            if attempt_index < attempts - 1:
                 # Exponential backoff with full jitter so a fleet of workers
                 # retrying a recovering API don't synchronise into a thundering herd.
                 base = 0.05 * (2 ** attempt_index)
@@ -376,6 +378,22 @@ class JavaCallbackClient:
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
         return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+
+
+def _parse_error_envelope(response: httpx.Response) -> tuple[bool, str | None]:
+    """Extract ``(retryable, errorCode)`` from the standard error envelope.
+
+    Defaults to ``(False, None)`` for non-JSON / envelope-less bodies, so an
+    unparseable error is treated as terminal (status-based) rather than retried.
+    """
+    try:
+        payload = response.json()
+    except Exception:  # noqa: BLE001 — any parse failure → treat as no envelope
+        return False, None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return False, None
+    return bool(error.get("retryable", False)), error.get("code")
 
 
 def _step_update_idempotency_key(

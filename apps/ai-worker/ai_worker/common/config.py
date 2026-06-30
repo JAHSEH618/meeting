@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     asr_chunk_overlap_seconds: float = 0.5
     speaker_min_segment_seconds: float = 3.0
     speaker_top_k: int = 5
+    # Cosine-similarity floor a candidate must clear to be reported as a speaker
+    # match. Operator-tunable because a model swap (real CAM++ vs deterministic
+    # fake) typically needs a different operating point. Wired into
+    # AuthorizedScopeMatcher alongside speaker_top_k.
+    speaker_min_confidence: float = 0.35
     enable_audio_artifact_cache: bool = True
     model_cache_dir: str | None = None
     # ── Storage backend (TOS read-path) ───────────────────────────────────

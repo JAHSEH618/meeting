@@ -548,7 +548,12 @@ class ProcessingTaskCallbackApplicationServiceTest {
     private static CallbackMetadata metadata(String method, String path, String body, String nonce) {
         String bodyHash = sha256(body);
         OffsetDateTime timestamp = NOW;
-        String signingString = timestamp + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
+        // Sign the timestamp in the same seconds-preserving canonical format the
+        // production CallbackSecurityVerifier uses; OffsetDateTime.toString() would
+        // drop a ':00' second and no longer match what the real worker signs.
+        String ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(java.time.ZoneOffset.UTC).format(timestamp);
+        String signingString = ts + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
         return new CallbackMetadata(
             "worker_01",
             1,

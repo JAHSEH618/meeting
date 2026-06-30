@@ -37,6 +37,14 @@ import org.springframework.stereotype.Component;
  * <p>Note: {@code path-with-query} MUST include the leading {@code /internal}
  * prefix (see CLAUDE.md HMAC note). All ai-worker endpoints live under
  * {@code /internal/...} so we hard-code the prefix when building the URI.
+ *
+ * <p>FIX ③: the contract signs {@code URL_PATH_WITH_QUERY}. The {@code path}
+ * argument to {@link #call} is therefore the full path-with-query: callers MUST
+ * include any query string (e.g. {@code "/speakers?cursor=abc"}) directly in
+ * {@code path}. Both the signing string and the actual request URI use this
+ * value verbatim, so the signed bytes always include any query exactly as sent.
+ * No outbound call carries a query today, in which case the signing string is
+ * identical to before (path only, no {@code ?}).
  */
 @Component
 public class HttpAiWorkerInternalClient implements AiWorkerInternalClient {
@@ -103,6 +111,10 @@ public class HttpAiWorkerInternalClient implements AiWorkerInternalClient {
         }
         byte[] bodyBytes = bodyJson.getBytes(StandardCharsets.UTF_8);
 
+        // fullPath is the canonical URL_PATH_WITH_QUERY: the leading /internal prefix plus the
+        // caller-supplied path, which itself includes any "?query" (none today). The exact same
+        // string is signed below and used as the request URI, so the query (when present) is
+        // always part of the signed bytes verbatim. With no query this is path-only, unchanged.
         String fullPath = INTERNAL_PREFIX + path;
         String timestamp = ISO_INSTANT_SECONDS.format(OffsetDateTime.now(clock));
         String nonce = "client-" + UUID.randomUUID();

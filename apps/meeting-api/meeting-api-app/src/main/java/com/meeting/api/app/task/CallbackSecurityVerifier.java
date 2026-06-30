@@ -1,5 +1,7 @@
 package com.meeting.api.app.task;
 
+import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.domain.task.CallbackNonceRepository;
 import java.nio.charset.StandardCharsets;
@@ -55,34 +57,39 @@ public class CallbackSecurityVerifier {
      * @param workerId Worker ID
      * @param taskId 任务ID (可选)
      * @param stepName 步骤名称 (可选)
-     * @throws IllegalArgumentException 验证失败
+     * @throws ApplicationException 验证失败 (HTTP 401 CALLBACK_AUTH_FAILED). 仅时间戳偏移失败可重试
+     *     (retryable=true)，签名/nonce 失败不可重试 (retryable=false)。
      */
     public void verify(CallbackMetadata metadata, String tenantId, String workerId, String taskId, String stepName) {
         // 1. HMAC 签名验证
         if (metadata.signature() == null || !metadata.signature().startsWith("hmac-sha256=")) {
-            throw new IllegalArgumentException("missing callback signature");
+            throw authFailed("missing callback signature", false);
         }
         String expected = "hmac-sha256=" + hmacSha256(signingString(metadata), secret);
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), metadata.signature().getBytes(StandardCharsets.UTF_8))) {
-            throw new IllegalArgumentException("callback signature mismatch");
+            throw authFailed("callback signature mismatch", false);
         }
 
-        // 2. 时间戳偏移验证
+        // 2. 时间戳偏移验证 (transient clock skew — a retry with a fresh timestamp can succeed)
         long skew = Math.abs(Duration.between(metadata.timestamp(), OffsetDateTime.now(clock)).toSeconds());
         if (skew > timestampSkewSeconds) {
-            throw new IllegalArgumentException("callback timestamp outside allowed skew");
+            throw authFailed("callback timestamp outside allowed skew", true);
         }
 
         // 3. Nonce 去重验证（防止重放攻击）
         if (nonceRepository.exists(tenantId, metadata.nonce())) {
-            throw new IllegalArgumentException("callback nonce already used (replay attack detected)");
+            throw authFailed("callback nonce already used (replay attack detected)", false);
         }
 
         // 4. 记录 nonce
         if (!nonceRepository.record(tenantId, metadata.nonce(), workerId, taskId, stepName)) {
             // 并发场景下另一个线程已记录
-            throw new IllegalArgumentException("callback nonce already used (replay attack detected)");
+            throw authFailed("callback nonce already used (replay attack detected)", false);
         }
+    }
+
+    private static ApplicationException authFailed(String message, boolean retryable) {
+        return new ApplicationException(ErrorCode.CALLBACK_AUTH_FAILED, 401, message, retryable);
     }
 
     /**
@@ -92,15 +99,15 @@ public class CallbackSecurityVerifier {
     @Deprecated
     public void verify(CallbackMetadata metadata) {
         if (metadata.signature() == null || !metadata.signature().startsWith("hmac-sha256=")) {
-            throw new IllegalArgumentException("missing callback signature");
+            throw authFailed("missing callback signature", false);
         }
         long skew = Math.abs(Duration.between(metadata.timestamp(), OffsetDateTime.now(clock)).toSeconds());
         if (skew > timestampSkewSeconds) {
-            throw new IllegalArgumentException("callback timestamp outside allowed skew");
+            throw authFailed("callback timestamp outside allowed skew", true);
         }
         String expected = "hmac-sha256=" + hmacSha256(signingString(metadata), secret);
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), metadata.signature().getBytes(StandardCharsets.UTF_8))) {
-            throw new IllegalArgumentException("callback signature mismatch");
+            throw authFailed("callback signature mismatch", false);
         }
     }
 

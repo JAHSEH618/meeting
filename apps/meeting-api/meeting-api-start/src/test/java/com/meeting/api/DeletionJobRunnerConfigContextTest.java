@@ -157,6 +157,11 @@ class DeletionJobRunnerConfigContextTest {
                 ) {
                     return List.of();
                 }
+                @Override public List<SpeakerEmbeddingRecord> findByProfileIds(
+                    String tenantId, java.util.Collection<String> speakerProfileIds
+                ) {
+                    return List.of();
+                }
                 @Override public int revokeForProfile(
                     String tenantId, String speakerProfileId, OffsetDateTime now
                 ) {

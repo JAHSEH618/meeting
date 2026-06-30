@@ -1,8 +1,10 @@
 package com.meeting.api;
 
+import com.meeting.api.app.common.ApplicationException;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.speaker.SpeakerEnrollmentCallbackApplicationService;
 import com.meeting.api.app.task.CallbackSecurityVerifier;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.internal.callback.CallbackMetadata;
 import com.meeting.api.client.internal.callback.SpeakerEnrollmentCallbackCommand;
@@ -156,8 +158,15 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
         );
 
         assertThatThrownBy(() -> fx.service().writeEnrollment(command))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("lease owner");
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("lease owner")
+            .satisfies(ex -> {
+                ApplicationException ae = (ApplicationException) ex;
+                assertThat(ae.httpStatus()).isEqualTo(409);
+                assertThat(ae.errorCode()).isEqualTo(ErrorCode.TASK_LEASE_CONFLICT);
+                // Transient lease conflict — the worker should retry a bounded number of times.
+                assertThat(ae.retryable()).isTrue();
+            });
 
         assertThat(fx.callbacks.records).isEmpty();
         assertThat(fx.embeddings.saved).isEmpty();
@@ -280,7 +289,11 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
         String method = "POST";
         String path = "/internal/processing-tasks/task_01/speaker-enrollment";
         String nonce = "nonce_" + idempotencyKey;
-        String signingString = NOW + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
+        // Seconds-preserving canonical timestamp, matching production
+        // CallbackSecurityVerifier (OffsetDateTime.toString() would drop ':00').
+        String ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(java.time.ZoneOffset.UTC).format(NOW);
+        String signingString = ts + "\n" + nonce + "\n" + method + "\n" + path + "\n" + bodyHash;
         return new CallbackMetadata(
             "worker_01",
             1,
@@ -461,6 +474,10 @@ class SpeakerEnrollmentCallbackApplicationServiceTest {
         }
 
         @Override public List<SpeakerEmbeddingRecord> findByProfile(String tenantId, String speakerProfileId) {
+            return List.of();
+        }
+
+        @Override public List<SpeakerEmbeddingRecord> findByProfileIds(String tenantId, java.util.Collection<String> speakerProfileIds) {
             return List.of();
         }
 
