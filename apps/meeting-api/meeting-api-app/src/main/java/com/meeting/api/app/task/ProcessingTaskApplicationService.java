@@ -17,6 +17,7 @@ import com.meeting.api.domain.meeting.MeetingDocumentRepository;
 import com.meeting.api.domain.meeting.MeetingGlossaryRepository;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskCreatedEvent;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
@@ -88,8 +89,8 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
     private final MeetingGlossaryRepository glossaryRepository;
     private final MeetingDocumentRepository meetingDocumentRepository;
     private final JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator;
+    private final OrphanedTaskRepublisher orphanedTaskRepublisher;
 
-    @Autowired
     public ProcessingTaskApplicationService(
         ProcessingTaskRepository taskRepository,
         MeetingRepository meetingRepository,
@@ -131,6 +132,26 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         MeetingDocumentRepository meetingDocumentRepository,
         JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator
     ) {
+        this(taskRepository, meetingRepository, messagePublisher, tenantScopedTransaction,
+            clock, glossaryRepository, meetingDocumentRepository, javaLlmPhaseOrchestrator, null);
+    }
+    // The @Autowired constructor must be the full one: the annotation used to
+    // sit on the 4-arg overload, so Spring built the production bean with
+    // glossaryRepository / meetingDocumentRepository / javaLlmPhaseOrchestrator
+    // all null — glossary terms silently never reached the worker and the
+    // resume-java-phase orchestration never ran.
+    @Autowired
+    public ProcessingTaskApplicationService(
+        ProcessingTaskRepository taskRepository,
+        MeetingRepository meetingRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        Clock clock,
+        MeetingGlossaryRepository glossaryRepository,
+        MeetingDocumentRepository meetingDocumentRepository,
+        JavaLlmPhaseOrchestrator javaLlmPhaseOrchestrator,
+        OrphanedTaskRepublisher orphanedTaskRepublisher
+    ) {
         this.taskRepository = taskRepository;
         this.meetingRepository = meetingRepository;
         this.messagePublisher = messagePublisher;
@@ -139,6 +160,7 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         this.glossaryRepository = glossaryRepository;
         this.meetingDocumentRepository = meetingDocumentRepository;
         this.javaLlmPhaseOrchestrator = javaLlmPhaseOrchestrator;
+        this.orphanedTaskRepublisher = orphanedTaskRepublisher;
     }
 
     @Override
@@ -292,7 +314,25 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             ProcessingTask task = taskRepository.findById(command.tenantId(), command.taskId())
                 .orElseThrow(() -> new IllegalArgumentException("task not found: " + command.taskId()));
             task.retry(OffsetDateTime.now(clock));
-            return ProcessingTaskAssembler.toDto(taskRepository.save(task));
+            ProcessingTask saved = taskRepository.save(task);
+            // A retry is only real once a message reaches the worker again:
+            // QUEUED with a null lease is invisible to the lease scanner, so
+            // without a republish the task sat in QUEUED forever and the
+            // user's retry button was a no-op. Reuse the orphan-republish
+            // path (original outbox payload with the bumped attemptNo); a
+            // failure rolls back the whole retry so the task stays FAILED
+            // and visibly retryable instead of stuck.
+            if (orphanedTaskRepublisher != null) {
+                boolean republished = orphanedTaskRepublisher.republish(
+                    saved.tenantId(), saved.taskId(), saved.attemptNo());
+                if (!republished) {
+                    throw new ApplicationException(
+                        ErrorCode.OUTBOX_PUBLISH_FAILED, 500,
+                        "retry accepted but task message could not be re-dispatched; try again", true
+                    );
+                }
+            }
+            return ProcessingTaskAssembler.toDto(saved);
         });
     }
 
@@ -407,8 +447,18 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
         payload.put("language", meeting.language());
         payload.put("channelMap", Map.of("channelCount", 1, "layout", "mono"));
         payload.put("knownParticipants", knownParticipantIds(meeting));
-        payload.put("minSpeakers", 1);
-        payload.put("maxSpeakers", 4);
+        List<String> displayNames = participantDisplayNames(meeting);
+        if (!displayNames.isEmpty()) {
+            // Human-readable names for ASR hot-word biasing; knownParticipants
+            // stays personId-based for speaker-match authorization.
+            payload.put("participantDisplayNames", displayNames);
+        }
+        // Derive diarization bounds from the participant list instead of the
+        // old hardcoded 4, which force-merged speakers in any larger meeting.
+        // No participant list -> null bounds, letting pyannote estimate.
+        Integer maxSpeakers = derivedMaxSpeakers(meeting);
+        payload.put("minSpeakers", maxSpeakers == null ? null : Integer.valueOf(1));
+        payload.put("maxSpeakers", maxSpeakers);
         payload.put("audioFileId", fileId);
         payload.put("audioUri", audioUri);
         payload.put("options", Map.of(
@@ -474,6 +524,30 @@ public class ProcessingTaskApplicationService implements ProcessingTaskFacade {
             })
             .filter(value -> value != null && !value.isBlank())
             .toList();
+    }
+
+    /** Contract cap on participantDisplayNames (schema maxItems). */
+    private static final int MAX_PARTICIPANT_DISPLAY_NAMES = 64;
+    /** Upper bound on the derived diarization cluster count; bounds pyannote
+     * clustering cost for meetings with very long participant lists. */
+    private static final int MAX_DERIVED_SPEAKERS = 16;
+
+    private static List<String> participantDisplayNames(Meeting meeting) {
+        return meeting.participants().stream()
+            .map(participant -> participant.displayName())
+            .filter(name -> name != null && !name.isBlank())
+            .distinct()
+            .limit(MAX_PARTICIPANT_DISPLAY_NAMES)
+            .toList();
+    }
+
+    private static Integer derivedMaxSpeakers(Meeting meeting) {
+        int participantCount = meeting.participants().size();
+        if (participantCount <= 0) {
+            return null;
+        }
+        // +1 headroom for an unlisted guest; never force-merge a known roster.
+        return Math.min(participantCount + 1, MAX_DERIVED_SPEAKERS);
     }
 
     private static Map<String, Object> expectedInputVersionForMeeting(

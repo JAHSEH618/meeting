@@ -111,8 +111,11 @@ public final class ProcessingTaskMessageValidator {
                 requireConditionalPresent(root, taskType, "language");
                 requireConditionalPresent(root, taskType, "channelMap");
                 requireConditionalPresent(root, taskType, "knownParticipants");
-                requireConditionalPresent(root, taskType, "minSpeakers");
-                requireConditionalPresent(root, taskType, "maxSpeakers");
+                // Schema type is ["integer","null"]: the keys must exist but a
+                // null value is legal — it means "no participant list, let the
+                // diarizer estimate the speaker count".
+                requireConditionalKey(root, taskType, "minSpeakers");
+                requireConditionalKey(root, taskType, "maxSpeakers");
             }
             // schema allOf[1] — if taskType == SPEAKER_ENROLLMENT
             // then required: speakerProfileId, speakerEnrollmentId,
@@ -143,6 +146,14 @@ public final class ProcessingTaskMessageValidator {
     private static void requireConditionalPresent(JsonNode root, String taskType, String field) {
         JsonNode n = root.get(field);
         if (n == null || n.isNull()) {
+            throw new InvalidPayloadException(
+                taskType + " requires field " + field + " (missing for taskType " + taskType + ")"
+            );
+        }
+    }
+
+    private static void requireConditionalKey(JsonNode root, String taskType, String field) {
+        if (!root.has(field)) {
             throw new InvalidPayloadException(
                 taskType + " requires field " + field + " (missing for taskType " + taskType + ")"
             );

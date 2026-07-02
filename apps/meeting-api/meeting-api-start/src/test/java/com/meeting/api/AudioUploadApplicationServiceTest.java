@@ -184,8 +184,13 @@ class AudioUploadApplicationServiceTest {
         assertThat(event.payload().get("audioFileId")).isEqualTo(completed.fileId());
         assertThat(event.payload().get("audioUri")).asString().startsWith("tos://meeting-local/");
         assertThat(event.payload().get("language")).isEqualTo("zh");
-        assertThat(event.payload().get("minSpeakers")).isEqualTo(1);
-        assertThat(event.payload().get("maxSpeakers")).isEqualTo(4);
+        // The fixture meeting has no participants: speaker bounds are sent as
+        // explicit nulls so the diarizer estimates the count instead of being
+        // force-capped at the old hardcoded 4.
+        assertThat(event.payload()).containsKey("minSpeakers");
+        assertThat(event.payload()).containsKey("maxSpeakers");
+        assertThat(event.payload().get("minSpeakers")).isNull();
+        assertThat(event.payload().get("maxSpeakers")).isNull();
         @SuppressWarnings("unchecked")
         Map<String, Object> options = (Map<String, Object>) event.payload().get("options");
         assertThat(options.get("enableAsr")).isEqualTo(true);
