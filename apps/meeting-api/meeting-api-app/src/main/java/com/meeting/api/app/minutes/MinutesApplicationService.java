@@ -277,22 +277,50 @@ public class MinutesApplicationService implements MinutesFacade {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("meetingTitle", meeting.title());
         context.put("meetingId", command.meetingId());
-        context.put("transcript", renderTranscript(segments));
+        String transcript = renderTranscript(segments);
+        context.put("transcript", transcript);
+        // Same content under the template files' canonical placeholder name so
+        // both {{transcript}} and {{transcriptSegments}} render — the two names
+        // had drifted apart and renderTemplate silently blanks unknown ones.
+        context.put("transcriptSegments", transcript);
+        // Meeting date lets the LLM resolve "下周五之前" into a concrete
+        // dueDate; participants give it the roster the system prompt asks it
+        // to assign owners from.
+        OffsetDateTime meetingDate = meeting.scheduledStartAt() != null
+            ? meeting.scheduledStartAt()
+            : meeting.createdAt();
+        context.put("meetingDate", meetingDate == null ? "未知" : meetingDate.toLocalDate().toString());
+        context.put("language", meeting.language() == null ? "zh" : meeting.language());
+        context.put("participants", renderParticipants(meeting));
 
-        // Workstation D2 — glossary terms (token-budget capped, R3).
+        // Workstation D2 — glossary terms (token-budget capped, R3). Always
+        // present so the template placeholder never dangles.
         String glossaryBlock = glossaryBlockFor(command.tenantId(), command.meetingId());
-        if (!glossaryBlock.isEmpty()) {
-            context.put("glossary", glossaryBlock);
-        }
+        context.put("glossary", glossaryBlock.isEmpty() ? "（无）" : glossaryBlock);
         // Workstation D1 — REFERENCE document summaries.
         // The LlmGateway already fail-closes on CONFIDENTIAL / SECRET meetings, so we don't need
         // to re-check here. If the gateway lets the call through, the meeting is PUBLIC / INTERNAL
         // and references with effectively-elevated security were rejected at attach time (R4).
         String referenceBlock = referenceBlockFor(command.tenantId(), command.meetingId());
-        if (!referenceBlock.isEmpty()) {
-            context.put("referenceDocuments", referenceBlock);
-        }
+        context.put("referenceDocuments", referenceBlock.isEmpty() ? "（无）" : referenceBlock);
         return context;
+    }
+
+    private static String renderParticipants(Meeting meeting) {
+        if (meeting.participants() == null || meeting.participants().isEmpty()) {
+            return "（未提供参会人名单）";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (var participant : meeting.participants()) {
+            String name = participant.displayName();
+            if (name == null || name.isBlank()) continue;
+            sb.append("- ").append(name);
+            if (participant.role() != null && !participant.role().isBlank()) {
+                sb.append("（").append(participant.role()).append("）");
+            }
+            sb.append("\n");
+        }
+        return sb.length() == 0 ? "（未提供参会人名单）" : sb.toString();
     }
 
     private String glossaryBlockFor(String tenantId, String meetingId) {
@@ -343,13 +371,28 @@ public class MinutesApplicationService implements MinutesFacade {
     }
 
     private static String renderTranscript(List<TranscriptRepository.TranscriptSegmentRecord> segments) {
+        // Confirmed speaker names + timestamps, e.g. "[seg_01 张三 00:12:30] …".
+        // The old "[seg_01 S1] …" form threw away the voiceprint pipeline's
+        // work right before the LLM assigned owners to action items.
         StringBuilder sb = new StringBuilder();
         for (var seg : segments) {
-            sb.append("[").append(seg.segmentId()).append(" ").append(seg.speakerLabel()).append("] ");
+            String speaker = seg.speakerDisplayName() != null && !seg.speakerDisplayName().isBlank()
+                ? seg.speakerDisplayName()
+                : seg.speakerLabel();
+            sb.append("[").append(seg.segmentId())
+                .append(" ").append(speaker)
+                .append(" ").append(formatTimestamp(seg.startMs()))
+                .append("] ");
             sb.append(seg.currentText() == null || seg.currentText().isEmpty() ? seg.originalText() : seg.currentText());
             sb.append("\n");
         }
         return sb.toString();
+    }
+
+    private static String formatTimestamp(long millis) {
+        long totalSeconds = Math.max(0, millis) / 1000;
+        return String.format("%02d:%02d:%02d",
+            totalSeconds / 3600, (totalSeconds % 3600) / 60, totalSeconds % 60);
     }
 
     private ParsedMinutes parse(String llmOutput) {
@@ -359,7 +402,6 @@ public class MinutesApplicationService implements MinutesFacade {
         try {
             JsonNode root = objectMapper.readTree(llmOutput);
             String title = root.has("title") ? root.get("title").asText() : null;
-            String markdown = root.has("markdown") ? root.get("markdown").asText() : llmOutput;
             List<MinutesRepository.SectionRecord> sections = new ArrayList<>();
             JsonNode sectionsNode = root.get("sections");
             if (sectionsNode != null && sectionsNode.isArray()) {
@@ -367,12 +409,34 @@ public class MinutesApplicationService implements MinutesFacade {
                     sections.add(parseSection(sectionNode));
                 }
             }
+            // A schema-obedient model may not emit "markdown" (it isn't in the
+            // schema's required list). Falling back to the raw JSON string put
+            // a JSON blob on the minutes page and in every export — render a
+            // deterministic Markdown body from the sections instead.
+            String markdown = root.has("markdown") && !root.get("markdown").asText().isBlank()
+                ? root.get("markdown").asText()
+                : renderMarkdown(title, sections);
             return new ParsedMinutes(title, markdown, sections);
         } catch (LlmProviderException ex) {
             throw ex;
         } catch (Exception ex) {
             throw new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID, "LLM minutes output is not valid JSON: " + ex.getMessage(), ex);
         }
+    }
+
+    private static String renderMarkdown(String title, List<MinutesRepository.SectionRecord> sections) {
+        StringBuilder sb = new StringBuilder();
+        if (title != null && !title.isBlank()) {
+            sb.append("# ").append(title).append("\n\n");
+        }
+        for (var section : sections) {
+            sb.append("## ").append(section.title()).append("\n\n");
+            for (var item : section.items()) {
+                sb.append("- ").append(item.text()).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().strip();
     }
 
     private MinutesRepository.SectionRecord parseSection(JsonNode node) {

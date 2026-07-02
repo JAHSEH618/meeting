@@ -123,11 +123,7 @@ public class ExtractionApplicationService {
                 taskId,
                 CAPABILITY,
                 TASK_NAME,
-                Map.of(
-                    "meetingTitle", context.meeting.title(),
-                    "meetingId", meetingId,
-                    "transcript", renderTranscript(context.segments)
-                ),
+                buildLlmContext(context.meeting, meetingId, context.segments),
                 (String) null,
                 (String) null
             ));
@@ -283,10 +279,39 @@ public class ExtractionApplicationService {
         }
     }
 
+    private static Map<String, Object> buildLlmContext(
+        Meeting meeting,
+        String meetingId,
+        List<TranscriptRepository.TranscriptSegmentRecord> segments
+    ) {
+        String transcript = renderTranscript(segments);
+        Map<String, Object> context = new java.util.LinkedHashMap<>();
+        context.put("meetingTitle", meeting.title());
+        context.put("meetingId", meetingId);
+        context.put("transcript", transcript);
+        // Canonical placeholder name used by the template files; keep both so
+        // template and code can't silently drift apart again.
+        context.put("transcriptSegments", transcript);
+        // Lets the model resolve relative deadlines ("下周五") into dueDate.
+        var meetingDate = meeting.scheduledStartAt() != null ? meeting.scheduledStartAt() : meeting.createdAt();
+        context.put("meetingDate", meetingDate == null ? "未知" : meetingDate.toLocalDate().toString());
+        return context;
+    }
+
     private static String renderTranscript(List<TranscriptRepository.TranscriptSegmentRecord> segments) {
+        // Confirmed speaker names + timestamps (same shape as the minutes
+        // prompt) so extracted action items can carry real owners.
         StringBuilder sb = new StringBuilder();
         for (var seg : segments) {
-            sb.append("[").append(seg.segmentId()).append(" ").append(seg.speakerLabel()).append("] ");
+            String speaker = seg.speakerDisplayName() != null && !seg.speakerDisplayName().isBlank()
+                ? seg.speakerDisplayName()
+                : seg.speakerLabel();
+            long totalSeconds = Math.max(0, seg.startMs()) / 1000;
+            sb.append("[").append(seg.segmentId())
+                .append(" ").append(speaker)
+                .append(" ").append(String.format("%02d:%02d:%02d",
+                    totalSeconds / 3600, (totalSeconds % 3600) / 60, totalSeconds % 60))
+                .append("] ");
             sb.append(seg.currentText() == null || seg.currentText().isEmpty() ? seg.originalText() : seg.currentText());
             sb.append("\n");
         }

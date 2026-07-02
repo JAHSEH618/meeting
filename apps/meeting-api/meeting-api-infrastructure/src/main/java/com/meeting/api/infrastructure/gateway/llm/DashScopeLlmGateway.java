@@ -81,6 +81,18 @@ public class DashScopeLlmGateway implements LlmGateway {
             .orElseThrow(() -> new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID,
                 "active prompt template not found for task " + request.taskName()));
         String rendered = renderTemplate(template.templateBody(), request.variables());
+        // Loud signal instead of silent data loss: a placeholder the caller
+        // didn't provide renders as an empty string — with a template/code
+        // variable-name drift that can mean the entire transcript silently
+        // missing from the prompt while the call still "succeeds".
+        java.util.List<String> unresolved = findUnresolvedVariables(template.templateBody(), request.variables());
+        if (!unresolved.isEmpty()) {
+            log.error(
+                "llm_template_unresolved_variables task={} template={} version={} vars={} — "
+                    + "these placeholders rendered EMPTY; align the template body with the caller's context keys",
+                request.taskName(), template.id(), template.version(), unresolved
+            );
+        }
         String inputHash = sha256(rendered);
         OffsetDateTime startedAt = OffsetDateTime.now(clock);
 
@@ -219,6 +231,22 @@ public class DashScopeLlmGateway implements LlmGateway {
         }
         matcher.appendTail(sb);
         return sb.toString();
+    }
+
+    /** Placeholder names present in the template body but absent (or null) in
+     * the caller-provided variables. Checked against the template, not the
+     * rendered output, so substituted values containing literal braces can't
+     * produce false positives. */
+    static java.util.List<String> findUnresolvedVariables(String template, Map<String, Object> variables) {
+        java.util.List<String> unresolved = new java.util.ArrayList<>();
+        Matcher matcher = VARIABLE_PATTERN.matcher(template);
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            if ((variables == null || variables.get(key) == null) && !unresolved.contains(key)) {
+                unresolved.add(key);
+            }
+        }
+        return unresolved;
     }
 
     static String sha256(String value) {
