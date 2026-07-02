@@ -36,7 +36,13 @@ class DeterministicAsrRuntime:
 
     model_version = "deterministic-asr-v0"
 
-    async def transcribe(self, audio_path: Path, metadata: AudioMetadata, language: str | None) -> list[AsrSegment]:
+    async def transcribe(
+        self,
+        audio_path: Path,
+        metadata: AudioMetadata,
+        language: str | None,
+        context: str | None = None,
+    ) -> list[AsrSegment]:
         if metadata.duration_ms <= 0:
             raise AsrRuntimeError("ASR_EMPTY_RESULT", "audio duration is empty")
         text = _sidecar_text(audio_path) or _default_text(language)

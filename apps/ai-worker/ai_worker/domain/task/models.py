@@ -42,6 +42,12 @@ class TaskMessage:
     language: str | None = None
     channel_map: dict[str, Any] | None = None
     known_participants: list[str] = field(default_factory=list)
+    # Human-readable participant names (knownParticipants carries personIds
+    # for speaker-match authorization). Used to bias ASR toward the names it
+    # is most likely to mis-transcribe.
+    participant_display_names: list[str] = field(default_factory=list)
+    # Meeting-scoped glossary/hot-word terms from Java's addWorkstationContext.
+    glossary_terms: list[str] = field(default_factory=list)
     min_speakers: int | None = None
     max_speakers: int | None = None
     options: dict[str, Any] = field(default_factory=dict)

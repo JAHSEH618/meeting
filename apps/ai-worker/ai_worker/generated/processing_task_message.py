@@ -76,6 +76,10 @@ class Options(BaseModel):
     exportFormat: Optional[ExportFormat] = None
 
 
+class ParticipantDisplayName(BaseModel):
+    __root__: constr(min_length=1)
+
+
 class GlossaryTerm(BaseModel):
     __root__: constr(min_length=1)
 
@@ -113,6 +117,11 @@ class ProcessingTaskMessage(BaseModel):
     language: Optional[str] = None
     channelMap: Optional[ChannelMap] = None
     knownParticipants: Optional[List[str]] = []
+    participantDisplayNames: Optional[List[ParticipantDisplayName]] = Field(
+        [],
+        description='Human-readable participant names for ASR hot-word biasing. knownParticipants stays personId-based for speaker-match authorization; this field is display-only context.',
+        max_items=64,
+    )
     minSpeakers: Optional[conint(ge=1)] = None
     maxSpeakers: Optional[conint(ge=1)] = None
     options: Options
@@ -120,7 +129,7 @@ class ProcessingTaskMessage(BaseModel):
     createdAt: Optional[datetime] = None
     glossaryTerms: Optional[List[GlossaryTerm]] = Field(
         [],
-        description='Optional meeting-scoped glossary terms; worker ignores if hot-word bias unimplemented.',
+        description='Optional meeting-scoped glossary terms; worker feeds them into ASR hot-word biasing together with participantDisplayNames.',
         max_items=200,
     )
     referenceDocumentIds: Optional[List[ReferenceDocumentId]] = Field(

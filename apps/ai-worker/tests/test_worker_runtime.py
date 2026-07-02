@@ -377,7 +377,9 @@ async def test_consume_message_submits_java_transcript_version_and_records_workf
     assert snapshot.status == "SUCCEEDED"
     assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
     assert engine.ran_steps == _valid_message()["pipelineSteps"]
-    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 3
+    # Two callbacks per step: RUNNING/0 at entry and SUCCEEDED/100 on finish.
+    # (The old third call was a fake "50%" heartbeat fired before any work.)
+    assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 2
     assert callback_client.update_step.await_args_list[0].kwargs["meeting_id"] == "mtg_01"
     callback_client.submit_transcript.assert_awaited_once()
     assert callback_client.submit_transcript.await_args.kwargs["transcript_version"] == 7

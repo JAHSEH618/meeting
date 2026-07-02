@@ -249,9 +249,6 @@ class MvpWorkerRuntime:
                 await self._fail_for_writeback(task, step_name, "step start callback failed")
                 return task
 
-            if await self._heartbeat(task, step_name, 50) is False:
-                self._log_heartbeat_rejected(task, step_name)
-
             pipeline_result = await self._run_with_heartbeat(
                 task,
                 step_name,
@@ -338,12 +335,13 @@ class MvpWorkerRuntime:
         return f"embed_batch_{task.task_id}_{task.attempt_no}_{digest}"
 
     async def execute_step(self, task: TaskMessage, step_name: str, context: Any | None = None) -> StepResult:
+        # RUNNING/0 marks the step started; progress stays honest (no fake
+        # "50%" the instant a step begins). Liveness during long inference
+        # comes from the periodic heartbeat loop, and the Java lease TTL
+        # governs orphan detection.
         started = await self._update_step(task, step_name, "RUNNING", 0)
         if not started.accepted:
             return self._writeback_failed(step_name, "step start callback failed")
-
-        if await self._heartbeat(task, step_name, 50) is False:
-            self._log_heartbeat_rejected(task, step_name)
 
         pipeline_result = await self._run_with_heartbeat(
             task,

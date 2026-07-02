@@ -89,6 +89,13 @@
       "items": {"type": "string"},
       "default": []
     },
+    "participantDisplayNames": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "maxItems": 64,
+      "default": [],
+      "description": "Human-readable participant names for ASR hot-word biasing. knownParticipants stays personId-based for speaker-match authorization; this field is display-only context."
+    },
     "minSpeakers": {"type": ["integer", "null"], "minimum": 1},
     "maxSpeakers": {"type": ["integer", "null"], "minimum": 1},
     "options": {
@@ -110,7 +117,7 @@
       "items": {"type": "string", "minLength": 1},
       "maxItems": 200,
       "default": [],
-      "description": "Optional meeting-scoped glossary terms; worker ignores if hot-word bias unimplemented."
+      "description": "Optional meeting-scoped glossary terms; worker feeds them into ASR hot-word biasing together with participantDisplayNames."
     },
     "referenceDocumentIds": {
       "type": "array",

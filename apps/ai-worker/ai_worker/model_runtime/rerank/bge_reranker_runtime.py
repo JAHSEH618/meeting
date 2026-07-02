@@ -35,7 +35,11 @@ class BgeRerankerRuntime:
 
     FAKE_MODEL_VERSION = "bge-reranker-v2-m3-fake-v0"
     REAL_MODEL_VERSION = "bge-reranker-v2-m3-v1"
-    MAX_LENGTH = 512
+    # Default token budget per (query + passage) pair. 512 used to truncate
+    # the tail of a 512-char Chinese chunk (query and passage share the
+    # budget), so answers near the chunk end were systematically under-scored.
+    # Operators tune it via AI_WORKER_RERANK_MAX_LENGTH (wired in registry).
+    MAX_LENGTH = 1024
 
     def __init__(
         self,
@@ -44,9 +48,13 @@ class BgeRerankerRuntime:
         models_dir: Path | None = None,
         device: str = "cpu",
         use_fp16: bool | None = None,
+        max_length: int | None = None,
+        batch_size: int | None = None,
     ) -> None:
         self._use_fake = use_fake
         self._models_dir = models_dir
+        self._max_length = max_length if max_length and max_length > 0 else self.MAX_LENGTH
+        self._batch_size = batch_size if batch_size and batch_size > 0 else None
         self._device = "fake" if use_fake else device
         # Same policy as BgeM3Runtime — see comment there. MPS keeps fp32
         # by default because pyannote/FlagReranker hit fp16 ops that don't
@@ -146,9 +154,13 @@ class BgeRerankerRuntime:
                 "bge-reranker-v2-m3 runtime is not loaded; call await ensure_loaded() first",
             )
         pairs = [[query, c] for c in candidates]
-        scores = self._model.compute_score(
-            pairs, max_length=self.MAX_LENGTH, normalize=True
-        )
+        score_kwargs: dict[str, Any] = {
+            "max_length": self._max_length,
+            "normalize": True,
+        }
+        if self._batch_size is not None:
+            score_kwargs["batch_size"] = self._batch_size
+        scores = self._model.compute_score(pairs, **score_kwargs)
         # FlagReranker returns float for single pair, list[float] otherwise.
         if isinstance(scores, float):
             return [float(scores)]

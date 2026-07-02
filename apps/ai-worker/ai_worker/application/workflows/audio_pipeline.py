@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
+import math
 from dataclasses import asdict
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ai_worker.common.config import settings
 from ai_worker.application.workflows.state import InMemoryWorkflowStateStore
@@ -198,11 +200,20 @@ class LocalAudioPipelineEngine:
                 await ensure_loaded()
             except AsrRuntimeError as exc:
                 raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
+        # Bias the model toward the words it is most likely to get wrong:
+        # participant names + meeting glossary terms from the task message.
+        # Passed as an optional kwarg so runtimes/test stubs with the plain
+        # 3-arg transcribe() keep working unchanged.
+        transcribe_kwargs: dict[str, Any] = {}
+        bias_context = _asr_bias_context(context.task)
+        if bias_context and _accepts_kwarg(self._asr_runtime.transcribe, "context"):
+            transcribe_kwargs["context"] = bias_context
         try:
             context.asr_segments = await self._asr_runtime.transcribe(
                 audio_path,
                 preprocess.metadata,
                 context.task.language,
+                **transcribe_kwargs,
             )
         except AsrRuntimeError as exc:
             raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
@@ -276,14 +287,24 @@ class LocalAudioPipelineEngine:
                 await ensure_loaded()
             except SpeakerEmbeddingRuntimeError as exc:
                 raise WorkerPipelineError("SPEAKER_EMBEDDING", exc.error_code, str(exc), retryable=True) from exc
+        # One aggregated embedding per diarized speaker instead of one per
+        # turn: short turns produce unstable voiceprints and a per-turn fanout
+        # meant hundreds of inferences (and hundreds of contradictory match
+        # candidates) for an hour-long meeting. Speakers are ordered by total
+        # speech duration so downstream embeddings[0] is the dominant speaker
+        # (what SPEAKER_ENROLLMENT submits as the profile reference).
         try:
-            for speaker_turn in _speaker_turns_for_embedding(context):
-                context.speaker_embeddings.append(
+            for _speaker_label, turns in _speaker_turn_groups_for_embedding(context):
+                per_turn = [
                     await self._speaker_embedding_runtime.embed(
                         audio_path,
                         preprocess.metadata,
                         speaker_turn,
                     )
+                    for speaker_turn in turns
+                ]
+                context.speaker_embeddings.append(
+                    _aggregate_speaker_embeddings(per_turn, turns)
                 )
         except SpeakerEmbeddingRuntimeError as exc:
             raise WorkerPipelineError("SPEAKER_EMBEDDING", exc.error_code, str(exc), retryable=True) from exc
@@ -437,6 +458,112 @@ def _speaker_turns_for_embedding(context: _PipelineContext) -> list[SpeakerTurn]
             confidence=1.0,
         )
     ]
+
+
+def _turn_duration_ms(turn: SpeakerTurn) -> int:
+    return max(0, turn.end_ms - turn.start_ms)
+
+
+def _speaker_turn_groups_for_embedding(
+    context: _PipelineContext,
+) -> list[tuple[str, list[SpeakerTurn]]]:
+    """Group diarization turns by speaker and pick the turns worth embedding.
+
+    Per speaker: drop turns shorter than ``speaker_min_segment_seconds``
+    (sub-3s clips yield unstable voiceprints), keep the
+    ``speaker_max_segments_per_speaker`` longest of the rest, and fall back to
+    the single longest turn when everything was filtered so no speaker is
+    silently dropped. Groups are ordered by the speaker's total speech
+    duration (dominant speaker first).
+    """
+    groups: dict[str, list[SpeakerTurn]] = {}
+    for turn in _speaker_turns_for_embedding(context):
+        groups.setdefault(turn.speaker_label, []).append(turn)
+
+    min_duration_ms = int(settings.speaker_min_segment_seconds * 1000)
+    max_segments = max(1, settings.speaker_max_segments_per_speaker)
+
+    ranked: list[tuple[str, list[SpeakerTurn], int]] = []
+    for speaker_label, turns in groups.items():
+        eligible = [t for t in turns if _turn_duration_ms(t) >= min_duration_ms]
+        if not eligible:
+            eligible = [max(turns, key=_turn_duration_ms)]
+        eligible.sort(key=_turn_duration_ms, reverse=True)
+        chosen = sorted(eligible[:max_segments], key=lambda t: t.start_ms)
+        total_ms = sum(_turn_duration_ms(t) for t in turns)
+        ranked.append((speaker_label, chosen, total_ms))
+    ranked.sort(key=lambda item: item[2], reverse=True)
+    return [(speaker_label, chosen) for speaker_label, chosen, _total in ranked]
+
+
+def _aggregate_speaker_embeddings(
+    embeddings: list[SpeakerEmbedding],
+    turns: list[SpeakerTurn],
+) -> SpeakerEmbedding:
+    """Collapse one speaker's per-turn embeddings into a single centroid.
+
+    Each vector is L2-normalized, then averaged weighted by turn duration and
+    re-normalized — one stable voiceprint per speaker instead of N noisy,
+    mutually contradictory ones. Single-turn speakers pass through untouched.
+    """
+    if len(embeddings) == 1:
+        return embeddings[0]
+    dimension = embeddings[0].dimension
+    accumulator = [0.0] * dimension
+    total_weight = 0.0
+    weighted_quality = 0.0
+    for embedding, turn in zip(embeddings, turns):
+        weight = float(max(1, _turn_duration_ms(turn)))
+        norm = math.sqrt(sum(v * v for v in embedding.values)) or 1.0
+        for i, value in enumerate(embedding.values):
+            accumulator[i] += weight * value / norm
+        weighted_quality += weight * embedding.quality_score
+        total_weight += weight
+    mean = [value / total_weight for value in accumulator]
+    norm = math.sqrt(sum(v * v for v in mean)) or 1.0
+    values = [value / norm for value in mean]
+    checksum = hashlib.sha256(
+        ",".join(f"{v:.6f}" for v in values).encode("utf-8")
+    ).hexdigest()
+    return SpeakerEmbedding(
+        speaker_label=embeddings[0].speaker_label,
+        values=values,
+        dimension=dimension,
+        model_version=embeddings[0].model_version,
+        checksum=checksum,
+        quality_score=weighted_quality / total_weight,
+    )
+
+
+_ASR_BIAS_CONTEXT_MAX_CHARS = 500
+
+
+def _asr_bias_context(task: TaskMessage) -> str | None:
+    """Join participant display names + glossary terms into a hot-word string.
+
+    Capped so an oversized glossary can't blow up the prompt; order keeps
+    names first (they matter most for minutes ownership).
+    """
+    seen: set[str] = set()
+    terms: list[str] = []
+    for value in [*task.participant_display_names, *task.glossary_terms]:
+        term = (value or "").strip()
+        if term and term not in seen:
+            seen.add(term)
+            terms.append(term)
+    if not terms:
+        return None
+    return " ".join(terms)[:_ASR_BIAS_CONTEXT_MAX_CHARS].strip() or None
+
+
+def _accepts_kwarg(callable_obj: Callable[..., Any], name: str) -> bool:
+    try:
+        parameters = inspect.signature(callable_obj).parameters
+    except (TypeError, ValueError):
+        return False
+    if name in parameters:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
 def _speaker_candidate_summary(match: SpeakerMatchResult) -> dict[str, Any]:

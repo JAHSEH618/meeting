@@ -176,12 +176,23 @@ class Qwen3AsrRuntime:
         # requires trust_remote_code=True so funasr can pull in the model's
         # custom code; without it the load fails. models_dir is a locally staged
         # path, so no hub fetch is needed.
-        self._model = AutoModel(
-            model=str(self._models_dir),
-            disable_update=True,
-            trust_remote_code=True,
-            device=self._device,
-        )
+        model_kwargs: dict[str, Any] = {
+            "model": str(self._models_dir),
+            "disable_update": True,
+            "trust_remote_code": True,
+            "device": self._device,
+        }
+        if settings.asr_vad_model:
+            # With a VAD front-end funasr splits long audio on silence and
+            # transcribes segment-by-segment: no mid-word hard cuts, per-
+            # segment timestamps, and hours-long meetings stop being a single
+            # monolithic generate() call. Offline deployments must stage the
+            # VAD weights and point asr_vad_model at the directory.
+            model_kwargs["vad_model"] = settings.asr_vad_model
+            model_kwargs["vad_kwargs"] = {
+                "max_single_segment_time": settings.asr_vad_max_single_segment_ms
+            }
+        self._model = AutoModel(**model_kwargs)
 
     # ── inference ──────────────────────────────────────────────────────
 
@@ -190,6 +201,7 @@ class Qwen3AsrRuntime:
         audio_path: Path,
         metadata: AudioMetadata,
         language: str | None,
+        context: str | None = None,
     ) -> list[AsrSegment]:
         """Transcribe ``audio_path`` into ordered :class:`AsrSegment` items.
 
@@ -234,6 +246,7 @@ class Qwen3AsrRuntime:
                         audio_path,
                         metadata,
                         language,
+                        context,
                     ),
                     timeout=timeout_s,
                 )
@@ -249,14 +262,24 @@ class Qwen3AsrRuntime:
         audio_path: Path,
         metadata: AudioMetadata,
         language: str | None,
+        context: str | None = None,
     ) -> list[AsrSegment]:
         """Sync inference path — runs on the executor pool."""
+        generate_kwargs: dict[str, Any] = {
+            "input": str(audio_path),
+            "language": _normalize_language(language),
+            "use_timestamp": True,
+            # Ask funasr for per-sentence timing where the model supports it;
+            # models that don't simply ignore the extra config key.
+            "sentence_timestamp": True,
+        }
+        if context:
+            # Hot-word / context biasing: participant names + glossary terms
+            # from the task message. Meeting names and domain terms are the
+            # highest-error word class and directly decide minutes ownership.
+            generate_kwargs["hotword"] = context
         try:
-            result = self._model.generate(
-                input=str(audio_path),
-                language=language or "zh",
-                use_timestamp=True,
-            )
+            result = self._model.generate(**generate_kwargs)
         except Exception as exc:
             raise Qwen3AsrRuntimeError(
                 "ASR_RUNTIME_ERROR",
@@ -265,30 +288,129 @@ class Qwen3AsrRuntime:
 
         segments: list[AsrSegment] = []
         for item in result if isinstance(result, list) else [result]:
-            text = (item.get("text") or "").strip()
-            if not text:
-                continue
-            timestamps = item.get("timestamp") or []
-            if timestamps:
-                start_ms = int(timestamps[0][0])
-                end_ms = int(timestamps[-1][1])
-            else:
-                start_ms = 0
-                end_ms = max(1, metadata.duration_ms)
-            segments.append(
-                AsrSegment(
-                    start_ms=start_ms,
-                    end_ms=end_ms,
-                    text=text,
-                    confidence=float(item.get("confidence", 0.85)),
-                )
-            )
+            segments.extend(_segments_from_item(item, metadata))
         if not segments:
             raise Qwen3AsrRuntimeError(
                 "ASR_EMPTY_RESULT",
                 "qwen3-asr produced no segments — possible silent audio",
             )
         return segments
+
+
+# BCP-47-ish tags Java sends → language codes funasr/Qwen3-ASR expects.
+# Unknown values fall back to their primary subtag so "zh-Hans-CN" still
+# resolves to "zh" instead of being passed through verbatim (behaviour then
+# depends on the model implementation and is hard to debug).
+_LANGUAGE_ALIASES = {
+    "zh": "zh", "zh-cn": "zh", "zh-tw": "zh", "zh-hk": "zh", "zh-hans": "zh", "zh-hant": "zh",
+    "en": "en", "en-us": "en", "en-gb": "en",
+    "ja": "ja", "ja-jp": "ja",
+    "ko": "ko", "ko-kr": "ko",
+    "auto": "auto",
+}
+
+
+def _normalize_language(language: str | None) -> str:
+    if not language or not language.strip():
+        return settings.asr_default_language
+    tag = language.strip().lower()
+    if tag in _LANGUAGE_ALIASES:
+        return _LANGUAGE_ALIASES[tag]
+    return tag.split("-", 1)[0]
+
+
+# Sentence-ending punctuation used when we have to split a monolithic
+# transcript ourselves (no sentence_info from the model).
+_SENTENCE_BREAKS = "。！？!?；;\n"
+
+
+def _segments_from_item(item: dict[str, Any], metadata: AudioMetadata) -> list[AsrSegment]:
+    """Build sentence-level AsrSegments from one funasr result item.
+
+    A single-file generate() typically returns ONE item whose text spans the
+    whole recording. Collapsing that into a single AsrSegment used to destroy
+    speaker attribution downstream: TRANSCRIPT_MERGE assigns each segment to
+    exactly one diarization turn, so the entire meeting landed on one speaker.
+
+    Preference order:
+      1. ``sentence_info`` (model-provided per-sentence timing) — exact.
+      2. Punctuation split with duration pro-rated by character count over the
+         item's [start, end] span — approximate but keeps segments small
+         enough for turn assignment to work.
+      3. The item as a single segment (last resort, e.g. no text breaks).
+    """
+    text = (item.get("text") or "").strip()
+    if not text:
+        return []
+    confidence = float(item.get("confidence", 0.85))
+
+    sentence_info = item.get("sentence_info") or []
+    if isinstance(sentence_info, list) and sentence_info:
+        sentences: list[AsrSegment] = []
+        for sentence in sentence_info:
+            if not isinstance(sentence, dict):
+                continue
+            sentence_text = (sentence.get("text") or "").strip()
+            if not sentence_text:
+                continue
+            start = sentence.get("start")
+            end = sentence.get("end")
+            if start is None or end is None:
+                continue
+            sentences.append(
+                AsrSegment(
+                    start_ms=int(start),
+                    end_ms=max(int(start) + 1, int(end)),
+                    text=sentence_text,
+                    confidence=confidence,
+                )
+            )
+        if sentences:
+            return sentences
+
+    timestamps = item.get("timestamp") or []
+    if timestamps:
+        item_start = int(timestamps[0][0])
+        item_end = int(timestamps[-1][1])
+    else:
+        item_start = 0
+        item_end = max(1, metadata.duration_ms)
+
+    pieces = _split_sentences(text)
+    if len(pieces) <= 1:
+        return [AsrSegment(start_ms=item_start, end_ms=item_end, text=text, confidence=confidence)]
+
+    total_chars = sum(len(piece) for piece in pieces)
+    span = max(1, item_end - item_start)
+    segments: list[AsrSegment] = []
+    cursor = item_start
+    consumed = 0
+    for index, piece in enumerate(pieces):
+        consumed += len(piece)
+        if index == len(pieces) - 1:
+            end_ms = item_end
+        else:
+            end_ms = item_start + int(span * consumed / total_chars)
+        end_ms = max(cursor + 1, end_ms)
+        segments.append(AsrSegment(start_ms=cursor, end_ms=end_ms, text=piece, confidence=confidence))
+        cursor = end_ms
+    return segments
+
+
+def _split_sentences(text: str) -> list[str]:
+    pieces: list[str] = []
+    current: list[str] = []
+    for char in text:
+        current.append(char)
+        if char in _SENTENCE_BREAKS:
+            piece = "".join(current).strip()
+            if piece:
+                pieces.append(piece)
+            current = []
+    tail = "".join(current).strip()
+    if tail:
+        pieces.append(tail)
+    return pieces
 
 
 # Ensure the class satisfies the runtime Protocol contract.

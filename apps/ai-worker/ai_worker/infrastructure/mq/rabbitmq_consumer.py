@@ -63,6 +63,7 @@ class RabbitMqTaskConsumer:
         self._loop_thread: threading.Thread | None = None
         self._inflight: set[Future] = set()
         self._inflight_lock = threading.Lock()
+        self._warmup_future: Future | None = None
 
     # ── worker event loop (dedicated thread) ────────────────────────────────
 
@@ -118,13 +119,29 @@ class RabbitMqTaskConsumer:
                 on_message_callback=self._on_message,
                 auto_ack=False,
             )
-        self._ensure_loop()
+        loop = self._ensure_loop()
+        self._schedule_model_warmup(loop)
         logger.info(
             "RabbitMQ task consumer started for queues=%s prefetch=%d",
             self.config.queues,
             self.config.prefetch_count,
         )
         channel.start_consuming()
+
+    def _schedule_model_warmup(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Kick off background model warmup on the worker loop.
+
+        MUST run on the same loop as task execution: the runtimes' asyncio
+        locks/semaphores bind to the first loop that awaits them, so warming
+        up on a throwaway loop would poison them for real tasks. Retain the
+        future so it can't be GC'd mid-flight; warmup_models swallows
+        per-runtime failures, so this never crashes the consumer.
+        """
+        if not settings.model_warmup_on_startup or self._warmup_future is not None:
+            return
+        from ai_worker.model_runtime.warmup import warmup_models
+
+        self._warmup_future = asyncio.run_coroutine_threadsafe(warmup_models(), loop)
 
     def request_stop(self) -> None:
         """Signal-safe request to stop consuming.

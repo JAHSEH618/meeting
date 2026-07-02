@@ -330,9 +330,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
         await enrollment_session_store.start_cleanup_loop()
         cleanup_started = True
+    warmup_task = None
+    if settings.model_warmup_on_startup:
+        import asyncio
+
+        from ai_worker.model_runtime.warmup import warmup_models
+
+        # Background warmup so the first embed/rerank/ASR request doesn't pay
+        # the cold model load; readiness stays honest because /internal/ready
+        # reads the runtimes' own status.
+        warmup_task = asyncio.create_task(warmup_models())
     try:
         yield
     finally:
+        if warmup_task is not None and not warmup_task.done():
+            warmup_task.cancel()
         if cleanup_started:
             from ai_worker.admin.session_store import enrollment_session_store
 
@@ -625,10 +637,13 @@ def _mount_admin_ui(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     # Hard-fail at startup if the internal-API / admin-JWT secrets are still the
-    # shipped defaults (unless AI_WORKER_ALLOW_INSECURE_SECRETS is set for dev).
-    from ai_worker.common.config import validate_security_config
+    # shipped defaults (unless AI_WORKER_ALLOW_INSECURE_SECRETS is set for dev),
+    # or if production storage/checksum config still has fake model runtimes
+    # enabled (unless AI_WORKER_ALLOW_FAKE_RUNTIME acknowledges the mix).
+    from ai_worker.common.config import validate_runtime_config, validate_security_config
 
     validate_security_config()
+    validate_runtime_config()
 
     app = FastAPI(title="ai-worker", version="0.1.0", lifespan=lifespan)
 

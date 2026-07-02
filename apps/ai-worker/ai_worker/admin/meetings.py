@@ -10,6 +10,7 @@ keep the BFF stateless (todo C3.12).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -119,24 +120,29 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
     ):
         # Aggregate: meeting + latest task + speakers + minutes
         # The BFF fans out N small Java calls instead of forcing the browser
-        # to do it; that's the only real-orchestration value-add here.
+        # to do it; that's the only real-orchestration value-add here. This is
+        # the workstation's hottest read path (page load + every SSE-triggered
+        # refresh), so the three independent sub-resources fetch concurrently
+        # instead of paying four sequential upstream round-trips.
         meeting = await java_client.request(
             "GET", f"/api/meetings/{meeting_id}",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
         )
         if meeting.status_code != 200:
             return passthrough(meeting.status_code, meeting.content, x_request_id, x_trace_id)
-        task = await java_client.request(
-            "GET", f"/api/meetings/{meeting_id}/processing-tasks/latest",
-            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
-        )
-        speakers = await java_client.request(
-            "GET", f"/api/meetings/{meeting_id}/speakers",
-            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
-        )
-        minutes = await java_client.request(
-            "GET", f"/api/meetings/{meeting_id}/minutes",
-            claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+        task, speakers, minutes = await asyncio.gather(
+            java_client.request(
+                "GET", f"/api/meetings/{meeting_id}/processing-tasks/latest",
+                claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            ),
+            java_client.request(
+                "GET", f"/api/meetings/{meeting_id}/speakers",
+                claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            ),
+            java_client.request(
+                "GET", f"/api/meetings/{meeting_id}/minutes",
+                claims=claims, request_id=x_request_id, trace_id=x_trace_id,
+            ),
         )
         return ok({
             "meeting": _safe_data(meeting),

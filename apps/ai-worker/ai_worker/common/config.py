@@ -1,3 +1,6 @@
+from typing import Literal
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +39,11 @@ class Settings(BaseSettings):
     # validation without changing the environment variable names again.
     model_profile: str = "all"  # api, bge, asr, diar, speaker, all
     local_profile: str | None = None  # mac-fake, mac-bge, mac-speaker, mac-audio, mac-all
+    # Warm the selected model runtimes in the background at process start so
+    # the first task / first embed request doesn't pay the multi-minute cold
+    # load inside its own latency budget. Honoured by both the API lifespan
+    # and the RabbitMQ consumer entrypoint. Comma-separated capability names:
+    # embedding, rerank, asr, diarization, speaker.
     model_warmup_on_startup: bool = False
     model_warmup_capabilities: str = "embedding,rerank"
     model_load_timeout_seconds: float = 600.0
@@ -53,12 +61,33 @@ class Settings(BaseSettings):
     ffprobe_timeout_seconds: float = 30.0
     bge_m3_batch_size: int = 16
     rerank_batch_size: int = 16
+    # Max tokens per (query + passage) pair fed to bge-reranker-v2-m3. The
+    # model itself accepts long inputs; 512 silently truncated the tail of a
+    # 512-char Chinese chunk, so candidates whose answer sat at the end were
+    # systematically under-scored. Keep ≥ chunk size + query budget.
+    rerank_max_length: int = 1024
     asr_max_concurrency: int = 1
     diarization_max_concurrency: int = 1
     speaker_max_concurrency: int = 1
-    asr_chunk_seconds: float = 60.0
-    asr_chunk_overlap_seconds: float = 0.5
+    # ── ASR segmentation (real runtime) ────────────────────────────────
+    # When set, funasr's AutoModel is loaded with this VAD model so long
+    # audio is split on silence and transcribed segment-by-segment (with
+    # per-segment timestamps) instead of as one monolithic pass. Accepts a
+    # model name ("fsmn-vad") or a locally staged path. Offline deployments
+    # (HF_HUB_OFFLINE=1) MUST stage the VAD weights and point this at the
+    # directory; leave unset to keep single-pass behaviour.
+    asr_vad_model: str | None = None
+    asr_vad_max_single_segment_ms: int = 30_000
+    # Default language funasr receives when the task doesn't carry one.
+    # "auto" lets Qwen3-ASR language-detect (better for mixed zh/en meetings).
+    asr_default_language: str = "zh"
+    # Diarization turns shorter than this are skipped when extracting speaker
+    # embeddings — sub-3s clips produce unstable voiceprints that pollute
+    # matching. Every speaker keeps at least their longest turn as fallback.
     speaker_min_segment_seconds: float = 3.0
+    # Cap how many (longest-first) turns per diarized speaker are embedded and
+    # averaged into that speaker's single centroid embedding.
+    speaker_max_segments_per_speaker: int = 5
     speaker_top_k: int = 5
     # Cosine-similarity floor a candidate must clear to be reported as a speaker
     # match. Operator-tunable because a model swap (real CAM++ vs deterministic
@@ -80,7 +109,7 @@ class Settings(BaseSettings):
     #             (artifact uploads such as quality-report JSON) still go to
     #             local emptyDir today — Java is the single writer of
     #             business-relevant objects. See TosArtifactStore docstring.
-    storage_backend: str = "local"
+    storage_backend: Literal["local", "tos"] = "local"
     tos_endpoint: str | None = None
     tos_region: str | None = None
     tos_access_key_id: str | None = None
@@ -170,7 +199,23 @@ class Settings(BaseSettings):
     # hard-fails at startup if any required secret is still its default or too
     # short. Secure-by-default with an explicit, greppable opt-out.
     allow_insecure_secrets: bool = False
+    # Escape hatch mirroring allow_insecure_secrets: production signals
+    # (storage_backend=tos or a configured *_EXPECTED_CHECKSUM) combined with
+    # any use_fake_* flag left true abort startup unless this is explicitly
+    # set. Prevents the worst misconfiguration in the system — a "green"
+    # deployment silently producing placeholder transcripts.
+    allow_fake_runtime: bool = False
     model_config = SettingsConfigDict(env_prefix="AI_WORKER_", env_file=".env")
+
+    @field_validator("storage_backend", mode="before")
+    @classmethod
+    def _normalize_storage_backend(cls, value: object) -> object:
+        # A typo like "TOS " used to silently fall back to local storage and
+        # only surface as AUDIO_OBJECT_NOT_FOUND on the first task. Normalize
+        # then let the Literal reject anything unknown at startup.
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 settings = Settings()
@@ -221,4 +266,54 @@ def validate_security_config(
             "refusing to start with insecure secrets: "
             + "; ".join(problems)
             + " (set AI_WORKER_ALLOW_INSECURE_SECRETS=true only for dev/CI/tests)"
+        )
+
+
+class FakeRuntimeConfigError(RuntimeError):
+    """Raised at startup when a production-looking deployment still has fake
+    model runtimes enabled without an explicit opt-in."""
+
+
+def validate_runtime_config(settings_obj: "Settings | None" = None) -> None:
+    """Fail fast when production signals coexist with fake model runtimes.
+
+    Four independent ``use_fake_*`` flags default to true (right for dev/CI,
+    catastrophic in prod): forgetting a single one made the worker report
+    READY and return deterministic placeholder transcripts with every task
+    SUCCEEDED. We treat ``storage_backend=tos`` or any configured
+    ``*_EXPECTED_CHECKSUM`` as "this is production"; from there every fake
+    flag must be off unless ``AI_WORKER_ALLOW_FAKE_RUNTIME=true`` explicitly
+    acknowledges the mix (e.g. a bge-only worker that intentionally keeps
+    ASR fake).
+    """
+    s = settings_obj or settings
+    if s.allow_fake_runtime:
+        return
+
+    production_signals = s.storage_backend == "tos" or any(
+        checksum
+        for checksum in (
+            s.bge_m3_expected_checksum,
+            s.bge_reranker_expected_checksum,
+            s.qwen3_asr_expected_checksum,
+            s.pyannote_expected_checksum,
+            s.cam_plus_expected_checksum,
+        )
+    )
+    if not production_signals:
+        return
+
+    fake_flags = {
+        "AI_WORKER_USE_FAKE_RUNTIME": s.use_fake_runtime,
+        "AI_WORKER_USE_FAKE_ASR_RUNTIME": s.use_fake_asr_runtime,
+        "AI_WORKER_USE_FAKE_DIARIZATION_RUNTIME": s.use_fake_diarization_runtime,
+        "AI_WORKER_USE_FAKE_SPEAKER_RUNTIME": s.use_fake_speaker_runtime,
+    }
+    still_fake = [name for name, value in fake_flags.items() if value]
+    if still_fake:
+        raise FakeRuntimeConfigError(
+            "production storage/checksum config detected but fake model runtimes "
+            f"are still enabled: {', '.join(still_fake)} "
+            "(set them to false, or set AI_WORKER_ALLOW_FAKE_RUNTIME=true to "
+            "explicitly run this mix)"
         )

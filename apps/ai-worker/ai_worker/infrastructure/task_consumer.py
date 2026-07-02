@@ -83,6 +83,8 @@ def validate_and_parse_task_message(raw_message: dict) -> tuple[TaskMessage | No
         language=raw_message.get("language"),
         channel_map=raw_message.get("channelMap"),
         known_participants=raw_message.get("knownParticipants", []),
+        participant_display_names=raw_message.get("participantDisplayNames", []),
+        glossary_terms=raw_message.get("glossaryTerms", []),
         min_speakers=raw_message.get("minSpeakers"),
         max_speakers=raw_message.get("maxSpeakers"),
         options=raw_message.get("options", {}),

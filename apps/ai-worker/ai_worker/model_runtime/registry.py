@@ -71,6 +71,8 @@ def get_bge_reranker() -> BgeRerankerRuntime:
             else None,
             device=device,
             use_fp16=_resolve_fp16(device, settings.bge_reranker_dtype),
+            max_length=settings.rerank_max_length,
+            batch_size=settings.rerank_batch_size,
         )
     return _bge_reranker
 

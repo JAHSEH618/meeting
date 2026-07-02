@@ -40,8 +40,14 @@ def _auth_headers(method: str, path: str, body: bytes) -> dict[str, str]:
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry() -> None:
-    """Each test gets a fresh registry so triggered-state assertions hold."""
+def _reset_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test gets a fresh registry so triggered-state assertions hold.
+
+    Tests here intentionally combine ``*_expected_checksum`` (a production
+    signal for validate_runtime_config) with fake runtimes, so opt in via
+    the same escape hatch a deliberate mixed deployment would use.
+    """
+    monkeypatch.setattr(settings, "allow_fake_runtime", True)
     registry.reset_for_tests()
     yield
     registry.reset_for_tests()
