@@ -366,3 +366,105 @@ async def test_commit_rejects_low_quality_preview_before_java_writes(tmp_path: P
     assert java.received == []
     assert await store.get(session.session_id) is not None
     assert audio.exists()
+
+
+def _wav_bytes(payload: bytes = b"\x00" * 64) -> bytes:
+    return b"RIFF" + (36 + len(payload)).to_bytes(4, "little") + b"WAVE" + payload
+
+
+def _mp3_bytes() -> bytes:
+    return b"ID3" + b"\x00" * 61
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_non_audio_payload(tmp_path: Path):
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "person_01")
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=_StubJavaClient(), session_store=store))
+    headers = {"Authorization": f"Bearer {make_admin_token()}"}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.put(
+            f"/admin/enrollment/sessions/{session.session_id}/audio",
+            headers=headers,
+            content=b"%PDF-1.7 definitely not audio",
+        )
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "AUDIO_FORMAT_UNSUPPORTED"
+    refreshed = await store.get(session.session_id)
+    assert refreshed is not None and refreshed.state == "CREATED"
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_oversize_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from ai_worker.common.config import settings
+
+    monkeypatch.setattr(settings, "enrollment_max_audio_bytes", 32)
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "person_01")
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=_StubJavaClient(), session_store=store))
+    headers = {"Authorization": f"Bearer {make_admin_token()}"}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        response = await client.put(
+            f"/admin/enrollment/sessions/{session.session_id}/audio",
+            headers=headers,
+            content=_wav_bytes(b"\x00" * 128),
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "AUDIO_FORMAT_UNSUPPORTED"
+
+
+@pytest.mark.asyncio
+async def test_upload_sniffs_format_and_commit_forwards_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import ai_worker.admin.enrollment as enrollment_module
+
+    upload_clients: list[Any] = []
+
+    class _RecordingUploadClient(_FakeUploadAsyncClient):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            upload_clients.append(self)
+
+    monkeypatch.setattr(enrollment_module.httpx, "AsyncClient", _RecordingUploadClient)
+    store = EnrollmentSessionStore(tmp_dir=str(tmp_path), ttl_seconds=3600)
+    session = await store.create("tenant_01", "person_01")
+
+    java = _StubJavaClient()
+    app = FastAPI()
+    app.include_router(build_enrollment_router(java_client=java, session_store=store))
+    headers = {
+        "Authorization": f"Bearer {make_admin_token()}",
+        "Idempotency-Key": "idem_1",
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://workstation") as client:
+        upload = await client.put(
+            f"/admin/enrollment/sessions/{session.session_id}/audio",
+            headers=headers,
+            content=_mp3_bytes(),
+        )
+        assert upload.status_code == 200
+        assert upload.json()["data"]["contentType"] == "audio/mpeg"
+
+        # move to PREVIEWED without invoking the preview model
+        refreshed = await store.get(session.session_id)
+        assert refreshed is not None
+        refreshed.touch_preview(0.9, [0.1, 0.2])
+        await store.replace(refreshed)
+
+        commit = await client.post(
+            f"/admin/enrollment/sessions/{session.session_id}/commit", headers=headers
+        )
+
+    assert commit.status_code == 200
+    init_call = next(call for call in java.received if call["path"] == "/api/files")
+    assert init_call["body"]["contentType"] == "audio/mpeg"
+    assert init_call["body"]["fileName"].endswith(".mp3")
+    assert upload_clients, "signed-URL PUT never happened"
+    _url, _content, put_headers = upload_clients[-1].requests[0]
+    assert put_headers["Content-Type"] == "audio/mpeg"

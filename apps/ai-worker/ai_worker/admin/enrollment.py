@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 
 from ai_worker.admin.envelopes import error, ok, passthrough
 from ai_worker.admin.java_client import JavaPublicClient
+from ai_worker.common.config import settings
 from ai_worker.admin.jwt_middleware import AdminClaims, admin_claims_dependency
 from ai_worker.admin.session_store import EnrollmentSession, EnrollmentSessionStore, enrollment_session_store
 
@@ -32,6 +33,29 @@ _log = logging.getLogger(__name__)
 QUALITY_THRESHOLD = 0.5
 DEFAULT_CONSENT_REFERENCE = "USER_ENROLLMENT:v1"
 PreviewFn = Callable[[Path, EnrollmentSession], Awaitable[dict[str, Any]]]
+
+
+def _sniff_audio_format(data: bytes) -> tuple[str, str] | None:
+    """Identify the audio container from magic bytes → (contentType, extension).
+
+    The frontend accepts audio/* (MP3, WAV, M4A per its own copy), but commit
+    used to hardcode audio/wav for whatever bytes arrived — Java's durable
+    store then carried a wrong contentType that broke any later decode by
+    type. Sniffing also rejects obvious non-audio uploads at the door.
+    """
+    if len(data) < 12:
+        return None
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "audio/wav", "wav"
+    if data[:3] == b"ID3" or (data[0] == 0xFF and (data[1] & 0xE0) == 0xE0):
+        return "audio/mpeg", "mp3"
+    if data[4:8] == b"ftyp":
+        return "audio/mp4", "m4a"
+    if data[:4] == b"fLaC":
+        return "audio/flac", "flac"
+    if data[:4] == b"OggS":
+        return "audio/ogg", "ogg"
+    return None
 
 
 async def _default_preview(audio_path: Path, session: EnrollmentSession) -> dict[str, Any]:
@@ -87,15 +111,40 @@ def build_enrollment_router(
             return error(status_code=404, code="ENROLLMENT_SESSION_NOT_FOUND",
                          message="session not found or expired", retryable=False,
                          request_id=x_request_id, trace_id=x_trace_id)
+        body = await request.body()
+        if len(body) > settings.enrollment_max_audio_bytes:
+            return error(
+                status_code=413,
+                code="AUDIO_FORMAT_UNSUPPORTED",
+                message=(
+                    f"enrollment audio is {len(body)} bytes; limit is "
+                    f"{settings.enrollment_max_audio_bytes} — upload a short voice sample, "
+                    "not a full recording"
+                ),
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        sniffed = _sniff_audio_format(body)
+        if sniffed is None:
+            return error(
+                status_code=415,
+                code="AUDIO_FORMAT_UNSUPPORTED",
+                message="file is not a recognized audio format (wav/mp3/m4a/flac/ogg)",
+                retryable=False,
+                request_id=x_request_id,
+                trace_id=x_trace_id,
+            )
+        content_type, extension = sniffed
         session_store.ensure_tmp_dir()
         audio_path = session_store.tmp_dir / f"{session_id}.bin"
         # Offload the multi-MB write off the event loop so a large voiceprint
         # upload doesn't stall other concurrent admin/RAG requests.
-        body = await request.body()
         await asyncio.get_running_loop().run_in_executor(None, audio_path.write_bytes, body)
-        session.touch_audio(audio_path)
+        session.touch_audio(audio_path, content_type=content_type, extension=extension)
         await session_store.replace(session)
-        return ok({"sessionId": session_id, "state": session.state, "sizeBytes": audio_path.stat().st_size},
+        return ok({"sessionId": session_id, "state": session.state, "sizeBytes": audio_path.stat().st_size,
+                   "contentType": content_type},
                   x_request_id, x_trace_id)
 
     @router.post("/sessions/{session_id}/preview", status_code=200)
@@ -239,13 +288,17 @@ def build_enrollment_router(
             None, session.audio_path.read_bytes
         )
         file_sha = hashlib.sha256(audio_bytes).hexdigest()
+        # Use the format sniffed at upload; fall back to wav only for sessions
+        # created before the sniffer existed.
+        content_type = session.audio_content_type or "audio/wav"
+        extension = session.audio_extension or "wav"
         init = await java_client.request(
             "POST", "/api/files",
             claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             idempotency_key=f"{idempotency_key or session_id}:init",
             json={
-                "fileName": f"enroll-{session_id}.wav",
-                "contentType": "audio/wav",
+                "fileName": f"enroll-{session_id}.{extension}",
+                "contentType": content_type,
                 "fileSizeBytes": len(audio_bytes),
                 "fileSha256": file_sha,
             },
@@ -293,7 +346,7 @@ def build_enrollment_router(
             put_response = await client.put(
                 upload_url,
                 content=audio_bytes,
-                headers={"Content-Type": "audio/wav"},
+                headers={"Content-Type": content_type},
             )
         if put_response.status_code >= 400:
             return error(

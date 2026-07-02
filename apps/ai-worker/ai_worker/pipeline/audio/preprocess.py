@@ -118,9 +118,20 @@ class FfprobeAudioPreprocessor:
 
 def _metadata_from_ffprobe(payload: dict[str, Any]) -> AudioMetadata:
     audio_stream = next(
-        stream for stream in payload.get("streams", [])
-        if stream.get("codec_type") == "audio"
+        (
+            stream for stream in payload.get("streams", [])
+            if stream.get("codec_type") == "audio"
+        ),
+        None,
     )
+    if audio_stream is None:
+        # A container ffprobe can parse but that has no audio track (video-only
+        # file, image, subtitle sidecar). Without the default this raised a
+        # bare StopIteration that bypassed the stable error-code mapping, so
+        # the user saw a generic failure instead of "file has no audio track".
+        raise AudioPreprocessError(
+            "AUDIO_FORMAT_UNSUPPORTED", "no audio stream found in file"
+        )
     format_info = payload.get("format", {})
     duration_seconds = float(audio_stream.get("duration") or format_info.get("duration") or 0)
     bit_rate_raw = audio_stream.get("bit_rate") or format_info.get("bit_rate")

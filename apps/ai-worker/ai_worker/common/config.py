@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     asr_inference_timeout_per_audio_minute_seconds: float = 120.0
     diarization_inference_timeout_base_seconds: float = 300.0
     diarization_inference_timeout_per_audio_minute_seconds: float = 120.0
+    # Per-turn CAM++ embedding budget: a turn is at most tens of seconds of
+    # audio, so a stuck inference is a fault, not a long job.
+    speaker_embed_timeout_seconds: float = 120.0
     ffprobe_timeout_seconds: float = 30.0
     bge_m3_batch_size: int = 16
     rerank_batch_size: int = 16
@@ -184,6 +187,9 @@ class Settings(BaseSettings):
     admin_jwt_issuer: str = "meeting-api"
     admin_jwt_required_role: str = "ADMIN"
     enrollment_tmp_dir: str = "/tmp/ai-worker-admin/enrollment"
+    # Voiceprint samples are short clips; cap the in-memory upload so a
+    # mis-selected full meeting recording can't balloon the worker process.
+    enrollment_max_audio_bytes: int = 50 * 1024 * 1024
     admin_session_ttl_seconds: int = 24 * 60 * 60
     admin_session_cleanup_interval_seconds: int = 5 * 60
     admin_ui_dist_path: str | None = None

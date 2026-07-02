@@ -36,6 +36,10 @@ class EnrollmentSession:
     expires_at: float
     state: str = "CREATED"  # CREATED → AUDIO_UPLOADED → PREVIEWED → COMMITTED | ABORTED
     audio_path: Path | None = None
+    # Sniffed from the uploaded bytes (magic numbers). Commit forwards these to
+    # Java so an MP3/M4A sample is no longer registered as audio/wav.
+    audio_content_type: str | None = None
+    audio_extension: str | None = None
     quality_score: float | None = None
     embedding_preview: list[float] | None = None
     error: str | None = None
@@ -45,8 +49,15 @@ class EnrollmentSession:
         current = time.time() if now is None else now
         return current >= self.expires_at
 
-    def touch_audio(self, path: Path) -> None:
+    def touch_audio(
+        self,
+        path: Path,
+        content_type: str | None = None,
+        extension: str | None = None,
+    ) -> None:
         self.audio_path = path
+        self.audio_content_type = content_type
+        self.audio_extension = extension
         self.state = "AUDIO_UPLOADED"
 
     def touch_preview(self, score: float, embedding: list[float]) -> None:
