@@ -25,11 +25,14 @@ public record AiWorkerInternalProperties(
 ) {
     public AiWorkerInternalProperties {
         baseUrl = stripTrailingSlash(baseUrl);
+        // 10s (was 3s): even with ai-worker's dedicated interactive GPU lane,
+        // embed/rerank can wait a beat behind a batch inference on shared
+        // hardware. 3s turned every such wait into a user-facing RAG failure.
         if (rerankTimeoutMs == null || rerankTimeoutMs <= 0) {
-            rerankTimeoutMs = 3000;
+            rerankTimeoutMs = 10000;
         }
         if (embedTimeoutMs == null || embedTimeoutMs <= 0) {
-            embedTimeoutMs = 3000;
+            embedTimeoutMs = 10000;
         }
         if (warmupTimeoutMs == null || warmupTimeoutMs <= 0) {
             warmupTimeoutMs = 5000;

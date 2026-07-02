@@ -217,11 +217,14 @@ async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_c
     result = await runtime.execute_step(task, "ASR", context)
 
     assert result.status == "SUCCEEDED"
-    heartbeat_calls = [
+    # Heartbeats now report honest progress (0 unless the engine supplies
+    # real per-step progress), so identify them as RUNNING calls beyond the
+    # single RUNNING/0 step-entry callback.
+    running_calls = [
         call for call in callback_client.update_step.await_args_list
-        if call.kwargs["status"] == "RUNNING" and call.kwargs["progress"] > 0
+        if call.kwargs["status"] == "RUNNING"
     ]
-    assert len(heartbeat_calls) >= 2
+    assert len(running_calls) - 1 >= 2
 
 
 @pytest.mark.asyncio
@@ -358,6 +361,22 @@ async def test_stop_closes_workflow_resources(callback_client) -> None:
     embedding_workflow.close.assert_awaited_once()
 
 
+def _assert_pipeline_step_order(ran_steps: list[str]) -> None:
+    """The ASR and diarization branches run concurrently, so exact global
+    ordering is no longer deterministic — assert the DAG constraints instead:
+    preprocess first, per-branch order preserved, merge after both branches."""
+    assert sorted(ran_steps) == sorted(_valid_message()["pipelineSteps"])
+    assert ran_steps[0] == "AUDIO_PREPROCESS"
+
+    def _order(*names: str) -> None:
+        indexes = [ran_steps.index(name) for name in names]
+        assert indexes == sorted(indexes), f"expected {names} in order, got {ran_steps}"
+
+    _order("ASR", "ALIGNMENT", "TRANSCRIPT_MERGE")
+    _order("DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING", "TRANSCRIPT_MERGE")
+    _order("TRANSCRIPT_MERGE", "RAG_INDEXING")
+
+
 @pytest.mark.asyncio
 async def test_consume_message_submits_java_transcript_version_and_records_workflow(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
@@ -376,7 +395,7 @@ async def test_consume_message_submits_java_transcript_version_and_records_workf
     assert snapshot is not None
     assert snapshot.status == "SUCCEEDED"
     assert [step.status for step in snapshot.steps] == ["SUCCEEDED"] * len(_valid_message()["pipelineSteps"])
-    assert engine.ran_steps == _valid_message()["pipelineSteps"]
+    _assert_pipeline_step_order(engine.ran_steps)
     # Two callbacks per step: RUNNING/0 at entry and SUCCEEDED/100 on finish.
     # (The old third call was a fake "50%" heartbeat fired before any work.)
     assert callback_client.update_step.await_count == len(_valid_message()["pipelineSteps"]) * 2
@@ -409,7 +428,7 @@ async def test_consume_message_submits_speaker_candidates(callback_client) -> No
     assert kwargs["speaker_candidates"][0]["speakerLabel"] == "SPEAKER_00"
     assert kwargs["speaker_candidates"][0]["candidates"][0]["speakerProfileId"] == "profile_alice_01"
     assert kwargs["speaker_candidates"][0]["embedding"]["values"] == [1.0, 0.0]
-    assert engine.ran_steps == _valid_message()["pipelineSteps"]
+    _assert_pipeline_step_order(engine.ran_steps)
 
 
 @pytest.mark.asyncio

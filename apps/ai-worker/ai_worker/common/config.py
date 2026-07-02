@@ -69,6 +69,20 @@ class Settings(BaseSettings):
     # the soundfile-based speaker path. Disable only if ffmpeg is unavailable.
     audio_normalize_enabled: bool = True
     ffmpeg_transcode_timeout_seconds: float = 600.0
+    # Reuse the previous attempt's ASR / diarization result artifacts when a
+    # task is retried (e.g. SPEAKER_MATCHING failed on a flaky reference
+    # service): the expensive GPU inference is only redone when no matching
+    # artifact from an earlier attempt is readable on this host. Artifacts
+    # are written to worker-local storage, so reuse applies to same-host
+    # retries — a miss silently falls back to full recompute.
+    artifact_reuse_enabled: bool = True
+    # Run the two independent halves of MEETING_FULL_PIPELINE concurrently:
+    # [ASR, ALIGNMENT] and [DIARIZATION, SPEAKER_EMBEDDING, SPEAKER_MATCHING]
+    # only join before TRANSCRIPT_MERGE. Per-device semaphores still gate GPU
+    # concurrency, so a single-GPU box degrades to near-serial safely, while
+    # split-device deployments (asr_device != diarization_device) cut the
+    # wall clock by min(T_asr, T_diar).
+    pipeline_parallel_branches: bool = True
     bge_m3_batch_size: int = 16
     rerank_batch_size: int = 16
     # Max tokens per (query + passage) pair fed to bge-reranker-v2-m3. The
@@ -79,6 +93,12 @@ class Settings(BaseSettings):
     asr_max_concurrency: int = 1
     diarization_max_concurrency: int = 1
     speaker_max_concurrency: int = 1
+    # Give the small interactive models (bge-m3 embed + bge-reranker) their
+    # own single GPU slot instead of queuing behind minutes-long ASR/diar
+    # inferences — otherwise RAG Q&A times out whenever audio is processing.
+    # Costs ~2-3GB extra VRAM alongside the audio models; disable on very
+    # tight cards (or pin AI_WORKER_BGE_M3_DEVICE/BGE_RERANKER_DEVICE=cpu).
+    gpu_interactive_lane_enabled: bool = True
     # ── ASR segmentation (real runtime) ────────────────────────────────
     # When set, funasr's AutoModel is loaded with this VAD model so long
     # audio is split on silence and transcribed segment-by-segment (with
@@ -88,6 +108,14 @@ class Settings(BaseSettings):
     # directory; leave unset to keep single-pass behaviour.
     asr_vad_model: str | None = None
     asr_vad_max_single_segment_ms: int = 30_000
+    # Long-audio chunked transcription: split the normalized WAV at silence
+    # points near every N-second mark and transcribe piece by piece, so long
+    # meetings report real ASR progress (per piece) and never sit in a single
+    # unbounded generate() call. Only activates on 16k mono PCM inputs
+    # comfortably longer than one chunk; disable to restore single-pass.
+    asr_chunked_transcribe_enabled: bool = True
+    asr_chunk_target_seconds: float = 300.0
+    asr_chunk_search_radius_seconds: float = 45.0
     # Default language funasr receives when the task doesn't carry one.
     # "auto" lets Qwen3-ASR language-detect (better for mixed zh/en meetings).
     asr_default_language: str = "zh"

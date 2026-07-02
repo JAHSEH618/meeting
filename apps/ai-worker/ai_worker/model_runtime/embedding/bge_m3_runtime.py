@@ -140,9 +140,9 @@ class BgeM3Runtime:
         """
         if self._status == "READY":
             return
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import INTERACTIVE_LANE, get_device_semaphore
 
-        async with get_device_semaphore(self._device):
+        async with get_device_semaphore(self._device, lane=INTERACTIVE_LANE):
             async with self._load_lock:
                 if self._status == "READY":
                     return
@@ -214,9 +214,9 @@ class BgeM3Runtime:
         """
         if not texts:
             return []
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import INTERACTIVE_LANE, get_device_semaphore
 
-        async with get_device_semaphore(self._device):
+        async with get_device_semaphore(self._device, lane=INTERACTIVE_LANE):
             if self._use_fake:
                 return self.embed(texts)
             loop = asyncio.get_running_loop()

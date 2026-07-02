@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import inspect
 import math
+import shutil
+import tempfile
 from dataclasses import asdict
 import json
 import logging
@@ -17,7 +19,12 @@ from ai_worker.infrastructure.artifact_store import ArtifactStore, LocalArtifact
 from ai_worker.infrastructure.speaker.reference_client import SpeakerReferenceUnavailable
 from ai_worker.pipeline.alignment.transcript_merge import merge_transcript_segments
 from ai_worker.pipeline.asr.runtime import AsrModelRuntime, AsrRuntimeError, AsrSegment, DeterministicAsrRuntime
-from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, FfprobeAudioPreprocessor, PreprocessResult
+from ai_worker.pipeline.audio.preprocess import (
+    AudioMetadata,
+    AudioPreprocessError,
+    FfprobeAudioPreprocessor,
+    PreprocessResult,
+)
 from ai_worker.pipeline.diarization.runtime import (
     DiarizationRuntime,
     DiarizationRuntimeError,
@@ -208,6 +215,21 @@ class LocalAudioPipelineEngine:
     async def _run_asr(self, context: "_PipelineContext") -> None:
         preprocess = _required_preprocess(context)
         audio_path = _required_audio_path(context)
+        # Retry economics: when SPEAKER_MATCHING (or any later step) failed
+        # transiently, don't redo minutes of GPU inference — reuse the prior
+        # attempt's raw ASR output if the model version still matches.
+        reused = await self._load_previous_json_artifact(context.task, "asr", "asr-raw.json")
+        if reused is not None and reused.get("modelVersion") == getattr(self._asr_runtime, "model_version", None):
+            segments = _asr_segments_from_payload(reused)
+            if segments:
+                context.asr_segments = segments
+                logger.info(
+                    "asr_artifact_reused task_id=%s from_attempt=%s segments=%d",
+                    context.task.task_id, reused.get("reusedFromAttempt"), len(segments),
+                )
+                ref = await self._write_json_artifact(context.task, "asr", "asr-raw.json", reused)
+                context.artifacts.append(_artifact_dict("ASR_RAW", ref.uri, ref.sha256, ref.size_bytes))
+                return
         # Lazy-load real model weights on first use; fake/deterministic
         # runtimes don't define ensure_loaded() and stay no-op. We surface
         # load failures as ASR step errors via the same error_code path
@@ -228,12 +250,16 @@ class LocalAudioPipelineEngine:
         if bias_context and _accepts_kwarg(self._asr_runtime.transcribe, "context"):
             transcribe_kwargs["context"] = bias_context
         try:
-            context.asr_segments = await self._asr_runtime.transcribe(
-                audio_path,
-                preprocess.metadata,
-                context.task.language,
-                **transcribe_kwargs,
-            )
+            chunked = await self._transcribe_chunked(context, audio_path, preprocess, transcribe_kwargs)
+            if chunked is not None:
+                context.asr_segments = chunked
+            else:
+                context.asr_segments = await self._asr_runtime.transcribe(
+                    audio_path,
+                    preprocess.metadata,
+                    context.task.language,
+                    **transcribe_kwargs,
+                )
         except AsrRuntimeError as exc:
             raise WorkerPipelineError("ASR", exc.error_code, str(exc), retryable=True) from exc
         if not context.asr_segments:
@@ -248,6 +274,93 @@ class LocalAudioPipelineEngine:
             },
         )
         context.artifacts.append(_artifact_dict("ASR_RAW", ref.uri, ref.sha256, ref.size_bytes))
+
+    async def _transcribe_chunked(
+        self,
+        context: "_PipelineContext",
+        audio_path: Path,
+        preprocess: PreprocessResult,
+        transcribe_kwargs: dict[str, Any],
+    ) -> list[AsrSegment] | None:
+        """Silence-aligned piece-by-piece transcription for long audio.
+
+        Returns None when chunking doesn't apply (short audio, non-PCM input,
+        disabled, or silence scan failure) — callers then run the single-pass
+        path. Pieces that are pure silence (ASR_EMPTY_RESULT) are skipped;
+        progress is reported per piece via ``context.step_progress``.
+        """
+        metadata = preprocess.metadata
+        if not settings.asr_chunked_transcribe_enabled:
+            return None
+        target_ms = int(settings.asr_chunk_target_seconds * 1000)
+        if target_ms <= 0 or metadata.duration_ms < target_ms * 3 // 2:
+            return None
+        # Slicing math assumes the pipeline's normalized decode shape.
+        if metadata.codec.lower() != "pcm_s16le" or metadata.channels != 1:
+            return None
+        from ai_worker.pipeline.audio.chunking import find_silence_cut_points_ms, slice_wav
+
+        loop = asyncio.get_running_loop()
+        try:
+            cut_points = await loop.run_in_executor(
+                None,
+                find_silence_cut_points_ms,
+                audio_path,
+                metadata.duration_ms,
+                target_ms,
+                int(settings.asr_chunk_search_radius_seconds * 1000),
+            )
+        except Exception:  # noqa: BLE001 — chunking is an optimization, never a failure source
+            logger.warning("asr_chunking_scan_failed task_id=%s", context.task.task_id, exc_info=True)
+            return None
+        if not cut_points:
+            return None
+
+        boundaries = [0, *cut_points, metadata.duration_ms]
+        pieces = list(zip(boundaries, boundaries[1:]))
+        logger.info(
+            "asr_chunked_transcribe task_id=%s pieces=%d duration_ms=%d",
+            context.task.task_id, len(pieces), metadata.duration_ms,
+        )
+        segments: list[AsrSegment] = []
+        tmp_dir = Path(tempfile.mkdtemp(prefix="asr-chunks-"))
+        try:
+            for index, (start_ms, end_ms) in enumerate(pieces):
+                piece_path = tmp_dir / f"piece-{index:03d}.wav"
+                await loop.run_in_executor(None, slice_wav, audio_path, piece_path, start_ms, end_ms)
+                piece_metadata = AudioMetadata(
+                    duration_ms=max(1, end_ms - start_ms),
+                    sample_rate_hz=metadata.sample_rate_hz,
+                    channels=1,
+                    codec=metadata.codec,
+                    bitrate=None,
+                    format_name="wav",
+                )
+                try:
+                    piece_segments = await self._asr_runtime.transcribe(
+                        piece_path, piece_metadata, context.task.language, **transcribe_kwargs
+                    )
+                except AsrRuntimeError as exc:
+                    if exc.error_code == "ASR_EMPTY_RESULT":
+                        piece_segments = []  # a silent stretch is legitimate
+                    else:
+                        raise
+                for segment in piece_segments:
+                    segments.append(
+                        AsrSegment(
+                            start_ms=segment.start_ms + start_ms,
+                            end_ms=segment.end_ms + start_ms,
+                            text=segment.text,
+                            confidence=segment.confidence,
+                        )
+                    )
+                piece_path.unlink(missing_ok=True)
+                context.step_progress["ASR"] = int((index + 1) * 100 / len(pieces))
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        if not segments:
+            raise AsrRuntimeError("ASR_EMPTY_RESULT", "all audio pieces produced no segments — possible silent audio")
+        return segments
 
     async def _run_alignment(self, context: "_PipelineContext") -> None:
         # Forced alignment is a phase-later/optional refinement — no FA model
@@ -264,6 +377,20 @@ class LocalAudioPipelineEngine:
     async def _run_diarization(self, context: "_PipelineContext") -> None:
         preprocess = _required_preprocess(context)
         audio_path = _required_audio_path(context)
+        reused = await self._load_previous_json_artifact(context.task, "diarization", "diarization-turns.json")
+        if reused is not None and reused.get("modelVersion") == getattr(self._diarization_runtime, "model_version", None):
+            turns = _speaker_turns_from_payload(reused)
+            if turns:
+                context.speaker_turns = turns
+                logger.info(
+                    "diarization_artifact_reused task_id=%s from_attempt=%s turns=%d",
+                    context.task.task_id, reused.get("reusedFromAttempt"), len(turns),
+                )
+                ref = await self._write_json_artifact(
+                    context.task, "diarization", "diarization-turns.json", reused
+                )
+                context.artifacts.append(_artifact_dict("DIARIZATION_TURNS", ref.uri, ref.sha256, ref.size_bytes))
+                return
         ensure_loaded = getattr(self._diarization_runtime, "ensure_loaded", None)
         if ensure_loaded is not None:
             try:
@@ -313,7 +440,8 @@ class LocalAudioPipelineEngine:
         # speech duration so downstream embeddings[0] is the dominant speaker
         # (what SPEAKER_ENROLLMENT submits as the profile reference).
         try:
-            for _speaker_label, turns in _speaker_turn_groups_for_embedding(context):
+            groups = _speaker_turn_groups_for_embedding(context)
+            for group_index, (_speaker_label, turns) in enumerate(groups):
                 per_turn = [
                     await self._speaker_embedding_runtime.embed(
                         audio_path,
@@ -324,6 +452,9 @@ class LocalAudioPipelineEngine:
                 ]
                 context.speaker_embeddings.append(
                     _aggregate_speaker_embeddings(per_turn, turns)
+                )
+                context.step_progress["SPEAKER_EMBEDDING"] = int(
+                    (group_index + 1) * 100 / len(groups)
                 )
         except SpeakerEmbeddingRuntimeError as exc:
             raise WorkerPipelineError("SPEAKER_EMBEDDING", exc.error_code, str(exc), retryable=True) from exc
@@ -413,21 +544,55 @@ class LocalAudioPipelineEngine:
             await self._run_audio_preprocess(context)
         return _required_preprocess(context)
 
-    async def _write_json_artifact(self, task: TaskMessage, category: str, name: str, payload: dict[str, Any]) -> Any:
-        bucket = "meeting-artifacts"
-        key = "/".join([
+    _ARTIFACT_BUCKET = "meeting-artifacts"
+
+    @staticmethod
+    def _artifact_key(task: TaskMessage, category: str, name: str, attempt_no: int | None = None) -> str:
+        return "/".join([
             "tenant",
             task.tenant_id,
             "meeting",
             task.meeting_id or "none",
             "task",
             task.task_id,
-            f"attempt-{task.attempt_no}",
+            f"attempt-{attempt_no if attempt_no is not None else task.attempt_no}",
             category,
             name,
         ])
+
+    async def _write_json_artifact(self, task: TaskMessage, category: str, name: str, payload: dict[str, Any]) -> Any:
+        key = self._artifact_key(task, category, name)
         data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return await self._artifact_store.upload(bucket, key, data, "application/json")
+        return await self._artifact_store.upload(self._ARTIFACT_BUCKET, key, data, "application/json")
+
+    async def _load_previous_json_artifact(
+        self, task: TaskMessage, category: str, name: str
+    ) -> dict[str, Any] | None:
+        """Read the newest prior attempt's artifact of this kind, if any.
+
+        Worker-written artifacts live on local storage (TosArtifactStore
+        delegates writes to its local writer), so read through that same
+        surface. Any miss/parse failure just means "recompute" — reuse is a
+        pure optimization and must never fail a retry.
+        """
+        if task.attempt_no <= 1 or not settings.artifact_reuse_enabled:
+            return None
+        reader = getattr(self._artifact_store, "_local_writer", None) or self._artifact_store
+        download_json = getattr(reader, "download_json", None)
+        if download_json is None:
+            return None
+        for previous_attempt in range(task.attempt_no - 1, 0, -1):
+            uri = f"tos://{self._ARTIFACT_BUCKET}/" + self._artifact_key(
+                task, category, name, attempt_no=previous_attempt
+            )
+            try:
+                payload = await download_json(uri)
+            except Exception:  # noqa: BLE001 — absent/corrupt artifact → recompute
+                continue
+            if isinstance(payload, dict):
+                payload["reusedFromAttempt"] = previous_attempt
+                return payload
+        return None
 
 
 class _PipelineContext:
@@ -445,6 +610,9 @@ class _PipelineContext:
         self.transcript_segments: list[dict[str, Any]] = []
         self.artifacts: list[dict[str, Any]] = []
         self.skipped_steps: list[dict[str, str]] = []
+        # Engine-reported per-step progress (0-100); the worker heartbeat loop
+        # reads this so Java/前端 see real progress instead of a constant.
+        self.step_progress: dict[str, int] = {}
 
 
 def _required_audio_uri(task: TaskMessage) -> str:
@@ -598,6 +766,40 @@ def _speaker_candidate_summary(match: SpeakerMatchResult) -> dict[str, Any]:
             for candidate in match.candidates
         ],
     }
+
+
+def _asr_segments_from_payload(payload: dict[str, Any]) -> list[AsrSegment]:
+    segments: list[AsrSegment] = []
+    for raw in payload.get("segments", []):
+        try:
+            segments.append(
+                AsrSegment(
+                    start_ms=int(raw["start_ms"]),
+                    end_ms=int(raw["end_ms"]),
+                    text=str(raw["text"]),
+                    confidence=float(raw["confidence"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            return []  # malformed artifact — recompute rather than trust it
+    return segments
+
+
+def _speaker_turns_from_payload(payload: dict[str, Any]) -> list[SpeakerTurn]:
+    turns: list[SpeakerTurn] = []
+    for raw in payload.get("turns", []):
+        try:
+            turns.append(
+                SpeakerTurn(
+                    speaker_label=str(raw["speaker_label"]),
+                    start_ms=int(raw["start_ms"]),
+                    end_ms=int(raw["end_ms"]),
+                    confidence=float(raw["confidence"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            return []
+    return turns
 
 
 def _artifact_dict(category: str, uri: str, sha256: str, size_bytes: int | None) -> dict[str, Any]:

@@ -344,11 +344,14 @@ async def test_runtime_sends_periodic_heartbeats_while_text_embedding_runs(state
     task = await runtime.consume_message(_raw_embedding_message("task_slow_emb"))
 
     assert task is not None
-    heartbeat_calls = [
+    # Heartbeats now report honest progress (0 unless the engine supplies
+    # real per-step progress), so identify them as RUNNING calls beyond the
+    # single RUNNING/0 step-entry callback.
+    running_calls = [
         call for call in callback_client.update_step.await_args_list
-        if call.kwargs["status"] == "RUNNING" and call.kwargs["progress"] > 0
+        if call.kwargs["status"] == "RUNNING"
     ]
-    assert len(heartbeat_calls) >= 2
+    assert len(running_calls) - 1 >= 2
 
 
 @pytest.mark.asyncio

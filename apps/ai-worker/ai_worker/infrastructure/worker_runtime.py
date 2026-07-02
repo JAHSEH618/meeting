@@ -154,19 +154,20 @@ class MvpWorkerRuntime:
                 except Exception:  # noqa: BLE001 — cleanup must not mask outcomes
                     logger.exception("pipeline_cleanup_failed task_id=%s", task.task_id)
 
+    # The two independent halves of the audio DAG. ASR does not consume
+    # diarization output (TRANSCRIPT_MERGE is the join point), so they can
+    # run concurrently; per-device semaphores keep single-GPU hosts safe.
+    _PARALLEL_BRANCH_A = ("ASR", "ALIGNMENT")
+    _PARALLEL_BRANCH_B = ("DIARIZATION", "SPEAKER_EMBEDDING", "SPEAKER_MATCHING")
+
     async def _run_audio_pipeline(self, task: TaskMessage, context: Any) -> TaskMessage:
-        for step_name in task.pipeline_steps:
-            if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
-                self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, "NOT_REQUIRED_FOR_ENROLLMENT")
-                _add_skipped_step(context, step_name, "NOT_REQUIRED_FOR_ENROLLMENT")
-                continue
-            result = await self.execute_step(task, step_name, context)
-            if result.status == "FAILED":
-                if result.error_code == "WRITEBACK_FAILED":
-                    await self._fail_for_writeback(task, result.step_name, result.error_message or "callback writeback failed")
-                else:
-                    await self._fail_for_pipeline_result(task, result)
-                return task
+        failure = await self._run_pipeline_steps(task, context)
+        if failure is not None:
+            if failure.error_code == "WRITEBACK_FAILED":
+                await self._fail_for_writeback(task, failure.step_name, failure.error_message or "callback writeback failed")
+            else:
+                await self._fail_for_pipeline_result(task, failure)
+            return task
 
         artifact = await self.workflow_engine.complete_pipeline(context)
 
@@ -230,6 +231,73 @@ class MvpWorkerRuntime:
 
         self.state_store.complete(task.task_id, artifact.terminal_status)
         return task
+
+    async def _run_pipeline_steps(self, task: TaskMessage, context: Any) -> StepResult | None:
+        """Execute the task's steps; return the first failing StepResult.
+
+        MEETING_FULL_PIPELINE runs the ASR and diarization/speaker branches
+        concurrently (both are awaited to completion even if one fails, so no
+        heartbeat loop is orphaned); every other shape stays sequential.
+        """
+        steps = list(task.pipeline_steps)
+        parallel_ok = (
+            settings.pipeline_parallel_branches
+            and "ASR" in steps
+            and "DIARIZATION" in steps
+        )
+        if not parallel_ok:
+            return await self._run_step_sequence(task, context, steps)
+
+        branch_a = [s for s in steps if s in self._PARALLEL_BRANCH_A]
+        branch_b = [s for s in steps if s in self._PARALLEL_BRANCH_B]
+        parallel_steps = set(branch_a) | set(branch_b)
+        prefix = []
+        tail = []
+        seen_parallel = False
+        for step in steps:
+            if step in parallel_steps:
+                seen_parallel = True
+                continue
+            (tail if seen_parallel else prefix).append(step)
+
+        failure = await self._run_step_sequence(task, context, prefix)
+        if failure is not None:
+            return failure
+
+        results = await asyncio.gather(
+            self._run_step_sequence(task, context, branch_a),
+            self._run_step_sequence(task, context, branch_b),
+            return_exceptions=True,
+        )
+        for branch, outcome in zip((branch_a, branch_b), results):
+            if isinstance(outcome, BaseException):
+                logger.exception(
+                    "pipeline_branch_unexpected_error task_id=%s branch=%s",
+                    task.task_id, branch, exc_info=outcome,
+                )
+                return StepResult(
+                    step_name=branch[0] if branch else "WORKER_DAG",
+                    status="FAILED",
+                    progress=100,
+                    error_code="WORKER_UNEXPECTED_ERROR",
+                    error_message=str(outcome),
+                    retryable=True,
+                )
+            if outcome is not None:
+                return outcome
+
+        return await self._run_step_sequence(task, context, tail)
+
+    async def _run_step_sequence(self, task: TaskMessage, context: Any, steps: list[str]) -> StepResult | None:
+        for step_name in steps:
+            if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
+                self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, "NOT_REQUIRED_FOR_ENROLLMENT")
+                _add_skipped_step(context, step_name, "NOT_REQUIRED_FOR_ENROLLMENT")
+                continue
+            result = await self.execute_step(task, step_name, context)
+            if result.status == "FAILED":
+                return result
+        return None
 
     async def _submit_speaker_enrollment_embedding(self, task: TaskMessage, context: Any) -> CallbackResponse:
         speaker_profile_id = task.speaker_profile_id
@@ -360,6 +428,7 @@ class MvpWorkerRuntime:
             task,
             step_name,
             lambda: self._run_audio_step(context, step_name),
+            progress_supplier=_step_progress_supplier(context, step_name),
         )
         if pipeline_result is not None:
             return pipeline_result
@@ -379,8 +448,11 @@ class MvpWorkerRuntime:
         task: TaskMessage,
         step_name: str,
         run_step: Callable[[], Awaitable[None]],
+        progress_supplier: Callable[[], int] | None = None,
     ) -> StepResult | None:
-        heartbeat_task = asyncio.create_task(self._heartbeat_loop(task, step_name))
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(task, step_name, progress_supplier)
+        )
         pipeline_result: StepResult | None = None
         try:
             try:
@@ -464,10 +536,24 @@ class MvpWorkerRuntime:
             step_name,
         )
 
-    async def _heartbeat_loop(self, task: TaskMessage, step_name: str) -> None:
+    async def _heartbeat_loop(
+        self,
+        task: TaskMessage,
+        step_name: str,
+        progress_supplier: Callable[[], int] | None = None,
+    ) -> None:
+        # Heartbeats carry REAL step progress when the engine reports it
+        # (chunked ASR, per-speaker embedding); otherwise 0 — honest "still
+        # running", never the old fabricated constant 50.
         while True:
             await asyncio.sleep(self.heartbeat_interval_seconds)
-            if await self._heartbeat(task, step_name, 50) is False:
+            progress = 0
+            if progress_supplier is not None:
+                try:
+                    progress = max(0, min(99, int(progress_supplier())))
+                except Exception:  # noqa: BLE001 — liveness signal must not die on a progress bug
+                    progress = 0
+            if await self._heartbeat(task, step_name, progress) is False:
                 self._log_heartbeat_rejected(task, step_name)
 
     @staticmethod
@@ -556,6 +642,27 @@ class MvpWorkerRuntime:
             error_code="WRITEBACK_FAILED",
             error_message=message,
         )
+
+
+def _step_progress_supplier(context: Any, step_name: str) -> Callable[[], int]:
+    """Read the engine-reported progress for a step from the pipeline context.
+
+    Contexts are engine-specific (attribute-style for the real engine, plain
+    dicts in tests), so resolve defensively; absent → 0.
+    """
+    def _read() -> int:
+        if context is None:
+            return 0
+        if isinstance(context, dict):
+            progress_map = context.get("step_progress", {})
+        else:
+            progress_map = getattr(context, "step_progress", {})
+        if not isinstance(progress_map, dict):
+            return 0
+        value = progress_map.get(step_name, 0)
+        return int(value) if isinstance(value, (int, float)) else 0
+
+    return _read
 
 
 def _speaker_submissions_from_context(context: Any) -> list[SpeakerCandidateSubmission]:
