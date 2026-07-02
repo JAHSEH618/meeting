@@ -60,8 +60,8 @@ def _sniff_audio_format(data: bytes) -> tuple[str, str] | None:
 
 async def _default_preview(audio_path: Path, session: EnrollmentSession) -> dict[str, Any]:
     """Deterministic dev/test embedding: produces a 16-dim unit vector +
-    a quality_score in [0, 1] derived from the file size. Real production
-    replaces this with the 3D-Speaker runtime; that wiring is part of P5.
+    a quality_score in [0, 1] derived from the file size. Production wires
+    the CAM++ runtime instead — see :func:`build_default_preview_fn`.
     """
     raw = await asyncio.get_running_loop().run_in_executor(None, audio_path.read_bytes)
     if not raw:
@@ -76,6 +76,99 @@ async def _default_preview(audio_path: Path, session: EnrollmentSession) -> dict
         "embedding": embedding,
         "duration_ms": len(raw),
     }
+
+
+# Below this the sample is too short for a stable reference voiceprint; at
+# _PREVIEW_FULL_SCORE_SECONDS and beyond the duration component maxes out.
+_PREVIEW_MIN_SPEECH_SECONDS = 3.0
+_PREVIEW_FULL_SCORE_SECONDS = 10.0
+
+
+async def _cam_plus_plus_preview(audio_path: Path, session: EnrollmentSession) -> dict[str, Any]:
+    """Real preview: probe the sample, normalize to 16k mono WAV, extract a
+    CAM++ embedding over the whole clip, and score by usable duration.
+
+    The old default scored quality by FILE SIZE (any ≥16KB file passed the
+    gate — silence, music, noise), so the enrollment quality gate did not
+    actually gate anything, and the committed reference vector was a fake
+    16-dim sin() placeholder. Failures return quality 0.0 with a reason
+    instead of raising, so the operator sees "why it's bad" and commit stays
+    blocked by the existing threshold.
+    """
+    from ai_worker.model_runtime.registry import get_speaker_runtime
+    from ai_worker.pipeline.audio.preprocess import (
+        AudioPreprocessError,
+        FfprobeAudioPreprocessor,
+        _needs_normalization,
+        transcode_to_wav16k,
+    )
+    from ai_worker.pipeline.diarization.runtime import SpeakerTurn
+    from ai_worker.pipeline.speaker.runtime import SpeakerEmbeddingRuntimeError
+
+    normalized_path: Path | None = None
+    try:
+        preprocessor = FfprobeAudioPreprocessor()
+        metadata = await preprocessor.probe(audio_path)
+        duration_ms = metadata.duration_ms
+        if duration_ms / 1000.0 < _PREVIEW_MIN_SPEECH_SECONDS:
+            return {
+                "quality_score": 0.0,
+                "embedding": [],
+                "duration_ms": duration_ms,
+                "quality_reasons": [
+                    f"sample is {duration_ms / 1000.0:.1f}s; need at least "
+                    f"{_PREVIEW_MIN_SPEECH_SECONDS:.0f}s of speech"
+                ],
+            }
+
+        embed_path = audio_path
+        embed_metadata = metadata
+        if _needs_normalization(metadata):
+            normalized_path = audio_path.with_name(audio_path.name + ".norm16k.wav")
+            await transcode_to_wav16k(audio_path, normalized_path)
+            embed_path = normalized_path
+            embed_metadata = await preprocessor.probe(normalized_path)
+
+        runtime = get_speaker_runtime()
+        await runtime.ensure_loaded()
+        turn = SpeakerTurn(
+            speaker_label="ENROLLMENT",
+            start_ms=0,
+            end_ms=max(1, embed_metadata.duration_ms),
+            confidence=1.0,
+        )
+        embedding = await runtime.embed(embed_path, embed_metadata, turn)
+
+        duration_score = min(1.0, (duration_ms / 1000.0) / _PREVIEW_FULL_SCORE_SECONDS)
+        return {
+            "quality_score": round(duration_score, 4),
+            "embedding": list(embedding.values),
+            "duration_ms": duration_ms,
+        }
+    except (AudioPreprocessError, SpeakerEmbeddingRuntimeError) as exc:
+        _log.warning("enrollment_preview_failed session=%s reason=%s", session.session_id, exc)
+        return {
+            "quality_score": 0.0,
+            "embedding": [],
+            "duration_ms": 0,
+            "quality_reasons": [str(exc)],
+        }
+    finally:
+        if normalized_path is not None:
+            try:
+                normalized_path.unlink(missing_ok=True)
+            except OSError:  # best effort — tmp dir cleanup loop is the backstop
+                pass
+
+
+def build_default_preview_fn() -> PreviewFn:
+    """CAM++-backed preview when the real speaker runtime is enabled;
+    deterministic stub in fake mode (tests / CI / dev without weights)."""
+    from ai_worker.model_runtime.registry import get_speaker_runtime
+
+    if get_speaker_runtime().use_fake:
+        return _default_preview
+    return _cam_plus_plus_preview
 
 
 def build_enrollment_router(
@@ -173,6 +266,9 @@ def build_enrollment_router(
             "state": session.state,
             "qualityScore": session.quality_score,
             "durationMs": result.get("duration_ms"),
+            # Present only when the preview scored low/failed — tells the
+            # operator WHY instead of just showing a number below threshold.
+            "qualityReasons": result.get("quality_reasons"),
         }, x_request_id, x_trace_id)
 
     @router.post("/sessions/{session_id}/commit", status_code=200)

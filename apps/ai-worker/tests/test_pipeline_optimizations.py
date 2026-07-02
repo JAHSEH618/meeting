@@ -416,3 +416,93 @@ def test_storage_backend_normalized_and_validated() -> None:
     assert _settings(storage_backend=" TOS ").storage_backend == "tos"
     with pytest.raises(Exception):
         _settings(storage_backend="toss")
+
+
+# ── audio normalization (transcode-to-16k-mono) ────────────────────────────
+
+
+def test_needs_normalization_truth_table() -> None:
+    from ai_worker.pipeline.audio.preprocess import _needs_normalization
+
+    ok = AudioMetadata(60_000, 16_000, 1, "pcm_s16le", None, "wav")
+    assert not _needs_normalization(ok)
+    assert _needs_normalization(AudioMetadata(60_000, 44_100, 1, "pcm_s16le", None, "wav"))
+    assert _needs_normalization(AudioMetadata(60_000, 16_000, 2, "pcm_s16le", None, "wav"))
+    assert _needs_normalization(AudioMetadata(60_000, 16_000, 1, "aac", 128_000, "mov,mp4"))
+
+
+@pytest.mark.asyncio
+async def test_preprocess_transcodes_and_rewrites_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_worker.pipeline.audio.preprocess as preprocess_module
+    from ai_worker.pipeline.audio.preprocess import FfprobeAudioPreprocessor
+
+    source = tmp_path / "meeting.m4a"
+    source.write_bytes(b"fake")
+    original = AudioMetadata(120_000, 44_100, 2, "aac", 128_000, "mov,mp4")
+
+    async def _fake_probe(self, audio_path: Path) -> AudioMetadata:
+        return original
+
+    transcoded: list[tuple[Path, Path]] = []
+
+    async def _fake_transcode(src: Path, dst: Path, **_kwargs) -> None:
+        transcoded.append((src, dst))
+        dst.write_bytes(b"wav")
+
+    monkeypatch.setattr(FfprobeAudioPreprocessor, "probe", _fake_probe)
+    monkeypatch.setattr(preprocess_module, "transcode_to_wav16k", _fake_transcode)
+
+    result = await FfprobeAudioPreprocessor().preprocess(source, "tos://b/meeting.m4a", None)
+
+    assert transcoded == [(source, source.with_name("meeting.m4a.norm16k.wav"))]
+    assert result.normalized_audio_path == source.with_name("meeting.m4a.norm16k.wav")
+    # metadata must describe the file downstream consumers will actually read
+    assert result.metadata.sample_rate_hz == 16_000
+    assert result.metadata.channels == 1
+    assert result.metadata.codec == "pcm_s16le"
+    assert result.metadata.duration_ms == original.duration_ms
+    # quality report keeps describing the original upload
+    assert result.quality_report["sampleRateHz"] == 44_100
+    assert result.quality_report["normalized"] is True
+
+
+@pytest.mark.asyncio
+async def test_preprocess_skips_transcode_for_conformant_wav(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai_worker.pipeline.audio.preprocess import FfprobeAudioPreprocessor
+
+    source = tmp_path / "meeting.wav"
+    source.write_bytes(b"fake")
+
+    async def _fake_probe(self, audio_path: Path) -> AudioMetadata:
+        return AudioMetadata(120_000, 16_000, 1, "pcm_s16le", None, "wav")
+
+    monkeypatch.setattr(FfprobeAudioPreprocessor, "probe", _fake_probe)
+
+    result = await FfprobeAudioPreprocessor().preprocess(source, "tos://b/meeting.wav", None)
+
+    assert result.normalized_audio_path is None
+    assert result.quality_report["normalized"] is False
+
+
+@pytest.mark.asyncio
+async def test_cleanup_pipeline_removes_normalized_file(tmp_path: Path) -> None:
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
+    context = _PipelineContext(_task())
+    normalized = tmp_path / "audio.norm16k.wav"
+    normalized.write_bytes(b"wav")
+    context.preprocess = PreprocessResult(
+        metadata=_metadata(),
+        channel_map={"channelCount": 1, "layout": "mono"},
+        quality_warnings=[],
+        normalized_audio_uri="tos://b/a.wav",
+        quality_report={},
+        normalized_audio_path=normalized,
+    )
+
+    await engine.cleanup_pipeline(context)
+
+    assert not normalized.exists()

@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # audio, so a stuck inference is a fault, not a long job.
     speaker_embed_timeout_seconds: float = 120.0
     ffprobe_timeout_seconds: float = 30.0
+    # ── Audio normalization (AUDIO_PREPROCESS) ─────────────────────────
+    # Transcode every input once to 16 kHz mono PCM WAV so ASR / pyannote /
+    # CAM++ all consume the same decoded audio (consistent timeline, no
+    # per-model resampling) and compressed uploads (m4a/mp3) stop failing in
+    # the soundfile-based speaker path. Disable only if ffmpeg is unavailable.
+    audio_normalize_enabled: bool = True
+    ffmpeg_transcode_timeout_seconds: float = 600.0
     bge_m3_batch_size: int = 16
     rerank_batch_size: int = 16
     # Max tokens per (query + passage) pair fed to bge-reranker-v2-m3. The

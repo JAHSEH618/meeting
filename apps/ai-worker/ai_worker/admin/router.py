@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ai_worker.admin.enrollment import build_enrollment_router, build_voiceprint_router
+from ai_worker.admin.enrollment import (
+    build_default_preview_fn,
+    build_enrollment_router,
+    build_voiceprint_router,
+)
 from ai_worker.admin.files import build_files_router
 from ai_worker.admin.java_client import JavaPublicClient
 from ai_worker.admin.meetings import build_meetings_router
@@ -41,7 +45,15 @@ def build_admin_router(
     client = java_client or JavaPublicClient()
     store = session_store or enrollment_session_store
     parent = APIRouter()
-    parent.include_router(build_enrollment_router(java_client=client, session_store=store))
+    parent.include_router(
+        build_enrollment_router(
+            java_client=client,
+            session_store=store,
+            # Real CAM++ preview when the speaker runtime is real; the old
+            # default silently scored quality by file size in production.
+            preview_fn=build_default_preview_fn(),
+        )
+    )
     parent.include_router(build_voiceprint_router(java_client=client))
     parent.include_router(build_persons_router(java_client=client))
     parent.include_router(build_files_router(java_client=client))

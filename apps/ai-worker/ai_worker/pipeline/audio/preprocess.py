@@ -33,17 +33,98 @@ class PreprocessResult:
     quality_warnings: list[str]
     normalized_audio_uri: str
     quality_report: dict[str, Any]
+    # Local 16 kHz mono PCM WAV produced by the normalization pass; None when
+    # the source already had that shape (or normalization is disabled). The
+    # pipeline feeds this single decode to ASR / diarization / speaker so all
+    # models share one timeline and the soundfile-based CAM++ path stops
+    # failing on compressed uploads.
+    normalized_audio_path: Path | None = None
+
+
+# Target shape every model consumes.
+NORMALIZED_SAMPLE_RATE_HZ = 16_000
+NORMALIZED_CODEC = "pcm_s16le"
+
+
+def _needs_normalization(metadata: AudioMetadata) -> bool:
+    return (
+        metadata.codec.lower() != NORMALIZED_CODEC
+        or metadata.sample_rate_hz != NORMALIZED_SAMPLE_RATE_HZ
+        or metadata.channels != 1
+    )
+
+
+async def transcode_to_wav16k(
+    source: Path,
+    target: Path,
+    *,
+    ffmpeg_binary: str = "ffmpeg",
+    timeout_seconds: float | None = None,
+) -> None:
+    """Decode ``source`` once into 16 kHz mono PCM WAV at ``target``."""
+    if shutil.which(ffmpeg_binary) is None:
+        raise AudioPreprocessError("AUDIO_PREPROCESS_RUNTIME_MISSING", "ffmpeg is not installed")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    process = await asyncio.create_subprocess_exec(
+        ffmpeg_binary,
+        "-nostdin",
+        "-v", "error",
+        "-y",
+        "-i", str(source),
+        "-ac", "1",
+        "-ar", str(NORMALIZED_SAMPLE_RATE_HZ),
+        "-c:a", NORMALIZED_CODEC,
+        str(target),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    budget = timeout_seconds if timeout_seconds is not None else settings.ffmpeg_transcode_timeout_seconds
+    try:
+        _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=budget)
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise AudioPreprocessError(
+            "AUDIO_CORRUPTED", f"ffmpeg transcode timed out after {budget}s"
+        ) from exc
+    if process.returncode != 0:
+        message = stderr.decode("utf-8", errors="replace").strip()
+        raise AudioPreprocessError(
+            "AUDIO_CORRUPTED", message or "ffmpeg failed to transcode audio"
+        )
 
 
 class FfprobeAudioPreprocessor:
-    def __init__(self, ffprobe_binary: str = "ffprobe") -> None:
+    def __init__(self, ffprobe_binary: str = "ffprobe", ffmpeg_binary: str = "ffmpeg") -> None:
         self.ffprobe_binary = ffprobe_binary
+        self.ffmpeg_binary = ffmpeg_binary
 
     async def preprocess(self, audio_path: Path, audio_uri: str, channel_map: dict[str, Any] | None) -> PreprocessResult:
         metadata = await self.probe(audio_path)
         self._validate(metadata)
+        # Quality signals describe the ORIGINAL upload; the normalized copy is
+        # a decode product, not what the user provided.
         effective_channel_map = _channel_map(metadata, channel_map)
         quality_warnings = _quality_warnings(metadata)
+
+        normalized_path: Path | None = None
+        effective_metadata = metadata
+        if settings.audio_normalize_enabled and _needs_normalization(metadata):
+            normalized_path = audio_path.with_name(audio_path.name + ".norm16k.wav")
+            await transcode_to_wav16k(
+                audio_path, normalized_path, ffmpeg_binary=self.ffmpeg_binary
+            )
+            # Downstream consumers (e.g. CAM++ frame slicing) compute offsets
+            # from this metadata, so it must describe the file they will read.
+            effective_metadata = AudioMetadata(
+                duration_ms=metadata.duration_ms,
+                sample_rate_hz=NORMALIZED_SAMPLE_RATE_HZ,
+                channels=1,
+                codec=NORMALIZED_CODEC,
+                bitrate=None,
+                format_name="wav",
+            )
+
         report = {
             "audioUri": audio_uri,
             "durationMs": metadata.duration_ms,
@@ -54,13 +135,15 @@ class FfprobeAudioPreprocessor:
             "formatName": metadata.format_name,
             "channelMap": effective_channel_map,
             "qualityWarnings": quality_warnings,
+            "normalized": normalized_path is not None,
         }
         return PreprocessResult(
-            metadata=metadata,
+            metadata=effective_metadata,
             channel_map=effective_channel_map,
             quality_warnings=quality_warnings,
             normalized_audio_uri=audio_uri,
             quality_report=report,
+            normalized_audio_path=normalized_path,
         )
 
     async def probe(self, audio_path: Path) -> AudioMetadata:

@@ -142,6 +142,19 @@ class MvpWorkerRuntime:
 
     async def _consume_audio_message(self, task: TaskMessage) -> TaskMessage:
         context = self.workflow_engine.start_pipeline(task)
+        try:
+            return await self._run_audio_pipeline(task, context)
+        finally:
+            # Success or failure, drop per-task decode products (normalized
+            # WAVs) so they can't accumulate on disk across tasks.
+            cleanup = getattr(self.workflow_engine, "cleanup_pipeline", None)
+            if cleanup is not None:
+                try:
+                    await cleanup(context)
+                except Exception:  # noqa: BLE001 — cleanup must not mask outcomes
+                    logger.exception("pipeline_cleanup_failed task_id=%s", task.task_id)
+
+    async def _run_audio_pipeline(self, task: TaskMessage, context: Any) -> TaskMessage:
         for step_name in task.pipeline_steps:
             if task.task_type == "SPEAKER_ENROLLMENT" and step_name == "SPEAKER_MATCHING":
                 self.state_store.update_step(task.task_id, step_name, "SKIPPED", 100, "NOT_REQUIRED_FOR_ENROLLMENT")

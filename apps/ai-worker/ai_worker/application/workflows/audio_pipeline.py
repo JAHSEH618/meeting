@@ -156,6 +156,20 @@ class LocalAudioPipelineEngine:
             terminal_status="SUCCEEDED",
         )
 
+    async def cleanup_pipeline(self, context: "_PipelineContext") -> None:
+        """Remove per-task decode products (runs on success AND failure paths
+        so normalized WAVs can't accumulate on disk)."""
+        preprocess = context.preprocess
+        normalized = preprocess.normalized_audio_path if preprocess else None
+        if normalized is None:
+            return
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, lambda: normalized.unlink(missing_ok=True)
+            )
+        except OSError:
+            logger.warning("normalized_audio_cleanup_failed path=%s", normalized, exc_info=True)
+
     async def _run_audio_preprocess(self, context: "_PipelineContext") -> None:
         audio_uri = _required_audio_uri(context.task)
         try:
@@ -176,7 +190,12 @@ class LocalAudioPipelineEngine:
         except OSError as exc:
             raise WorkerPipelineError("AUDIO_PREPROCESS", "AUDIO_OBJECT_NOT_FOUND", str(exc), retryable=True) from exc
 
-        context.audio_path = audio_path
+        # All later steps consume the normalized 16k mono decode when the
+        # preprocessor produced one — a single shared timeline for ASR /
+        # diarization / speaker instead of three per-model decodes of the raw
+        # upload (which the soundfile-based CAM++ path couldn't even open for
+        # m4a/mp3).
+        context.audio_path = context.preprocess.normalized_audio_path or audio_path
         context.normalized_audio_uri = context.preprocess.normalized_audio_uri
         ref = await self._write_json_artifact(
             context.task,
