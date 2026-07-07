@@ -86,9 +86,9 @@ public interface KnowledgeChunkRepository {
     }
 
     /**
-     * Keyword retrieval using to_tsvector / plainto_tsquery on the
-     * Postgres GIN index. Same status / scope rules as
-     * {@link #searchByVector}.
+     * Keyword retrieval using to_tsvector / plainto_tsquery plus a conservative
+     * phrase/term fallback for languages that the simple Postgres parser does
+     * not segment well. Same status / scope rules as {@link #searchByVector}.
      */
     default List<KnowledgeChunkCandidate> searchByKeyword(
         String tenantId,

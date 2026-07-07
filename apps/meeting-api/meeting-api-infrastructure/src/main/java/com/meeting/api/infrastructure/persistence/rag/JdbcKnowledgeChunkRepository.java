@@ -256,25 +256,77 @@ public class JdbcKnowledgeChunkRepository implements KnowledgeChunkRepository {
         if (queryText == null || queryText.isBlank() || topK <= 0) {
             return List.of();
         }
+        String normalizedQuery = queryText.strip();
+        List<String> likeTerms = keywordLikeTerms(normalizedQuery);
+        String exactLike = likePattern(normalizedQuery);
+        String termPredicate = likeTerms.stream()
+            .map(_term -> "content ILIKE ? ESCAPE '\\'")
+            .reduce((a, b) -> a + " AND " + b)
+            .orElse("FALSE");
         StringBuilder sql = new StringBuilder("""
+            WITH keyword_query AS (
+              SELECT plainto_tsquery('simple', ?) AS tsq
+            )
             SELECT id, tenant_id, project_id, meeting_id, document_id,
                    source_type, source_id, source_segment_id, content,
                    transcript_version, minutes_version,
-                   ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', ?)) AS rank
-              FROM knowledge_chunks
+                   (
+                     ts_rank_cd(to_tsvector('simple', content), keyword_query.tsq)
+                     + CASE WHEN content ILIKE ? ESCAPE '\\' THEN 0.20 ELSE 0 END
+                     + CASE WHEN %s THEN 0.10 ELSE 0 END
+                   ) AS rank
+              FROM knowledge_chunks, keyword_query
              WHERE tenant_id = ?
                AND status = 'ACTIVE'::content_status
                AND stale_status = 'ACTIVE'::stale_status
-               AND to_tsvector('simple', content) @@ plainto_tsquery('simple', ?)
-            """);
+               AND (
+                    to_tsvector('simple', content) @@ keyword_query.tsq
+                    OR content ILIKE ? ESCAPE '\\'
+                    OR (%s)
+               )
+            """.formatted(termPredicate, termPredicate));
         List<Object> args = new ArrayList<>();
-        args.add(queryText);
+        args.add(normalizedQuery);
+        args.add(exactLike);
+        for (String term : likeTerms) {
+            args.add(likePattern(term));
+        }
         args.add(tenantId);
-        args.add(queryText);
+        args.add(exactLike);
+        for (String term : likeTerms) {
+            args.add(likePattern(term));
+        }
         appendScopeFilter(sql, args, scope);
         sql.append(" ORDER BY rank DESC, id ASC LIMIT ?");
         args.add(topK);
         return jdbcTemplate.query(sql.toString(), (rs, n) -> mapCandidate(rs, "rank"), args.toArray());
+    }
+
+    private static List<String> keywordLikeTerms(String queryText) {
+        String[] tokens = queryText.strip().split("\\s+");
+        List<String> terms = new ArrayList<>();
+        for (String token : tokens) {
+            if (!token.isBlank()) {
+                terms.add(token);
+            }
+        }
+        return terms.isEmpty() ? List.of(queryText) : terms;
+    }
+
+    private static String likePattern(String raw) {
+        return "%" + escapeLike(raw) + "%";
+    }
+
+    private static String escapeLike(String raw) {
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c == '\\' || c == '%' || c == '_') {
+                sb.append('\\');
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     private static void appendScopeFilter(StringBuilder sql, List<Object> args, RetrievalScope scope) {

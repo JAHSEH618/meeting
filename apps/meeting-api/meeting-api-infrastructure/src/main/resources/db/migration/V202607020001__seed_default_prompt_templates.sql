@@ -9,8 +9,9 @@
 -- llm_template_unresolved_variables when they drift).
 --
 -- Guarded by NOT EXISTS on task_name so an operator-managed template is never
--- overridden; the whole template body is a single user message (the gateway
--- does not send a separate system message).
+-- overridden. V202607070001 splits these default bodies into system_prompt +
+-- user template and adds model_params; this seed stays backward-compatible
+-- with databases that have not reached that migration yet.
 
 INSERT INTO prompt_templates (
   id, tenant_id, task_name, version, major_version, minor_version, patch_version,

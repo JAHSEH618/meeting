@@ -18,7 +18,7 @@ class KnowledgeChunkDomainTest {
     @Test
     void defaultChunkStrategyMatchesBgeM3Sweetspot() {
         ChunkStrategy s = ChunkStrategy.DEFAULT_ZH;
-        assertThat(s.name()).isEqualTo("default-zh-v1");
+        assertThat(s.name()).isEqualTo("default-zh-v2");
         assertThat(s.maxTokens()).isEqualTo(512);
         assertThat(s.overlapTokens()).isEqualTo(64);
         assertThat(s.tokenizer()).isEqualTo("chinese-char");

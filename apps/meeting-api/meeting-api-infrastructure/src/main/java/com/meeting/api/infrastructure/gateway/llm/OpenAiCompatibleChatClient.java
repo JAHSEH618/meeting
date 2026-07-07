@@ -17,8 +17,18 @@ public interface OpenAiCompatibleChatClient {
         List<ChatMessage> messages,
         Double temperature,
         Integer maxTokens,
-        String responseFormatJsonSchema
+        String responseFormatJsonSchema,
+        Double topP
     ) {
+        public ChatCompletionRequest(
+            String model,
+            List<ChatMessage> messages,
+            Double temperature,
+            Integer maxTokens,
+            String responseFormatJsonSchema
+        ) {
+            this(model, messages, temperature, maxTokens, responseFormatJsonSchema, null);
+        }
     }
 
     record ChatMessage(String role, String content) {
@@ -37,8 +47,19 @@ public interface OpenAiCompatibleChatClient {
         int promptTokens,
         int completionTokens,
         long latencyMs,
-        Map<String, Object> rawResponse
+        Map<String, Object> rawResponse,
+        String finishReason
     ) {
+        public ChatCompletion(
+            String content,
+            String modelVersion,
+            int promptTokens,
+            int completionTokens,
+            long latencyMs,
+            Map<String, Object> rawResponse
+        ) {
+            this(content, modelVersion, promptTokens, completionTokens, latencyMs, rawResponse, null);
+        }
     }
 
     /**

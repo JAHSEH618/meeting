@@ -290,6 +290,12 @@ errorCodes:
     userMessage: LLM 服务限流
     i18nKey: errors.LLM_RATE_LIMIT
     opsTags: [llm, rate_limit]
+  - code: LLM_OUTPUT_TRUNCATED
+    step: LLM
+    retryable: true
+    userMessage: LLM 输出被截断
+    i18nKey: errors.LLM_OUTPUT_TRUNCATED
+    opsTags: [llm, truncated]
   - code: LLM_DATA_BOUNDARY_BLOCKED
     step: LLM
     retryable: false

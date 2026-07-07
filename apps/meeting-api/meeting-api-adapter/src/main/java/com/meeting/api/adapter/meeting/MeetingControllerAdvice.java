@@ -32,7 +32,9 @@ public class MeetingControllerAdvice {
     @ExceptionHandler(LlmProviderException.class)
     public ResponseEntity<ApiResponse<Void>> handleLlmProvider(LlmProviderException ex) {
         ErrorCode code = ex.errorCode();
-        boolean retryable = code == ErrorCode.LLM_PROVIDER_TIMEOUT || code == ErrorCode.LLM_RATE_LIMIT;
+        boolean retryable = code == ErrorCode.LLM_PROVIDER_TIMEOUT
+            || code == ErrorCode.LLM_RATE_LIMIT
+            || code == ErrorCode.LLM_OUTPUT_TRUNCATED;
         HttpStatus status = code == ErrorCode.LLM_RATE_LIMIT ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.SERVICE_UNAVAILABLE;
         return error(status, code, ex.getMessage(), retryable, Map.of());
     }

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -128,30 +129,14 @@ public class ChunkingApplicationService {
 
         int transcriptVersion = transcriptRepository.currentTranscriptVersion(tenantId, meetingId);
         if (transcriptVersion > 0) {
-            for (var seg : transcriptRepository.findByMeeting(tenantId, meetingId, transcriptVersion)) {
-                String text = currentText(seg.currentText(), seg.editedText(), seg.originalText());
-                if (text == null || text.isBlank()) {
-                    continue;
-                }
-                int sub = 0;
-                for (String piece : split(text)) {
-                    built.add(KnowledgeChunk.builder()
-                        .id(newChunkId("trn"))
-                        .tenantId(tenantId)
-                        .meetingId(meetingId)
-                        .sourceType(KnowledgeSourceType.PRIMARY_TRANSCRIPT)
-                        .sourceId(seg.segmentId() + "#" + sub)
-                        .sourceSegmentId(seg.segmentId())
-                        .content(piece)
-                        .contentHash(sha256(piece))
-                        .chunkStrategyVersion(strategy.name())
-                        .transcriptVersion(transcriptVersion)
-                        .createdAt(now)
-                        .updatedAt(now)
-                        .build());
-                    sub++;
-                }
-            }
+            chunkTranscript(
+                built,
+                tenantId,
+                meetingId,
+                transcriptRepository.findByMeeting(tenantId, meetingId, transcriptVersion),
+                transcriptVersion,
+                now
+            );
         }
 
         int minutesVersion = 0;
@@ -326,6 +311,130 @@ public class ChunkingApplicationService {
         }
     }
 
+    private void chunkTranscript(
+        List<KnowledgeChunk> sink,
+        String tenantId,
+        String meetingId,
+        List<TranscriptRepository.TranscriptSegmentRecord> segments,
+        int transcriptVersion,
+        OffsetDateTime now
+    ) {
+        List<TranscriptLine> lines = segments.stream()
+            .map(ChunkingApplicationService::toTranscriptLine)
+            .flatMap(Optional::stream)
+            .sorted((a, b) -> {
+                int byStart = Long.compare(a.startMs(), b.startMs());
+                return byStart != 0 ? byStart : a.segmentId().compareTo(b.segmentId());
+            })
+            .toList();
+        if (lines.isEmpty()) {
+            return;
+        }
+
+        List<TranscriptWindow> windows = transcriptWindows(lines);
+        for (int i = 0; i < windows.size(); i++) {
+            TranscriptWindow window = windows.get(i);
+            sink.add(KnowledgeChunk.builder()
+                .id(newChunkId("trn"))
+                .tenantId(tenantId)
+                .meetingId(meetingId)
+                .sourceType(KnowledgeSourceType.PRIMARY_TRANSCRIPT)
+                .sourceId(window.sourceId(i))
+                .sourceSegmentId(window.firstSegmentId())
+                .content(window.content())
+                .contentHash(sha256(window.content()))
+                .chunkStrategyVersion(strategy.name())
+                .transcriptVersion(transcriptVersion)
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
+        }
+    }
+
+    private static Optional<TranscriptLine> toTranscriptLine(TranscriptRepository.TranscriptSegmentRecord seg) {
+        String text = currentText(seg.currentText(), seg.editedText(), seg.originalText());
+        if (text == null || text.isBlank()) {
+            return Optional.empty();
+        }
+        String speaker = seg.speakerDisplayName() != null && !seg.speakerDisplayName().isBlank()
+            ? seg.speakerDisplayName().strip()
+            : seg.speakerLabel();
+        String rendered = (speaker == null || speaker.isBlank() ? "UNKNOWN" : speaker.strip())
+            + ": " + text.strip();
+        return Optional.of(new TranscriptLine(seg.segmentId(), seg.startMs(), rendered));
+    }
+
+    private List<TranscriptWindow> transcriptWindows(List<TranscriptLine> lines) {
+        int max = strategy.maxTokens();
+        int overlap = strategy.overlapTokens();
+        List<TranscriptWindow> windows = new ArrayList<>();
+        List<TranscriptLine> current = new ArrayList<>();
+
+        for (TranscriptLine line : lines) {
+            if (line.content().length() > max) {
+                if (!current.isEmpty()) {
+                    windows.add(TranscriptWindow.of(current));
+                    current = overlapTail(current, overlap);
+                }
+                int sub = 0;
+                for (String piece : split(line.content())) {
+                    windows.add(new TranscriptWindow(
+                        List.of(line.segmentId()),
+                        line.segmentId(),
+                        line.segmentId(),
+                        piece,
+                        sub++
+                    ));
+                }
+                current.clear();
+                continue;
+            }
+
+            if (!current.isEmpty() && joinedLength(current) + 1 + line.content().length() > max) {
+                windows.add(TranscriptWindow.of(current));
+                current = overlapTail(current, overlap);
+                if (!current.isEmpty() && joinedLength(current) + 1 + line.content().length() > max) {
+                    current.clear();
+                }
+            }
+            current.add(line);
+        }
+
+        if (!current.isEmpty()) {
+            windows.add(TranscriptWindow.of(current));
+        }
+        return windows;
+    }
+
+    private static List<TranscriptLine> overlapTail(List<TranscriptLine> lines, int overlap) {
+        if (overlap <= 0 || lines.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<TranscriptLine> tail = new ArrayList<>();
+        int length = 0;
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            TranscriptLine line = lines.get(i);
+            int nextLength = length + line.content().length() + (tail.isEmpty() ? 0 : 1);
+            if (!tail.isEmpty() && nextLength > overlap) {
+                break;
+            }
+            tail.add(0, line);
+            length = nextLength;
+        }
+        return tail;
+    }
+
+    private static int joinedLength(List<TranscriptLine> lines) {
+        int length = 0;
+        for (TranscriptLine line : lines) {
+            if (length > 0) {
+                length++;
+            }
+            length += line.content().length();
+        }
+        return length;
+    }
+
     private static String composeExtractionBody(String title, String description) {
         StringBuilder sb = new StringBuilder();
         if (title != null && !title.isBlank()) {
@@ -383,6 +492,33 @@ public class ChunkingApplicationService {
             return HexFormat.of().formatHex(md.digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    private record TranscriptLine(String segmentId, long startMs, String content) {
+    }
+
+    private record TranscriptWindow(
+        List<String> segmentIds,
+        String firstSegmentId,
+        String lastSegmentId,
+        String content,
+        Integer splitIndex
+    ) {
+        static TranscriptWindow of(List<TranscriptLine> lines) {
+            List<String> ids = lines.stream().map(TranscriptLine::segmentId).toList();
+            String content = String.join("\n", lines.stream().map(TranscriptLine::content).toList());
+            return new TranscriptWindow(ids, ids.get(0), ids.get(ids.size() - 1), content, null);
+        }
+
+        String sourceId(int windowIndex) {
+            if (splitIndex != null) {
+                return firstSegmentId + "#" + splitIndex;
+            }
+            String range = firstSegmentId.equals(lastSegmentId)
+                ? firstSegmentId
+                : firstSegmentId + ".." + lastSegmentId;
+            return range + "#w" + windowIndex;
         }
     }
 

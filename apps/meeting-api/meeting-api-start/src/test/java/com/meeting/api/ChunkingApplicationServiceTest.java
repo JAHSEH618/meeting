@@ -59,12 +59,13 @@ class ChunkingApplicationServiceTest {
         ChunkingResult result = fx.service().rebuildForMeeting("tenant_01", "mtg_01");
 
         assertThat(result.staleCount()).isEqualTo(0);
-        // 2 transcript segs + 1 minutes item + 1 action (REJECTED skipped) + 1 decision + 1 risk = 6
-        assertThat(result.newChunkIds()).hasSize(6);
-        assertThat(fx.chunks.saved).hasSize(6);
+        // 2 short transcript segments coalesce into one speaker-prefixed window
+        // + 1 minutes item + 1 action (REJECTED skipped) + 1 decision + 1 risk = 5.
+        assertThat(result.newChunkIds()).hasSize(5);
+        assertThat(fx.chunks.saved).hasSize(5);
 
         var bySourceType = groupBySourceType(fx.chunks.saved);
-        assertThat(bySourceType.get(KnowledgeSourceType.PRIMARY_TRANSCRIPT)).hasSize(2);
+        assertThat(bySourceType.get(KnowledgeSourceType.PRIMARY_TRANSCRIPT)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.MINUTES)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.ACTION_ITEM)).hasSize(1);
         assertThat(bySourceType.get(KnowledgeSourceType.DECISION)).hasSize(1);
@@ -75,11 +76,14 @@ class ChunkingApplicationServiceTest {
         assertThat(transcriptChunk.meetingId()).isEqualTo("mtg_01");
         assertThat(transcriptChunk.documentId()).isNull();
         assertThat(transcriptChunk.sourceSegmentId()).isEqualTo("seg_a");
-        assertThat(transcriptChunk.sourceId()).isEqualTo("seg_a#0");
+        assertThat(transcriptChunk.sourceId()).isEqualTo("seg_a..seg_b#w0");
         assertThat(transcriptChunk.transcriptVersion()).isEqualTo(3);
-        assertThat(transcriptChunk.chunkStrategyVersion()).isEqualTo("default-zh-v1");
+        assertThat(transcriptChunk.chunkStrategyVersion()).isEqualTo("default-zh-v2");
         assertThat(transcriptChunk.createdAt()).isEqualTo(NOW);
         assertThat(transcriptChunk.contentHash()).hasSize(64);
+        assertThat(transcriptChunk.content())
+            .contains("Alice: 今天讨论一下下季度的产品规划。")
+            .contains("Alice: 我们需要在月底前确定预算。");
 
         var summaryChunk = bySourceType.get(KnowledgeSourceType.MINUTES).get(0);
         assertThat(summaryChunk.minutesVersion()).isEqualTo(2);
@@ -139,12 +143,6 @@ class ChunkingApplicationServiceTest {
         String body = repeat("我", 20);
         fx.transcripts.addSegment(seg("seg_big", body, 1));
 
-        ChunkingApplicationService svc = new ChunkingApplicationService(
-            fx.transcripts, fx.minutes, fx.actions, fx.decisions, fx.risks,
-            fx.documents, fx.documentChunks, fx.meetings, fx.chunks,
-            new ChunkStrategy("test-zh", 64, 16, "chinese-char"),
-            fx.events, CLOCK
-        );
         // shrink strategy explicitly for the test rather than relying on prod defaults
         ChunkingApplicationService scoped = new ChunkingApplicationService(
             fx.transcripts, fx.minutes, fx.actions, fx.decisions, fx.risks,
@@ -158,7 +156,7 @@ class ChunkingApplicationServiceTest {
         // single 20-char body fits inside maxTokens=32, so still one chunk
         assertThat(result.newChunkIds()).hasSize(1);
         var stored = fx.chunks.saved.get(0);
-        assertThat(stored.content()).isEqualTo(body);
+        assertThat(stored.content()).isEqualTo("Alice: " + body);
 
         // Now grow the body past the window and re-run
         fx.chunks.clear();
@@ -169,9 +167,9 @@ class ChunkingApplicationServiceTest {
 
         scoped.rebuildForMeeting("tenant_01", "mtg_long");
 
-        // 80 chars / step=24 (max=32, overlap=8) → windows starting at 0, 24, 48
-        // window at 48 ends at 80, so loop breaks. → 3 pieces.
-        assertThat(fx.chunks.saved).hasSize(3);
+        // 80 chars plus speaker prefix / step=24 (max=32, overlap=8)
+        // → windows starting at 0, 24, 48, 72. → 4 pieces.
+        assertThat(fx.chunks.saved).hasSize(4);
         assertThat(fx.chunks.saved.get(0).content()).hasSize(32);
         assertThat(fx.chunks.saved.get(1).content()).hasSize(32);
         assertThat(fx.chunks.saved.get(2).content()).hasSize(32);
@@ -241,7 +239,7 @@ class ChunkingApplicationServiceTest {
         assertThat(evt.meetingId()).isEqualTo("mtg_evt");
         assertThat(evt.documentId()).isNull();
         assertThat(evt.chunkIds()).containsExactlyElementsOf(result.newChunkIds());
-        assertThat(evt.chunkStrategyVersion()).isEqualTo("default-zh-v1");
+        assertThat(evt.chunkStrategyVersion()).isEqualTo("default-zh-v2");
         assertThat(evt.transcriptVersion()).isEqualTo(2);
         assertThat(evt.minutesVersion()).isEqualTo(1);
     }

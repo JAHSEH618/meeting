@@ -12,7 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -81,11 +83,17 @@ public class DashScopeLlmGateway implements LlmGateway {
             .orElseThrow(() -> new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID,
                 "active prompt template not found for task " + request.taskName()));
         String rendered = renderTemplate(template.templateBody(), request.variables());
+        String renderedSystem = renderOptionalTemplate(template.systemPrompt(), request.variables());
+        ResolvedModelParams modelParams = resolveModelParams(template.modelParams());
+        String responseSchema = request.expectedJsonSchema() != null && !request.expectedJsonSchema().isBlank()
+            ? request.expectedJsonSchema()
+            : template.jsonSchema();
         // Loud signal instead of silent data loss: a placeholder the caller
         // didn't provide renders as an empty string — with a template/code
         // variable-name drift that can mean the entire transcript silently
         // missing from the prompt while the call still "succeeds".
-        java.util.List<String> unresolved = findUnresolvedVariables(template.templateBody(), request.variables());
+        List<String> unresolved = new ArrayList<>(findUnresolvedVariables(template.templateBody(), request.variables()));
+        addUnique(unresolved, findUnresolvedVariables(template.systemPrompt(), request.variables()));
         if (!unresolved.isEmpty()) {
             log.error(
                 "llm_template_unresolved_variables task={} template={} version={} vars={} — "
@@ -93,34 +101,42 @@ public class DashScopeLlmGateway implements LlmGateway {
                 request.taskName(), template.id(), template.version(), unresolved
             );
         }
-        String inputHash = sha256(rendered);
+        List<OpenAiCompatibleChatClient.ChatMessage> messages = new ArrayList<>();
+        if (renderedSystem != null && !renderedSystem.isBlank()) {
+            messages.add(OpenAiCompatibleChatClient.ChatMessage.system(renderedSystem));
+        }
+        messages.add(OpenAiCompatibleChatClient.ChatMessage.user(rendered));
+        String inputHash = sha256(inputForHash(messages));
         OffsetDateTime startedAt = OffsetDateTime.now(clock);
 
         OpenAiCompatibleChatClient.ChatCompletion completion;
-        String errorCode = null;
-        String status = "SUCCEEDED";
         try {
             completion = client.chatComplete(new OpenAiCompatibleChatClient.ChatCompletionRequest(
-                defaultModel,
-                java.util.List.of(OpenAiCompatibleChatClient.ChatMessage.user(rendered)),
-                0.2,
-                null,
-                request.expectedJsonSchema() != null && !request.expectedJsonSchema().isBlank()
-                    ? request.expectedJsonSchema()
-                    : template.jsonSchema()
+                modelParams.model(),
+                messages,
+                modelParams.temperature(),
+                modelParams.maxTokens(),
+                responseSchema,
+                modelParams.topP()
             ));
+            if ("length".equalsIgnoreCase(completion.finishReason())) {
+                throw new LlmProviderException(
+                    ErrorCode.LLM_OUTPUT_TRUNCATED,
+                    "LLM output was truncated by the provider; increase max_tokens or reduce prompt input"
+                );
+            }
         } catch (LlmProviderException ex) {
-            recordFailedCall(request, template, inputHash, ex.errorCode().name(), 0, startedAt);
+            recordFailedCall(request, template, inputHash, ex.errorCode().name(), 0, startedAt, modelParams.model());
             throw ex;
         }
-        String structuredJson = extractStructuredJson(completion.content(), template.jsonSchema());
+        String structuredJson = extractStructuredJson(completion.content(), responseSchema);
         if (structuredJson != null) {
-            validateAgainstSchema(structuredJson, template.jsonSchema());
+            validateAgainstSchema(structuredJson, responseSchema);
         }
         String outputHash = sha256(completion.content());
         OffsetDateTime now = OffsetDateTime.now(clock);
         String manifestId = recordArtifactManifest(
-            request, template, inputHash, outputHash, completion, now
+            request, template, inputHash, outputHash, completion, now, modelParams.model()
         );
         String callLogId = recordSuccessfulCall(
             request,
@@ -128,7 +144,8 @@ public class DashScopeLlmGateway implements LlmGateway {
             inputHash,
             outputHash,
             completion,
-            startedAt
+            startedAt,
+            modelParams.model()
         );
         return new LlmResponse(
             completion.content(),
@@ -148,12 +165,13 @@ public class DashScopeLlmGateway implements LlmGateway {
         String inputHash,
         String outputHash,
         OpenAiCompatibleChatClient.ChatCompletion completion,
-        OffsetDateTime now
+        OffsetDateTime now,
+        String requestedModel
     ) {
         String id = "art_" + UUID.randomUUID().toString().replace("-", "");
         String modelsJson = String.format(
-            "[{\"role\":\"llm\",\"provider\":\"%s\",\"modelVersion\":%s}]",
-            PROVIDER, quoteJson(completion.modelVersion())
+            "[{\"role\":\"llm\",\"provider\":\"%s\",\"requestedModel\":%s,\"modelVersion\":%s}]",
+            PROVIDER, quoteJson(requestedModel), quoteJson(completion.modelVersion())
         );
         // Don't persist raw input/output text — we already have content
         // hashes on llm_call_logs and full content can be re-derived from
@@ -233,11 +251,78 @@ public class DashScopeLlmGateway implements LlmGateway {
         return sb.toString();
     }
 
+    private static String renderOptionalTemplate(String template, Map<String, Object> variables) {
+        if (template == null || template.isBlank()) {
+            return null;
+        }
+        return renderTemplate(template, variables);
+    }
+
+    private ResolvedModelParams resolveModelParams(String rawModelParams) {
+        JsonNode root = null;
+        if (rawModelParams != null && !rawModelParams.isBlank()) {
+            try {
+                root = objectMapper.readTree(rawModelParams);
+                if (!root.isObject()) {
+                    root = null;
+                }
+            } catch (Exception ex) {
+                throw new LlmProviderException(
+                    ErrorCode.LLM_SCHEMA_INVALID,
+                    "prompt model_params is not valid JSON: " + ex.getMessage(),
+                    ex
+                );
+            }
+        }
+        String model = textParam(root, "model");
+        return new ResolvedModelParams(
+            model == null || model.isBlank() ? defaultModel : model,
+            doubleParam(root, "temperature"),
+            doubleParam(root, "topP", "top_p"),
+            intParam(root, "maxTokens", "max_tokens")
+        );
+    }
+
+    private static String textParam(JsonNode root, String... names) {
+        JsonNode value = param(root, names);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        String text = value.asText();
+        return text == null || text.isBlank() ? null : text;
+    }
+
+    private static Double doubleParam(JsonNode root, String... names) {
+        JsonNode value = param(root, names);
+        return value == null || !value.isNumber() ? null : value.asDouble();
+    }
+
+    private static Integer intParam(JsonNode root, String... names) {
+        JsonNode value = param(root, names);
+        return value == null || !value.isNumber() ? null : value.asInt();
+    }
+
+    private static JsonNode param(JsonNode root, String... names) {
+        if (root == null) {
+            return null;
+        }
+        for (String name : names) {
+            JsonNode value = root.get(name);
+            if (value != null && !value.isNull()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     /** Placeholder names present in the template body but absent (or null) in
      * the caller-provided variables. Checked against the template, not the
      * rendered output, so substituted values containing literal braces can't
      * produce false positives. */
     static java.util.List<String> findUnresolvedVariables(String template, Map<String, Object> variables) {
+        if (template == null || template.isBlank()) {
+            return java.util.List.of();
+        }
         java.util.List<String> unresolved = new java.util.ArrayList<>();
         Matcher matcher = VARIABLE_PATTERN.matcher(template);
         while (matcher.find()) {
@@ -247,6 +332,22 @@ public class DashScopeLlmGateway implements LlmGateway {
             }
         }
         return unresolved;
+    }
+
+    private static void addUnique(List<String> target, List<String> values) {
+        for (String value : values) {
+            if (!target.contains(value)) {
+                target.add(value);
+            }
+        }
+    }
+
+    private static String inputForHash(List<OpenAiCompatibleChatClient.ChatMessage> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (var message : messages) {
+            sb.append(message.role()).append('\n').append(message.content()).append('\n');
+        }
+        return sb.toString();
     }
 
     static String sha256(String value) {
@@ -310,7 +411,8 @@ public class DashScopeLlmGateway implements LlmGateway {
         String inputHash,
         String outputHash,
         OpenAiCompatibleChatClient.ChatCompletion completion,
-        OffsetDateTime startedAt
+        OffsetDateTime startedAt,
+        String requestedModel
     ) {
         int latencyMs = (int) completion.latencyMs();
         int tokenTotal = completion.promptTokens() + completion.completionTokens();
@@ -323,7 +425,7 @@ public class DashScopeLlmGateway implements LlmGateway {
                 request.taskId(),
                 request.capability(),
                 PROVIDER,
-                defaultModel,
+                requestedModel,
                 completion.modelVersion(),
                 template.id(),
                 template.version(),
@@ -349,7 +451,8 @@ public class DashScopeLlmGateway implements LlmGateway {
         String inputHash,
         String errorCode,
         int latencyMs,
-        OffsetDateTime startedAt
+        OffsetDateTime startedAt,
+        String requestedModel
     ) {
         String id = "llmlog_" + UUID.randomUUID().toString().replace("-", "");
         try {
@@ -360,7 +463,7 @@ public class DashScopeLlmGateway implements LlmGateway {
                 request.taskId(),
                 request.capability(),
                 PROVIDER,
-                defaultModel,
+                requestedModel,
                 null,
                 template.id(),
                 template.version(),
@@ -377,5 +480,13 @@ public class DashScopeLlmGateway implements LlmGateway {
         } catch (RuntimeException ex) {
             log.warn("llm_call_log_persist_failed_on_error task={} reason={}", request.taskName(), ex.getMessage());
         }
+    }
+
+    private record ResolvedModelParams(
+        String model,
+        Double temperature,
+        Double topP,
+        Integer maxTokens
+    ) {
     }
 }

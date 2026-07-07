@@ -15,7 +15,7 @@ public record ChunkStrategy(
     String tokenizer
 ) {
     public static final ChunkStrategy DEFAULT_ZH = new ChunkStrategy(
-        "default-zh-v1", 512, 64, "chinese-char"
+        "default-zh-v2", 512, 64, "chinese-char"
     );
 
     public ChunkStrategy {

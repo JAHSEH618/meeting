@@ -406,6 +406,24 @@ class JdbcKnowledgeChunkRepositoryIT {
     }
 
     @Test
+    void searchByKeywordFallsBackToPhraseMatchForChinese() throws Exception {
+        setTenantContext();
+
+        repo.saveAll(List.of(
+            chunkWithContent("chunk_kw_zh_budget", "张三: 三季度预算需要下周确认。"),
+            chunkWithContent("chunk_kw_zh_other", "李四: 会议室需要重新预订。")
+        ));
+
+        var hits = repo.searchByKeyword(
+            TENANT, "三季度预算",
+            KnowledgeChunkRepository.RetrievalScope.EMPTY, 10
+        );
+
+        assertThat(hits).extracting(c -> c.chunkId())
+            .containsExactly("chunk_kw_zh_budget");
+    }
+
+    @Test
     void searchByKeywordReturnsEmptyForBlankQueryOrNoMatches() throws Exception {
         setTenantContext();
         repo.saveAll(List.of(chunkWithContent("chunk_kw_solo", "Pizza tastes good.")));

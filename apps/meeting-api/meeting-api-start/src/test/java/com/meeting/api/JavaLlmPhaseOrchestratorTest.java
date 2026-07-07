@@ -6,12 +6,14 @@ import com.meeting.api.app.extraction.ExtractionApplicationService;
 import com.meeting.api.app.minutes.MinutesApplicationService;
 import com.meeting.api.app.task.JavaLlmPhaseOrchestrator;
 import com.meeting.api.app.task.TaskStepProgressService;
+import com.meeting.api.client.common.ErrorCode;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.extraction.ExtractionSummary;
 import com.meeting.api.client.minutes.MinutesDTO;
+import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
@@ -80,6 +82,22 @@ class JavaLlmPhaseOrchestratorTest {
         assertThat(tasks.task.step(ProcessingStep.SUMMARY).status()).isEqualTo(StepStatus.FAILED);
         assertThat(tasks.task.step(ProcessingStep.EXTRACTION).status()).isEqualTo(StepStatus.FAILED);
         assertThat(extraction.calls).isZero();
+    }
+
+    @Test
+    void summaryLlmProviderFailureKeepsProviderErrorCodeOnTask() {
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository(workerDagDoneTask());
+        RecordingMinutesService minutes = new RecordingMinutesService();
+        RecordingExtractionService extraction = new RecordingExtractionService();
+        minutes.failure = new LlmProviderException(ErrorCode.LLM_OUTPUT_TRUNCATED, "truncated");
+        JavaLlmPhaseOrchestrator orchestrator = orchestrator(tasks, minutes, extraction);
+
+        assertThatThrownBy(() -> orchestrator.run("tenant_01", "task_01"))
+            .isInstanceOf(LlmProviderException.class);
+
+        assertThat(tasks.task.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(tasks.task.lastErrorCode()).isEqualTo("LLM_OUTPUT_TRUNCATED");
+        assertThat(tasks.task.step(ProcessingStep.SUMMARY).errorCode()).isEqualTo("LLM_OUTPUT_TRUNCATED");
     }
 
     @Test

@@ -92,6 +92,75 @@ class DashScopeLlmGatewayTest {
     }
 
     @Test
+    void sendsSystemPromptAndTemplateModelParamsToClient() {
+        InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
+        templates.put(
+            null,
+            "MINUTES_SUMMARY",
+            "User body {{transcript}}",
+            "{\"required\":[\"summary\",\"sections\"]}",
+            "ACTIVE",
+            "System says {{meetingTitle}}",
+            "{\"model\":\"qwen-max\",\"temperature\":0.1,\"topP\":0.7,\"maxTokens\":2048}"
+        );
+        CapturingClient client = new CapturingClient();
+        client.next = new OpenAiCompatibleChatClient.ChatCompletion(
+            "{\"summary\":\"ok\",\"sections\":[]}",
+            "qwen-max-2026",
+            1,
+            2,
+            3L,
+            Map.of(),
+            "stop"
+        );
+        DashScopeLlmGateway gateway = gateway(client, templates, new InMemoryCallLogRepo(), new InMemoryManifestRepo());
+
+        gateway.complete(new LlmGateway.LlmRequest(
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            "MINUTES_SUMMARY",
+            "MINUTES_SUMMARY",
+            Map.of("meetingTitle", "Roadmap", "transcript", "hello"),
+            null,
+            "trace_01"
+        ));
+
+        assertThat(client.lastRequest.model()).isEqualTo("qwen-max");
+        assertThat(client.lastRequest.temperature()).isEqualTo(0.1);
+        assertThat(client.lastRequest.topP()).isEqualTo(0.7);
+        assertThat(client.lastRequest.maxTokens()).isEqualTo(2048);
+        assertThat(client.lastRequest.messages()).extracting(OpenAiCompatibleChatClient.ChatMessage::role)
+            .containsExactly("system", "user");
+        assertThat(client.lastRequest.messages().get(0).content()).isEqualTo("System says Roadmap");
+        assertThat(client.lastRequest.messages().get(1).content()).isEqualTo("User body hello");
+    }
+
+    @Test
+    void completionFinishReasonLengthRaisesTruncatedErrorAndRecordsFailure() {
+        InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
+        templates.put(null, "MINUTES_SUMMARY", "render {{transcript}}", "{}", "ACTIVE");
+        InMemoryCallLogRepo logs = new InMemoryCallLogRepo();
+        CapturingClient client = new CapturingClient();
+        client.next = new OpenAiCompatibleChatClient.ChatCompletion(
+            "{\"partial\":",
+            "qwen-plus",
+            10,
+            4096,
+            99L,
+            Map.of(),
+            "length"
+        );
+        DashScopeLlmGateway gateway = gateway(client, templates, logs, new InMemoryManifestRepo());
+
+        assertThatThrownBy(() -> gateway.complete(request()))
+            .isInstanceOfSatisfying(LlmProviderException.class, ex ->
+                assertThat(ex.errorCode()).isEqualTo(ErrorCode.LLM_OUTPUT_TRUNCATED));
+        assertThat(logs.records).hasSize(1);
+        assertThat(logs.records.get(0).errorCode()).isEqualTo("LLM_OUTPUT_TRUNCATED");
+    }
+
+    @Test
     void manifestPersistFailureFailsTheLlmCall() {
         InMemoryTemplateRepo templates = new InMemoryTemplateRepo();
         templates.put(null, "MINUTES_SUMMARY", "render {{transcript}}", "{}", "ACTIVE");
@@ -213,6 +282,18 @@ class DashScopeLlmGatewayTest {
         private final java.util.Map<String, PromptTemplate> store = new java.util.HashMap<>();
 
         void put(String tenantId, String taskName, String body, String jsonSchema, String status) {
+            put(tenantId, taskName, body, jsonSchema, status, null, "{}");
+        }
+
+        void put(
+            String tenantId,
+            String taskName,
+            String body,
+            String jsonSchema,
+            String status,
+            String systemPrompt,
+            String modelParams
+        ) {
             String key = key(tenantId, taskName);
             store.put(key, new PromptTemplate(
                 "tpl_" + taskName + "_" + (tenantId == null ? "system" : tenantId),
@@ -221,7 +302,9 @@ class DashScopeLlmGatewayTest {
                 "1.0.0",
                 body,
                 jsonSchema,
-                status
+                status,
+                systemPrompt,
+                modelParams
             ));
         }
 

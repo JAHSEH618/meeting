@@ -16,7 +16,8 @@ public class JdbcPromptTemplateRepository implements PromptTemplateRepository {
     @Override
     public Optional<PromptTemplate> findActiveByTaskName(String tenantId, String taskName) {
         String sql = """
-            SELECT id, tenant_id, task_name, version, template_body, json_schema::text AS json_schema, status
+            SELECT id, tenant_id, task_name, version, template_body, json_schema::text AS json_schema,
+                   status, system_prompt, COALESCE(model_params, '{}'::jsonb)::text AS model_params
               FROM prompt_templates
              WHERE task_name = ?
                AND status = 'ACTIVE'
@@ -33,7 +34,9 @@ public class JdbcPromptTemplateRepository implements PromptTemplateRepository {
                 rs.getString("version"),
                 rs.getString("template_body"),
                 rs.getString("json_schema"),
-                rs.getString("status")
+                rs.getString("status"),
+                rs.getString("system_prompt"),
+                rs.getString("model_params")
             )) : Optional.<PromptTemplate>empty(),
             taskName,
             tenantId

@@ -66,6 +66,9 @@ public class HttpOpenAiCompatibleChatClient implements OpenAiCompatibleChatClien
         if (request.maxTokens() != null) {
             body.put("max_tokens", request.maxTokens());
         }
+        if (request.topP() != null) {
+            body.put("top_p", request.topP());
+        }
         if (request.responseFormatJsonSchema() != null && !request.responseFormatJsonSchema().isBlank()) {
             body.put("response_format", Map.of(
                 "type", "json_schema",
@@ -107,7 +110,7 @@ public class HttpOpenAiCompatibleChatClient implements OpenAiCompatibleChatClien
     }
 
     @SuppressWarnings("unchecked")
-    private static ChatCompletion parseResponse(Map<String, Object> response, long latencyMs) {
+    static ChatCompletion parseResponse(Map<String, Object> response, long latencyMs) {
         if (response == null) {
             throw new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID, "empty LLM response body");
         }
@@ -121,12 +124,19 @@ public class HttpOpenAiCompatibleChatClient implements OpenAiCompatibleChatClien
         if (message == null) {
             throw new LlmProviderException(ErrorCode.LLM_SCHEMA_INVALID, "LLM response missing message");
         }
+        String finishReason = asString(firstChoice.get("finish_reason"));
+        if ("length".equalsIgnoreCase(finishReason)) {
+            throw new LlmProviderException(
+                ErrorCode.LLM_OUTPUT_TRUNCATED,
+                "LLM output was truncated by the provider; increase max_tokens or reduce prompt input"
+            );
+        }
         String content = String.valueOf(message.getOrDefault("content", ""));
         Object usageRaw = response.get("usage");
         Map<String, Object> usage = usageRaw instanceof Map ? (Map<String, Object>) usageRaw : Map.of();
         int promptTokens = asInt(usage.get("prompt_tokens"));
         int completionTokens = asInt(usage.get("completion_tokens"));
-        return new ChatCompletion(content, modelVersion, promptTokens, completionTokens, latencyMs, response);
+        return new ChatCompletion(content, modelVersion, promptTokens, completionTokens, latencyMs, response, finishReason);
     }
 
     private static int asInt(Object value) {
@@ -134,5 +144,9 @@ public class HttpOpenAiCompatibleChatClient implements OpenAiCompatibleChatClien
             return n.intValue();
         }
         return 0;
+    }
+
+    private static String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 }

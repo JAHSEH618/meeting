@@ -16,7 +16,20 @@ public interface PromptTemplateRepository {
         String version,
         String templateBody,
         String jsonSchema,
-        String status
+        String status,
+        String systemPrompt,
+        String modelParams
     ) {
+        public PromptTemplate(
+            String id,
+            String tenantId,
+            String taskName,
+            String version,
+            String templateBody,
+            String jsonSchema,
+            String status
+        ) {
+            this(id, tenantId, taskName, version, templateBody, jsonSchema, status, null, "{}");
+        }
     }
 }

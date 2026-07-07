@@ -9,6 +9,7 @@ import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.StepStatus;
 import com.meeting.api.client.task.ProcessingTaskDTO;
+import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -136,6 +137,9 @@ public class JavaLlmPhaseOrchestrator {
     private static String errorCode(RuntimeException ex) {
         if (ex instanceof ApplicationException appEx) {
             return appEx.errorCode().name();
+        }
+        if (ex instanceof LlmProviderException llmEx) {
+            return llmEx.errorCode().name();
         }
         return "JAVA_LLM_PHASE_FAILED";
     }
