@@ -18,6 +18,7 @@ import com.meeting.api.domain.common.DomainEvent;
 import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
@@ -284,6 +285,113 @@ class ProcessingTaskCallbackApplicationServiceTest {
     }
 
     @Test
+    void failWithRetryableErrorRequeuesNewAttempt() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingRepublisher republisher = new CapturingRepublisher();
+        ProcessingTaskCallbackApplicationService service =
+            service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher(), republisher);
+
+        var dto = service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "transient gpu error", true),
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.QUEUED);
+        assertThat(dto.attemptNo()).isEqualTo(2);
+        assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.WORKER_DAG_RUNNING);
+        assertThat(republisher.calls).singleElement().satisfies(call -> {
+            assertThat(call.tenantId()).isEqualTo("tenant_01");
+            assertThat(call.taskId()).isEqualTo("task_01");
+            assertThat(call.newAttemptNo()).isEqualTo(2);
+        });
+    }
+
+    @Test
+    void failWithNonRetryableErrorFailsTerminallyEvenWithRepublisher() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingRepublisher republisher = new CapturingRepublisher();
+        ProcessingTaskCallbackApplicationService service =
+            service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher(), republisher);
+
+        var dto = service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "deterministic failure", false),
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        assertThat(republisher.calls).isEmpty();
+    }
+
+    @Test
+    void failWithRetryableErrorFailsTerminallyWhenBudgetExhausted() {
+        InMemoryTaskRepository tasks = runningTaskAtAttempt(ProcessingTask.MAX_ATTEMPTS);
+        CapturingRepublisher republisher = new CapturingRepublisher();
+        ProcessingTaskCallbackApplicationService service =
+            service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher(), republisher);
+
+        var dto = service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            ProcessingTask.MAX_ATTEMPTS,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "transient gpu error", true),
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        assertThat(dto.attemptNo()).isEqualTo(ProcessingTask.MAX_ATTEMPTS);
+        assertThat(republisher.calls).isEmpty();
+    }
+
+    @Test
+    void failWithRetryableErrorFallsBackToTerminalWhenRepublishFails() {
+        InMemoryTaskRepository tasks = runningTask();
+        CapturingRepublisher republisher = new CapturingRepublisher();
+        republisher.result = false;
+        ProcessingTaskCallbackApplicationService service =
+            service(tasks, new InMemoryCallbackEvents(), new CapturingPublisher(), republisher);
+
+        var dto = service.fail(new FailTaskCommand(
+            metadata("POST", "/internal/processing-tasks/task_01/fail", "{}"),
+            "tenant_01",
+            "meeting_01",
+            "task_01",
+            1,
+            ProcessingStep.ASR,
+            ErrorInfo.of(ErrorCode.ASR_RUNTIME_ERROR, "transient gpu error", true),
+            null,  // speakerEnrollmentId
+            null,  // artifactManifestId
+            NOW.plusMinutes(1)
+        ));
+
+        assertThat(dto.status()).isEqualTo(ProcessingTaskStatus.FAILED);
+        assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        assertThat(republisher.calls).hasSize(1);
+    }
+
+    @Test
     void failReplayWithSameBodyHashIsNoOp() {
         InMemoryTaskRepository tasks = runningTask();
         InMemoryCallbackEvents callbacks = new InMemoryCallbackEvents();
@@ -504,6 +612,52 @@ class ProcessingTaskCallbackApplicationServiceTest {
             enrollments,
             Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
         );
+    }
+
+    private static ProcessingTaskCallbackApplicationService service(
+        InMemoryTaskRepository tasks,
+        InMemoryCallbackEvents callbacks,
+        CapturingPublisher publisher,
+        OrphanedTaskRepublisher republisher
+    ) {
+        return new ProcessingTaskCallbackApplicationService(
+            tasks,
+            callbacks,
+            publisher,
+            TenantScopedTransaction.immediate(),
+            new CallbackSecurityVerifier(SECRET, 300L, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC), new InMemoryCallbackNonceRepository()),
+            new InMemoryTranscriptRepository(),
+            event -> {},
+            null,
+            republisher,
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
+            120L
+        );
+    }
+
+    private static final class CapturingRepublisher implements OrphanedTaskRepublisher {
+        record Call(String tenantId, String taskId, int newAttemptNo) {}
+
+        final List<Call> calls = new ArrayList<>();
+        boolean result = true;
+
+        @Override
+        public boolean republish(String tenantId, String taskId, int newAttemptNo) {
+            calls.add(new Call(tenantId, taskId, newAttemptNo));
+            return result;
+        }
+    }
+
+    /** A RUNNING task whose attempt counter has already been bumped to {@code attemptNo}. */
+    private static InMemoryTaskRepository runningTaskAtAttempt(int attemptNo) {
+        InMemoryTaskRepository tasks = runningTask();
+        ProcessingTask task = tasks.task;
+        for (int attempt = 1; attempt < attemptNo; attempt++) {
+            task.markOrphanedForRetryableFailure(NOW);
+            task.requeueOrphaned(NOW);
+            task.claimLease("worker_01", "worker_01:task_01:1", NOW.plusMinutes(5), NOW);
+        }
+        return tasks;
     }
 
     private static InMemoryTaskRepository runningTask() {
