@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { createPerson, searchPersons } from "@/shared/api/endpoints";
-import { ApiError } from "@/shared/api/client";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { VirtualList } from "@/shared/list/VirtualList";
 import type { PersonDTO } from "@/shared/api/types";
+import { formatError } from "@/shared/utils/format-error";
 
 const VIRTUAL_LIST_THRESHOLD = 50;
 const PERSON_ROW_HEIGHT = 72;
@@ -163,9 +163,3 @@ function mergePeople(primary: PersonDTO[], secondary: PersonDTO[]): PersonDTO[] 
   return merged;
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof ApiError) {
-    return `${error.error.code}: ${error.error.message}`;
-  }
-  return error instanceof Error ? error.message : String(error);
-}
