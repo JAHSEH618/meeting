@@ -125,7 +125,7 @@ export function MeetingDetailPage() {
     [steps],
   );
 
-  const seedSteps = (incoming?: ProcessingTaskStepDTO[]) => {
+  const seedSteps = (incoming?: ProcessingTaskStepDTO[] | null) => {
     if (!incoming?.length) return;
     setSteps((current) => ({ ...current, ...Object.fromEntries(incoming.map((step) => [step.stepName, normalizeStep(step)])) }));
   };

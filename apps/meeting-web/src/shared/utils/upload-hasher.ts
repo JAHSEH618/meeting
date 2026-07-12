@@ -9,7 +9,7 @@
 // work in a Web Worker when available (falling back inline for jsdom /
 // older environments) with byte-level progress for a real progress bar.
 
-import { Sha256, toHex } from "./sha256-stream";
+import { readBlobAsUint8Array, Sha256, toHex } from "./sha256-stream";
 
 export interface UploadHashPart {
   partNumber: number;
@@ -49,7 +49,7 @@ export async function hashFileForUploadInline(
     const partHasher = new Sha256();
     for (let offset = start; offset < end; offset += readChunkBytes) {
       const chunkEnd = Math.min(end, offset + readChunkBytes);
-      const bytes = new Uint8Array(await file.slice(offset, chunkEnd).arrayBuffer());
+      const bytes = await readBlobAsUint8Array(file.slice(offset, chunkEnd));
       partHasher.update(bytes);
       fileHasher.update(bytes);
       bytesHashed += bytes.length;
