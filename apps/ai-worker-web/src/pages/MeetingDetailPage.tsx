@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { subscribeEventStream } from "@/shared/api/client";
 import {
-  confirmSpeaker,
   createExport,
-  getMeetingAggregate,
   pollExport,
   processingTaskEventsUrl,
-  rejectSpeaker,
   searchPersons,
-  updateMeeting,
 } from "@/shared/api/endpoints";
+import {
+  TERMINAL_TASK_STATUSES,
+  meetingAggregateKey,
+  useConfirmSpeaker,
+  useMeetingAggregateQuery,
+  useRejectSpeaker,
+  useUpdateMeetingParticipants,
+} from "@/features/meetings/queries";
 import type {
   ExportJobDTO,
-  MeetingAggregateDTO,
   MeetingParticipantDTO,
   MeetingSpeakerDTO,
   PersonDTO,
@@ -39,10 +43,11 @@ const STEPS = [
   "EXTRACTION",
 ] as const;
 
-const TERMINAL_STATUSES: ProcessingTaskStatus[] = ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"];
 // Upper bound on how long the export button waits before handing off to
 // a background-completion hint (renders can legitimately take minutes).
 const EXPORT_WAIT_MS = 5 * 60 * 1000;
+// Fallback poll cadence while the SSE stream is down and the task is live.
+const FALLBACK_POLL_MS = 5000;
 const DEFAULT_PARTICIPANT_ROLE = "PARTICIPANT";
 
 // Aggregate sub-resources the BFF may report as failed-upstream.
@@ -54,8 +59,10 @@ const DEGRADED_LABELS: Record<string, string> = {
 
 export function MeetingDetailPage() {
   const { meetingId = "" } = useParams<{ meetingId: string }>();
-  const [aggregate, setAggregate] = useState<MeetingAggregateDTO | null>(null);
+  const queryClient = useQueryClient();
   const [steps, setSteps] = useState<Record<string, ProcessingTaskStepDTO>>({});
+  // SSE exhausted its retries — degrade to polling until the task ends.
+  const [sseDown, setSseDown] = useState(false);
   const [exportJob, setExportJob] = useState<ExportJobDTO | null>(null);
   const [busyExport, setBusyExport] = useState(false);
   const exportAbortRef = useRef<AbortController | null>(null);
@@ -64,75 +71,50 @@ export function MeetingDetailPage() {
   const [rejectingSpeaker, setRejectingSpeaker] = useState<string | null>(null);
   const [addingParticipant, setAddingParticipant] = useState<string | null>(null);
   const [rejectError, setRejectError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const aggregateQuery = useMeetingAggregateQuery(meetingId, {
+    fallbackPollMs: sseDown ? FALLBACK_POLL_MS : false,
+  });
+  const aggregate = aggregateQuery.data ?? null;
+  const confirmSpeakerMutation = useConfirmSpeaker(meetingId);
+  const rejectSpeakerMutation = useRejectSpeaker(meetingId);
+  const updateParticipantsMutation = useUpdateMeetingParticipants(meetingId);
 
   const task = aggregate?.latestTask ?? null;
   const meeting = aggregate?.meeting ?? null;
   const participants = meeting?.participants ?? [];
-  const isTerminal = task ? TERMINAL_STATUSES.includes(task.status) : false;
+  const isTerminal = task ? TERMINAL_TASK_STATUSES.includes(task.status) : false;
   const terminalContentVisible = isTerminal || !!aggregate?.minutes || !!aggregate?.speakers?.speakers.length;
   const personFetcher = useCallback((q: string, signal: AbortSignal) => searchPersons(q, { signal }), []);
   const personSearch = useDebouncedSearch<PersonDTO>(personFetcher);
   const personResults = personSearch.results ?? [];
+  const error = actionError ?? (aggregateQuery.error ? formatError(aggregateQuery.error) : null);
 
-  useEffect(() => {
-    if (!meetingId) return;
-    let cancelled = false;
-    let eventStream: EventStreamSubscription | null = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-    const load = async () => {
-      try {
-        const data = await getMeetingAggregate(meetingId);
-        if (cancelled) return;
-        setAggregate(data);
-        seedSteps(data.latestTask?.steps);
-        const latest = data.latestTask;
-        if (latest && TERMINAL_STATUSES.includes(latest.status)) {
-          // Pipeline finished — nothing changes on its own anymore. Stop the
-          // fallback poll (it used to run every 5s forever, fanning out to
-          // several upstream Java calls per tick) and the event stream.
-          eventStream?.close();
-          eventStream = null;
-          if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-          }
-          return;
-        }
-        if (latest?.taskId && !eventStream) {
-          eventStream = openTaskEvents(latest.taskId, () => {
-            if (!pollTimer) {
-              pollTimer = setInterval(() => void load(), 5000);
-            }
-          });
-        }
-      } catch (e) {
-        if (!cancelled) setError(formatError(e));
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-      eventStream?.close();
-      if (pollTimer) clearInterval(pollTimer);
-    };
-  }, [meetingId]);
-
-  const sortedSteps = useMemo(
-    () => STEPS.map((stepName) => steps[stepName] ?? { stepName, status: "PENDING", progress: 0 }),
-    [steps],
-  );
-
-  const seedSteps = (incoming?: ProcessingTaskStepDTO[] | null) => {
+  const seedSteps = useCallback((incoming?: ProcessingTaskStepDTO[] | null) => {
     if (!incoming?.length) return;
     setSteps((current) => ({ ...current, ...Object.fromEntries(incoming.map((step) => [step.stepName, normalizeStep(step)])) }));
-  };
+  }, []);
 
-  const openTaskEvents = (taskId: string, onFallback: () => void) => {
-    const handleEvent = (payload: TaskEventDTO) => {
-      try {
+  // Steps arriving with the aggregate (initial load, refetches) merge into
+  // the same local map the SSE events feed, so neither source regresses
+  // progress the other already reported.
+  const latestTaskSteps = aggregate?.latestTask?.steps;
+  useEffect(() => {
+    seedSteps(latestTaskSteps);
+  }, [latestTaskSteps, seedSteps]);
+
+  // Live updates: subscribe to the task's SSE stream while it can still
+  // change. Terminal pipeline → no stream and no poll (the governance fix:
+  // this page used to poll every 5s forever, fanning out to several
+  // upstream Java calls per tick). If the stream gives up (onFallback),
+  // sseDown flips the aggregate query's fallback poll on until terminal.
+  const taskId = task?.taskId ?? null;
+  useEffect(() => {
+    if (!meetingId || !taskId || isTerminal) return;
+    setSseDown(false); // fresh task attempt → give SSE a fresh chance
+    const stream = subscribeEventStream<TaskEventDTO>(processingTaskEventsUrl(taskId), {
+      onEvent: (payload) => {
         if (payload.steps?.length) {
           seedSteps(payload.steps);
         } else if (payload.stepName) {
@@ -144,31 +126,26 @@ export function MeetingDetailPage() {
             errorCode: payload.errorCode,
           }]);
         }
-        if (payload.status && TERMINAL_STATUSES.includes(payload.status as ProcessingTaskStatus)) {
-          void refreshAggregate();
+        if (payload.status && TERMINAL_TASK_STATUSES.includes(payload.status as ProcessingTaskStatus)) {
+          void queryClient.invalidateQueries({ queryKey: meetingAggregateKey(meetingId) });
         }
-      } catch (e) {
-        setError(formatError(e));
-      }
-    };
-
-    return subscribeEventStream<TaskEventDTO>(processingTaskEventsUrl(taskId), {
-      onEvent: handleEvent,
-      onFallback,
+      },
+      onFallback: () => setSseDown(true),
     });
-  };
+    return () => stream.close();
+  }, [meetingId, taskId, isTerminal, seedSteps, queryClient]);
 
-  const refreshAggregate = async () => {
-    if (!meetingId) return;
-    const data = await getMeetingAggregate(meetingId);
-    setAggregate(data);
-    seedSteps(data.latestTask?.steps);
-  };
+  const sortedSteps = useMemo(
+    () => STEPS.map((stepName) => steps[stepName] ?? { stepName, status: "PENDING", progress: 0 }),
+    [steps],
+  );
 
+  // Deliberately imperative (not a useQuery): a one-shot bounded wait with
+  // operator-visible cancel, not cacheable server state.
   const handleExport = async () => {
     if (!meetingId) return;
     setBusyExport(true);
-    setError(null);
+    setActionError(null);
     const controller = new AbortController();
     exportAbortRef.current = controller;
     try {
@@ -195,10 +172,10 @@ export function MeetingDetailPage() {
         });
       }
       if (!controller.signal.aborted) {
-        setError("导出仍在后台进行，稍后可刷新页面查看下载链接");
+        setActionError("导出仍在后台进行，稍后可刷新页面查看下载链接");
       }
     } catch (e) {
-      setError(formatError(e));
+      setActionError(formatError(e));
     } finally {
       exportAbortRef.current = null;
       setBusyExport(false);
@@ -214,16 +191,18 @@ export function MeetingDetailPage() {
     const label = getSpeakerLabel(speaker);
     const key = `${label}:${candidate.personId}`;
     setConfirmingSpeaker(key);
-    setError(null);
+    setActionError(null);
     try {
-      await confirmSpeaker(meetingId, label, {
-        personId: candidate.personId,
-        speakerProfileId: candidate.speakerProfileId,
-        expectedTranscriptVersion: meeting.transcriptVersion,
+      await confirmSpeakerMutation.mutateAsync({
+        speakerLabel: label,
+        body: {
+          personId: candidate.personId,
+          speakerProfileId: candidate.speakerProfileId,
+          expectedTranscriptVersion: meeting.transcriptVersion,
+        },
       });
-      await refreshAggregate();
     } catch (e) {
-      setError(formatError(e));
+      setActionError(formatError(e));
     } finally {
       setConfirmingSpeaker(null);
     }
@@ -237,16 +216,15 @@ export function MeetingDetailPage() {
       { personId: person.personId, displayName: person.displayName, role: DEFAULT_PARTICIPANT_ROLE },
     ];
     setAddingParticipant(person.personId);
-    setError(null);
+    setActionError(null);
     try {
-      await updateMeeting(meetingId, {
+      await updateParticipantsMutation.mutateAsync({
         participants: nextParticipants,
         expectedVersion: meeting.transcriptVersion,
       });
       personSearch.reset();
-      await refreshAggregate();
     } catch (e) {
-      setError(formatError(e));
+      setActionError(formatError(e));
     } finally {
       setAddingParticipant(null);
     }
@@ -257,11 +235,10 @@ export function MeetingDetailPage() {
     const label = getSpeakerLabel(pendingRejectSpeaker);
     setRejectingSpeaker(label);
     setRejectError(null);
-    setError(null);
+    setActionError(null);
     try {
-      await rejectSpeaker(meetingId, label);
+      await rejectSpeakerMutation.mutateAsync(label);
       setPendingRejectSpeaker(null);
-      await refreshAggregate();
     } catch (e) {
       setRejectError(formatError(e));
     } finally {
@@ -294,7 +271,7 @@ export function MeetingDetailPage() {
             {aggregate.degraded.map((name) => DEGRADED_LABELS[name] ?? name).join("、")}
             暂时不可用（上游服务异常，并非“暂无数据”）。
           </span>
-          <button className="button" type="button" onClick={() => void refreshAggregate()}>重试</button>
+          <button className="button" type="button" onClick={() => void aggregateQuery.refetch()}>重试</button>
         </div>
       ) : null}
 

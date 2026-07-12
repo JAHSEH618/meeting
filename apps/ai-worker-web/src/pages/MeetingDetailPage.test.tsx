@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -129,7 +130,7 @@ describe("MeetingDetailPage", () => {
     renderPage();
 
     const participants = await screen.findByRole("region", { name: "参会人" });
-    expect(within(participants).getByText("李四")).toBeInTheDocument();
+    expect(await within(participants).findByText("李四")).toBeInTheDocument();
 
     fireEvent.change(within(participants).getByLabelText("搜索人员"), { target: { value: "王" } });
     const addWang = await within(participants).findByRole("button", { name: "添加 王五" });
@@ -294,10 +295,15 @@ describe("MeetingDetailPage", () => {
 });
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   render(
-    <MemoryRouter initialEntries={["/meetings/m1"]}>
-      <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/meetings/m1"]}>
+        <Routes><Route path="/meetings/:meetingId" element={<MeetingDetailPage />} /></Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

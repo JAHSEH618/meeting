@@ -1,12 +1,12 @@
 import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { searchPersons } from "@/shared/api/endpoints";
 import {
-  commitEnrollment,
-  createEnrollmentSession,
-  previewEnrollment,
-  searchPersons,
-  uploadEnrollmentAudio,
-} from "@/shared/api/endpoints";
+  useCommitEnrollment,
+  useCreateEnrollmentSession,
+  usePreviewEnrollment,
+  useUploadEnrollmentAudio,
+} from "@/features/meetings/queries";
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
@@ -27,8 +27,13 @@ export function EnrollmentPage() {
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [personModalOpen, setPersonModalOpen] = useState(false);
+
+  const createSession = useCreateEnrollmentSession();
+  const uploadAudio = useUploadEnrollmentAudio();
+  const preview = usePreviewEnrollment();
+  const commit = useCommitEnrollment();
+  const busy = createSession.isPending || uploadAudio.isPending || preview.isPending || commit.isPending;
 
   const searchPersonsFetcher = useCallback(
     (q: string, signal: AbortSignal) => searchPersons(q, { signal }),
@@ -38,44 +43,32 @@ export function EnrollmentPage() {
   const persons = personSearch.results ?? [];
 
   const handleStart = async () => {
-    setBusy(true);
     setError(null);
     try {
-      const s = await createEnrollmentSession(personId);
-      setSession(s);
+      setSession(await createSession.mutateAsync(personId));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleUploadAndPreview = async () => {
     if (!session || !file || session.state === "COMMITTED") return;
-    setBusy(true);
     setError(null);
     try {
-      await uploadEnrollmentAudio(session.sessionId, file);
-      const previewed = await previewEnrollment(session.sessionId);
-      setSession(previewed);
+      await uploadAudio.mutateAsync({ sessionId: session.sessionId, file });
+      setSession(await preview.mutateAsync(session.sessionId));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleCommit = async () => {
     if (!session) return;
-    setBusy(true);
     setError(null);
     try {
-      const committed = await commitEnrollment(session.sessionId, personId);
-      setSession(committed);
+      setSession(await commit.mutateAsync({ sessionId: session.sessionId, personId }));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
