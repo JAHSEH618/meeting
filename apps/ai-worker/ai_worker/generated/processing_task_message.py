@@ -57,6 +57,10 @@ class ChannelMap(BaseModel):
     channels: Optional[List[Channel]] = None
 
 
+class ParticipantDisplayName(BaseModel):
+    __root__: constr(min_length=1)
+
+
 class ExportFormat(Enum):
     MARKDOWN = 'MARKDOWN'
     DOCX = 'DOCX'
@@ -74,10 +78,6 @@ class Options(BaseModel):
     enableRagIndexing: Optional[bool] = True
     enableAlignment: Optional[bool] = False
     exportFormat: Optional[ExportFormat] = None
-
-
-class ParticipantDisplayName(BaseModel):
-    __root__: constr(min_length=1)
 
 
 class GlossaryTerm(BaseModel):

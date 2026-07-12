@@ -39,8 +39,12 @@ describe("TaskProgressPage", () => {
 
     expect(container.querySelector(".page--workbench")).toBeInTheDocument();
     expect(container.querySelector(".page-hero--workbench")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("音频处理")).toBeInTheDocument());
-    expect(screen.getByText("语音识别")).toBeInTheDocument();
+    // Wait on the data-driven step row, not the static PhaseStrip label —
+    // "音频处理" renders before the task snapshot arrives, so anchoring the
+    // waitFor there raced the REST fetch.
+    await waitFor(() => expect(screen.getByText("语音识别")).toBeInTheDocument());
+    // Phase label appears in both the stat card and the PhaseStrip.
+    expect(screen.getAllByText("音频处理").length).toBeGreaterThan(0);
     expect(screen.getAllByText("处理中").length).toBeGreaterThan(0);
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
@@ -64,12 +68,14 @@ describe("TaskProgressPage", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("轮询")).toBeInTheDocument(), { timeout: 4000 });
+    // SSE now backs off (~1-4.5s jittered) before declaring fallback, so
+    // give the POLLING pill a comfortable window.
+    await waitFor(() => expect(screen.getByText("轮询")).toBeInTheDocument(), { timeout: 10000 });
     await waitFor(() => expect(screen.getAllByText("已完成").length).toBeGreaterThan(0), { timeout: 6000 });
     await waitFor(() => expect(screen.getByText("已结束")).toBeInTheDocument());
 
     const callsAtTerminal = callCount;
     await new Promise((resolve) => setTimeout(resolve, 3500));
     expect(callCount).toBe(callsAtTerminal);
-  }, 15000);
+  }, 25000);
 });

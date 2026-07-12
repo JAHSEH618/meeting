@@ -133,6 +133,8 @@ const INVALIDATION_MATRIX: Record<
 export function invalidateAfter(
   event: InvalidationEvent,
   queryClient: QueryClient,
+  // Reserved for callers that need to thread extra scope in later.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _context?: InvalidationContext,
 ): void {
   const handler = INVALIDATION_MATRIX[event.type];
