@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/shared/auth/useAuth";
 import { SkipLink } from "@/shared/components/SkipLink";
+import { ThemeToggle } from "@/shared/theme/ThemeToggle";
 import { EnrollmentPage } from "@/pages/EnrollmentPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MeetingsPage } from "@/pages/MeetingsPage";
@@ -41,7 +42,10 @@ export default function App() {
           <NavLink to="/enrollment" className={({ isActive }) => (isActive ? "active" : "")}>声纹录入</NavLink>
           <NavLink to="/speaker-profiles" className={({ isActive }) => (isActive ? "active" : "")}>声纹档案</NavLink>
         </nav>
-        <span className="layout__status">{token ? "已登录" : "未登录"}</span>
+        <div className="layout__header-actions">
+          <ThemeToggle />
+          <span className="layout__status">{token ? "已登录" : "未登录"}</span>
+        </div>
       </header>
       <main id="main-content" className="layout__main">
         <Suspense fallback={<div aria-busy="true" role="status">加载中…</div>}>
