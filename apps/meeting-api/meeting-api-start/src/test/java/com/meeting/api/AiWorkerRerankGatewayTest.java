@@ -6,11 +6,14 @@ import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.domain.rag.AiWorkerContractException;
 import com.meeting.api.domain.rag.AiWorkerUnavailableException;
 import com.meeting.api.domain.rag.RerankGateway;
+import com.meeting.api.infrastructure.gateway.aiworker.AiWorkerCircuitBreaker;
 import com.meeting.api.infrastructure.gateway.aiworker.AiWorkerInternalClient;
 import com.meeting.api.infrastructure.gateway.aiworker.AiWorkerInternalProperties;
 import com.meeting.api.infrastructure.gateway.aiworker.AiWorkerRerankGateway;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,7 +23,7 @@ class AiWorkerRerankGatewayTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AiWorkerInternalProperties PROPS = new AiWorkerInternalProperties(
-        "http://test-ai-worker", "test-hmac", 3000, 3000, 5000, 2000, 1000
+        "http://test-ai-worker", "test-hmac", 3000, 3000, 5000, 2000, 1000, null, null
     );
 
     @Test
@@ -137,6 +140,77 @@ class AiWorkerRerankGatewayTest {
             .isEqualTo(1.0);
     }
 
+    @Test
+    void breakerShortCircuitsAfterConsecutiveFailuresWithoutCallingClient() {
+        CountingFailingClient failing = new CountingFailingClient();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        AtomicLong nanos = new AtomicLong(0);
+        AiWorkerRerankGateway gateway = new AiWorkerRerankGateway(
+            failing, PROPS, MAPPER, new MeetingApiMetrics(registry),
+            new AiWorkerCircuitBreaker(2, Duration.ofSeconds(30), nanos::get)
+        );
+
+        for (int i = 0; i < 2; i++) {
+            assertThatThrownBy(() -> gateway.rerank(req()))
+                .isInstanceOf(AiWorkerUnavailableException.class);
+        }
+        assertThat(failing.calls).isEqualTo(2);
+
+        // Circuit is open: no client call, distinct error code + metric.
+        assertThatThrownBy(() -> gateway.rerank(req()))
+            .isInstanceOf(AiWorkerUnavailableException.class)
+            .hasMessageContaining("circuit");
+        assertThat(failing.calls).isEqualTo(2);
+        assertThat(registry.counter("meeting.api.aiworker.calls", "operation", "rerank", "outcome", "circuit_open").count())
+            .isEqualTo(1.0);
+    }
+
+    @Test
+    void breakerAllowsProbeAfterCooldownAndClosesOnSuccess() {
+        var data = MAPPER.createObjectNode();
+        data.put("modelVersion", "v");
+        data.putArray("items").addObject().put("chunkId", "c1").put("rank", 1).put("rerankScore", 0.9);
+
+        AtomicLong nanos = new AtomicLong(0);
+        FlakyClient client = new FlakyClient(data, 2);
+        AiWorkerRerankGateway gateway = new AiWorkerRerankGateway(
+            client, PROPS, MAPPER, new MeetingApiMetrics(new SimpleMeterRegistry()),
+            new AiWorkerCircuitBreaker(2, Duration.ofSeconds(30), nanos::get)
+        );
+
+        assertThatThrownBy(() -> gateway.rerank(req())).isInstanceOf(AiWorkerUnavailableException.class);
+        assertThatThrownBy(() -> gateway.rerank(req())).isInstanceOf(AiWorkerUnavailableException.class);
+        assertThatThrownBy(() -> gateway.rerank(req())).isInstanceOf(AiWorkerUnavailableException.class);
+        assertThat(client.calls).isEqualTo(2);
+
+        // Cooldown elapses → single probe goes through and succeeds → closed.
+        nanos.addAndGet(Duration.ofSeconds(30).toNanos());
+        assertThat(gateway.rerank(req()).items()).hasSize(1);
+        assertThat(gateway.rerank(req()).items()).hasSize(1);
+        assertThat(client.calls).isEqualTo(4);
+    }
+
+    @Test
+    void contractErrorDoesNotTripTheBreaker() {
+        var badData = MAPPER.createObjectNode();
+        badData.put("modelVersion", "v");
+        // Missing items → contract error on every call.
+        CapturingClient client = new CapturingClient(badData);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        AtomicLong nanos = new AtomicLong(0);
+        AiWorkerRerankGateway gateway = new AiWorkerRerankGateway(
+            client, PROPS, MAPPER, new MeetingApiMetrics(registry),
+            new AiWorkerCircuitBreaker(2, Duration.ofSeconds(30), nanos::get)
+        );
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> gateway.rerank(req()))
+                .isInstanceOf(AiWorkerContractException.class);
+        }
+        assertThat(registry.counter("meeting.api.aiworker.calls", "operation", "rerank", "outcome", "circuit_open").count())
+            .isEqualTo(0.0);
+    }
+
     private static RerankGateway.RerankRequest req() {
         return new RerankGateway.RerankRequest(
             "tenant_01",
@@ -147,6 +221,37 @@ class AiWorkerRerankGatewayTest {
             "req_x",
             "trace_x"
         );
+    }
+
+    static class CountingFailingClient implements AiWorkerInternalClient {
+        int calls;
+
+        @Override
+        public JsonNode call(String method, String path, JsonNode body, String tenantId, String requestId, String traceId, int timeoutMs) {
+            calls++;
+            throw new AiWorkerUnavailableException("RERANK_UNAVAILABLE", "model down");
+        }
+    }
+
+    /** Fails the first {@code failuresBeforeSuccess} calls, then succeeds. */
+    static class FlakyClient implements AiWorkerInternalClient {
+        int calls;
+        private final JsonNode response;
+        private final int failuresBeforeSuccess;
+
+        FlakyClient(JsonNode response, int failuresBeforeSuccess) {
+            this.response = response;
+            this.failuresBeforeSuccess = failuresBeforeSuccess;
+        }
+
+        @Override
+        public JsonNode call(String method, String path, JsonNode body, String tenantId, String requestId, String traceId, int timeoutMs) {
+            calls++;
+            if (calls <= failuresBeforeSuccess) {
+                throw new AiWorkerUnavailableException("RERANK_UNAVAILABLE", "model down");
+            }
+            return response;
+        }
     }
 
     static class CapturingClient implements AiWorkerInternalClient {

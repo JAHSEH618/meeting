@@ -210,7 +210,7 @@ class HttpAiWorkerInternalClientTest {
 
     private HttpAiWorkerInternalClient newClient() {
         AiWorkerInternalProperties props = new AiWorkerInternalProperties(
-            "http://127.0.0.1:" + port, HMAC_SECRET, 3000, 3000, 5000, 2000, 1000
+            "http://127.0.0.1:" + port, HMAC_SECRET, 3000, 3000, 5000, 2000, 1000, null, null
         );
         HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofMillis(props.connectTimeoutMs()))

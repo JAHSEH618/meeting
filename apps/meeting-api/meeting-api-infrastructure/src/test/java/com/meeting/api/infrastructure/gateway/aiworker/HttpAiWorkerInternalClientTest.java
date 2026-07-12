@@ -72,7 +72,9 @@ class HttpAiWorkerInternalClientTest {
             3000,
             5000,
             2000,
-            1000
+            1000,
+            null,
+            null
         );
         HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofMillis(props.connectTimeoutMs()))

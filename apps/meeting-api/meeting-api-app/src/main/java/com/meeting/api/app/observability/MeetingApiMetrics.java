@@ -107,7 +107,8 @@ public class MeetingApiMetrics {
      * Counts ai-worker internal API call outcomes. {@code operation} is the
      * endpoint family ({@code embed}, {@code rerank}, {@code models},
      * {@code warmup}); {@code outcome} is one of {@code called},
-     * {@code success}, {@code unavailable}, {@code contract_error}.
+     * {@code success}, {@code unavailable}, {@code contract_error},
+     * {@code circuit_open}.
      */
     public Counter aiWorkerCallCounter(String operation, String outcome) {
         return Counter.builder(AI_WORKER_CALLS)

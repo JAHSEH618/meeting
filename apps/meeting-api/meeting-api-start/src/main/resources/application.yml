@@ -77,6 +77,12 @@ meeting:
       warmup-timeout-ms: 5000
       models-timeout-ms: 2000
       connect-timeout-ms: 1000
+      # Circuit breaker on the rerank call: after N consecutive
+      # unavailable/timeout outcomes, short-circuit to the RRF fallback for
+      # open-ms instead of paying the rerank timeout on every RAG query.
+      # threshold 0 disables the breaker.
+      rerank-breaker-failure-threshold: 5
+      rerank-breaker-open-ms: 30000
   storage:
     type: ${STORAGE_TYPE:oss}
     # Logical bucket names — shared by every backend. Override per env
