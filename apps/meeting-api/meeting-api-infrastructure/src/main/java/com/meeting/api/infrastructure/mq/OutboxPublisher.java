@@ -98,6 +98,7 @@ public class OutboxPublisher {
                 outboxEventStore.markUnroutable(record.id(),
                     "unknown event type: " + eventType);
                 metrics.outboxFailedCounter(eventType, "OUTBOX_UNROUTABLE_EVENT_TYPE").increment();
+                metrics.outboxDlqCounter(eventType).increment();
                 continue;
             }
             try {
@@ -126,15 +127,35 @@ public class OutboxPublisher {
                     "outbox_schema_violation event={} type={} reason={}",
                     record.id(), eventType, ex.getMessage()
                 );
-                outboxEventStore.markFailed(record.id(), "OUTBOX_PUBLISH_FAILED",
+                boolean dlq = outboxEventStore.markFailed(record.id(), "OUTBOX_PUBLISH_FAILED",
                     "schema violation: " + ex.getMessage(), maxRetries);
                 metrics.outboxFailedCounter(eventType, "OUTBOX_PUBLISH_FAILED").increment();
+                reportIfDlq(dlq, record, ex.getMessage());
             } catch (Exception ex) {
-                outboxEventStore.markFailed(record.id(), "OUTBOX_PUBLISH_FAILED", ex.getMessage(), maxRetries);
+                boolean dlq = outboxEventStore.markFailed(
+                    record.id(), "OUTBOX_PUBLISH_FAILED", ex.getMessage(), maxRetries);
                 metrics.outboxFailedCounter(eventType, "OUTBOX_PUBLISH_FAILED").increment();
+                reportIfDlq(dlq, record, ex.getMessage());
             }
         }
         return published;
+    }
+
+    /**
+     * A DLQ transition is terminal — the relay will never retry this event
+     * again, so the task/export it carries is stuck until someone acts.
+     * Log at ERROR (the per-retry failures above only warn) and tick the
+     * dedicated {@code meeting.api.outbox.dlq} counter that ops alert on.
+     */
+    private void reportIfDlq(boolean dlq, OutboxEventRecord record, String reason) {
+        if (!dlq) {
+            return;
+        }
+        log.error(
+            "outbox_event_dlq event={} type={} aggregate={}/{} — retry budget exhausted, manual intervention required; last error: {}",
+            record.id(), record.eventType(), record.aggregateType(), record.aggregateId(), reason
+        );
+        metrics.outboxDlqCounter(record.eventType()).increment();
     }
 
     /**

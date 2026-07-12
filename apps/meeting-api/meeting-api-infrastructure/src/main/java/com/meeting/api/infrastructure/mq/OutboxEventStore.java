@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Repository
 public class OutboxEventStore {
@@ -25,6 +26,17 @@ public class OutboxEventStore {
     }
 
     public OutboxEventRecord append(DomainEvent event) {
+        // The whole point of the outbox is that the event row commits (or
+        // rolls back) atomically with the business write. An append outside
+        // a transaction silently loses that guarantee — fail loudly instead.
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                "outbox append for " + event.eventType()
+                    + " outside an active transaction — the outbox row must commit"
+                    + " atomically with the business write (wrap the caller in"
+                    + " TenantScopedTransaction)"
+            );
+        }
         long sequenceNo = nextSequenceNo(event.tenantId(), event.aggregateType(), event.aggregateId());
         String id = event.eventId() == null || event.eventId().isBlank()
             ? "evt_" + UUID.randomUUID().toString().replace("-", "")
@@ -117,8 +129,15 @@ public class OutboxEventStore {
         );
     }
 
-    public void markFailed(String id, String errorCode, String errorMessage, int maxRetries) {
-        jdbcTemplate.update(
+    /**
+     * Record a publish failure: bump {@code retry_count} and either keep the
+     * row {@code PENDING} for the next poll or flip it to terminal {@code DLQ}
+     * once the retry budget is exhausted.
+     *
+     * @return {@code true} if this failure moved the event to {@code DLQ}
+     */
+    public boolean markFailed(String id, String errorCode, String errorMessage, int maxRetries) {
+        String status = jdbcTemplate.query(
             """
             UPDATE domain_events_outbox
                SET retry_count = retry_count + 1,
@@ -126,12 +145,15 @@ public class OutboxEventStore {
                    last_error_message = ?,
                    status = CASE WHEN retry_count + 1 >= ? THEN 'DLQ' ELSE 'PENDING' END
              WHERE id = ?
+             RETURNING status
             """,
+            rs -> rs.next() ? rs.getString(1) : null,
             errorCode,
             errorMessage,
             maxRetries,
             id
         );
+        return "DLQ".equals(status);
     }
 
     /**
