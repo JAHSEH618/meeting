@@ -30,7 +30,6 @@ export function AudioUploadPage() {
   const [state, dispatch] = useReducer(uploadReducer, initialUploadState);
   const [file, setFile] = useState<File | null>(null);
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
-  const [fileSha256, setFileSha256] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [hashProgress, setHashProgress] = useState<number | null>(null);
@@ -88,7 +87,6 @@ export function AudioUploadPage() {
       // Web Worker so the UI stays responsive on GB-scale recordings.
       setHashProgress(0);
       let hashed = await hashFileForUpload(file, PART_SIZE_BYTES, onHashProgress);
-      setFileSha256(hashed.fileSha256);
       const session = await createAudioUpload(meetingId, {
         fileName: file.name,
         contentType: file.type || "application/octet-stream",
@@ -204,7 +202,6 @@ export function AudioUploadPage() {
         error.retryable = false;
         throw error;
       }
-      setFileSha256(hashed.fileSha256);
       const parts = toPartStates(hashed.parts);
       reconcilePartsWithSession(parts, state.session);
       dispatch({ type: "session", session: state.session, parts });
@@ -271,7 +268,6 @@ export function AudioUploadPage() {
             onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
               setFile(nextFile);
-              setFileSha256(null);
               setMessage(null);
             }}
           />
