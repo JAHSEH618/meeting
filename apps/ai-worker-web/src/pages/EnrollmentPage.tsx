@@ -8,9 +8,9 @@ import {
   uploadEnrollmentAudio,
 } from "@/shared/api/endpoints";
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
-import { ApiError } from "@/shared/api/client";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
+import { formatError } from "@/shared/utils/format-error";
 
 const QUALITY_THRESHOLD = 0.5;
 const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
@@ -276,19 +276,6 @@ export function EnrollmentPage() {
   );
 }
 
-function formatError(e: unknown): string {
-  if (e instanceof ApiError) {
-    // Handle specific enrollment errors with user-friendly messages
-    if (e.error.code === "ENROLLMENT_SESSION_NOT_FOUND") {
-      return "声纹会话已失效，请重新开始";
-    }
-    if (e.error.code === "ENROLLMENT_PERSON_MISMATCH") {
-      return "声纹会话人员不匹配，请重新开始";
-    }
-    return `${e.error.code}: ${e.error.message}`;
-  }
-  return e instanceof Error ? e.message : String(e);
-}
 
 function getSafeReturnTo(returnTo: string | null): string | null {
   if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) return null;

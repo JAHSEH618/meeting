@@ -87,14 +87,35 @@ copy_file() {
 }
 
 # ── TS ───────────────────────────────────────────────────────────────────────
+# Both frontends consume the same public-api.yaml; generate once, copy twice
+# so neither can silently drift from the contract.
 if "$OPENAPI_TS_BIN" "$CONTRACTS_DIR/openapi/public-api.yaml" \
     -o "$TEMP_DIR/types.gen.ts" >/dev/null 2>$_err; then
   pass "codegen:ts"
   copy_file "$TEMP_DIR/types.gen.ts" \
     "$PROJECT_ROOT/apps/meeting-web/src/shared/api/types.gen.ts" \
-    "TS types.gen.ts"
+    "TS types.gen.ts (meeting-web)"
+  copy_file "$TEMP_DIR/types.gen.ts" \
+    "$PROJECT_ROOT/apps/ai-worker-web/src/shared/api/types.gen.ts" \
+    "TS types.gen.ts (ai-worker-web)"
 else
   fail "codegen:ts FAILED"
+  cat $_err >&2
+  failures=1
+fi
+
+# ── TS error messages (error-codes.yaml → both frontends) ───────────────────
+if python3 "$SCRIPT_DIR/generate-error-messages.py" \
+    --output "$TEMP_DIR/error-messages.gen.ts" >/dev/null 2>$_err; then
+  pass "codegen:error-messages"
+  copy_file "$TEMP_DIR/error-messages.gen.ts" \
+    "$PROJECT_ROOT/apps/meeting-web/src/shared/api/error-messages.gen.ts" \
+    "TS error-messages.gen.ts (meeting-web)"
+  copy_file "$TEMP_DIR/error-messages.gen.ts" \
+    "$PROJECT_ROOT/apps/ai-worker-web/src/shared/api/error-messages.gen.ts" \
+    "TS error-messages.gen.ts (ai-worker-web)"
+else
+  fail "codegen:error-messages FAILED"
   cat $_err >&2
   failures=1
 fi

@@ -1,15 +1,24 @@
 /**
- * Hand-written admin BFF DTO surfaces. The OpenAPI codegen target is
- * `npm run codegen` (points at the public-api spec); this file covers the
- * worker BFF responses + a few public-API shapes the workstation needs.
+ * Workstation API types.
+ *
+ * Task/step/event enums and DTOs are derived from ./types.gen.ts
+ * (openapi-typescript over meeting-contracts/openapi/public-api.yaml) so a
+ * contract change breaks this app at compile time instead of silently at
+ * runtime. Regenerate with `npm run codegen`; drift is enforced by the
+ * contracts package's check-codegen-via-temp.sh.
+ *
+ * The remaining interfaces are the admin BFF's private response surfaces
+ * (/admin/*), which have no OpenAPI spec yet and stay hand-written.
  */
 
+import type { components } from "./types.gen";
+
 export type DocumentRole = "REFERENCE" | "ATTACHMENT";
-export type ProcessingTaskPhase = "WORKER_DAG_RUNNING" | "WORKER_DAG_DONE" | "JAVA_LLM_RUNNING" | "TERMINAL";
-export type ProcessingTaskStatus =
-  | "PENDING" | "QUEUED" | "RUNNING" | "ORPHANED" | "PARTIAL_SUCCEEDED"
-  | "SUCCEEDED" | "FAILED" | "CANCEL_PENDING" | "CANCELLED";
-export type StepStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+export type ProcessingTaskPhase = components["schemas"]["ProcessingTaskPhase"];
+export type ProcessingTaskStatus = components["schemas"]["ProcessingTaskStatus"];
+export type StepStatus = components["schemas"]["StepStatus"];
+export type ProcessingStep = components["schemas"]["ProcessingStep"];
+export type TaskEventType = components["schemas"]["TaskEvent"]["eventType"];
 export type DocumentType = "PDF" | "DOCX" | "PPTX" | "TXT" | "MD" | "OTHER";
 
 export interface PersonDTO {
@@ -146,24 +155,27 @@ export interface TranscriptSegmentDTO {
   text: string;
 }
 
+type ContractStep = components["schemas"]["ProcessingTaskStep"];
+type ContractTask = components["schemas"]["ProcessingTask"];
+
+/**
+ * UI-lenient step row. Field names/types stay bound to the contract's
+ * ProcessingTaskStep (a renamed or retyped field breaks compile here), but
+ * beyond the display essentials everything is optional because SSE step
+ * fragments and placeholder rows are constructed client-side.
+ */
 export interface ProcessingTaskStepDTO {
-  stepName: string;
-  status: StepStatus | string;
-  progress: number;
-  retryable?: boolean | null;
+  stepName: ContractStep["stepName"] | (string & {});
+  status: ContractStep["status"] | (string & {});
+  progress: ContractStep["progress"];
+  retryable?: ContractStep["retryable"];
+  source?: ContractStep["source"];
+  /** Carried on TaskEvent (not on the step schema); surfaced per-row in the UI. */
   errorCode?: string | null;
 }
 
-export interface ProcessingTaskDTO {
-  taskId: string;
-  meetingId: string | null;
-  status: ProcessingTaskStatus;
-  phase: ProcessingTaskPhase;
-  attemptNo: number;
-  currentStep: string | null;
-  lastErrorCode: string | null;
-  retryable: boolean;
-  steps?: ProcessingTaskStepDTO[];
+export interface ProcessingTaskDTO extends Omit<ContractTask, "steps"> {
+  steps?: ProcessingTaskStepDTO[] | null;
 }
 
 export interface MeetingAggregateDTO {
@@ -171,6 +183,8 @@ export interface MeetingAggregateDTO {
   latestTask: ProcessingTaskDTO | null;
   speakers: MeetingSpeakerListDTO | null;
   minutes: { title?: string; markdown: string; minutesVersion?: number; meetingId?: string } | null;
+  /** Sub-resources whose upstream fetch FAILED (≠ "not produced yet"). */
+  degraded?: string[];
 }
 
 export interface ExportJobDTO {
@@ -232,19 +246,13 @@ export interface AudioUploadSessionDTO {
   parts: FileUploadPartDTO[];
 }
 
-export interface TaskEventDTO {
-  eventId?: string;
-  sequenceNo?: number;
-  eventType?: string;
-  taskId: string;
-  meetingId?: string | null;
-  stepName?: string | null;
-  status?: string;
-  phase?: ProcessingTaskPhase;
-  progress?: number | null;
-  retryable?: boolean | null;
-  errorCode?: string | null;
-  attemptNo?: number | null;
-  completedSteps?: string[];
-  steps?: ProcessingTaskStepDTO[];
+type ContractTaskEvent = components["schemas"]["TaskEvent"];
+
+/**
+ * Contract-shaped SSE task event: eventId / sequenceNo / eventType / status /
+ * emittedAt are required, exactly as Java emits them. Only `steps` is relaxed
+ * to the UI-lenient step row above.
+ */
+export interface TaskEventDTO extends Omit<ContractTaskEvent, "steps"> {
+  steps?: ProcessingTaskStepDTO[] | null;
 }

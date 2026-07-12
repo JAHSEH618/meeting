@@ -64,7 +64,7 @@ describe("MeetingDetailPage", () => {
     await waitFor(() => expect(screen.getByTestId("step-ASR")).toBeInTheDocument());
     await waitFor(() => expect(taskEventHandler).not.toBeNull());
     act(() => {
-      taskEventHandler?.({ taskId: "task1", steps: [{ stepName: "ASR", status: "SUCCEEDED", progress: 100 }] });
+      taskEventHandler?.(taskEvent({ steps: [{ stepName: "ASR", status: "SUCCEEDED", progress: 100 }] }));
     });
 
     const speakers = await screen.findByRole("region", { name: "说话人" });
@@ -340,6 +340,19 @@ function defaultAggregate(overrides: Partial<MeetingAggregateDTO> & { speakers?:
     },
     minutes: { title: "纪要", markdown: "# 会议纪要\n\n完成。", minutesVersion: 1 },
     ...rest,
+  };
+}
+
+function taskEvent(overrides: Partial<TaskEventDTO>): TaskEventDTO {
+  // Contract-required fields, mirroring what Java actually emits on SSE.
+  return {
+    eventId: "evt1",
+    sequenceNo: 1,
+    eventType: "TASK_STEP_UPDATED",
+    taskId: "task1",
+    status: "RUNNING",
+    emittedAt: "2026-07-12T00:00:00Z",
+    ...overrides,
   };
 }
 

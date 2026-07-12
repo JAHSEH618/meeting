@@ -1,9 +1,9 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useRevokeSpeakerProfile, useSpeakerProfilesQuery } from "@/features/speaker-profiles/queries";
-import { ApiError } from "@/shared/api/client";
 import type { SpeakerProfileDTO } from "@/shared/api/types";
 import { formatDate } from "@/shared/utils/formatters";
+import { formatError } from "@/shared/utils/format-error";
 
 const STATUS_TONE: Record<string, string> = {
   ACTIVE: "pill--success",
@@ -181,9 +181,3 @@ function formatOptionalError(error: unknown): string | null {
   return error ? formatError(error) : null;
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof ApiError) {
-    return `${error.error.code}: ${error.error.message}`;
-  }
-  return error instanceof Error ? error.message : String(error);
-}
