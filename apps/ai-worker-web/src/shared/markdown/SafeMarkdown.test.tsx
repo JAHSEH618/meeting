@@ -42,4 +42,41 @@ describe("SafeMarkdown", () => {
     render(<SafeMarkdown source={"```\nhello\n```\n"} />);
     expect(screen.getByText("hello").tagName.toLowerCase()).toBe("code");
   });
+
+  it("strips on* event handler attributes", () => {
+    const { container } = render(
+      <SafeMarkdown source={'点击<img src="https://example.com/x.png" onerror="window.__pwned=true" />'} />,
+    );
+    const img = container.querySelector("img");
+    if (img) {
+      expect(img.getAttribute("onerror")).toBeNull();
+    }
+    expect((globalThis as Record<string, unknown>).__pwned).toBeUndefined();
+  });
+
+  it("drops data: image sources", () => {
+    const { container } = render(
+      <SafeMarkdown source={"![x](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)"} />,
+    );
+    const img = container.querySelector("img");
+    if (img) {
+      expect(img.getAttribute("src") ?? "").not.toContain("data:");
+    }
+  });
+
+  it("strips form and input elements", () => {
+    const { container } = render(
+      <SafeMarkdown source={'<form action="https://evil.example"><input name="pw" /></form>'} />,
+    );
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.querySelector("input")).toBeNull();
+  });
+
+  it("strips iframe and srcdoc", () => {
+    const { container } = render(
+      <SafeMarkdown source={'<iframe srcdoc="<script>window.__pwned=true</script>"></iframe>'} />,
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+    expect((globalThis as Record<string, unknown>).__pwned).toBeUndefined();
+  });
 });
