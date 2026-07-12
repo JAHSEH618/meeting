@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     # concurrency, so raising this never over-subscribes the GPU.
     rabbitmq_prefetch_count: int = 1
     callback_max_retries: int = 3
+    # Result-writeback callbacks (step transitions, transcript, embeddings,
+    # speaker candidates, complete, fail) carry work that is expensive to
+    # recompute, so instead of the attempt-count retry above they keep
+    # retrying transport failures with capped exponential backoff for up to
+    # this many seconds. Sized to ride out an ordinary meeting-api rolling
+    # restart (10-30s unavailable) while staying comfortably below the Java
+    # lease TTL (120s) so a genuinely dead API still falls back to
+    # lease-expiry requeue. Heartbeats are excluded: the next one supersedes.
+    callback_writeback_retry_budget_seconds: float = 90.0
+    callback_retry_max_backoff_seconds: float = 10.0
     artifact_store_root: str = ".artifacts"
     # ── Model deployment profile controls ───────────────────────────────
     # These settings are intentionally lightweight in Stage 1: they give
