@@ -9,10 +9,21 @@ import {
 } from "@/shared/api/endpoints";
 import type { MeetingSummaryDTO, PersonDTO } from "@/shared/api/types";
 
+// Meeting statuses that can still change on their own (pipeline running).
+const LIVE_MEETING_STATUSES = new Set(["CREATED", "PROCESSING", "UPLOADING", "QUEUED", "RUNNING"]);
+
 export function useAdminMeetingsQuery() {
   return useQuery<MeetingSummaryDTO[]>({
     queryKey: ["admin", "meetings"],
     queryFn: () => listAdminMeetings(),
+    // The workstation landing page is a pipeline monitor: while any meeting
+    // is still moving, refresh so status pills / counters advance without a
+    // manual reload; go quiet once everything is terminal.
+    refetchInterval: (query) => {
+      const meetings = query.state.data;
+      if (!meetings?.length) return false;
+      return meetings.some((m) => LIVE_MEETING_STATUSES.has(m.status)) ? 8000 : false;
+    },
   });
 }
 

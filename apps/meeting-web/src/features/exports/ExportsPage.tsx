@@ -4,6 +4,7 @@ import {
   cancelExport,
   createExport,
   getAuthToken,
+  getExport,
   getMeeting,
   listMeetingExports,
   revokeExportLink,
@@ -97,61 +98,89 @@ export function ExportsPage() {
     void loadAll();
   }, [loadAll]);
 
-  // Re-fetch every 3s while any job is in QUEUED/RUNNING so the user
-  // sees progress without manual refresh; stops when all are terminal.
+  // Refresh a single job in place — an SSE status change must not trigger a
+  // full meeting + job-list reload (that used to churn every subscription).
+  const refreshJob = useCallback(async (exportId: string) => {
+    try {
+      const job = await getExport(exportId);
+      setJobs((prev) => prev.map((item) => (item.exportId === job.exportId ? job : item)));
+    } catch {
+      /* the safety poll / next event will reconcile */
+    }
+  }, []);
+
+  // SSE is the primary channel; polling is fallback-only (see below).
+  // `sseDegraded` flips when a stream errors, handing updates to the poll.
+  const [sseDegraded, setSseDegraded] = useState(false);
+
+  // Stable subscription key: the sorted set of active export IDs. Job field
+  // updates (progress, timestamps) no longer tear down every connection —
+  // only a job entering/leaving the active set changes the key.
+  const activeIdsKey = useMemo(
+    () =>
+      jobs
+        .filter((j) => !TERMINAL_STATUSES.has(j.status))
+        .map((j) => j.exportId)
+        .sort()
+        .join(","),
+    [jobs],
+  );
+
   useEffect(() => {
-    if (!hasActiveJob) return;
-    const handle = window.setInterval(() => void loadAll(), 3000);
-    return () => window.clearInterval(handle);
-  }, [hasActiveJob, loadAll]);
+    if (!activeIdsKey) return;
+    const controller = new AbortController();
+    const token = getAuthToken();
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, ms);
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(t);
+            resolve();
+          },
+          { once: true },
+        );
+      });
 
-  // SSE live-nudge: open /api/exports/{id}/events for each non-terminal
-  // job. The backend (Phase 8 D1/D2) sends a snapshot event on
-  // EXPORT_STATUS_CHANGED and closes; the browser auto-reconnects, so
-  // combined with the 3s polling above we get sub-second update latency
-  // when the broker pushes and a guaranteed fallback when SSE is
-  // unsupported / blocked. Uses fetch-SSE to support auth headers.
-  useEffect(() => {
-    const activeJobs = jobs.filter((j) => !TERMINAL_STATUSES.has(j.status));
-    if (activeJobs.length === 0) return;
-
-    const abortControllers: AbortController[] = [];
-
-    for (const job of activeJobs) {
-      const abortController = new AbortController();
-      abortControllers.push(abortController);
-
-      const token = getAuthToken();
-      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-
+    for (const exportId of activeIdsKey.split(",")) {
       (async () => {
-        try {
-          for await (const event of fetchSSE(
-            `/api/exports/${encodeURIComponent(job.exportId)}/events`,
-            {
-              signal: abortController.signal,
-              headers,
+        // The backend sends a snapshot on EXPORT_STATUS_CHANGED and closes
+        // the stream; fetch-SSE does not auto-reconnect, so loop here until
+        // the job leaves the active set (which re-keys this effect).
+        while (!controller.signal.aborted) {
+          try {
+            for await (const event of fetchSSE(
+              `/api/exports/${encodeURIComponent(exportId)}/events`,
+              { signal: controller.signal, headers },
+            )) {
+              if (event.type === "EXPORT_STATUS_CHANGED") {
+                void refreshJob(exportId);
+              }
             }
-          )) {
-            // Parse event type from MessageEvent.type (set by fetchSSE)
-            if (event.type === "EXPORT_STATUS_CHANGED") {
-              void loadAll();
-            }
-          }
-        } catch (error) {
-          if ((error as Error).name !== "AbortError") {
-            // Silent — 3s polling still drives updates.
+            await sleep(2000);
+          } catch (error) {
+            if ((error as Error).name === "AbortError" || controller.signal.aborted) return;
+            // Stream failed (proxy, auth, network) — degrade to polling.
+            setSseDegraded(true);
+            return;
           }
         }
       })();
     }
 
-    return () => {
-      for (const controller of abortControllers) {
-        controller.abort();
-      }
-    };
-  }, [jobs, loadAll]);
+    return () => controller.abort();
+  }, [activeIdsKey, refreshJob]);
+
+  // Fallback polling: 3s only when SSE has degraded; otherwise a slow 15s
+  // safety net reconciles anything a missed event left stale.
+  useEffect(() => {
+    if (!hasActiveJob) return;
+    const interval = sseDegraded ? 3000 : 15000;
+    const handle = window.setInterval(() => void loadAll(), interval);
+    return () => window.clearInterval(handle);
+  }, [hasActiveJob, sseDegraded, loadAll]);
 
   const handleCreate = useCallback(async () => {
     if (!meeting) return;

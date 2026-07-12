@@ -22,6 +22,8 @@ const TERMINAL: ProcessingTaskStatus[] = [
   "CANCELLED",
 ];
 const POLL_INTERVAL = 3000;
+// While polling, retry SSE this often — degradation must not be permanent.
+const SSE_RECOVERY_INTERVAL = 30_000;
 
 export type ConnectionMode = "SSE" | "POLLING" | "TERMINATED";
 
@@ -70,6 +72,9 @@ export interface UseTaskEventsStreamResult {
 export function useTaskEventsStream(taskId: string): UseTaskEventsStreamResult {
   const queryClient = useQueryClient();
   const [connectionMode, setConnectionMode] = useState<"SSE" | "POLLING">("SSE");
+  // Bumping this re-runs the subscription effect: used to periodically try
+  // to climb back from POLLING to SSE once the network/backend recovers.
+  const [sseAttempt, setSseAttempt] = useState(0);
   const subRef = useRef<TaskEventSubscription | null>(null);
   const lastEventId = useRef<string | null>(null);
 
@@ -97,21 +102,34 @@ export function useTaskEventsStream(taskId: string): UseTaskEventsStreamResult {
       subRef.current = null;
       return;
     }
+    let recoveryTimer: number | null = null;
     subRef.current = subscribeTaskEvents(taskId, {
       lastEventId: lastEventId.current,
       onEvent: (event) => {
         lastEventId.current = event.eventId;
+        // Events flowing means SSE is healthy again — leave polling mode.
+        setConnectionMode((mode) => (mode === "SSE" ? mode : "SSE"));
         queryClient.setQueryData<TaskSnapshot>(["task", taskId], (cur) =>
           sseReducer(cur && cur.taskId ? cur : createInitialSnapshot(), event),
         );
       },
-      onFallback: () => setConnectionMode("POLLING"),
+      onFallback: () => {
+        setConnectionMode("POLLING");
+        // Polling used to be a one-way door: once degraded the client never
+        // returned to SSE even after the network recovered. Retry the
+        // stream periodically; a successful event flips the mode back.
+        recoveryTimer = window.setTimeout(
+          () => setSseAttempt((attempt) => attempt + 1),
+          SSE_RECOVERY_INTERVAL,
+        );
+      },
     });
     return () => {
+      if (recoveryTimer !== null) window.clearTimeout(recoveryTimer);
       subRef.current?.close();
       subRef.current = null;
     };
-  }, [taskId, terminated, queryClient]);
+  }, [taskId, terminated, queryClient, sseAttempt]);
 
   return {
     snapshot: query.data ?? createInitialSnapshot(),
