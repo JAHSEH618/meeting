@@ -22,12 +22,20 @@ class CallbackResponse:
     body: dict | None = None
 
 
+# First backoff base (seconds) for budget-bounded writeback retries; grows
+# exponentially up to ``callback_retry_max_backoff_seconds``. Module-level so
+# tests can shrink it.
+_WRITEBACK_BACKOFF_INITIAL = 0.5
+
+
 class JavaCallbackClient:
     def __init__(self, base_url: str | None = None) -> None:
         self.base_url = (base_url or settings.meeting_api_base_url).rstrip("/")
         self.worker_id = settings.worker_id
         self.hmac_secret = settings.callback_hmac_secret
         self._max_retries = settings.callback_max_retries
+        self._writeback_retry_budget = settings.callback_writeback_retry_budget_seconds
+        self._max_backoff = settings.callback_retry_max_backoff_seconds
         self._http_client: httpx.AsyncClient | None = None
 
     def _client(self) -> httpx.AsyncClient:
@@ -90,13 +98,27 @@ class JavaCallbackClient:
         trace_id: str,
         idempotency_key: str,
         max_retries: int | None = None,
+        retry_budget_seconds: float | None = None,
     ) -> CallbackResponse:
+        """Send one signed callback with retries on transport failures.
+
+        Two retry modes:
+        - default: at most ``max_retries`` quick attempts (sub-second total) —
+          right for heartbeats, whose next emission supersedes a lost one.
+        - ``retry_budget_seconds``: keep retrying with capped exponential
+          backoff until the budget elapses — for result writebacks whose loss
+          discards finished (GPU) work. A plain meeting-api rolling restart
+          must not be enough to throw a completed pipeline away.
+        """
         body_str = json.dumps(body, separators=(",", ":"), sort_keys=True) if body else "{}"
         url = f"{self.base_url}{path}"
         attempts = max_retries if max_retries is not None else self._max_retries
         last_error: str | None = None
+        loop = asyncio.get_running_loop()
+        deadline = None if retry_budget_seconds is None else loop.time() + retry_budget_seconds
 
-        for attempt_index in range(attempts):
+        attempt_index = 0
+        while True:
             headers = self._build_headers(
                 method, path, body_str,
                 task_id, attempt_no, trace_id, idempotency_key,
@@ -137,11 +159,20 @@ class JavaCallbackClient:
                 last_error = f"HTTP {status}" + (f" {server_code}" if server_code else "")
             except Exception as e:
                 last_error = str(e)
-            if attempt_index < attempts - 1:
-                # Exponential backoff with full jitter so a fleet of workers
-                # retrying a recovering API don't synchronise into a thundering herd.
+            # Exponential backoff with full jitter so a fleet of workers
+            # retrying a recovering API don't synchronise into a thundering herd.
+            if deadline is None:
+                if attempt_index >= attempts - 1:
+                    break
                 base = 0.05 * (2 ** attempt_index)
-                await asyncio.sleep(base + random.uniform(0.0, base))
+                delay = base + random.uniform(0.0, base)
+            else:
+                base = min(self._max_backoff, _WRITEBACK_BACKOFF_INITIAL * (2 ** attempt_index))
+                delay = base + random.uniform(0.0, base)
+                if loop.time() + delay > deadline:
+                    break
+            await asyncio.sleep(delay)
+            attempt_index += 1
 
         return CallbackResponse(
             http_status=0,
@@ -182,7 +213,14 @@ class JavaCallbackClient:
             body["meetingId"] = meeting_id
         if error_code:
             body["errorCode"] = error_code
-        return await self._request("PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        # Heartbeats (RUNNING, progress>0) keep the quick attempt-count retry:
+        # a lost one is superseded by the next emission. State transitions get
+        # the writeback budget so a brief Java outage doesn't fail the task.
+        is_heartbeat = status == "RUNNING" and progress > 0
+        return await self._request(
+            "PATCH", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=None if is_heartbeat else self._writeback_retry_budget,
+        )
 
     async def submit_transcript(
         self,
@@ -209,7 +247,10 @@ class JavaCallbackClient:
         }
         if artifact_manifest_id:
             body["artifactManifestId"] = artifact_manifest_id
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def submit_speaker_candidates(
         self,
@@ -240,7 +281,10 @@ class JavaCallbackClient:
         }
         if meeting_id:
             body["meetingId"] = meeting_id
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def submit_speaker_enrollment_embedding(
         self,
@@ -264,7 +308,10 @@ class JavaCallbackClient:
             "audioFileId": audio_file_id,
             "embedding": embedding,
         }
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def submit_artifacts(
         self,
@@ -285,7 +332,10 @@ class JavaCallbackClient:
         }
         if artifact_manifest_id:
             body["artifactManifestId"] = artifact_manifest_id
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def submit_embeddings(
         self,
@@ -317,7 +367,10 @@ class JavaCallbackClient:
             "chunkStrategyVersion": chunk_strategy_version,
             "items": items,
         }
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def complete_worker_phase(
         self,
@@ -345,7 +398,10 @@ class JavaCallbackClient:
         }
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
     async def fail_task(
         self,
@@ -377,7 +433,10 @@ class JavaCallbackClient:
             body["meetingId"] = meeting_id
         if speaker_enrollment_id:
             body["speakerEnrollmentId"] = speaker_enrollment_id
-        return await self._request("POST", path, body, task_id, attempt_no, trace_id, idempotency_key)
+        return await self._request(
+            "POST", path, body, task_id, attempt_no, trace_id, idempotency_key,
+            retry_budget_seconds=self._writeback_retry_budget,
+        )
 
 
 def _parse_error_envelope(response: httpx.Response) -> tuple[bool, str | None]:
