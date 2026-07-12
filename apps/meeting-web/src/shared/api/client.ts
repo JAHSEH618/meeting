@@ -520,8 +520,23 @@ export function subscribeTaskEvents(
   const controller = new AbortController();
   let failures = 0;
 
+  // Abort-aware sleep so close() interrupts a pending backoff immediately.
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+
   const connect = async () => {
     while (!controller.signal.aborted && failures < 3) {
+      const connectedAt = Date.now();
       try {
         const headers: Record<string, string> = {
           Accept: "text/event-stream",
@@ -557,9 +572,19 @@ export function subscribeTaskEvents(
             if (data) handlers.onEvent(JSON.parse(data) as TaskEvent);
           }
         }
+        // Clean server close: an immediately-dropped stream counts against
+        // the failure budget, otherwise a flapping upstream turns this loop
+        // into a tight reconnect hammer.
+        if (Date.now() - connectedAt < 5000) failures += 1;
       } catch {
         if (controller.signal.aborted) return;
         failures += 1;
+      }
+      if (!controller.signal.aborted && failures > 0 && failures < 3) {
+        // Exponential backoff with jitter (≈1s → 2s → 4s, capped) instead of
+        // hammering a recovering backend with instant reconnects.
+        const base = Math.min(8000, 1000 * 2 ** (failures - 1));
+        await sleep(base / 2 + Math.random() * base);
       }
     }
     if (!controller.signal.aborted) handlers.onFallback();

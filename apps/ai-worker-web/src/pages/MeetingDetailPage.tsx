@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError } from "@/shared/api/client";
 import { subscribeEventStream, type EventStreamSubscription } from "@/shared/api/client";
 import {
   confirmSpeaker,
@@ -25,6 +24,7 @@ import type {
 } from "@/shared/api/types";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { SafeMarkdown } from "@/shared/markdown/SafeMarkdown";
+import { formatError } from "@/shared/utils/format-error";
 
 const STEPS = [
   "AUDIO_PREPROCESS",
@@ -40,7 +40,17 @@ const STEPS = [
 ] as const;
 
 const TERMINAL_STATUSES: ProcessingTaskStatus[] = ["SUCCEEDED", "PARTIAL_SUCCEEDED", "FAILED", "CANCELLED"];
+// Upper bound on how long the export button waits before handing off to
+// a background-completion hint (renders can legitimately take minutes).
+const EXPORT_WAIT_MS = 5 * 60 * 1000;
 const DEFAULT_PARTICIPANT_ROLE = "PARTICIPANT";
+
+// Aggregate sub-resources the BFF may report as failed-upstream.
+const DEGRADED_LABELS: Record<string, string> = {
+  latestTask: "处理任务",
+  speakers: "说话人结果",
+  minutes: "会议纪要",
+};
 
 export function MeetingDetailPage() {
   const { meetingId = "" } = useParams<{ meetingId: string }>();
@@ -48,6 +58,7 @@ export function MeetingDetailPage() {
   const [steps, setSteps] = useState<Record<string, ProcessingTaskStepDTO>>({});
   const [exportJob, setExportJob] = useState<ExportJobDTO | null>(null);
   const [busyExport, setBusyExport] = useState(false);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const [confirmingSpeaker, setConfirmingSpeaker] = useState<string | null>(null);
   const [pendingRejectSpeaker, setPendingRejectSpeaker] = useState<MeetingSpeakerDTO | null>(null);
   const [rejectingSpeaker, setRejectingSpeaker] = useState<string | null>(null);
@@ -76,9 +87,21 @@ export function MeetingDetailPage() {
         if (cancelled) return;
         setAggregate(data);
         seedSteps(data.latestTask?.steps);
-        const taskId = data.latestTask?.taskId;
-        if (taskId && !eventStream) {
-          eventStream = openTaskEvents(taskId, () => {
+        const latest = data.latestTask;
+        if (latest && TERMINAL_STATUSES.includes(latest.status)) {
+          // Pipeline finished — nothing changes on its own anymore. Stop the
+          // fallback poll (it used to run every 5s forever, fanning out to
+          // several upstream Java calls per tick) and the event stream.
+          eventStream?.close();
+          eventStream = null;
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+          return;
+        }
+        if (latest?.taskId && !eventStream) {
+          eventStream = openTaskEvents(latest.taskId, () => {
             if (!pollTimer) {
               pollTimer = setInterval(() => void load(), 5000);
             }
@@ -146,23 +169,44 @@ export function MeetingDetailPage() {
     if (!meetingId) return;
     setBusyExport(true);
     setError(null);
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
     try {
       const created = await createExport(meetingId, "DOCX");
       setExportJob(created);
-      for (let attempt = 0; attempt < 30; attempt += 1) {
+      // Poll until terminal within a generous deadline. The old loop was a
+      // fixed 30×1s: renders slower than 30s silently "failed" and the
+      // operator had no way to cancel the wait.
+      const deadline = Date.now() + EXPORT_WAIT_MS;
+      while (Date.now() < deadline && !controller.signal.aborted) {
         const polled = await pollExport(meetingId, created.exportId);
+        if (controller.signal.aborted) return;
         setExportJob(polled);
         if (polled.status === "SUCCEEDED" && polled.downloadUrl) return;
         if (["FAILED", "CANCELLED", "REVOKED"].includes(polled.status)) {
           throw new Error(`导出失败: ${polled.status}`);
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2000);
+          controller.signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            resolve();
+          }, { once: true });
+        });
+      }
+      if (!controller.signal.aborted) {
+        setError("导出仍在后台进行，稍后可刷新页面查看下载链接");
       }
     } catch (e) {
       setError(formatError(e));
     } finally {
+      exportAbortRef.current = null;
       setBusyExport(false);
     }
+  };
+
+  const cancelExportWait = () => {
+    exportAbortRef.current?.abort();
   };
 
   const handleConfirmCandidate = async (speaker: MeetingSpeakerDTO, candidate: SpeakerCandidateDTO) => {
@@ -243,6 +287,16 @@ export function MeetingDetailPage() {
       </header>
 
       {error ? <div className="banner banner--danger" role="alert">{error}</div> : null}
+      {aggregate?.degraded?.length ? (
+        <div className="banner banner--danger" role="alert">
+          <strong className="banner__title">部分数据加载失败</strong>
+          <span className="banner__body">
+            {aggregate.degraded.map((name) => DEGRADED_LABELS[name] ?? name).join("、")}
+            暂时不可用（上游服务异常，并非“暂无数据”）。
+          </span>
+          <button className="button" type="button" onClick={() => void refreshAggregate()}>重试</button>
+        </div>
+      ) : null}
 
       <section className="card stack" aria-labelledby="meeting-participants">
         <h2 id="meeting-participants">参会人</h2>
@@ -392,6 +446,11 @@ export function MeetingDetailPage() {
           <button className="button button--primary" type="button" data-testid="export-docx" disabled={busyExport} onClick={() => void handleExport()}>
             {busyExport ? "导出中…" : "创建 docx"}
           </button>
+          {busyExport ? (
+            <button className="button" type="button" onClick={cancelExportWait}>
+              取消等待
+            </button>
+          ) : null}
           {exportJob ? <span className="pill pill--info" data-testid="export-status">{exportJob.status}</span> : null}
           {exportJob?.status === "SUCCEEDED" && exportJob.downloadUrl ? (
             <a className="button button--secondary" href={exportJob.downloadUrl} download data-testid="download-link">下载</a>
@@ -511,8 +570,3 @@ function canEnrollSpeaker(speaker: MeetingSpeakerDTO): boolean {
     !speaker.candidates?.length;
 }
 
-function formatError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.error.code}: ${e.error.message}`;
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
