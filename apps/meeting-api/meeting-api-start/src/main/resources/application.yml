@@ -119,10 +119,23 @@ meeting:
     heartbeat-interval-seconds: 15
     event-timeout-seconds: 300
   outbox:
-    poll-interval-ms: 5000
     batch-size: 100
     max-retries: 5
-    retry-backoff-ms: 1000
+  # Outbox 投递轮询（OutboxPublisherConfig）
+  outbox-publisher:
+    enabled: true
+    interval-ms: 2000
+    initial-delay-ms: 5000
+  # Outbox 积压 gauge 采样（OutboxMetricsSamplerConfig，供 Prometheus 告警规则使用）
+  outbox-metrics:
+    enabled: true
+    interval-ms: 30000
+    initial-delay-ms: 15000
+  # callback_nonces 过期清理（CallbackNonceCleanupConfig）
+  callback-nonce-cleanup:
+    enabled: true
+    interval-ms: 300000
+    initial-delay-ms: 120000
   llm:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
