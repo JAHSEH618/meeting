@@ -136,6 +136,13 @@ meeting:
     enabled: true
     interval-ms: 300000
     initial-delay-ms: 120000
+  # WORKER_DAG_DONE 卡死任务恢复（WorkerDagDoneRecoveryScannerConfig）
+  worker-dag-recovery:
+    enabled: true
+    interval-ms: 60000
+    initial-delay-ms: 60000
+    batch-size: 100
+    stuck-after-ms: 120000
   llm:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
@@ -144,6 +151,10 @@ meeting:
       max-retries: 3
   export:
     download-ttl-hours: 24
+    consumer:
+      # 可重试渲染失败的重投上限；达到后置 FAILED 并 dead-letter
+      #（配合 export-queue 的 x-delivery-limit 兜底）
+      max-attempts: 5
     libreoffice:
       binary: ${LIBREOFFICE_BINARY:soffice}
       timeout-seconds: ${LIBREOFFICE_TIMEOUT_SECONDS:60}

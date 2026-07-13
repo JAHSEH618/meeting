@@ -211,7 +211,43 @@ class AudioUploadApplicationServiceTest {
         var replay = ctx.service.complete(completeCommand(uploadId));
 
         assertThat(replay.uploadStatus()).isEqualTo(AudioUploadStatus.COMPLETED);
+        // Idempotent replay: no second meeting_files row, no second task/outbox event.
         assertThat(ctx.publisher.events).hasSize(1);
+        assertThat(ctx.files.files).hasSize(1);
+        // The replay early-returns from the plain read; only the original
+        // complete claimed the row FOR UPDATE.
+        assertThat(ctx.uploads.forUpdateLoads).containsExactly(uploadId);
+    }
+
+    @Test
+    void completeClaimsSessionRowWithForUpdateBeforeWriting() {
+        // Pin the locking read: without findSessionForUpdate two concurrent
+        // completes both pass the status check and double-create the
+        // meeting_files row + MEETING_FULL_PIPELINE task.
+        TestContext ctx = new TestContext();
+        String uploadId = ctx.service.createSession(createCommand("meeting_01")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('b')));
+
+        ctx.service.complete(completeCommand(uploadId));
+
+        assertThat(ctx.uploads.forUpdateLoads).containsExactly(uploadId);
+    }
+
+    @Test
+    void completeRunsStorageHeadOutsideTenantTransaction() {
+        // The TOS HEAD is a network call; it must not run inside a tenant
+        // transaction where it would pin a pooled DB connection.
+        RecordingTenantTransaction recordingTx = new RecordingTenantTransaction();
+        TestContext ctx = new TestContext(recordingTx);
+        ctx.storage.statHook = () -> assertThat(recordingTx.inTransaction())
+            .as("statObject must not run inside a tenant-scoped transaction")
+            .isFalse();
+        String uploadId = ctx.service.createSession(createCommand("meeting_01")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('b')));
+
+        var completed = ctx.service.complete(completeCommand(uploadId));
+
+        assertThat(completed.uploadStatus()).isEqualTo(AudioUploadStatus.COMPLETED);
     }
 
     @Test
@@ -315,22 +351,31 @@ class AudioUploadApplicationServiceTest {
         private final FakeStorage storage = new FakeStorage();
         private final InMemoryTasks tasks = new InMemoryTasks();
         private final CapturingPublisher publisher = new CapturingPublisher();
-        private final ProcessingTaskApplicationService taskService = new ProcessingTaskApplicationService(
-            tasks,
-            meetings,
-            publisher,
-            TenantScopedTransaction.immediate(),
-            CLOCK
-        );
-        private final AudioUploadApplicationService service = new AudioUploadApplicationService(
-            meetings,
-            uploads,
-            files,
-            storage,
-            taskService,
-            TenantScopedTransaction.immediate(),
-            CLOCK
-        );
+        private final ProcessingTaskApplicationService taskService;
+        private final AudioUploadApplicationService service;
+
+        TestContext() {
+            this(TenantScopedTransaction.immediate());
+        }
+
+        TestContext(TenantScopedTransaction tenantScopedTransaction) {
+            this.taskService = new ProcessingTaskApplicationService(
+                tasks,
+                meetings,
+                publisher,
+                tenantScopedTransaction,
+                CLOCK
+            );
+            this.service = new AudioUploadApplicationService(
+                meetings,
+                uploads,
+                files,
+                storage,
+                taskService,
+                tenantScopedTransaction,
+                CLOCK
+            );
+        }
     }
 
     private static final class InMemoryMeetings implements MeetingRepository {
@@ -375,6 +420,10 @@ class AudioUploadApplicationServiceTest {
     private static final class InMemoryUploads implements AudioUploadRepository {
         private final Map<String, AudioUploadSession> sessions = new HashMap<>();
         private final Map<String, AudioUploadPart> parts = new HashMap<>();
+        // Records FOR UPDATE loads so tests can pin that complete() claims the
+        // session row with a lock before writing (a real lock can't be
+        // modelled in-memory).
+        private final List<String> forUpdateLoads = new ArrayList<>();
 
         @Override
         public AudioUploadSession saveSession(AudioUploadSession session) {
@@ -392,6 +441,12 @@ class AudioUploadApplicationServiceTest {
         public Optional<AudioUploadSession> findSession(String tenantId, String uploadId) {
             AudioUploadSession session = sessions.get(uploadId);
             return session != null && tenantId.equals(session.tenantId()) ? Optional.of(session) : Optional.empty();
+        }
+
+        @Override
+        public Optional<AudioUploadSession> findSessionForUpdate(String tenantId, String uploadId) {
+            forUpdateLoads.add(uploadId);
+            return findSession(tenantId, uploadId);
         }
 
         @Override
@@ -433,6 +488,7 @@ class AudioUploadApplicationServiceTest {
 
     private static final class FakeStorage implements ObjectStorageGateway {
         long statSizeBytes = 1024;
+        Runnable statHook = () -> {};
 
         @Override
         public String defaultBucket() {
@@ -455,6 +511,7 @@ class AudioUploadApplicationServiceTest {
 
         @Override
         public StorageObject statObject(String bucket, String objectKey) {
+            statHook.run();
             return new StorageObject(bucket, objectKey, statSizeBytes, sha('a'), "etag_object", OffsetDateTime.now(CLOCK));
         }
 

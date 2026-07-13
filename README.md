@@ -438,6 +438,8 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 | `meeting.outbox-publisher.interval-ms` | outbox 投递轮询间隔（默认 2000ms） |
 | `meeting.outbox-metrics.interval-ms` | outbox 积压 gauge 采样间隔（默认 30000ms，供 `OutboxBacklogHigh` / `OutboxPublishLag` 告警使用） |
 | `meeting.callback-nonce-cleanup.interval-ms` | `callback_nonces` 过期清理间隔（默认 300000ms） |
+| `meeting.worker-dag-recovery.interval-ms` | WORKER_DAG_DONE 卡死任务恢复扫描间隔（默认 60000ms；`stuck-after-ms` 默认 120000ms） |
+| `meeting.export.consumer.max-attempts` | 导出渲染可重试失败的重投上限（默认 5，达到后置 FAILED 并 dead-letter） |
 
 **ai-worker（Python，前缀 `AI_WORKER_`）**
 

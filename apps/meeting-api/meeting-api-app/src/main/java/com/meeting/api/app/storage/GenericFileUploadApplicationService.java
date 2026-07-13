@@ -185,24 +185,42 @@ public class GenericFileUploadApplicationService implements GenericFileFacade {
 
     @Override
     public GenericFileCompleteDTO complete(CompleteGenericFileUploadCommand command) {
-        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+        List<CompleteGenericFileUploadCommand.PartCommand> requestedParts =
+            command.parts() == null ? List.of() : command.parts();
+
+        // Short TX #1 — load + request-shape validation, no writes. Returns the
+        // completed DTO for an idempotent replay, otherwise the session whose
+        // immutable bucket/objectKey feed the out-of-transaction HEAD below.
+        record Precheck(GenericFileCompleteDTO completed, GenericFileUploadSession session) {}
+        Precheck precheck = tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
             GenericFileUploadSession session = requireSession(command.tenantId(), command.uploadId());
+            if (session.uploadStatus() == AudioUploadStatus.COMPLETED && session.fileId() != null) {
+                return new Precheck(toCompleteDto(session), null);
+            }
+            ensureMutable(session);
+            validateCompleteRequest(session, command, requestedParts);
+            return new Precheck(null, session);
+        });
+        if (precheck.completed() != null) {
+            return precheck.completed();
+        }
+
+        // No TX — the network HEAD to object storage must not hold a pooled
+        // connection. bucket/objectKey never change after createSession, so the
+        // metadata fetched here stays valid for the locked validation below.
+        StorageObject object = objectStorageGateway.statObject(precheck.session().bucket(), precheck.session().objectKey());
+
+        // Short TX #2 — re-load FOR UPDATE and re-validate under the row lock,
+        // then write. Two concurrent completes serialize here: the loser
+        // re-reads the committed COMPLETED session and returns it idempotently
+        // instead of duplicating the meeting_files row.
+        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+            GenericFileUploadSession session = requireSessionForUpdate(command.tenantId(), command.uploadId());
             if (session.uploadStatus() == AudioUploadStatus.COMPLETED && session.fileId() != null) {
                 return toCompleteDto(session);
             }
             ensureMutable(session);
-            if (!session.fileSha256().equals(command.fileSha256())) {
-                throw conflict(ErrorCode.UPLOAD_FILE_HASH_MISMATCH, "file sha256 does not match upload session");
-            }
-            List<CompleteGenericFileUploadCommand.PartCommand> requestedParts =
-                command.parts() == null ? List.of() : command.parts();
-            if (requestedParts.isEmpty()) {
-                throw conflict(ErrorCode.UPLOAD_INCOMPLETE_PARTS, "complete requires at least one part");
-            }
-            if (requestedParts.size() > session.maxPartCount()) {
-                throw validation(ErrorCode.UPLOAD_TOO_MANY_PARTS, "too many upload parts");
-            }
-            validateExpectedPartSet(session, requestedParts);
+            validateCompleteRequest(session, command, requestedParts);
             Map<Integer, GenericFileUploadPart> savedByNumber = uploadRepository.findParts(command.tenantId(), command.uploadId())
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(GenericFileUploadPart::partNumber, part -> part));
@@ -222,7 +240,6 @@ public class GenericFileUploadApplicationService implements GenericFileFacade {
                     uploadRepository.savePart(savedPart.markCompleted(requestedPart.etag(), now));
                 }
             }
-            StorageObject object = objectStorageGateway.statObject(session.bucket(), session.objectKey());
             if (object.sizeBytes() >= 0 && object.sizeBytes() != session.fileSizeBytes()) {
                 throw conflict(
                     ErrorCode.UPLOAD_FILE_SIZE_MISMATCH,
@@ -299,6 +316,34 @@ public class GenericFileUploadApplicationService implements GenericFileFacade {
         GenericFileUploadSession session = uploadRepository.findSession(tenantId, uploadId)
             .orElseThrow(() -> notFound("file upload session not found: " + uploadId));
         return expireIfNeeded(session);
+    }
+
+    /** Same as {@link #requireSession} but claims the row with {@code FOR UPDATE}. */
+    private GenericFileUploadSession requireSessionForUpdate(String tenantId, String uploadId) {
+        GenericFileUploadSession session = uploadRepository.findSessionForUpdate(tenantId, uploadId)
+            .orElseThrow(() -> notFound("file upload session not found: " + uploadId));
+        return expireIfNeeded(session);
+    }
+
+    /**
+     * Deterministic request-vs-session checks shared by the pre-HEAD read
+     * transaction and the locked write transaction of {@code complete()}.
+     */
+    private static void validateCompleteRequest(
+        GenericFileUploadSession session,
+        CompleteGenericFileUploadCommand command,
+        List<CompleteGenericFileUploadCommand.PartCommand> requestedParts
+    ) {
+        if (!session.fileSha256().equals(command.fileSha256())) {
+            throw conflict(ErrorCode.UPLOAD_FILE_HASH_MISMATCH, "file sha256 does not match upload session");
+        }
+        if (requestedParts.isEmpty()) {
+            throw conflict(ErrorCode.UPLOAD_INCOMPLETE_PARTS, "complete requires at least one part");
+        }
+        if (requestedParts.size() > session.maxPartCount()) {
+            throw validation(ErrorCode.UPLOAD_TOO_MANY_PARTS, "too many upload parts");
+        }
+        validateExpectedPartSet(session, requestedParts);
     }
 
     private GenericFileUploadSession expireIfNeeded(GenericFileUploadSession session) {

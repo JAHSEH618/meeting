@@ -33,10 +33,22 @@ import org.springframework.stereotype.Component;
  *   <li>{@link ExportInputInvalidException} (e.g. STALE snapshot) →
  *       {@code basicReject(requeue=false)} so the message goes to the
  *       DLQ; the service has already transitioned the job to FAILED.</li>
- *   <li>{@link ExportRuntimeException} or any other unchecked exception
- *       → {@code basicNack(requeue=true)} bounded by RabbitMQ's
- *       {@code x-death} count via the queue's TTL/max-delivery policy
- *       (configured in {@code rabbitmq/definitions.json}).</li>
+ *   <li>{@link ExportRuntimeException} → retried via
+ *       {@code basicReject(requeue=true)} while the delivery attempt is
+ *       below {@code meeting.export.consumer.max-attempts} (default 5).
+ *       Attempts are counted from the {@code x-delivery-count} header
+ *       that quorum queues stamp on every redelivery (requeue does NOT
+ *       increment {@code x-death}, so that header cannot bound this
+ *       loop). Once the cap is reached the job is marked FAILED via
+ *       {@link ExportRenderService#failTerminally} and the message is
+ *       rejected without requeue, dead-lettering it to
+ *       {@code export-queue.dlq}. If the header is missing (non-quorum
+ *       queue) the consumer conservatively treats the delivery as the
+ *       first attempt and relies on the queue's {@code x-delivery-limit}
+ *       (declared in {@code rabbitmq/definitions.json}) as the backstop
+ *       against an unbounded hot requeue loop.</li>
+ *   <li>Any other unchecked exception → job marked FAILED terminally and
+ *       {@code basicReject(requeue=false)} (dead-letter).</li>
  * </ul>
  *
  * <p>The consumer is opt-in via {@code meeting.export.consumer.enabled}
@@ -49,11 +61,13 @@ public class ExportQueueConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(ExportQueueConsumer.class);
     public static final String QUEUE_NAME = "export-queue";
+    static final String DELIVERY_COUNT_HEADER = "x-delivery-count";
 
     private final RabbitMqProperties properties;
     private final ObjectMapper objectMapper;
     private final ExportRenderService renderService;
     private final boolean enabled;
+    private final int maxAttempts;
 
     private volatile Connection connection;
     private volatile Channel channel;
@@ -62,12 +76,17 @@ public class ExportQueueConsumer {
         RabbitMqProperties properties,
         ObjectMapper objectMapper,
         ExportRenderService renderService,
-        @Value("${meeting.export.consumer.enabled:true}") boolean enabled
+        @Value("${meeting.export.consumer.enabled:true}") boolean enabled,
+        @Value("${meeting.export.consumer.max-attempts:5}") int maxAttempts
     ) {
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException("maxAttempts must be positive");
+        }
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.renderService = renderService;
         this.enabled = enabled;
+        this.maxAttempts = maxAttempts;
     }
 
     @PostConstruct
@@ -95,7 +114,7 @@ public class ExportQueueConsumer {
                         String consumerTag, Envelope envelope,
                         com.rabbitmq.client.AMQP.BasicProperties properties, byte[] body
                     ) {
-                        onMessage(envelope, body);
+                        onMessage(envelope, properties, body);
                     }
                 });
             log.info("export_consumer_started queue={}", QUEUE_NAME);
@@ -127,11 +146,16 @@ public class ExportQueueConsumer {
         }
     }
 
+    /** Legacy two-arg entry point — treats the delivery as a first attempt. */
+    public void onMessage(Envelope envelope, byte[] body) {
+        onMessage(envelope, null, body);
+    }
+
     /**
      * Visible for tests — drives the same code path as the live AMQP
      * consumer, sans channel ack/nack bookkeeping.
      */
-    public void onMessage(Envelope envelope, byte[] body) {
+    public void onMessage(Envelope envelope, com.rabbitmq.client.AMQP.BasicProperties properties, byte[] body) {
         long deliveryTag = envelope == null ? 0L : envelope.getDeliveryTag();
         ExportJobMessage msg;
         try {
@@ -154,11 +178,25 @@ public class ExportQueueConsumer {
             );
             safeReject(deliveryTag, /* requeue */ false);
         } catch (ExportRuntimeException ex) {
-            log.warn(
-                "export_consumer_runtime_failure tenant={} export={} reason={}",
-                msg.tenantId(), msg.exportId(), ex.getMessage()
-            );
-            safeReject(deliveryTag, /* requeue */ true);
+            long attempt = deliveryCount(properties) + 1;
+            if (attempt >= maxAttempts) {
+                log.warn(
+                    "export_consumer_retries_exhausted tenant={} export={} attempt={} maxAttempts={} reason={}",
+                    msg.tenantId(), msg.exportId(), attempt, maxAttempts, ex.getMessage()
+                );
+                renderService.failTerminally(
+                    msg,
+                    ex.errorCode(),
+                    "retryable failure persisted after " + attempt + " deliveries: " + ex.getMessage()
+                );
+                safeReject(deliveryTag, /* requeue */ false);
+            } else {
+                log.warn(
+                    "export_consumer_runtime_failure tenant={} export={} attempt={} maxAttempts={} reason={}",
+                    msg.tenantId(), msg.exportId(), attempt, maxAttempts, ex.getMessage()
+                );
+                safeReject(deliveryTag, /* requeue */ true);
+            }
         } catch (Exception ex) {
             log.warn(
                 "export_consumer_unexpected_failure tenant={} export={} reason={}",
@@ -167,6 +205,19 @@ public class ExportQueueConsumer {
             renderService.failTerminally(msg, ErrorCode.INTERNAL_ERROR, ex.getMessage());
             safeReject(deliveryTag, /* requeue */ false);
         }
+    }
+
+    /**
+     * How many times this message has already been delivered, from the
+     * {@code x-delivery-count} header quorum queues stamp on redelivery.
+     * Absent header (first delivery, or a non-quorum queue) counts as 0.
+     */
+    private static long deliveryCount(com.rabbitmq.client.AMQP.BasicProperties properties) {
+        if (properties == null || properties.getHeaders() == null) {
+            return 0L;
+        }
+        Object value = properties.getHeaders().get(DELIVERY_COUNT_HEADER);
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     ExportJobMessage deserialize(byte[] body) throws Exception {

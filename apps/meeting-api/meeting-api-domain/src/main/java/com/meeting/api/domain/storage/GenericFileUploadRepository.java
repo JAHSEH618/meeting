@@ -10,6 +10,14 @@ public interface GenericFileUploadRepository {
 
     Optional<GenericFileUploadSession> findSession(String tenantId, String uploadId);
 
+    /**
+     * Loads the session with a pessimistic row lock ({@code FOR UPDATE}).
+     * Must run inside a transaction; used by {@code complete()} so two
+     * concurrent completes serialize instead of both passing the
+     * status check and double-creating files.
+     */
+    Optional<GenericFileUploadSession> findSessionForUpdate(String tenantId, String uploadId);
+
     Optional<GenericFileUploadPart> findPart(String tenantId, String uploadId, int partNumber);
 
     List<GenericFileUploadPart> findParts(String tenantId, String uploadId);

@@ -1,64 +1,115 @@
 package com.meeting.api.app.task;
 
 import com.meeting.api.app.common.TenantScopedTransaction;
-import com.meeting.api.client.enums.ProcessingTaskPhase;
-import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 
 /**
- * Periodically scans for tasks stuck at {@code WORKER_DAG_DONE} phase
- * and re-publishes {@code WorkerPhaseCompletedEvent} to drive them forward.
+ * Scans for tasks stuck at {@code WORKER_DAG_DONE} phase and re-publishes
+ * {@code WorkerPhaseCompletedEvent} to drive them forward.
  *
  * <p>This handles cases where the listener failed to process an event,
  * or where the app restarted after a callback committed but before
  * the listener ran.</p>
+ *
+ * <p>All task tables are FORCE RLS, so the scan iterates the configured
+ * active tenants and runs each query inside a tenant-scoped transaction
+ * — a naive cross-tenant query would silently return nothing. Only tasks
+ * whose last update is older than {@code stuckAfter} are recovered, so
+ * the scanner does not race the asynchronous
+ * {@code WorkerPhaseCompletedListener} that normally fires right after
+ * the callback commits.</p>
+ *
+ * <p>Scheduling and tenant configuration live in the start module
+ * ({@code WorkerDagDoneRecoveryScannerConfig}), mirroring the other
+ * scanners.</p>
  */
-@Component
 public class WorkerDagDoneRecoveryScanner {
     private static final Logger log = LoggerFactory.getLogger(WorkerDagDoneRecoveryScanner.class);
-    private static final int BATCH_SIZE = 100;
 
     private final ProcessingTaskRepository taskRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TenantScopedTransaction tenantScopedTransaction;
     private final Clock clock;
+    private final int batchSize;
+    private final Duration stuckAfter;
+    private volatile boolean warnedMissingExtension;
 
     public WorkerDagDoneRecoveryScanner(
         ProcessingTaskRepository taskRepository,
         ApplicationEventPublisher eventPublisher,
         TenantScopedTransaction tenantScopedTransaction,
-        Clock clock
+        Clock clock,
+        int batchSize,
+        Duration stuckAfter
     ) {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive");
+        }
+        if (stuckAfter.isNegative()) {
+            throw new IllegalArgumentException("stuckAfter must not be negative");
+        }
         this.taskRepository = taskRepository;
         this.eventPublisher = eventPublisher;
         this.tenantScopedTransaction = tenantScopedTransaction;
         this.clock = clock;
+        this.batchSize = batchSize;
+        this.stuckAfter = stuckAfter;
     }
 
     /**
-     * Runs every minute. Scans for tasks at {@code WORKER_DAG_DONE}
-     * phase that are not in a terminal status, and re-publishes
+     * Scans the given tenants for tasks at {@code WORKER_DAG_DONE} phase
+     * that are not in a terminal status and have been sitting there for at
+     * least {@code stuckAfter}, and re-publishes
      * {@code WorkerPhaseCompletedEvent} for each.
      */
-    @Scheduled(fixedRate = 60_000, initialDelay = 60_000)
-    public void scanAndRecover() {
-        try {
-            List<ProcessingTask> stuckTasks = findStuckTasks();
-            if (stuckTasks.isEmpty()) {
-                return;
+    public ScanReport scanAndRecover(List<String> tenantIds) {
+        if (!(taskRepository instanceof ProcessingTaskRepositoryExtensions ext)) {
+            // The safety net is dead without the recovery query — say so loudly
+            // (once) instead of silently scanning nothing.
+            if (!warnedMissingExtension) {
+                warnedMissingExtension = true;
+                log.warn(
+                    "worker_dag_done_recovery_unsupported repository={} does not implement"
+                        + " ProcessingTaskRepositoryExtensions — stuck WORKER_DAG_DONE tasks"
+                        + " will NOT be recovered",
+                    taskRepository.getClass().getName()
+                );
             }
-            log.info("worker_dag_done_recovery_scan found={} tasks", stuckTasks.size());
-            int recovered = 0;
+            return new ScanReport(0, 0);
+        }
+        OffsetDateTime olderThan = OffsetDateTime.now(clock).minus(stuckAfter);
+        int scanned = 0;
+        int recovered = 0;
+        for (String tenantId : tenantIds) {
+            List<ProcessingTask> stuckTasks;
+            try {
+                stuckTasks = tenantScopedTransaction.execute(
+                    tenantId,
+                    "worker-dag-done-recovery",
+                    "dag-done-recovery-find-" + tenantId,
+                    () -> ext.findStuckWorkerDagDone(tenantId, olderThan, batchSize)
+                );
+            } catch (RuntimeException ex) {
+                log.warn(
+                    "worker_dag_done_recovery_scan_failed tenant={} reason={}",
+                    tenantId, ex.getMessage(), ex
+                );
+                continue;
+            }
+            if (stuckTasks.isEmpty()) {
+                continue;
+            }
+            log.info("worker_dag_done_recovery_scan tenant={} found={} tasks", tenantId, stuckTasks.size());
+            scanned += stuckTasks.size();
             for (ProcessingTask task : stuckTasks) {
                 try {
                     republishEvent(task);
@@ -70,20 +121,11 @@ public class WorkerDagDoneRecoveryScanner {
                     );
                 }
             }
-            log.info("worker_dag_done_recovery_completed scanned={} recovered={}", stuckTasks.size(), recovered);
-        } catch (RuntimeException ex) {
-            log.error("worker_dag_done_recovery_scan_failed reason={}", ex.getMessage(), ex);
         }
-    }
-
-    private List<ProcessingTask> findStuckTasks() {
-        // We need to search across all tenants, so we can't use TenantScopedTransaction here
-        // The repository implementation should handle multi-tenant query
-        if (taskRepository instanceof ProcessingTaskRepositoryExtensions ext) {
-            return ext.findStuckWorkerDagDone(BATCH_SIZE);
+        if (scanned > 0) {
+            log.info("worker_dag_done_recovery_completed scanned={} recovered={}", scanned, recovered);
         }
-        // Fallback: no extension method available
-        return List.of();
+        return new ScanReport(scanned, recovered);
     }
 
     private void republishEvent(ProcessingTask task) {
@@ -114,15 +156,20 @@ public class WorkerDagDoneRecoveryScanner {
         );
     }
 
+    public record ScanReport(int scanned, int recovered) {}
+
     /**
      * Extension interface for ProcessingTaskRepository to support
-     * recovery queries. Not all implementations need to support this.
+     * recovery queries. The query is tenant-scoped: task tables are FORCE
+     * RLS, so callers must invoke it once per active tenant inside a
+     * tenant-scoped transaction.
      */
     public interface ProcessingTaskRepositoryExtensions {
         /**
-         * Finds tasks stuck at WORKER_DAG_DONE phase (non-terminal status).
-         * Query should scan across all tenants.
+         * Finds tasks of the given tenant stuck at WORKER_DAG_DONE phase
+         * (non-terminal status, not held at the worker phase) whose last
+         * update is older than {@code olderThan}.
          */
-        List<ProcessingTask> findStuckWorkerDagDone(int limit);
+        List<ProcessingTask> findStuckWorkerDagDone(String tenantId, OffsetDateTime olderThan, int limit);
     }
 }
