@@ -142,8 +142,12 @@ public class MinutesApplicationService implements MinutesFacade {
 
     @Override
     public MinutesDTO regenerate(RegenerateMinutesCommand command) {
-        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(),
-            () -> doRegenerate(command, null));
+        // No wrapping transaction here: doRegenerate manages its own
+        // "Short TX #1 / no-TX LLM / Short TX #2" split. An outer
+        // tenantScopedTransaction.execute would be joined by the inner short
+        // transactions (REQUIRED propagation), leaving the LLM call holding a
+        // DB connection and an open transaction for its whole duration.
+        return doRegenerate(command, null);
     }
 
     /**
@@ -164,7 +168,7 @@ public class MinutesApplicationService implements MinutesFacade {
     }
 
     private MinutesDTO doRegenerate(RegenerateMinutesCommand command, String taskId) {
-        // Short TX #1: load meeting + transcript, validate versions
+        // Short TX #1: load meeting + transcript + workstation context, validate versions
         GenerationContext context = tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
             Meeting meeting = meetingRepository.findById(command.tenantId(), command.meetingId())
                 .orElseThrow(() -> new IllegalArgumentException("meeting not found: " + command.meetingId()));
@@ -192,7 +196,16 @@ public class MinutesApplicationService implements MinutesFacade {
                 segmentById.put(seg.segmentId(), seg);
             }
 
-            return new GenerationContext(meeting, segments, segmentById, currentTranscriptVersion, currentMinutesVersion);
+            // Workstation D1 / D2 context is tenant-scoped too, so it must be
+            // read here inside TX #1 — in the no-TX LLM window below, RLS
+            // would silently return empty glossary / reference content.
+            String glossaryBlock = glossaryBlockFor(command.tenantId(), command.meetingId());
+            String referenceBlock = referenceBlockFor(command.tenantId(), command.meetingId());
+
+            return new GenerationContext(
+                meeting, segments, segmentById, currentTranscriptVersion, currentMinutesVersion,
+                glossaryBlock, referenceBlock
+            );
         });
 
         // No TX: call LLM gateway
@@ -204,7 +217,7 @@ public class MinutesApplicationService implements MinutesFacade {
                 taskId,
                 CAPABILITY,
                 TASK_NAME,
-                buildLlmContext(context.meeting, command, context.segments),
+                buildLlmContext(context, command),
                 (String) null,
                 (String) null
             ));
@@ -269,15 +282,20 @@ public class MinutesApplicationService implements MinutesFacade {
         }
     }
 
-    private Map<String, Object> buildLlmContext(
-        Meeting meeting,
-        RegenerateMinutesCommand command,
-        List<TranscriptRepository.TranscriptSegmentRecord> segments
+    /**
+     * Pure assembly — runs in the no-TX LLM window, so everything tenant-scoped
+     * (transcript, glossary, references) must already be loaded on the
+     * {@link GenerationContext} by TX #1.
+     */
+    private static Map<String, Object> buildLlmContext(
+        GenerationContext generationContext,
+        RegenerateMinutesCommand command
     ) {
+        Meeting meeting = generationContext.meeting;
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("meetingTitle", meeting.title());
         context.put("meetingId", command.meetingId());
-        String transcript = renderTranscript(segments);
+        String transcript = renderTranscript(generationContext.segments);
         context.put("transcript", transcript);
         // Same content under the template files' canonical placeholder name so
         // both {{transcript}} and {{transcriptSegments}} render — the two names
@@ -295,13 +313,13 @@ public class MinutesApplicationService implements MinutesFacade {
 
         // Workstation D2 — glossary terms (token-budget capped, R3). Always
         // present so the template placeholder never dangles.
-        String glossaryBlock = glossaryBlockFor(command.tenantId(), command.meetingId());
+        String glossaryBlock = generationContext.glossaryBlock;
         context.put("glossary", glossaryBlock.isEmpty() ? "（无）" : glossaryBlock);
         // Workstation D1 — REFERENCE document summaries.
         // The LlmGateway already fail-closes on CONFIDENTIAL / SECRET meetings, so we don't need
         // to re-check here. If the gateway lets the call through, the meeting is PUBLIC / INTERNAL
         // and references with effectively-elevated security were rejected at attach time (R4).
-        String referenceBlock = referenceBlockFor(command.tenantId(), command.meetingId());
+        String referenceBlock = generationContext.referenceBlock;
         context.put("referenceDocuments", referenceBlock.isEmpty() ? "（无）" : referenceBlock);
         return context;
     }
@@ -533,7 +551,9 @@ public class MinutesApplicationService implements MinutesFacade {
         List<TranscriptRepository.TranscriptSegmentRecord> segments,
         Map<String, TranscriptRepository.TranscriptSegmentRecord> segmentById,
         int currentTranscriptVersion,
-        int currentMinutesVersion
+        int currentMinutesVersion,
+        String glossaryBlock,
+        String referenceBlock
     ) {
     }
 

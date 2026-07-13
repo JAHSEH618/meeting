@@ -44,6 +44,63 @@ class EmbeddingTaskDispatcherTest {
         assertThat(result.taskIds()).isEmpty();
         assertThat(fx.tasks.saved).isEmpty();
         assertThat(fx.publisher.events).isEmpty();
+        // Short-circuit must not even open a tenant transaction.
+        assertThat(fx.tenantTx.executions()).isZero();
+    }
+
+    @Test
+    void dispatchRunsInsideTenantScopedTransactionForTheEventTenant() {
+        var fx = new Fixtures();
+        List<Boolean> saveInTx = new ArrayList<>();
+        fx.tasks.onSave = () -> saveInTx.add(fx.tenantTx.inTransaction());
+        List<Boolean> publishInTx = new ArrayList<>();
+        MessagePublisher probingPublisher = e -> publishInTx.add(fx.tenantTx.inTransaction());
+        EmbeddingTaskDispatcher dispatcher = new EmbeddingTaskDispatcher(
+            fx.tasks, probingPublisher, fx.metrics, CLOCK, fx.tenantTx
+        );
+        var event = new KnowledgeChunkReindexRequestedEvent(
+            "tenant_01", "mtg_01", null,
+            List.of(ref("c1", "text 1"), ref("c2", "text 2")),
+            "default-zh-v1", 1, null, null
+        );
+
+        dispatcher.onReindexRequested(event);
+
+        // AFTER_COMMIT leaves the listener with no transaction and no tenant
+        // GUC: the processing_tasks insert + outbox append must run inside a
+        // fresh tenant-scoped transaction or RLS WITH CHECK rejects them.
+        assertThat(fx.tenantTx.tenantIds()).containsExactly("tenant_01");
+        assertThat(saveInTx).isNotEmpty().containsOnly(true);
+        assertThat(publishInTx).isNotEmpty().containsOnly(true);
+    }
+
+    @Test
+    void listenerDoesNotDeclareABareSpringTransaction() throws NoSuchMethodException {
+        // @Transactional(REQUIRES_NEW) opened a fresh transaction WITHOUT the
+        // tenant GUC — the tenant context must come from TenantScopedTransaction.
+        var method = EmbeddingTaskDispatcher.class.getMethod(
+            "onReindexRequested", KnowledgeChunkReindexRequestedEvent.class);
+        assertThat(method.getAnnotation(org.springframework.transaction.annotation.Transactional.class)).isNull();
+    }
+
+    @Test
+    void dispatchFailureIsCountedAndRethrown() {
+        var fx = new Fixtures();
+        fx.tasks.onSave = () -> {
+            throw new IllegalStateException("insert rejected");
+        };
+        var event = new KnowledgeChunkReindexRequestedEvent(
+            "tenant_01", "mtg_01", null,
+            List.of(ref("c1", "text 1")),
+            "default-zh-v1", 1, null, null
+        );
+
+        assertThatThrownBy(() -> fx.dispatcher().onReindexRequested(event))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("insert rejected");
+
+        assertThat(fx.metrics.outboxFailedCounter("EmbeddingDispatcher", "DISPATCH_FAILED").count())
+            .isEqualTo(1.0d);
     }
 
     @Test
@@ -175,7 +232,7 @@ class EmbeddingTaskDispatcherTest {
     void customMaxBatchSizeIsHonoured() {
         var fx = new Fixtures();
         EmbeddingTaskDispatcher tiny = new EmbeddingTaskDispatcher(
-            fx.tasks, fx.publisher, fx.metrics, CLOCK, 2
+            fx.tasks, fx.publisher, fx.metrics, CLOCK, fx.tenantTx, 2
         );
 
         var event = new KnowledgeChunkReindexRequestedEvent(
@@ -193,9 +250,9 @@ class EmbeddingTaskDispatcherTest {
     @Test
     void invalidBatchSizeIsRejected() {
         var fx = new Fixtures();
-        assertThatThrownBy(() -> new EmbeddingTaskDispatcher(fx.tasks, fx.publisher, fx.metrics, CLOCK, 0))
+        assertThatThrownBy(() -> new EmbeddingTaskDispatcher(fx.tasks, fx.publisher, fx.metrics, CLOCK, fx.tenantTx, 0))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new EmbeddingTaskDispatcher(fx.tasks, fx.publisher, fx.metrics, CLOCK, 65))
+        assertThatThrownBy(() -> new EmbeddingTaskDispatcher(fx.tasks, fx.publisher, fx.metrics, CLOCK, fx.tenantTx, 65))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -234,18 +291,21 @@ class EmbeddingTaskDispatcherTest {
         final InMemoryProcessingTaskRepo tasks = new InMemoryProcessingTaskRepo();
         final CapturingMessagePublisher publisher = new CapturingMessagePublisher();
         final MeetingApiMetrics metrics = new MeetingApiMetrics(new SimpleMeterRegistry());
+        final RecordingTenantTransaction tenantTx = new RecordingTenantTransaction();
 
         EmbeddingTaskDispatcher dispatcher() {
-            return new EmbeddingTaskDispatcher(tasks, publisher, metrics, CLOCK);
+            return new EmbeddingTaskDispatcher(tasks, publisher, metrics, CLOCK, tenantTx);
         }
     }
 
     private static final class InMemoryProcessingTaskRepo implements ProcessingTaskRepository {
         final List<ProcessingTask> saved = new ArrayList<>();
         final Map<String, ProcessingTask> store = new LinkedHashMap<>();
+        Runnable onSave = () -> { };
 
         @Override
         public ProcessingTask save(ProcessingTask task) {
+            onSave.run();
             saved.add(task);
             store.put(task.taskId(), task);
             return task;

@@ -1,6 +1,7 @@
 package com.meeting.api.app.task;
 
 import com.meeting.api.app.common.ApplicationException;
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.extraction.ExtractionApplicationService;
 import com.meeting.api.app.minutes.MinutesApplicationService;
 import com.meeting.api.app.rag.TranscriptIndexFallbackEvent;
@@ -21,6 +22,16 @@ import org.springframework.stereotype.Service;
  * <p>Both the default worker-complete path and workstation's explicit
  * resume-java-phase path use this class so SUMMARY / EXTRACTION step state,
  * minutes persistence, and downstream RAG reindexing stay consistent.</p>
+ *
+ * <p>Callers arrive here without an ambient transaction (async
+ * {@code WorkerPhaseCompletedListener}, or {@code resumeJavaPhase} after its
+ * gating transaction has committed), so every task read goes through
+ * {@link TenantScopedTransaction} — a bare repository call would see empty
+ * results under RLS. The LLM invocations themselves
+ * ({@code generateForTask} / {@code extractForTask}) deliberately stay
+ * OUTSIDE any database transaction: those services manage their own
+ * "short TX / no-TX LLM / short TX" split so a slow provider never holds
+ * a connection or an open transaction.</p>
  */
 @Service
 public class JavaLlmPhaseOrchestrator {
@@ -29,19 +40,22 @@ public class JavaLlmPhaseOrchestrator {
     private final MinutesApplicationService minutesApplicationService;
     private final ExtractionApplicationService extractionApplicationService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final TenantScopedTransaction tenantScopedTransaction;
 
     public JavaLlmPhaseOrchestrator(
         TaskStepProgressService taskStepProgressService,
         ProcessingTaskRepository taskRepository,
         MinutesApplicationService minutesApplicationService,
         ExtractionApplicationService extractionApplicationService,
-        ApplicationEventPublisher applicationEventPublisher
+        ApplicationEventPublisher applicationEventPublisher,
+        TenantScopedTransaction tenantScopedTransaction
     ) {
         this.taskStepProgressService = taskStepProgressService;
         this.taskRepository = taskRepository;
         this.minutesApplicationService = minutesApplicationService;
         this.extractionApplicationService = extractionApplicationService;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.tenantScopedTransaction = tenantScopedTransaction;
     }
 
     public ProcessingTaskDTO run(String tenantId, String taskId) {
@@ -119,7 +133,11 @@ public class JavaLlmPhaseOrchestrator {
     }
 
     private ProcessingTask load(String tenantId, String taskId) {
-        return taskRepository.findById(tenantId, taskId)
+        // Read inside a tenant-scoped transaction: this runs on async / post-commit
+        // paths where no transaction (and no tenant GUC) is active, and RLS would
+        // otherwise return empty and misreport the task as TASK_NOT_FOUND.
+        return tenantScopedTransaction.execute(tenantId, null, null,
+                () -> taskRepository.findById(tenantId, taskId))
             .orElseThrow(() -> new ApplicationException(
                 ErrorCode.TASK_NOT_FOUND, 404,
                 "task not found: " + taskId, false

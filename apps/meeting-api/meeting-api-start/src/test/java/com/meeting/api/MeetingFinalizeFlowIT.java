@@ -214,7 +214,8 @@ class MeetingFinalizeFlowIT {
             taskRepository,
             minutesService,
             extractionService,
-            event -> { }
+            event -> { },
+            TenantScopedTransaction.immediate()
         );
         return new ProcessingTaskApplicationService(
             taskRepository,

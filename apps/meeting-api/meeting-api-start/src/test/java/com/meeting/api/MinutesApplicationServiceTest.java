@@ -3,12 +3,16 @@ package com.meeting.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.minutes.MinutesApplicationService;
+import com.meeting.api.client.enums.DocumentRole;
 import com.meeting.api.client.enums.MeetingStatus;
 import com.meeting.api.client.enums.StaleStatus;
 import com.meeting.api.client.minutes.RegenerateMinutesCommand;
+import com.meeting.api.domain.document.DocumentChunkRepository;
 import com.meeting.api.domain.llm.LlmGateway;
 import com.meeting.api.domain.llm.LlmProviderException;
 import com.meeting.api.domain.meeting.Meeting;
+import com.meeting.api.domain.meeting.MeetingDocumentRepository;
+import com.meeting.api.domain.meeting.MeetingGlossaryRepository;
 import com.meeting.api.domain.meeting.MeetingRepository;
 import com.meeting.api.domain.minutes.MinutesRepository;
 import com.meeting.api.domain.transcript.TranscriptRepository;
@@ -117,6 +121,88 @@ class MinutesApplicationServiceTest {
 
         assertThat(dto.sections().get(0).items().get(0).evidence()).singleElement()
             .satisfies(ev -> assertThat(ev.segmentId()).isEqualTo("seg_real"));
+    }
+
+    @Test
+    void regenerateCallsLlmOutsideAnyTenantTransactionUsingTwoShortTransactions() {
+        InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
+        meetings.add(meeting("meeting_01", 1, 0));
+        InMemoryTranscriptRepo transcripts = new InMemoryTranscriptRepo(1);
+        transcripts.add(segment("seg_01", 0, 1000, "SPEAKER_00", "Hello."));
+        RecordingTenantTransaction tenantTx = new RecordingTenantTransaction();
+        FakeLlmGateway llm = new FakeLlmGateway();
+        llm.txProbe = tenantTx::inTransaction;
+        llm.next = llmResponse("""
+            {"title": "T", "markdown": "# m", "sections": []}
+            """);
+        MinutesApplicationService service = new MinutesApplicationService(
+            meetings,
+            new InMemoryMinutesRepo(),
+            transcripts,
+            llm,
+            tenantTx,
+            new ObjectMapper(),
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)
+        );
+
+        service.regenerate(new RegenerateMinutesCommand(
+            "tenant_01", "meeting_01", "user_01", "req_01", "idem_01", null, null
+        ));
+
+        // The documented split: Short TX #1 (load) / no-TX LLM / Short TX #2
+        // (persist). The LLM call must never hold a DB transaction, and
+        // regenerate() must not add an outer transaction the short ones join.
+        assertThat(llm.calledInsideTenantTx).isFalse();
+        assertThat(tenantTx.executions()).isEqualTo(2);
+        assertThat(tenantTx.maxDepth()).isEqualTo(1);
+        assertThat(tenantTx.tenantIds()).containsOnly("tenant_01");
+    }
+
+    @Test
+    void glossaryAndReferenceReadsHappenInsideTenantTransactionAndReachLlm() {
+        InMemoryMeetingRepo meetings = new InMemoryMeetingRepo();
+        meetings.add(meeting("meeting_01", 1, 0));
+        InMemoryTranscriptRepo transcripts = new InMemoryTranscriptRepo(1);
+        transcripts.add(segment("seg_01", 0, 1000, "SPEAKER_00", "Hello."));
+        RecordingTenantTransaction tenantTx = new RecordingTenantTransaction();
+        FakeLlmGateway llm = new FakeLlmGateway();
+        llm.next = llmResponse("""
+            {"title": "T", "markdown": "# m", "sections": []}
+            """);
+        RecordingGlossaryRepo glossary = new RecordingGlossaryRepo(tenantTx);
+        RecordingMeetingDocumentRepo links = new RecordingMeetingDocumentRepo(tenantTx);
+        RecordingDocumentChunkRepo chunks = new RecordingDocumentChunkRepo(tenantTx);
+        MinutesApplicationService service = new MinutesApplicationService(
+            meetings,
+            new InMemoryMinutesRepo(),
+            transcripts,
+            llm,
+            tenantTx,
+            new ObjectMapper(),
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
+            null,
+            null,
+            glossary,
+            links,
+            chunks
+        );
+
+        service.regenerate(new RegenerateMinutesCommand(
+            "tenant_01", "meeting_01", "user_01", "req_01", "idem_01", null, null
+        ));
+
+        // Glossary / reference tables are tenant-scoped: reading them in the
+        // no-TX LLM window silently returns empty under RLS, so the reads
+        // must happen inside TX #1.
+        assertThat(glossary.calledInsideTenantTx).isTrue();
+        assertThat(links.calledInsideTenantTx).isTrue();
+        assertThat(chunks.calledInsideTenantTx).isTrue();
+        assertThat(llm.lastRequest.variables().get("glossary").toString())
+            .contains("RAG")
+            .contains("检索增强生成");
+        assertThat(llm.lastRequest.variables().get("referenceDocuments").toString())
+            .contains("需求文档")
+            .contains("参考内容第一段");
     }
 
     @Test
@@ -314,14 +400,88 @@ class MinutesApplicationServiceTest {
         }
     }
 
+    private static final class RecordingGlossaryRepo implements MeetingGlossaryRepository {
+        private final RecordingTenantTransaction tenantTx;
+        boolean calledInsideTenantTx;
+
+        private RecordingGlossaryRepo(RecordingTenantTransaction tenantTx) {
+            this.tenantTx = tenantTx;
+        }
+
+        @Override
+        public Optional<List<GlossaryTerm>> findByMeetingId(String tenantId, String meetingId) {
+            calledInsideTenantTx |= tenantTx.inTransaction();
+            return Optional.of(List.of(new GlossaryTerm("RAG", "检索增强生成", List.of("retrieval"))));
+        }
+
+        @Override
+        public OffsetDateTime replace(String tenantId, String meetingId, List<GlossaryTerm> terms, OffsetDateTime now) {
+            return now;
+        }
+    }
+
+    private static final class RecordingMeetingDocumentRepo implements MeetingDocumentRepository {
+        private final RecordingTenantTransaction tenantTx;
+        boolean calledInsideTenantTx;
+
+        private RecordingMeetingDocumentRepo(RecordingTenantTransaction tenantTx) {
+            this.tenantTx = tenantTx;
+        }
+
+        @Override
+        public String save(MeetingDocumentRecord record) {
+            return record.id();
+        }
+
+        @Override
+        public Optional<MeetingDocumentRecord> findActive(String tenantId, String meetingId, String documentId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<MeetingDocumentJoinRow> listByMeeting(String tenantId, String meetingId) {
+            calledInsideTenantTx |= tenantTx.inTransaction();
+            return List.of(new MeetingDocumentJoinRow(
+                "link_01", meetingId, "doc_01", "需求文档", DocumentRole.REFERENCE, "user_01", NOW
+            ));
+        }
+
+        @Override
+        public boolean softDelete(String tenantId, String meetingId, String documentId, OffsetDateTime now) {
+            return false;
+        }
+    }
+
+    private static final class RecordingDocumentChunkRepo implements DocumentChunkRepository {
+        private final RecordingTenantTransaction tenantTx;
+        boolean calledInsideTenantTx;
+
+        private RecordingDocumentChunkRepo(RecordingTenantTransaction tenantTx) {
+            this.tenantTx = tenantTx;
+        }
+
+        @Override
+        public void replaceChunks(String tenantId, String documentId, List<ChunkRecord> chunks, OffsetDateTime now) {
+        }
+
+        @Override
+        public List<ChunkRecord> findByDocument(String tenantId, String documentId) {
+            calledInsideTenantTx |= tenantTx.inTransaction();
+            return List.of(new ChunkRecord("chunk_01", tenantId, documentId, 0, 1, "参考内容第一段", "hash_01"));
+        }
+    }
+
     private static final class FakeLlmGateway implements LlmGateway {
         LlmRequest lastRequest;
         LlmResponse next;
         RuntimeException failWith;
+        java.util.function.BooleanSupplier txProbe = () -> false;
+        boolean calledInsideTenantTx;
 
         @Override
         public LlmResponse complete(LlmRequest request) {
             this.lastRequest = request;
+            calledInsideTenantTx |= txProbe.getAsBoolean();
             if (failWith != null) throw failWith;
             return next;
         }

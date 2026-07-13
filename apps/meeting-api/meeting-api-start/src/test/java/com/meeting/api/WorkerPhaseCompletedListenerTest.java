@@ -250,7 +250,7 @@ class WorkerPhaseCompletedListenerTest {
         private final List<String> calls;
 
         private RecordingOrchestrator(List<String> calls) {
-            super(null, null, null, null, null);
+            super(null, null, null, null, null, null);
             this.calls = calls;
         }
 

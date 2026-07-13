@@ -101,6 +101,31 @@ class JavaLlmPhaseOrchestratorTest {
     }
 
     @Test
+    void loadsTaskInsideTenantTransactionAndCallsLlmServicesOutside() {
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository(workerDagDoneTask());
+        RecordingTenantTransaction tenantTx = new RecordingTenantTransaction();
+        RecordingMinutesService minutes = new RecordingMinutesService();
+        RecordingExtractionService extraction = new RecordingExtractionService();
+        minutes.txProbe = tenantTx::inTransaction;
+        extraction.txProbe = tenantTx::inTransaction;
+        JavaLlmPhaseOrchestrator orchestrator = orchestrator(tasks, minutes, extraction, tenantTx);
+
+        var dto = orchestrator.run("tenant_01", "task_01");
+
+        assertThat(dto.phase()).isEqualTo(ProcessingTaskPhase.TERMINAL);
+        // Every task read re-opens a tenant-scoped transaction: the callers
+        // (async worker-complete listener, resume-java-phase after its gating
+        // transaction) have no ambient transaction, and a bare repository read
+        // would come back empty under RLS → spurious TASK_NOT_FOUND.
+        assertThat(tenantTx.executions()).isGreaterThanOrEqualTo(1);
+        assertThat(tenantTx.tenantIds()).containsOnly("tenant_01");
+        // The LLM-calling services stay OUTSIDE any tenant transaction; they
+        // manage their own short-TX / no-TX-LLM / short-TX split.
+        assertThat(minutes.calledInsideTenantTx).isFalse();
+        assertThat(extraction.calledInsideTenantTx).isFalse();
+    }
+
+    @Test
     void extractionFailureKeepsGeneratedMinutesAsPartialSuccess() {
         InMemoryTaskRepository tasks = new InMemoryTaskRepository(workerDagDoneTask());
         RecordingMinutesService minutes = new RecordingMinutesService();
@@ -122,13 +147,23 @@ class JavaLlmPhaseOrchestratorTest {
         MinutesApplicationService minutes,
         ExtractionApplicationService extraction
     ) {
+        return orchestrator(tasks, minutes, extraction, TenantScopedTransaction.immediate());
+    }
+
+    private static JavaLlmPhaseOrchestrator orchestrator(
+        InMemoryTaskRepository tasks,
+        MinutesApplicationService minutes,
+        ExtractionApplicationService extraction,
+        TenantScopedTransaction tenantScopedTransaction
+    ) {
         Clock clock = Clock.fixed(NOW.toInstant(), ZoneOffset.UTC);
         return new JavaLlmPhaseOrchestrator(
             new TaskStepProgressService(tasks, TenantScopedTransaction.immediate(), clock),
             tasks,
             minutes,
             extraction,
-            event -> { }
+            event -> { },
+            tenantScopedTransaction
         );
     }
 
@@ -177,6 +212,8 @@ class JavaLlmPhaseOrchestratorTest {
         private int calls;
         private String lastTaskId;
         private RuntimeException failure;
+        private java.util.function.BooleanSupplier txProbe = () -> false;
+        private boolean calledInsideTenantTx;
 
         private RecordingMinutesService() {
             super(null, null, null, null, TenantScopedTransaction.immediate(), new ObjectMapper());
@@ -186,6 +223,7 @@ class JavaLlmPhaseOrchestratorTest {
         public MinutesDTO generateForTask(String tenantId, String meetingId, String taskId, Integer expectedTranscriptVersion) {
             calls++;
             lastTaskId = taskId;
+            calledInsideTenantTx |= txProbe.getAsBoolean();
             if (failure != null) {
                 throw failure;
             }
@@ -197,6 +235,8 @@ class JavaLlmPhaseOrchestratorTest {
         private int calls;
         private String lastMeetingId;
         private RuntimeException failure;
+        private java.util.function.BooleanSupplier txProbe = () -> false;
+        private boolean calledInsideTenantTx;
 
         private RecordingExtractionService() {
             super(null, null, null, null, null, null, TenantScopedTransaction.immediate(), new ObjectMapper());
@@ -206,6 +246,7 @@ class JavaLlmPhaseOrchestratorTest {
         public ExtractionSummary extractForTask(String tenantId, String meetingId, String taskId) {
             calls++;
             lastMeetingId = meetingId;
+            calledInsideTenantTx |= txProbe.getAsBoolean();
             if (failure != null) {
                 throw failure;
             }
