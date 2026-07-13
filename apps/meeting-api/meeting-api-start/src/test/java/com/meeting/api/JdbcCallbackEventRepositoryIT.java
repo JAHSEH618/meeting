@@ -44,6 +44,7 @@ class JdbcCallbackEventRepositoryIT {
         Flyway.configure()
             .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
             .locations("classpath:db/migration")
+            .placeholderReplacement(false)  // seed SQL uses PostgreSQL $tag$ dollar-quoting; ${ must stay literal
             .load()
             .migrate();
 

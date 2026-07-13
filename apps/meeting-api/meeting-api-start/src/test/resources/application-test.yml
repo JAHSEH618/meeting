@@ -8,6 +8,9 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # Mirror the main config: dollar-quoted seed SQL must not be
+    # placeholder-parsed (see application.yml).
+    placeholder-replacement: false
 
   rabbitmq:
     host: ${TESTCONTAINERS_RABBITMQ_HOST:localhost}

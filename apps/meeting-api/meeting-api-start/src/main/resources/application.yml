@@ -19,6 +19,12 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
+    # Seed migrations embed prompt templates and JSON schemas via PostgreSQL
+    # dollar-quoting ($body$…$body$, $schema$…$schema$); a closing $schema$
+    # immediately followed by `{` forms `${`, which Flyway would otherwise
+    # parse as an unresolved placeholder and fail the migration. No migration
+    # relies on Flyway placeholders, so replacement is disabled globally.
+    placeholder-replacement: false
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
