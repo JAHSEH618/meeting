@@ -27,6 +27,20 @@ class AiWorkerRerankGatewayTest {
     );
 
     @Test
+    void exactlyOneConstructorIsSpringInjectable() {
+        // Regression guard: this @Component has two public constructors (a
+        // Spring one and a test seam that injects a deterministic breaker).
+        // With neither annotated @Autowired, Spring falls back to a
+        // non-existent no-arg ctor and the entire ApplicationContext fails to
+        // start — a failure only the Docker-gated ITs surface. Keep exactly
+        // one @Autowired constructor.
+        long autowired = java.util.Arrays.stream(AiWorkerRerankGateway.class.getDeclaredConstructors())
+            .filter(c -> c.isAnnotationPresent(org.springframework.beans.factory.annotation.Autowired.class))
+            .count();
+        assertThat(autowired).isEqualTo(1L);
+    }
+
+    @Test
     void rerankSerializesCandidatesAndParsesItems() {
         var data = MAPPER.createObjectNode();
         data.put("modelVersion", "bge-reranker-v2-m3-fake-v0");

@@ -11,6 +11,7 @@ import com.meeting.api.domain.rag.RerankGateway;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,6 +40,11 @@ public class AiWorkerRerankGateway implements RerankGateway {
     private final MeetingApiMetrics metrics;
     private final AiWorkerCircuitBreaker breaker;
 
+    // Spring's injection constructor. With two constructors present, one must
+    // be marked @Autowired or Spring falls back to a (nonexistent) no-arg ctor
+    // and the whole context fails to start. The 5-arg ctor below is a test seam
+    // for injecting a deterministic breaker.
+    @Autowired
     public AiWorkerRerankGateway(
         AiWorkerInternalClient client,
         AiWorkerInternalProperties properties,
