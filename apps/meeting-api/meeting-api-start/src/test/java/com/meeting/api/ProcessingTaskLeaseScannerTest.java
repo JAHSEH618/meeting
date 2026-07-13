@@ -102,6 +102,30 @@ class ProcessingTaskLeaseScannerTest {
     }
 
     @Test
+    void transitionsClaimTasksWithRowLockNotPlainRead() {
+        // The per-task transition must load via findByIdForUpdate: the FOR
+        // UPDATE claim is what stops a second scanner replica from also
+        // republishing the orphan, and stops a stale save() from overwriting
+        // a concurrent callback's just-committed heartbeat/completion.
+        ProcessingTask expired = runningTaskWithLease("task_expired", NOW.minusMinutes(2));
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository(List.of(expired));
+        RecordingRepublisher republisher = new RecordingRepublisher(true);
+
+        ProcessingTaskLeaseScanner scanner = new ProcessingTaskLeaseScanner(
+            tasks,
+            republisher,
+            TenantScopedTransaction.immediate(),
+            Clock.fixed(NOW.toInstant(), ZoneOffset.UTC),
+            10
+        );
+
+        scanner.scanOnce(List.of("tenant_01"));
+
+        assertThat(tasks.forUpdateLoads).containsExactly("task_expired");
+        assertThat(tasks.plainLoads).isEmpty();
+    }
+
+    @Test
     void reportsZeroWhenRepositoryReturnsNoCandidates() {
         InMemoryTaskRepository tasks = new InMemoryTaskRepository(List.of());
 
@@ -188,6 +212,12 @@ class ProcessingTaskLeaseScannerTest {
 
     private static class InMemoryTaskRepository implements ProcessingTaskRepository {
         private final List<ProcessingTask> tasks;
+        // Records which load path callers use so tests can pin that state
+        // transitions go through the FOR UPDATE (locking) read. A real lock
+        // can't be modelled in-memory; call recording is the practical mirror
+        // of the locking semantics.
+        final List<String> plainLoads = new ArrayList<>();
+        final List<String> forUpdateLoads = new ArrayList<>();
 
         InMemoryTaskRepository(List<ProcessingTask> initial) {
             this.tasks = new ArrayList<>(initial);
@@ -211,14 +241,20 @@ class ProcessingTaskLeaseScannerTest {
 
         @Override
         public Optional<ProcessingTask> findById(String tenantId, String taskId) {
-            return tasks.stream()
-                .filter(task -> task.tenantId().equals(tenantId) && task.taskId().equals(taskId))
-                .findFirst();
+            plainLoads.add(taskId);
+            return lookup(tenantId, taskId);
         }
 
         @Override
         public Optional<ProcessingTask> findByIdForUpdate(String tenantId, String taskId) {
-            return findById(tenantId, taskId);
+            forUpdateLoads.add(taskId);
+            return lookup(tenantId, taskId);
+        }
+
+        private Optional<ProcessingTask> lookup(String tenantId, String taskId) {
+            return tasks.stream()
+                .filter(task -> task.tenantId().equals(tenantId) && task.taskId().equals(taskId))
+                .findFirst();
         }
 
         @Override

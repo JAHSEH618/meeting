@@ -14,6 +14,9 @@ import java.util.Map;
 import java.util.Objects;
 
 public final class ProcessingTask {
+    /** Total attempt budget shared by lease-expiry requeues and worker-reported retryable failures. */
+    public static final int MAX_ATTEMPTS = 3;
+
     private final String taskId;
     private final String tenantId;
     private final String meetingId;
@@ -416,11 +419,32 @@ public final class ProcessingTask {
         return true;
     }
 
+    /** Whether another attempt may still be dispatched without exhausting the retry budget. */
+    public boolean hasRetryBudget() {
+        return attemptNo < MAX_ATTEMPTS;
+    }
+
+    /**
+     * Transition to ORPHANED because the worker reported a retryable failure,
+     * so the attempt can be requeued via {@link #requeueOrphaned} immediately
+     * instead of waiting for the lease to expire.
+     */
+    public void markOrphanedForRetryableFailure(OffsetDateTime now) {
+        requireNonTerminal();
+        if (status != ProcessingTaskStatus.RUNNING && status != ProcessingTaskStatus.QUEUED) {
+            throw new IllegalStateException("retryable failure requeue requires RUNNING or QUEUED but was " + status);
+        }
+        status = ProcessingTaskStatus.ORPHANED;
+        leaseOwner = null;
+        leaseExpiresAt = null;
+        touch(now);
+    }
+
     public void requeueOrphaned(OffsetDateTime now) {
         requireStatus(ProcessingTaskStatus.ORPHANED);
         requireNonTerminal();
         attemptNo += 1;
-        if (attemptNo > 3) {
+        if (attemptNo > MAX_ATTEMPTS) {
             throw new IllegalStateException("retry exhausted: attemptNo=" + attemptNo);
         }
         status = ProcessingTaskStatus.QUEUED;

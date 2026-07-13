@@ -423,6 +423,50 @@ curl -fsSL http://localhost:8080/actuator/health | jq '.components.aiWorker'
 | **Outbox 队列消费堵塞，后台日志出现大量的 HMAC 拒签** | Java 的密钥与 Worker 密钥发生了漂移或人工配置错乱 | 检查 CentOS 的 `.meeting-api-prod.env` 与 Mac 的 `.ai-worker-apple-silicon.env`。检查 `AI_WORKER_CALLBACK_HMAC_SECRET` 和 `AI_WORKER_INTERNAL_API_HMAC_SECRET` 四个密钥，两两严格一致。 |
 | **OSS 音频操作失败，提示 403 / SignatureDoesNotMatch** | 阿里云 OSS endpoint 配置或 AK/SK 有误，导致服务端签名失败 | 1. 确认 `STORAGE_BUCKET_*` 填写的名称在阿里云控制台确实存在且拼写正确。<br>2. 检查 `OSS_ENDPOINT` 在公网下是否填成了内网 `-internal` 地址。对于两机不在同地域 VPC 时，必须统一使用公网 Endpoint 进行上传测试。 |
 
+### 5.1 Outbox DLQ 处理
+
+Outbox 事件投递失败会自动重试；当重试预算耗尽（`retry_count + 1 >= meeting.outbox.max-retries`，默认 5）或事件类型不可路由时，该行被置为**终态** `domain_events_outbox.status='DLQ'`，此后不再自动重试，事件所承载的任务/导出会一直卡住，必须人工介入。
+
+**观测信号**：
+
+| 信号 | 含义 |
+|------|------|
+| Prometheus `meeting_api_outbox_dlq_total{eventType}`（Micrometer counter `meeting.api.outbox.dlq`） | 事件进入 DLQ 终态，非零即需人工处理；critical 告警 `OutboxEventsDeadLettered`（`infra/meeting-infra/observability/prometheus/rules.yaml`）基于它触发 |
+| `meeting_api_outbox_failed_total{eventType,errorCode}` | 每次可重试的投递失败计一次（区别于 DLQ 终态） |
+| `meeting_api_outbox_published_total{eventType}` | 成功投递计数 |
+| ERROR 日志标记 `outbox_event_dlq` | 携带 event id / type / aggregate 与最后一次错误信息 |
+
+**积压视图**：`OutboxMetricsSamplerConfig` 每 30s（`meeting.outbox-metrics.interval-ms`）采样 PENDING 行数与最老 PENDING 事件的年龄，发布 gauge `meeting_api_outbox_backlog` / `meeting_api_outbox_oldest_pending_seconds`，驱动 `OutboxBacklogHigh` / `OutboxPublishLag` 告警；`outboxBacklog` HealthIndicator（统计 PENDING 超过 30s 的行，≥5k 报 degraded、≥50k 报 DOWN）是同一信号的健康探针视图。
+
+**恢复步骤**：
+
+```sql
+-- 1. 检查 DLQ 行与失败原因
+SELECT id, event_type, aggregate_type, aggregate_id, retry_count,
+       last_error_code, last_error_message
+  FROM domain_events_outbox
+ WHERE status = 'DLQ';
+
+-- 2. 修复根因（RabbitMQ 可用性、schema 违规、路由配置）后重新入队
+UPDATE domain_events_outbox
+   SET status = 'PENDING', retry_count = 0
+ WHERE id = '<event-id>';
+```
+
+### 5.2 Rerank 熔断降级
+
+Java 调 ai-worker rerank 的路径带一个进程内熔断器（`AiWorkerCircuitBreaker`，状态 CLOSED / OPEN / HALF_OPEN，状态本身不导出为 gauge）：连续 `meeting.security.ai-worker.rerank-breaker-failure-threshold`（默认 5，置 0 关闭）次 unavailable/timeout 后打开 `meeting.security.ai-worker.rerank-breaker-open-ms`（默认 30000ms），期间 rerank 调用直接短路，不再逐次等待超时。
+
+- **可观测信号**：counter `meeting_api_aiworker_calls_total{operation="rerank",outcome="circuit_open"}`（由 `AiWorkerRerankGateway` 递增）；告警 `RagRerankDegradedRate` 统计 `outcome=~"unavailable|circuit_open"` 占比 >20%。
+- **降级行为**：RAG 检索结果按 RRF 排序返回，质量略降，但对用户不表现为失败。排障方向是恢复 ai-worker 可用性 / 排查 HMAC 配置漂移，无需重启 Java；熔断到期后会自动放行探测请求并在成功后闭合。
+
+### 5.3 callback_nonces 清理任务
+
+每个 worker 回调（含每 15s 一次的 step 心跳）都会写入一条 5 分钟 TTL 的 nonce，`callback_nonces` 表以心跳速率增长。`CallbackNonceCleanupConfig` 每 5 分钟（`meeting.callback-nonce-cleanup.interval-ms`，默认 300000）按活跃租户（`meeting.tenants.active`，兜底 `meeting.callback-nonce-cleanup.tenants`）逐租户清理过期行。
+
+- 日志标记：`callback_nonce_cleanup_run deleted=N`（有删除时打印）/ `callback_nonce_cleanup_failed tenant=...`（单租户失败不影响其他租户）。
+- 若通过 `meeting.callback-nonce-cleanup.enabled=false` 关闭该任务，此表将无限增长（索引膨胀、autovacuum 压力、回调热路径逐渐变慢），生产环境不要长期关闭。
+
 ---
 
 ## 6. 最终检查清单

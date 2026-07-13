@@ -5,6 +5,7 @@ import com.meeting.api.client.enums.ProcessingStepUpdateSource;
 import com.meeting.api.client.enums.ProcessingTaskPhase;
 import com.meeting.api.client.enums.ProcessingTaskStatus;
 import com.meeting.api.client.enums.StepStatus;
+import com.meeting.api.app.task.WorkerDagDoneRecoveryScanner;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.ProcessingTaskStep;
@@ -20,7 +21,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
+public class JdbcProcessingTaskRepository
+    implements ProcessingTaskRepository, WorkerDagDoneRecoveryScanner.ProcessingTaskRepositoryExtensions {
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcProcessingTaskRepository(JdbcTemplate jdbcTemplate) {
@@ -130,6 +132,12 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
 
     @Override
     public List<ExpiredLease> findExpiredLeases(String tenantId, OffsetDateTime now, int limit) {
+        // FOR UPDATE SKIP LOCKED: the scanner calls this inside a tenant-scoped
+        // transaction, so rows currently being transitioned (locked FOR UPDATE by
+        // a callback or by another scanner replica's per-task transaction) are
+        // skipped instead of being re-reported. The per-task transition then
+        // re-claims each candidate with findByIdForUpdate and re-checks its
+        // status/lease under that lock, which is what makes the requeue safe.
         return jdbcTemplate.query(
             """
             SELECT tenant_id, id
@@ -141,10 +149,40 @@ public class JdbcProcessingTaskRepository implements ProcessingTaskRepository {
                AND lease_expires_at < ?
              ORDER BY lease_expires_at ASC
              LIMIT ?
+               FOR UPDATE SKIP LOCKED
             """,
             (rs, rowNum) -> new ExpiredLease(rs.getString("tenant_id"), rs.getString("id")),
             tenantId,
             Timestamp.from(now.toInstant()),
+            limit
+        );
+    }
+
+    @Override
+    public List<ProcessingTask> findStuckWorkerDagDone(String tenantId, OffsetDateTime olderThan, int limit) {
+        // Tenant-scoped because processing_tasks is FORCE RLS — the recovery
+        // scanner iterates the active tenants and calls this inside a
+        // tenant-scoped transaction (a cross-tenant scan would silently return
+        // nothing under RLS). hold_at_worker_phase tasks are excluded: they sit
+        // at WORKER_DAG_DONE by design (workstation D3 gate) until an explicit
+        // resume-java-phase call, so they are waiting, not stuck.
+        return jdbcTemplate.query(
+            """
+            SELECT id, tenant_id, meeting_id, task_type, status, phase, current_step,
+                   attempt_count, lease_owner, lease_expires_at, heartbeat_at,
+                   last_error_code, created_at, updated_at, hold_at_worker_phase
+              FROM processing_tasks
+             WHERE tenant_id = ?
+               AND phase = 'WORKER_DAG_DONE'
+               AND status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'PARTIAL_SUCCEEDED')
+               AND hold_at_worker_phase = false
+               AND updated_at < ?
+             ORDER BY updated_at ASC
+             LIMIT ?
+            """,
+            (rs, rowNum) -> mapTask(rs, findSteps(tenantId, rs.getString("id"))),
+            tenantId,
+            Timestamp.from(olderThan.toInstant()),
             limit
         );
     }

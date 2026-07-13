@@ -124,6 +124,52 @@ class GenericFileUploadApplicationServiceTest {
     }
 
     @Test
+    void completeReplayReturnsExistingFileWithoutRewriting() {
+        TestContext ctx = new TestContext();
+        String uploadId = ctx.service.createSession(createCommand("ref.pdf", "application/pdf")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('a')));
+        var first = ctx.service.complete(completeCommand(uploadId));
+
+        var replay = ctx.service.complete(completeCommand(uploadId));
+
+        assertThat(replay.fileId()).isEqualTo(first.fileId());
+        // Idempotent replay: no second meeting_files row and no second lock claim.
+        assertThat(ctx.files.files).hasSize(1);
+        assertThat(ctx.uploads.forUpdateLoads).containsExactly(uploadId);
+    }
+
+    @Test
+    void completeClaimsSessionRowWithForUpdateBeforeWriting() {
+        // Pin the locking read: without findSessionForUpdate two concurrent
+        // completes both pass the status check and double-create the
+        // meeting_files row.
+        TestContext ctx = new TestContext();
+        String uploadId = ctx.service.createSession(createCommand("ref.pdf", "application/pdf")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('a')));
+
+        ctx.service.complete(completeCommand(uploadId));
+
+        assertThat(ctx.uploads.forUpdateLoads).containsExactly(uploadId);
+    }
+
+    @Test
+    void completeRunsStorageHeadOutsideTenantTransaction() {
+        // The TOS HEAD is a network call; it must not run inside a tenant
+        // transaction where it would pin a pooled DB connection.
+        RecordingTenantTransaction recordingTx = new RecordingTenantTransaction();
+        TestContext ctx = new TestContext(recordingTx);
+        ctx.storage.statHook = () -> assertThat(recordingTx.inTransaction())
+            .as("statObject must not run inside a tenant-scoped transaction")
+            .isFalse();
+        String uploadId = ctx.service.createSession(createCommand("ref.pdf", "application/pdf")).uploadId();
+        ctx.service.createPart(partCommand(uploadId, 1, sha('a')));
+
+        var completed = ctx.service.complete(completeCommand(uploadId));
+
+        assertThat(completed.fileId()).startsWith("file_");
+    }
+
+    @Test
     void abortMarksSessionAndDeletesTemporaryObject() {
         TestContext ctx = new TestContext();
         String uploadId = ctx.service.createSession(createCommand("ref.pdf", "application/pdf")).uploadId();
@@ -213,18 +259,29 @@ class GenericFileUploadApplicationServiceTest {
         private final InMemoryGenericUploads uploads = new InMemoryGenericUploads();
         private final InMemoryMeetingFiles files = new InMemoryMeetingFiles();
         private final FakeStorage storage = new FakeStorage();
-        private final GenericFileUploadApplicationService service = new GenericFileUploadApplicationService(
-            uploads,
-            files,
-            storage,
-            TenantScopedTransaction.immediate(),
-            CLOCK
-        );
+        private final GenericFileUploadApplicationService service;
+
+        TestContext() {
+            this(TenantScopedTransaction.immediate());
+        }
+
+        TestContext(TenantScopedTransaction tenantScopedTransaction) {
+            this.service = new GenericFileUploadApplicationService(
+                uploads,
+                files,
+                storage,
+                tenantScopedTransaction,
+                CLOCK
+            );
+        }
     }
 
     private static final class InMemoryGenericUploads implements GenericFileUploadRepository {
         private final Map<String, GenericFileUploadSession> sessions = new HashMap<>();
         private final Map<String, GenericFileUploadPart> parts = new HashMap<>();
+        // Records FOR UPDATE loads so tests can pin that complete() claims the
+        // session row with a lock before writing.
+        private final List<String> forUpdateLoads = new ArrayList<>();
 
         @Override
         public GenericFileUploadSession saveSession(GenericFileUploadSession session) {
@@ -242,6 +299,12 @@ class GenericFileUploadApplicationServiceTest {
         public Optional<GenericFileUploadSession> findSession(String tenantId, String uploadId) {
             GenericFileUploadSession session = sessions.get(uploadId);
             return session != null && tenantId.equals(session.tenantId()) ? Optional.of(session) : Optional.empty();
+        }
+
+        @Override
+        public Optional<GenericFileUploadSession> findSessionForUpdate(String tenantId, String uploadId) {
+            forUpdateLoads.add(uploadId);
+            return findSession(tenantId, uploadId);
         }
 
         @Override
@@ -283,6 +346,7 @@ class GenericFileUploadApplicationServiceTest {
 
     private static final class FakeStorage implements ObjectStorageGateway {
         private final List<String> deletedKeys = new ArrayList<>();
+        Runnable statHook = () -> {};
 
         @Override
         public String defaultBucket() {
@@ -305,6 +369,7 @@ class GenericFileUploadApplicationServiceTest {
 
         @Override
         public StorageObject statObject(String bucket, String objectKey) {
+            statHook.run();
             return new StorageObject(bucket, objectKey, 1024, sha('a'), "etag_object", OffsetDateTime.now(CLOCK));
         }
 

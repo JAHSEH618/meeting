@@ -25,7 +25,12 @@ deployments can raise the limit via env in a future iteration.
 from __future__ import annotations
 
 import asyncio
-from typing import Dict
+import logging
+from typing import Any, Callable, Dict, TypeVar
+
+_LOG = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 _DEFAULTS: dict[str, int] = {"mps": 1, "cuda": 1, "cpu": 4, "fake": 32}
 _semaphores: Dict[str, asyncio.Semaphore] = {}
@@ -65,6 +70,74 @@ def get_device_semaphore(device: str, lane: str | None = None) -> asyncio.Semaph
         sem = asyncio.Semaphore(limit)
         _semaphores[key] = sem
     return sem
+
+
+async def run_gated_blocking(
+    device: str,
+    fn: Callable[..., _T],
+    *args: Any,
+    timeout: float | None,
+    lane: str | None = None,
+    description: str = "blocking model call",
+) -> _T:
+    """Run ``fn(*args)`` in the default executor while holding the device slot.
+
+    The crucial difference from ``async with sem: await wait_for(
+    run_in_executor(...))``: on timeout (or caller cancellation) the
+    executor thread cannot be interrupted — it is still running CUDA/MPS
+    kernels and holding device memory. Releasing the semaphore at that
+    point would let the next inference start *concurrently with the
+    zombie call* and OOM on exactly the degraded path the gate exists to
+    protect. Instead the slot stays with the abandoned call and is
+    released by a done-callback only when the thread actually exits;
+    subsequent inferences queue on the semaphore as usual.
+    """
+    sem = get_device_semaphore(device, lane)
+    await sem.acquire()
+    try:
+        fut = asyncio.get_running_loop().run_in_executor(None, fn, *args)
+    except BaseException:
+        sem.release()
+        raise
+    try:
+        result = await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
+    except BaseException:
+        if fut.done():
+            # fn already finished — wait_for re-raised fn's own exception
+            # and the device is free again.
+            sem.release()
+        else:
+            # Timeout or cancellation while the thread is still running:
+            # the slot belongs to the zombie call until it exits.
+            _LOG.warning(
+                "%s abandoned (timeout/cancel); keeping its device slot until the thread exits",
+                description,
+            )
+            fut.add_done_callback(lambda f: _release_abandoned_slot(f, sem, description))
+        raise
+    sem.release()
+    return result
+
+
+def _release_abandoned_slot(
+    fut: "asyncio.Future[Any]", sem: asyncio.Semaphore, description: str
+) -> None:
+    """Done-callback for abandoned executor calls: log the outcome and
+    hand the device slot back. Runs on the event loop, so the plain
+    ``sem.release()`` is safe."""
+    if fut.cancelled():
+        _LOG.warning("%s cancelled before it started; releasing device slot", description)
+    else:
+        exc = fut.exception()
+        if exc is not None:
+            _LOG.warning(
+                "%s finished with %s after being abandoned; releasing device slot",
+                description,
+                type(exc).__name__,
+            )
+        else:
+            _LOG.warning("%s finished after being abandoned; releasing device slot", description)
+    sem.release()
 
 
 def reset_for_tests() -> None:

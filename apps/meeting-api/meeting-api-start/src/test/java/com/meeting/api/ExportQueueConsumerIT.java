@@ -262,11 +262,55 @@ class ExportQueueConsumerIT {
         }
     }
 
+    @Test
+    void persistentRetryableFailureIsBoundedAndDeadLetters() throws Exception {
+        // A render that always throws ExportRuntimeException must NOT spin the
+        // consumer forever: the quorum queue's x-delivery-count header bounds
+        // the requeue loop, the job is failed terminally, and the message
+        // dead-letters to export-queue.dlq.
+        ExportRenderService renderService = Mockito.mock(ExportRenderService.class);
+        doThrow(new com.meeting.api.domain.export.ExportRuntimeException(
+                ErrorCode.EXPORT_RENDER_FAILED, "soffice keeps timing out"))
+            .when(renderService).render(any());
+
+        try (var consumer = startConsumer(renderService, /* maxAttempts */ 3)) {
+            byte[] body = """
+                {"tenantId":"tenant_it_spin",
+                 "exportId":"exp_it_spin",
+                 "meetingId":"mtg_it_spin",
+                 "format":"PDF",
+                 "expectedInputVersion":{"transcriptVersion":1},
+                 "traceId":"trace_it_spin",
+                 "createdAt":"2026-05-19T10:00:00Z"}
+                """.getBytes(StandardCharsets.UTF_8);
+
+            publish(body);
+
+            verify(renderService, timeout(Duration.ofSeconds(15).toMillis()))
+                .failTerminally(any(), eq(ErrorCode.EXPORT_RENDER_FAILED), any());
+            // Exactly maxAttempts render attempts — bounded, not infinite.
+            verify(renderService, timeout(Duration.ofSeconds(5).toMillis()).times(3))
+                .render(any());
+            assertQueueDepthEventuallyZero(Duration.ofSeconds(5));
+
+            // The final reject used requeue=false, so the message dead-lettered.
+            long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (System.nanoTime() < deadline && dlqDepth() == 0) {
+                Thread.sleep(100);
+            }
+            assertThat(dlqDepth()).isEqualTo(1);
+        }
+    }
+
     // ─── helpers ──────────────────────────────────────────────
 
     private ConsumerHandle startConsumer(ExportRenderService renderService) {
+        return startConsumer(renderService, /* maxAttempts */ 5);
+    }
+
+    private ConsumerHandle startConsumer(ExportRenderService renderService, int maxAttempts) {
         ExportQueueConsumer consumer = new ExportQueueConsumer(
-            properties, objectMapper, renderService, /* enabled */ true
+            properties, objectMapper, renderService, /* enabled */ true, maxAttempts
         );
         consumer.start();
         return new ConsumerHandle(consumer);

@@ -7,12 +7,30 @@ import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
 
 /**
- * 8.1.2.a — verifies that Row-Level Security is enforced on at least
- * one tenant-owned table. The probe runs in a fresh connection without
- * setting {@code app.tenant_id}; under correct RLS configuration the
- * query returns zero rows or fails — either way RLS is active. If the
- * query returns rows we know the policy is broken and the indicator
- * goes DOWN.
+ * 8.1.2.a — verifies that Row-Level Security is actually enforced for
+ * this connection's role. The probe clears {@code app.tenant_id} and
+ * counts rows in {@code tenants}, a FORCE-RLS table whose
+ * {@code tenant_self} policy ({@code id = current_tenant_id()}) hides
+ * every row when no tenant context is set. {@code TenantBootstrap}
+ * guarantees the table is non-empty in any working deployment (prod
+ * refuses to start when a configured tenant is missing; dev/test seeds
+ * it), so:
+ *
+ * <ul>
+ *   <li>count == 0 → RLS filtered the rows → UP.</li>
+ *   <li>count &gt; 0 → the role sees rows without tenant context — it
+ *       has {@code BYPASSRLS} (e.g. the bootstrap superuser) or the
+ *       policy is broken → DOWN with {@code rls=bypassed}.</li>
+ * </ul>
+ *
+ * <p>A probe that filters on a nonexistent tenant id (the previous
+ * implementation) returns zero rows whether RLS is enforced or
+ * bypassed, and therefore cannot catch the misconfiguration this
+ * indicator exists for.</p>
+ *
+ * <p>A "permission denied" SQL failure still counts as UP — the policy
+ * (or a REVOKE) stopped the read. Any other failure (connectivity,
+ * missing table) stays DOWN.</p>
  */
 @Component("postgresRls")
 public class PostgresRlsHealthIndicator implements HealthIndicator {
@@ -28,18 +46,23 @@ public class PostgresRlsHealthIndicator implements HealthIndicator {
         try (Connection conn = dataSource.getConnection();
              var stmt = conn.createStatement()) {
             stmt.execute("RESET app.tenant_id");
-            stmt.execute("SET LOCAL ROLE NONE");
-            try (var rs = stmt.executeQuery(
-                "SELECT count(*) AS c FROM meetings WHERE tenant_id = '__rls_probe__'"
-            )) {
-                if (rs.next() && rs.getLong("c") == 0L) {
+            try (var rs = stmt.executeQuery("SELECT count(*) AS c FROM tenants")) {
+                long visible = rs.next() ? rs.getLong("c") : 0L;
+                if (visible == 0L) {
                     return Health.up()
-                        .withDetail("policy", "tenant_isolation")
-                        .withDetail("probedTable", "meetings")
+                        .withDetail("policy", "tenant_self")
+                        .withDetail("probedTable", "tenants")
                         .build();
                 }
                 return Health.down()
-                    .withDetail("reason", "RLS probe returned rows without tenant context")
+                    .withDetail("rls", "bypassed")
+                    .withDetail("probedTable", "tenants")
+                    .withDetail("visibleRows", visible)
+                    .withDetail(
+                        "reason",
+                        "tenants rows are visible without tenant context — the application"
+                            + " role bypasses RLS (BYPASSRLS/superuser) or the policy is broken"
+                    )
                     .build();
             }
         } catch (Exception ex) {
@@ -49,7 +72,7 @@ public class PostgresRlsHealthIndicator implements HealthIndicator {
             String msg = ex.getMessage();
             if (msg != null && msg.toLowerCase().contains("permission")) {
                 return Health.up()
-                    .withDetail("policy", "tenant_isolation")
+                    .withDetail("policy", "tenant_self")
                     .withDetail("note", "probe denied by RLS as expected")
                     .build();
             }

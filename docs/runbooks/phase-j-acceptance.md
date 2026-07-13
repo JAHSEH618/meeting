@@ -68,10 +68,10 @@ curl -fsSL http://localhost:8080/actuator/health | jq .
 
 **Pass criteria**
 
-- `/actuator/health` → `{ "status": "UP" }` with all six `HealthIndicator`
+- `/actuator/health` → `{ "status": "UP" }` with all five `HealthIndicator`
   components reporting UP:
-  `postgresRls`, `rabbitMqQueue`, `minIo`, `kms`, `aiWorker`,
-  `outboxBacklog`.
+  `postgresRls`, `rabbitMqQueue`, `kms`, `aiWorker`, `outboxBacklog`.
+  (`minIo` was removed in the v1.1.0 TOS migration.)
 - Prometheus rules load:
   `curl -fsSL http://localhost:9090/api/v1/rules | jq '.data.groups[].rules | length'`
   returns ≥ 12.

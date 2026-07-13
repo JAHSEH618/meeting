@@ -161,7 +161,7 @@ class TestUpdateStep:
     async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -182,7 +182,7 @@ class TestUpdateStep:
     async def test_request_body_contains_correct_fields(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -208,7 +208,7 @@ class TestUpdateStep:
     async def test_tenant_id_is_passed_through(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -228,7 +228,7 @@ class TestUpdateStep:
     async def test_error_code_included_when_provided(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -249,7 +249,7 @@ class TestUpdateStep:
     async def test_error_code_absent_when_not_provided(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -269,7 +269,7 @@ class TestUpdateStep:
     async def test_idempotency_key_distinguishes_step_status_events(self, client: JavaCallbackClient) -> None:
         idempotency_keys: list[str] = []
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             idempotency_keys.append(idempotency_key)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -300,7 +300,7 @@ class TestUpdateStep:
     async def test_running_start_and_heartbeat_do_not_share_idempotency_key(self, client: JavaCallbackClient) -> None:
         captured: list[tuple[dict, str]] = []
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured.append((body, idempotency_key))
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -332,7 +332,7 @@ class TestSubmitSpeakerEnrollmentEmbedding:
     async def test_uses_dedicated_endpoint_and_payload(self, client: JavaCallbackClient) -> None:
         captured: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured.update(method=method, path=path, body=body, idempotency_key=idempotency_key)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -362,7 +362,7 @@ class TestCompleteWorkerPhase:
     async def test_completed_steps_is_string_array(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -387,7 +387,7 @@ class TestCompleteWorkerPhase:
     async def test_request_body_fields(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -412,7 +412,7 @@ class TestCompleteWorkerPhase:
     async def test_terminal_complete_body_is_stable_for_idempotent_replay(self, client: JavaCallbackClient) -> None:
         captured_bodies: list[dict] = []
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_bodies.append(dict(body))
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -434,7 +434,7 @@ class TestCompleteWorkerPhase:
     async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -458,7 +458,7 @@ class TestFailTask:
     async def test_meeting_task_body_contains_meeting_id(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -479,7 +479,7 @@ class TestFailTask:
     async def test_tenant_id_in_request_body(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -507,7 +507,7 @@ class TestFailTask:
     async def test_terminal_fail_body_is_stable_for_idempotent_replay(self, client: JavaCallbackClient) -> None:
         captured_bodies: list[dict] = []
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_bodies.append(dict(body))
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -529,7 +529,7 @@ class TestFailTask:
     async def test_retryable_defaults_to_true(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -550,7 +550,7 @@ class TestFailTask:
     async def test_speaker_enrollment_id_is_included_when_provided(self, client: JavaCallbackClient) -> None:
         captured_body: dict = {}
 
-        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3):
+        async def mock_request(self_inner, method, path, body, task_id, attempt_no, trace_id, idempotency_key, max_retries=3, **kwargs):
             captured_body.update(body)
             return CallbackResponse(http_status=200, accepted=True)
 
@@ -611,7 +611,7 @@ class TestRequestRetryClassification:
 
         resp = await client.update_step(
             task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
-            status="RUNNING", progress=0,
+            status="RUNNING", progress=50,  # heartbeat → quick attempt-count mode
         )
 
         assert resp.accepted is False
@@ -626,8 +626,130 @@ class TestRequestRetryClassification:
 
         resp = await client.update_step(
             task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
-            status="RUNNING", progress=0,
+            status="RUNNING", progress=50,  # heartbeat → quick attempt-count mode
         )
 
         assert resp.accepted is False
         assert fake.calls == 3  # 429 is transient → retried
+
+
+class TestWritebackRetryBudget:
+    """Result writebacks retry within a time budget so a Java rolling restart
+    doesn't discard finished GPU work; heartbeats keep the quick 3-attempt
+    mode because the next emission supersedes a lost one."""
+
+    class _RefusingClient:
+        """Simulates a down API (connection refused on every attempt)."""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def request(self, *args, **kwargs):
+            self.calls += 1
+            raise ConnectionError("connection refused")
+
+    class _RecoveringClient:
+        """Refuses the first N attempts, then accepts — a rolling restart."""
+
+        def __init__(self, refuse_first: int) -> None:
+            self.refuse_first = refuse_first
+            self.calls = 0
+
+        async def request(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls <= self.refuse_first:
+                raise ConnectionError("connection refused")
+
+            class _Resp:
+                status_code = 200
+
+                def json(self) -> dict:
+                    return {"success": True}
+
+            return _Resp()
+
+    def _budgeted_client(self, monkeypatch, budget: float) -> JavaCallbackClient:
+        # Shrink the backoff so the test exercises several attempts quickly.
+        monkeypatch.setattr(
+            "ai_worker.infrastructure.java_callback.client._WRITEBACK_BACKOFF_INITIAL",
+            0.005,
+        )
+        client = JavaCallbackClient(base_url="http://localhost:8080")
+        client._writeback_retry_budget = budget
+        client._max_backoff = 0.01
+        return client
+
+    @pytest.mark.asyncio
+    async def test_terminal_callback_retries_beyond_attempt_count(self, monkeypatch) -> None:
+        client = self._budgeted_client(monkeypatch, budget=0.25)
+        fake = self._RefusingClient()
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.fail_task(
+            task_id="t", tenant_id="x", attempt_no=1,
+            failed_step="ASR", error_code="GPU_OOM", error_message="oom",
+        )
+
+        assert resp.accepted is False
+        assert resp.error_code == "WRITEBACK_FAILED"
+        # Attempt-count mode would stop at 3; the budget keeps it retrying.
+        assert fake.calls > 3
+
+    @pytest.mark.asyncio
+    async def test_terminal_callback_survives_recovering_api(self, monkeypatch) -> None:
+        client = self._budgeted_client(monkeypatch, budget=1.0)
+        fake = self._RecoveringClient(refuse_first=4)
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.complete_worker_phase(
+            task_id="t", tenant_id="x", meeting_id="m", attempt_no=1,
+            status="SUCCEEDED", completed_steps=["ASR"],
+        )
+
+        # 4 refused attempts would exhaust the old 3-attempt budget; the
+        # time budget rides out the restart and lands the writeback.
+        assert resp.accepted is True
+        assert fake.calls == 5
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_keeps_quick_attempt_mode(self, monkeypatch) -> None:
+        client = self._budgeted_client(monkeypatch, budget=60.0)
+        fake = self._RefusingClient()
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.update_step(
+            task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
+            status="RUNNING", progress=50,  # heartbeat
+        )
+
+        assert resp.accepted is False
+        assert fake.calls == 3  # never enters the budget mode
+
+    @pytest.mark.asyncio
+    async def test_step_transition_uses_writeback_budget(self, monkeypatch) -> None:
+        client = self._budgeted_client(monkeypatch, budget=0.25)
+        fake = self._RefusingClient()
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.update_step(
+            task_id="t", tenant_id="x", step_name="ASR", attempt_no=1,
+            status="SUCCEEDED", progress=100,  # transition, not heartbeat
+        )
+
+        assert resp.accepted is False
+        assert fake.calls > 3
+
+    @pytest.mark.asyncio
+    async def test_terminal_4xx_still_short_circuits_in_budget_mode(self) -> None:
+        fake = TestRequestRetryClassification._CountingClient(404)
+        client = JavaCallbackClient(base_url="http://localhost:8080")
+        client._http_client = fake  # type: ignore[assignment]
+
+        resp = await client.fail_task(
+            task_id="t", tenant_id="x", attempt_no=1,
+            failed_step="ASR", error_code="GPU_OOM", error_message="oom",
+        )
+
+        assert resp.accepted is False
+        assert resp.error_code == "CALLBACK_REJECTED"
+        assert fake.calls == 1  # permanent rejection is not retried

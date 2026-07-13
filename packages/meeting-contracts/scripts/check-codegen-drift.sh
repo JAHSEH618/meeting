@@ -20,7 +20,10 @@ check_path() {
   fi
 }
 
-check_path "apps/meeting-web/src/shared/api/types.gen.ts"                 "TS types.gen.ts"
+check_path "apps/meeting-web/src/shared/api/types.gen.ts"                 "TS types.gen.ts (meeting-web)"
+check_path "apps/ai-worker-web/src/shared/api/types.gen.ts"               "TS types.gen.ts (ai-worker-web)"
+check_path "apps/meeting-web/src/shared/api/error-messages.gen.ts"        "TS error-messages.gen.ts (meeting-web)"
+check_path "apps/ai-worker-web/src/shared/api/error-messages.gen.ts"      "TS error-messages.gen.ts (ai-worker-web)"
 check_path "apps/ai-worker/ai_worker/generated/internal_callback_types.py" "Python internal_callback_types.py"
 check_path "apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py" "Python ai_worker_internal_types.py"
 check_path "apps/ai-worker/ai_worker/generated/processing_task_message.py"  "Python processing_task_message.py"

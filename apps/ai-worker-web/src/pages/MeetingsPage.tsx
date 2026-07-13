@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAdminMeetingsQuery } from "@/features/meetings/queries";
 import { formatDate } from "@/shared/utils/formatters";
-import { ApiError } from "@/shared/api/client";
+import { formatError } from "@/shared/utils/format-error";
 
 const STATUS_TONE: Record<string, string> = {
   CREATED: "pill--neutral",
@@ -107,9 +107,7 @@ export function MeetingsPage() {
           <div className="banner banner--danger" role="alert">
             <strong className="banner__title">会议列表加载失败</strong>
             <span className="banner__body">
-              {error instanceof ApiError
-                ? `${error.error.code}: ${error.error.message}`
-                : "稍后重试"}
+              {formatError(error)}
             </span>
           </div>
         ) : null}

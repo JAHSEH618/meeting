@@ -20,7 +20,7 @@ class AiWorkerEmbeddingGatewayTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AiWorkerInternalProperties PROPS = new AiWorkerInternalProperties(
-        "http://test-ai-worker", "test-hmac", 3000, 3000, 5000, 2000, 1000
+        "http://test-ai-worker", "test-hmac", 3000, 3000, 5000, 2000, 1000, null, null
     );
 
     @Test

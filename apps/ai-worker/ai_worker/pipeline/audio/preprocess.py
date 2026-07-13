@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import shutil
 from typing import Any
@@ -61,10 +62,19 @@ async def transcode_to_wav16k(
     ffmpeg_binary: str = "ffmpeg",
     timeout_seconds: float | None = None,
 ) -> None:
-    """Decode ``source`` once into 16 kHz mono PCM WAV at ``target``."""
+    """Decode ``source`` once into 16 kHz mono PCM WAV at ``target``.
+
+    Atomicity contract: ffmpeg writes to a ``.part`` sibling that is only
+    ``os.replace``d onto ``target`` after a clean exit. A timeout, non-zero
+    exit, or worker crash therefore can't leave a truncated-but-plausible WAV
+    at the target path for downstream ffprobe/ASR to silently consume; the
+    partial bytes are unlinked on every failure path.
+    """
     if shutil.which(ffmpeg_binary) is None:
         raise AudioPreprocessError("AUDIO_PREPROCESS_RUNTIME_MISSING", "ffmpeg is not installed")
     target.parent.mkdir(parents=True, exist_ok=True)
+    # ffmpeg 从扩展名推断容器格式,.part 推断不出来 → 显式 -f wav。
+    partial = target.with_name(target.name + ".part")
     process = await asyncio.create_subprocess_exec(
         ffmpeg_binary,
         "-nostdin",
@@ -74,24 +84,37 @@ async def transcode_to_wav16k(
         "-ac", "1",
         "-ar", str(NORMALIZED_SAMPLE_RATE_HZ),
         "-c:a", NORMALIZED_CODEC,
-        str(target),
+        "-f", "wav",
+        str(partial),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     budget = timeout_seconds if timeout_seconds is not None else settings.ffmpeg_transcode_timeout_seconds
     try:
-        _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=budget)
-    except asyncio.TimeoutError as exc:
-        process.kill()
-        await process.wait()
-        raise AudioPreprocessError(
-            "AUDIO_CORRUPTED", f"ffmpeg transcode timed out after {budget}s"
-        ) from exc
-    if process.returncode != 0:
-        message = stderr.decode("utf-8", errors="replace").strip()
-        raise AudioPreprocessError(
-            "AUDIO_CORRUPTED", message or "ffmpeg failed to transcode audio"
-        )
+        try:
+            _stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=budget)
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.wait()
+            raise AudioPreprocessError(
+                "AUDIO_CORRUPTED", f"ffmpeg transcode timed out after {budget}s"
+            ) from exc
+        if process.returncode != 0:
+            message = stderr.decode("utf-8", errors="replace").strip()
+            raise AudioPreprocessError(
+                "AUDIO_CORRUPTED", message or "ffmpeg failed to transcode audio"
+            )
+        # Atomic publish — any reader that observes ``target`` sees a WAV that
+        # ffmpeg finished writing.
+        os.replace(partial, target)
+    except BaseException:
+        # Includes CancelledError / KeyboardInterrupt: never leave partial
+        # bytes behind where a later pass (or disk-usage) could find them.
+        try:
+            partial.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 class FfprobeAudioPreprocessor:

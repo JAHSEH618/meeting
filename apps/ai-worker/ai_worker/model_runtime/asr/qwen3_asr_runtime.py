@@ -114,48 +114,49 @@ class Qwen3AsrRuntime:
         serialize behind an asyncio.Lock so the heavy load happens
         exactly once.
 
-        Wrapped in the per-device semaphore so a concurrent cold-start
-        with DIAR / embedding doesn't double-allocate VRAM on a single-
-        GPU host.
+        The blocking load runs under the per-device slot (via
+        run_gated_blocking) so a concurrent cold-start with DIAR /
+        embedding doesn't double-allocate VRAM on a single-GPU host.
         """
         if self._status == "READY":
             return
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import run_gated_blocking
 
-        async with get_device_semaphore(self._device):
-            async with self._load_lock:
-                if self._status == "READY":
-                    return
-                self._status = "LOADING"
-                try:
-                    # Bound the blocking load so a stalled funasr import / weight
-                    # load can't hang the step forever. On timeout wait_for
-                    # cancels the await (the executor thread may keep running,
-                    # but the task fails terminally and Java learns the outcome).
-                    await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(
-                            None, self._load_model_blocking
-                        ),
-                        timeout=settings.model_load_timeout_seconds,
-                    )
-                    self._status = "READY"
-                    self._last_error = None
-                except asyncio.TimeoutError as exc:
-                    self._status = "ERROR"
-                    self._last_error = (
-                        f"load timed out after {settings.model_load_timeout_seconds}s"
-                    )
-                    raise Qwen3AsrRuntimeError(
-                        "ASR_MODEL_TIMEOUT",
-                        f"qwen3-asr load timed out after {settings.model_load_timeout_seconds}s",
-                    ) from exc
-                except Exception as exc:
-                    self._status = "ERROR"
-                    self._last_error = f"{type(exc).__name__}: {exc}"
-                    raise Qwen3AsrRuntimeError(
-                        "ASR_MODEL_TIMEOUT",
-                        f"failed to load qwen3-asr: {exc}",
-                    ) from exc
+        async with self._load_lock:
+            if self._status == "READY":
+                return
+            self._status = "LOADING"
+            try:
+                # Bound the blocking load so a stalled funasr import / weight
+                # load can't hang the step forever. The executor thread can't
+                # be interrupted on timeout — run_gated_blocking keeps the
+                # device slot with the zombie load until it actually exits,
+                # so a retry (or another model) queues instead of racing it
+                # for VRAM.
+                await run_gated_blocking(
+                    self._device,
+                    self._load_model_blocking,
+                    timeout=settings.model_load_timeout_seconds,
+                    description="qwen3-asr load",
+                )
+                self._status = "READY"
+                self._last_error = None
+            except asyncio.TimeoutError as exc:
+                self._status = "ERROR"
+                self._last_error = (
+                    f"load timed out after {settings.model_load_timeout_seconds}s"
+                )
+                raise Qwen3AsrRuntimeError(
+                    "ASR_MODEL_TIMEOUT",
+                    f"qwen3-asr load timed out after {settings.model_load_timeout_seconds}s",
+                ) from exc
+            except Exception as exc:
+                self._status = "ERROR"
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                raise Qwen3AsrRuntimeError(
+                    "ASR_MODEL_TIMEOUT",
+                    f"failed to load qwen3-asr: {exc}",
+                ) from exc
 
     def _load_model_blocking(self) -> None:
         """Synchronous heavy load. Called from ensure_loaded's executor.
@@ -215,47 +216,50 @@ class Qwen3AsrRuntime:
         bursty load. Fake mode's ``device=="fake"`` semaphore is wide
         open, so this stays a no-op for tests.
         """
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import (
+            get_device_semaphore,
+            run_gated_blocking,
+        )
 
         if metadata.duration_ms <= 0:
             raise Qwen3AsrRuntimeError("ASR_EMPTY_RESULT", "audio duration is empty")
-        async with get_device_semaphore(self._device):
-            if self._use_fake:
+        if self._use_fake:
+            async with get_device_semaphore(self._device):
                 return await self._fake.transcribe(audio_path, metadata, language)
-            if self._status != "READY" or self._model is None:
-                raise Qwen3AsrRuntimeError(
-                    "ASR_RUNTIME_ERROR",
-                    "qwen3-asr runtime is not loaded; call await ensure_loaded() first",
-                )
-            # funasr's `generate` is sync + CPU-bound (or GPU-bound); push
-            # to an executor so the FastAPI event loop stays responsive, and
-            # bound it with a duration-scaled timeout so a stalled inference
-            # surfaces as a terminal ASR_MODEL_TIMEOUT instead of hanging the
-            # step (heartbeats would otherwise renew the Java lease forever).
-            loop = asyncio.get_running_loop()
-            timeout_s = (
-                settings.asr_inference_timeout_base_seconds
-                + max(1.0, metadata.duration_ms / 60_000.0)
-                * settings.asr_inference_timeout_per_audio_minute_seconds
+        if self._status != "READY" or self._model is None:
+            raise Qwen3AsrRuntimeError(
+                "ASR_RUNTIME_ERROR",
+                "qwen3-asr runtime is not loaded; call await ensure_loaded() first",
             )
-            try:
-                return await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        self._transcribe_blocking,
-                        audio_path,
-                        metadata,
-                        language,
-                        context,
-                    ),
-                    timeout=timeout_s,
-                )
-            except asyncio.TimeoutError as exc:
-                raise Qwen3AsrRuntimeError(
-                    "ASR_MODEL_TIMEOUT",
-                    f"qwen3-asr inference exceeded {timeout_s:.0f}s budget "
-                    f"for {metadata.duration_ms}ms audio",
-                ) from exc
+        # funasr's `generate` is sync + CPU-bound (or GPU-bound); push
+        # to an executor so the FastAPI event loop stays responsive, and
+        # bound it with a duration-scaled timeout so a stalled inference
+        # surfaces as a terminal ASR_MODEL_TIMEOUT instead of hanging the
+        # step (heartbeats would otherwise renew the Java lease forever).
+        # On timeout the device slot stays with the zombie inference until
+        # its thread exits (see run_gated_blocking).
+        timeout_s = (
+            settings.asr_inference_timeout_base_seconds
+            + max(1.0, metadata.duration_ms / 60_000.0)
+            * settings.asr_inference_timeout_per_audio_minute_seconds
+        )
+        try:
+            return await run_gated_blocking(
+                self._device,
+                self._transcribe_blocking,
+                audio_path,
+                metadata,
+                language,
+                context,
+                timeout=timeout_s,
+                description="qwen3-asr inference",
+            )
+        except asyncio.TimeoutError as exc:
+            raise Qwen3AsrRuntimeError(
+                "ASR_MODEL_TIMEOUT",
+                f"qwen3-asr inference exceeded {timeout_s:.0f}s budget "
+                f"for {metadata.duration_ms}ms audio",
+            ) from exc
 
     def _transcribe_blocking(
         self,

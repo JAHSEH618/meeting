@@ -111,6 +111,25 @@ public class JdbcAudioUploadRepository implements AudioUploadRepository {
     }
 
     @Override
+    public Optional<AudioUploadSession> findSessionForUpdate(String tenantId, String uploadId) {
+        List<AudioUploadSession> sessions = jdbcTemplate.query(
+            """
+            SELECT id, tenant_id, meeting_id, file_id, object_key, bucket, content_type,
+                   file_name, file_size_bytes, file_sha256, part_size_bytes, max_part_count,
+                   upload_status, created_by, expires_at, completed_at, aborted_at,
+                   created_at, updated_at
+              FROM audio_upload_sessions
+             WHERE tenant_id = ? AND id = ?
+               FOR UPDATE
+            """,
+            this::mapSession,
+            tenantId,
+            uploadId
+        );
+        return sessions.stream().findFirst();
+    }
+
+    @Override
     public Optional<AudioUploadPart> findPart(String tenantId, String uploadId, int partNumber) {
         List<AudioUploadPart> parts = jdbcTemplate.query(
             """

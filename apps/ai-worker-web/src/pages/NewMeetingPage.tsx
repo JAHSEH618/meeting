@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ApiError } from "@/shared/api/client";
 import {
   abortAudioUpload,
   abortFileUpload,
@@ -27,6 +26,7 @@ import type {
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { MultipartUploader, MultipartUploadError } from "@/shared/upload/MultipartUploader";
+import { formatError } from "@/shared/utils/format-error";
 
 const MAX_GLOSSARY_TERMS = 200;
 const MAX_TERM_LENGTH = 64;
@@ -479,12 +479,6 @@ function deriveDocumentType(fileName: string, mime: string): DocumentType {
   return "OTHER";
 }
 
-function formatError(e: unknown): string {
-  if (e instanceof ApiError) return `${e.error.code}: ${e.error.message}`;
-  if (e instanceof MultipartUploadError) return `${e.code}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
 
 function isUploadAborted(e: unknown): boolean {
   return e instanceof MultipartUploadError && e.code === "UPLOAD_ABORTED";

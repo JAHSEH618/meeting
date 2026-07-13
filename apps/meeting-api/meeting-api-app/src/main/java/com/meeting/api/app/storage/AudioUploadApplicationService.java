@@ -168,23 +168,41 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
 
     @Override
     public AudioUploadSessionDTO complete(CompleteAudioUploadCommand command) {
-        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+        List<CompleteAudioUploadCommand.PartCommand> requestedParts = command.parts() == null ? List.of() : command.parts();
+
+        // Short TX #1 — load + request-shape validation, no writes. Returns the
+        // completed DTO for an idempotent replay, otherwise the session whose
+        // immutable bucket/objectKey feed the out-of-transaction HEAD below.
+        record Precheck(AudioUploadSessionDTO completed, AudioUploadSession session) {}
+        Precheck precheck = tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
             AudioUploadSession session = requireSession(command.tenantId(), command.meetingId(), command.uploadId());
+            if (session.uploadStatus() == AudioUploadStatus.COMPLETED) {
+                return new Precheck(toDto(session), null);
+            }
+            ensureMutable(session);
+            validateCompleteRequest(session, command, requestedParts);
+            return new Precheck(null, session);
+        });
+        if (precheck.completed() != null) {
+            return precheck.completed();
+        }
+
+        // No TX — the network HEAD to object storage must not hold a pooled
+        // connection. bucket/objectKey never change after createSession, so the
+        // metadata fetched here stays valid for the locked validation below.
+        StorageObject object = objectStorageGateway.statObject(precheck.session().bucket(), precheck.session().objectKey());
+
+        // Short TX #2 — re-load FOR UPDATE and re-validate under the row lock,
+        // then write. Two concurrent completes serialize here: the loser
+        // re-reads the committed COMPLETED session and returns it idempotently
+        // instead of duplicating the meeting_files row and pipeline task.
+        return tenantScopedTransaction.execute(command.tenantId(), command.requestedBy(), command.requestId(), () -> {
+            AudioUploadSession session = requireSessionForUpdate(command.tenantId(), command.meetingId(), command.uploadId());
             if (session.uploadStatus() == AudioUploadStatus.COMPLETED) {
                 return toDto(session);
             }
             ensureMutable(session);
-            if (!session.fileSha256().equals(command.fileSha256())) {
-                throw conflict(ErrorCode.UPLOAD_FILE_HASH_MISMATCH, "file sha256 does not match upload session");
-            }
-            List<CompleteAudioUploadCommand.PartCommand> requestedParts = command.parts() == null ? List.of() : command.parts();
-            if (requestedParts.isEmpty()) {
-                throw conflict(ErrorCode.UPLOAD_INCOMPLETE_PARTS, "complete requires at least one part");
-            }
-            if (requestedParts.size() > session.maxPartCount()) {
-                throw validation(ErrorCode.UPLOAD_TOO_MANY_PARTS, "too many upload parts");
-            }
-            validateExpectedPartSet(session, requestedParts);
+            validateCompleteRequest(session, command, requestedParts);
             List<AudioUploadPart> savedParts = uploadRepository.findParts(command.tenantId(), command.uploadId());
             Map<Integer, AudioUploadPart> savedByNumber = savedParts.stream()
                 .collect(java.util.stream.Collectors.toMap(AudioUploadPart::partNumber, part -> part));
@@ -204,7 +222,6 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
                     uploadRepository.savePart(savedPart.markCompleted(requestedPart.etag(), now));
                 }
             }
-            StorageObject object = objectStorageGateway.statObject(session.bucket(), session.objectKey());
             // sizeBytes >= 0 means the gateway reported a real size.
             // A real OSS/TOS HEAD always returns a non-negative size,
             // so 0 bytes vs a positive session size is treated as mismatch.
@@ -298,6 +315,37 @@ public class AudioUploadApplicationService implements AudioUploadFacade {
             throw forbidden(ErrorCode.PERMISSION_DENIED, "upload session is not accessible in current tenant");
         }
         return expireIfNeeded(session);
+    }
+
+    /** Same as {@link #requireSession} but claims the row with {@code FOR UPDATE}. */
+    private AudioUploadSession requireSessionForUpdate(String tenantId, String meetingId, String uploadId) {
+        AudioUploadSession session = uploadRepository.findSessionForUpdate(tenantId, uploadId)
+            .orElseThrow(() -> notFound(ErrorCode.VALIDATION_FAILED, "upload session not found: " + uploadId));
+        if (!meetingId.equals(session.meetingId())) {
+            throw forbidden(ErrorCode.PERMISSION_DENIED, "upload session is not accessible in current tenant");
+        }
+        return expireIfNeeded(session);
+    }
+
+    /**
+     * Deterministic request-vs-session checks shared by the pre-HEAD read
+     * transaction and the locked write transaction of {@code complete()}.
+     */
+    private void validateCompleteRequest(
+        AudioUploadSession session,
+        CompleteAudioUploadCommand command,
+        List<CompleteAudioUploadCommand.PartCommand> requestedParts
+    ) {
+        if (!session.fileSha256().equals(command.fileSha256())) {
+            throw conflict(ErrorCode.UPLOAD_FILE_HASH_MISMATCH, "file sha256 does not match upload session");
+        }
+        if (requestedParts.isEmpty()) {
+            throw conflict(ErrorCode.UPLOAD_INCOMPLETE_PARTS, "complete requires at least one part");
+        }
+        if (requestedParts.size() > session.maxPartCount()) {
+            throw validation(ErrorCode.UPLOAD_TOO_MANY_PARTS, "too many upload parts");
+        }
+        validateExpectedPartSet(session, requestedParts);
     }
 
     private AudioUploadSession expireIfNeeded(AudioUploadSession session) {

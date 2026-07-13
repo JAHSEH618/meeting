@@ -228,6 +228,45 @@ async def test_execute_step_sends_periodic_heartbeats_while_step_runs(callback_c
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_without_engine_progress_still_carries_progress_of_at_least_one(callback_client) -> None:
+    # RUNNING/progress=0 reuses the initial RUNNING state-transition
+    # idempotency key on the Java side and is discarded as a replay — the
+    # lease is NOT renewed, so a long no-progress step (DIARIZATION, model
+    # cold load) would exceed the lease TTL and get orphan-republished
+    # mid-inference. Every heartbeat must therefore clamp to progress>=1 so
+    # it takes the latest-wins heartbeat idempotency path that renews leases.
+    state_store = InMemoryWorkflowStateStore()
+    engine = SlowWorkflowEngine(state_store)
+    runtime = MvpWorkerRuntime(callback_client=callback_client, workflow_engine=engine, state_store=state_store)
+    runtime.heartbeat_interval_seconds = 0.01
+    task = TaskMessage(
+        task_id="task_noprogress_01",
+        task_type="MEETING_FULL_PIPELINE",
+        tenant_id="tenant_01",
+        meeting_id="mtg_01",
+        attempt_no=1,
+        pipeline_steps=("DIARIZATION",),
+        trace_id="trace_noprogress_01",
+    )
+    # StubWorkflowEngine contexts carry no step_progress → engine reports 0.
+    context = engine.start_pipeline(task)
+
+    result = await runtime.execute_step(task, "DIARIZATION", context)
+
+    assert result.status == "SUCCEEDED"
+    running_calls = [
+        call for call in callback_client.update_step.await_args_list
+        if call.kwargs["status"] == "RUNNING"
+    ]
+    # First RUNNING call is the step-entry transition (progress=0 is correct
+    # there); everything after it is a heartbeat and must carry 1..99.
+    assert running_calls[0].kwargs["progress"] == 0
+    heartbeats = running_calls[1:]
+    assert len(heartbeats) >= 2
+    assert all(1 <= call.kwargs["progress"] <= 99 for call in heartbeats)
+
+
+@pytest.mark.asyncio
 async def test_execute_step_converts_unexpected_error_to_terminal_failure(callback_client) -> None:
     state_store = InMemoryWorkflowStateStore()
     engine = ExplodingWorkflowEngine(state_store)

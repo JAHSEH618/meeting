@@ -123,12 +123,27 @@ class JavaSpeakerReferenceClient:
                 )
         return out
 
+    def _sweep_expired(self, now: float) -> None:
+        """Drop every expired cache entry.
+
+        The TTL used to be checked only on read, so keys that were never
+        requested again kept their decrypted centroids resident forever and
+        the (tenant, participant-set) keyed dict grew without bound on a
+        long-lived worker. A linear pass per batch() call is cheap next to
+        the network round-trip it fronts.
+        """
+        expired = [key for key, entry in self._cache.items() if entry.expires_at <= now]
+        for key in expired:
+            del self._cache[key]
+
     async def batch(self, tenant_id: str, person_ids: list[str]) -> dict[str, ReferenceEmbedding]:
         if not person_ids:
             return {}
+        now = time.time()
+        self._sweep_expired(now)
         key = (tenant_id, tuple(sorted(set(person_ids))))
         cached = self._cache.get(key)
-        if cached and cached.expires_at > time.time():
+        if cached and cached.expires_at > now:
             return {
                 pid: _copy_reference(ref)
                 for pid, ref in cached.by_person.items()

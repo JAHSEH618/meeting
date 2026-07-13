@@ -13,6 +13,7 @@ import com.meeting.api.client.task.ProcessingTaskDTO;
 import com.meeting.api.domain.speaker.SpeakerEnrollmentRepository;
 import com.meeting.api.domain.task.CallbackEventRepository;
 import com.meeting.api.domain.task.MessagePublisher;
+import com.meeting.api.domain.task.OrphanedTaskRepublisher;
 import com.meeting.api.domain.task.ProcessingTask;
 import com.meeting.api.domain.task.ProcessingTaskRepository;
 import com.meeting.api.domain.task.WorkerPhaseCompletedEvent;
@@ -23,6 +24,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,6 +33,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class ProcessingTaskCallbackApplicationService {
+    private static final Logger LOG = LoggerFactory.getLogger(ProcessingTaskCallbackApplicationService.class);
+
     private final ProcessingTaskRepository taskRepository;
     private final CallbackEventRepository callbackEventRepository;
     private final MessagePublisher messagePublisher;
@@ -38,6 +43,7 @@ public class ProcessingTaskCallbackApplicationService {
     private final TranscriptRepository transcriptRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final SpeakerEnrollmentRepository speakerEnrollmentRepository;
+    private final OrphanedTaskRepublisher orphanedTaskRepublisher;
     private final Clock clock;
     private final long leaseDurationSeconds;
 
@@ -51,9 +57,10 @@ public class ProcessingTaskCallbackApplicationService {
         TranscriptRepository transcriptRepository,
         ApplicationEventPublisher applicationEventPublisher,
         SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        OrphanedTaskRepublisher orphanedTaskRepublisher,
         @Value("${meeting.task.lease-duration-seconds:120}") long leaseDurationSeconds
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, Clock.systemUTC(), leaseDurationSeconds);
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, orphanedTaskRepublisher, Clock.systemUTC(), leaseDurationSeconds);
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -65,7 +72,7 @@ public class ProcessingTaskCallbackApplicationService {
         ApplicationEventPublisher applicationEventPublisher,
         Clock clock
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, clock, 120L);
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, null, null, clock, 120L);
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -78,7 +85,7 @@ public class ProcessingTaskCallbackApplicationService {
         SpeakerEnrollmentRepository speakerEnrollmentRepository,
         Clock clock
     ) {
-        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, clock, 120L);
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, null, clock, 120L);
     }
     public ProcessingTaskCallbackApplicationService(
         ProcessingTaskRepository taskRepository,
@@ -92,6 +99,21 @@ public class ProcessingTaskCallbackApplicationService {
         Clock clock,
         long leaseDurationSeconds
     ) {
+        this(taskRepository, callbackEventRepository, messagePublisher, tenantScopedTransaction, securityVerifier, transcriptRepository, applicationEventPublisher, speakerEnrollmentRepository, null, clock, leaseDurationSeconds);
+    }
+    public ProcessingTaskCallbackApplicationService(
+        ProcessingTaskRepository taskRepository,
+        CallbackEventRepository callbackEventRepository,
+        MessagePublisher messagePublisher,
+        TenantScopedTransaction tenantScopedTransaction,
+        CallbackSecurityVerifier securityVerifier,
+        TranscriptRepository transcriptRepository,
+        ApplicationEventPublisher applicationEventPublisher,
+        SpeakerEnrollmentRepository speakerEnrollmentRepository,
+        OrphanedTaskRepublisher orphanedTaskRepublisher,
+        Clock clock,
+        long leaseDurationSeconds
+    ) {
         this.taskRepository = taskRepository;
         this.callbackEventRepository = callbackEventRepository;
         this.messagePublisher = messagePublisher;
@@ -100,6 +122,7 @@ public class ProcessingTaskCallbackApplicationService {
         this.transcriptRepository = transcriptRepository;
         this.applicationEventPublisher = applicationEventPublisher;
         this.speakerEnrollmentRepository = speakerEnrollmentRepository;
+        this.orphanedTaskRepublisher = orphanedTaskRepublisher;
         this.clock = clock;
         this.leaseDurationSeconds = leaseDurationSeconds;
     }
@@ -290,10 +313,61 @@ public class ProcessingTaskCallbackApplicationService {
                 command.error().code().name(),
                 command.failedAt()
             );
+            if (requeueRetryableFailure(command, task)) {
+                return ProcessingTaskAssembler.toDto(taskRepository.save(task));
+            }
             markSpeakerEnrollmentFailedIfNeeded(command, task);
             task.completeTerminal(ProcessingTaskStatus.FAILED, command.error().code().name(), command.failedAt());
             return ProcessingTaskAssembler.toDto(taskRepository.save(task));
         });
+    }
+
+    /**
+     * Honour the worker's {@code error.retryable} flag: re-dispatch the task
+     * (consuming one attempt from the shared retry budget) instead of failing
+     * it terminally. Falls back to the terminal path when the budget is
+     * exhausted or the original message payload cannot be recovered.
+     */
+    private boolean requeueRetryableFailure(FailTaskCommand command, ProcessingTask task) {
+        if (orphanedTaskRepublisher == null || command.error() == null || !command.error().retryable()) {
+            return false;
+        }
+        if (!task.hasRetryBudget()) {
+            LOG.info(
+                "retryable_failure_budget_exhausted task={} tenant={} attempt={} errorCode={}",
+                task.taskId(),
+                task.tenantId(),
+                task.attemptNo(),
+                command.error().code().name()
+            );
+            return false;
+        }
+        // Runs in the caller's transaction, so the re-published message and the
+        // requeued task commit atomically (same contract as the lease scanner).
+        boolean republished = orphanedTaskRepublisher.republish(
+            command.tenantId(),
+            command.taskId(),
+            task.attemptNo() + 1
+        );
+        if (!republished) {
+            LOG.warn(
+                "retryable_failure_republish_failed task={} tenant={} attempt={} (failing terminally)",
+                task.taskId(),
+                task.tenantId(),
+                task.attemptNo()
+            );
+            return false;
+        }
+        task.markOrphanedForRetryableFailure(command.failedAt());
+        task.requeueOrphaned(command.failedAt());
+        LOG.info(
+            "retryable_failure_requeued task={} tenant={} newAttempt={} errorCode={}",
+            task.taskId(),
+            task.tenantId(),
+            task.attemptNo(),
+            command.error().code().name()
+        );
+        return true;
     }
 
     private void markSpeakerEnrollmentFailedIfNeeded(FailTaskCommand command, ProcessingTask task) {

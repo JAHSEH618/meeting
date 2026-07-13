@@ -12,7 +12,7 @@ import {
 import type { ApiClientError } from "@shared/api/client";
 import type { AudioUploadSession } from "@shared/api/types";
 import { getUserMessage } from "@shared/utils/error-mapper";
-import { sha256Hex } from "@shared/utils/sha256-stream";
+import { hashFileForUpload, type UploadHashPart } from "@shared/utils/upload-hasher";
 import { initialUploadState, uploadReducer, type UploadPartState } from "./upload-reducer";
 import { AudioUploadSummary } from "./AudioUploadSummary";
 import { AudioPartList } from "./AudioPartList";
@@ -30,10 +30,14 @@ export function AudioUploadPage() {
   const [state, dispatch] = useReducer(uploadReducer, initialUploadState);
   const [file, setFile] = useState<File | null>(null);
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
-  const [fileSha256, setFileSha256] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [hashProgress, setHashProgress] = useState<number | null>(null);
   const storageKey = `${SESSION_STORAGE_PREFIX}${meetingId}`;
+
+  const onHashProgress = (bytesHashed: number, totalBytes: number) => {
+    setHashProgress(totalBytes > 0 ? Math.round((bytesHashed / totalBytes) * 100) : 0);
+  };
 
   const completedCount = useMemo(
     () => state.parts.filter((part) => part.status === "completed").length,
@@ -79,25 +83,35 @@ export function AudioUploadPage() {
     setAbortController(controller);
     try {
       validateFile(file);
-      const sha256 = await sha256Hex(file);
-      setFileSha256(sha256);
+      // Single pass: file hash + per-part hashes from the same read, in a
+      // Web Worker so the UI stays responsive on GB-scale recordings.
+      setHashProgress(0);
+      let hashed = await hashFileForUpload(file, PART_SIZE_BYTES, onHashProgress);
       const session = await createAudioUpload(meetingId, {
         fileName: file.name,
         contentType: file.type || "application/octet-stream",
         fileSizeBytes: file.size,
-        fileSha256: sha256,
+        fileSha256: hashed.fileSha256,
         partSizeBytes: PART_SIZE_BYTES,
       });
       window.localStorage.setItem(storageKey, session.uploadId);
-      const parts = await buildParts(file, session.partSizeBytes, sha256);
+      if (session.partSizeBytes !== PART_SIZE_BYTES) {
+        // Server overrode the requested part size (rare): part hashes must
+        // match its boundaries, so rerun the pass at the server's size.
+        setHashProgress(0);
+        hashed = await hashFileForUpload(file, session.partSizeBytes, onHashProgress);
+      }
+      setHashProgress(null);
+      const parts = toPartStates(hashed.parts);
       dispatch({ type: "session", session, parts });
       await uploadParts(session.uploadId, parts, controller.signal);
-      await finalize(session.uploadId, sha256, parts);
+      await finalize(session.uploadId, hashed.fileSha256, parts);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setMessage(apiError.message || String(cause));
       dispatch({ type: "failed", errorCode: apiError.code || "INTERNAL_ERROR" });
     } finally {
+      setHashProgress(null);
       setAbortController(null);
     }
   }
@@ -177,24 +191,28 @@ export function AudioUploadPage() {
         throw error;
       }
       dispatch({ type: "prepare" });
-      const sha256 = fileSha256 ?? await sha256Hex(file);
-      if (sha256 !== state.session.fileSha256) {
+      // The resume path needs the part hashes anyway, so a fresh single
+      // pass yields both the fingerprint check and the part table.
+      setHashProgress(0);
+      const hashed = await hashFileForUpload(file, state.session.partSizeBytes, onHashProgress);
+      setHashProgress(null);
+      if (hashed.fileSha256 !== state.session.fileSha256) {
         const error = new Error("文件指纹与原上传会话不一致，请选择同一个文件") as ApiClientError;
         error.code = "UPLOAD_FILE_MISMATCH";
         error.retryable = false;
         throw error;
       }
-      setFileSha256(sha256);
-      const parts = await buildParts(file, state.session.partSizeBytes, sha256);
+      const parts = toPartStates(hashed.parts);
       reconcilePartsWithSession(parts, state.session);
       dispatch({ type: "session", session: state.session, parts });
       await uploadParts(state.session.uploadId, parts.filter((part) => part.status !== "completed"), controller.signal);
-      await finalize(state.session.uploadId, sha256, parts);
+      await finalize(state.session.uploadId, hashed.fileSha256, parts);
     } catch (cause) {
       const apiError = cause as ApiClientError;
       setMessage(apiError.message || String(cause));
       dispatch({ type: "failed", errorCode: apiError.code || "INTERNAL_ERROR" });
     } finally {
+      setHashProgress(null);
       setAbortController(null);
     }
   }
@@ -250,7 +268,6 @@ export function AudioUploadPage() {
             onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
               setFile(nextFile);
-              setFileSha256(null);
               setMessage(null);
             }}
           />
@@ -308,47 +325,35 @@ export function AudioUploadPage() {
           <strong>上传状态</strong>
           <span className="pill pill--info">{formatUploadStatus(state.status)}</span>
         </div>
-        <div className="progress" aria-label="upload-progress">
-          <span style={{ display: "block", height: "100%", width: `${state.progress}%`, background: "var(--accent)" }} />
+        <div
+          className="progress"
+          role="progressbar"
+          aria-label={hashProgress != null ? "文件校验进度" : "上传进度"}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={hashProgress ?? state.progress}
+        >
+          <span style={{ display: "block", height: "100%", width: `${hashProgress ?? state.progress}%`, background: "var(--accent)" }} />
         </div>
-        <p className="page-subtitle">已完成 {completedCount} / {state.parts.length} 个分片</p>
+        {hashProgress != null ? (
+          <p className="page-subtitle" aria-live="polite">正在计算文件校验和 {hashProgress}%</p>
+        ) : (
+          <p className="page-subtitle">已完成 {completedCount} / {state.parts.length} 个分片</p>
+        )}
         <AudioPartList parts={state.parts} />
       </section>
     </main>
   );
 }
 
-async function buildParts(
-  file: File,
-  partSizeBytes: number,
-  fileSha256: string,
-): Promise<UploadPartState[]> {
-  const count = Math.ceil(file.size / partSizeBytes);
-  if (count === 1) {
-    return [
-      {
-        partNumber: 1,
-        sizeBytes: file.size,
-        partSha256: fileSha256,
-        attempts: 0,
-        status: "pending",
-      },
-    ];
-  }
-  const parts: UploadPartState[] = [];
-  for (let index = 0; index < count; index += 1) {
-    const start = index * partSizeBytes;
-    const end = Math.min(file.size, start + partSizeBytes);
-    const blob = file.slice(start, end);
-    parts.push({
-      partNumber: index + 1,
-      sizeBytes: blob.size,
-      partSha256: await sha256Hex(blob),
-      attempts: 0,
-      status: "pending",
-    });
-  }
-  return parts;
+function toPartStates(parts: UploadHashPart[]): UploadPartState[] {
+  return parts.map((part) => ({
+    partNumber: part.partNumber,
+    sizeBytes: part.sizeBytes,
+    partSha256: part.partSha256,
+    attempts: 0,
+    status: "pending" as const,
+  }));
 }
 
 function reconcilePartsWithSession(parts: UploadPartState[], session: AudioUploadSession) {

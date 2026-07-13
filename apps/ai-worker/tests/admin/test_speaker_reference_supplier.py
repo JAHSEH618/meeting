@@ -106,6 +106,35 @@ async def test_cache_hit_skips_second_network_call(client: JavaSpeakerReferenceC
 
 
 @pytest.mark.asyncio
+async def test_batch_sweeps_expired_cache_entries(client: JavaSpeakerReferenceClient):
+    # TTL was only checked on read: keys never requested again kept their
+    # decrypted centroids in memory forever and the cache grew unbounded.
+    # Every batch() must sweep expired entries up front.
+    import time
+
+    from ai_worker.infrastructure.speaker.reference_client import _CacheEntry
+    from ai_worker.pipeline.speaker.matcher import ReferenceEmbedding
+
+    expired_key = ("tenant_01", ("p_gone",))
+    fresh_key = ("tenant_01", ("p1",))
+    client._cache[expired_key] = _CacheEntry(
+        expires_at=time.time() - 1,
+        by_person={"p_gone": ReferenceEmbedding("p_gone", "profile_gone", [1.0, 0.0])},
+    )
+    client._cache[fresh_key] = _CacheEntry(
+        expires_at=time.time() + 60,
+        by_person={"p1": ReferenceEmbedding("p1", "profile_p1", [0.0, 1.0])},
+    )
+
+    # Served from the fresh cache entry — no network call is made.
+    result = await client.batch("tenant_01", ["p1"])
+
+    assert result["p1"].speaker_profile_id == "profile_p1"
+    assert expired_key not in client._cache
+    assert fresh_key in client._cache
+
+
+@pytest.mark.asyncio
 async def test_401_raises_speaker_reference_unavailable(client: JavaSpeakerReferenceClient):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"success": False, "error": {"code": "CALLBACK_AUTH_FAILED", "message": "bad sig", "retryable": False}, "requestId": "", "traceId": ""})

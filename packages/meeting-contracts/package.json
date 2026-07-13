@@ -5,7 +5,7 @@
   "scripts": {
     "check": "bash scripts/check-consistency.sh",
     "lint:openapi": "spectral lint openapi/public-api.yaml --ruleset .spectral-public.yaml --fail-severity warn && spectral lint openapi/internal-callback-api.yaml --ruleset .spectral-callback.yaml --fail-severity warn && spectral lint openapi/ai-worker-internal-api.yaml --ruleset .spectral-public.yaml --fail-severity warn",
-    "codegen:ts": "openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts",
+    "codegen:ts": "openapi-typescript openapi/public-api.yaml -o ../../apps/meeting-web/src/shared/api/types.gen.ts && openapi-typescript openapi/public-api.yaml -o ../../apps/ai-worker-web/src/shared/api/types.gen.ts",
     "codegen:py-callback": "datamodel-codegen --input openapi/internal-callback-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/internal_callback_types.py --disable-timestamp",
     "codegen:py-worker-internal": "datamodel-codegen --input openapi/ai-worker-internal-api.yaml --input-file-type openapi --output ../../apps/ai-worker/ai_worker/generated/ai_worker_internal_types.py --disable-timestamp",
     "codegen:py-task-msg": "datamodel-codegen --input schemas/rabbitmq/processing-task-message.schema.json --output ../../apps/ai-worker/ai_worker/generated/processing_task_message.py --disable-timestamp",
@@ -14,8 +14,9 @@
     "codegen:java-export-job": "openapi-generator-cli generate -g java -i openapi/export-job-message.yaml -o ../../apps/meeting-api/meeting-api-client/generated/export-job --additional-properties=apiPackage=com.meeting.api.client.exportjob,modelPackage=com.meeting.api.client.exportjob.model,hideGenerationTimestamp=true && bash scripts/cleanup-java-codegen.sh ../../apps/meeting-api/meeting-api-client/generated/export-job",
     "codegen": "bash scripts/codegen-apply.sh",
     "codegen:check-temp": "bash scripts/check-codegen-via-temp.sh",
-    "codegen:direct": "npm run codegen:ts && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal && npm run codegen:java-export-job",
-    "codegen:check": "npm run codegen:check-temp"
+    "codegen:direct": "npm run codegen:ts && npm run codegen:error-messages && npm run codegen:py-callback && npm run codegen:py-worker-internal && npm run codegen:py-task-msg && npm run codegen:java-public && npm run codegen:java-worker-internal && npm run codegen:java-export-job",
+    "codegen:check": "npm run codegen:check-temp",
+    "codegen:error-messages": "python3 scripts/generate-error-messages.py"
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "6.15.1",

@@ -152,6 +152,50 @@ def _parse_artifact_uri(uri: str) -> tuple[str, str, str]:
     raise ValueError(f"invalid artifact uri: {uri}")
 
 
+# Lazily built, shared TOS client for background backups. A fresh
+# TosArtifactStore (== a fresh tos.TosClientV2 connection pool) per artifact
+# upload leaked sockets/FDs at the rate artifacts are written; every backup
+# reuses this one instead. All access happens on the single consumer event
+# loop (create/get without awaits in between), so no lock is needed. Closed
+# via aclose_backup_store() on the consumer shutdown path.
+_shared_backup_store: Any | None = None
+
+
+def _get_backup_store() -> Any:
+    global _shared_backup_store
+    if _shared_backup_store is None:
+        endpoint = settings.tos_endpoint
+        region = settings.tos_region
+        access_key_id = settings.tos_access_key_id
+        access_key_secret = settings.tos_access_key_secret
+        if not (endpoint and region and access_key_id and access_key_secret):
+            # 调用方(_backup_to_tos_async)已经校验过凭据;这里防御性兜底。
+            raise RuntimeError("TOS backup store requires AI_WORKER_TOS_* settings")
+        from ai_worker.infrastructure.tos_artifact_store import TosArtifactStore
+
+        _shared_backup_store = TosArtifactStore(
+            endpoint=endpoint,
+            region=region,
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            local_writer=LocalArtifactStore(),
+        )
+    return _shared_backup_store
+
+
+async def aclose_backup_store() -> None:
+    """Release the shared backup store's pooled TOS connections.
+
+    Wired into the consumer shutdown path right after the in-flight backup
+    tasks in ``_background_backup_tasks`` have drained. Safe to call when no
+    backup ever ran (no-op) and idempotent.
+    """
+    global _shared_backup_store
+    store, _shared_backup_store = _shared_backup_store, None
+    if store is not None:
+        await store.aclose()
+
+
 async def _backup_to_tos_async(bucket: str, key: str, data: bytes, content_type: str) -> None:
     """Background task to upload workstation artifacts to TOS."""
     if settings.storage_backend != "tos":
@@ -160,15 +204,7 @@ async def _backup_to_tos_async(bucket: str, key: str, data: bytes, content_type:
         logger.warning("TOS backup skipped: credentials missing (bucket=%s, key=%s)", bucket, key)
         return
     try:
-        from ai_worker.infrastructure.tos_artifact_store import TosArtifactStore
-        local = LocalArtifactStore()
-        tos = TosArtifactStore(
-            endpoint=settings.tos_endpoint,
-            region=settings.tos_region,
-            access_key_id=settings.tos_access_key_id,
-            access_key_secret=settings.tos_access_key_secret,
-            local_writer=local,
-        )
+        tos = _get_backup_store()
         await tos.upload_direct(bucket, key, data, content_type)
         logger.info("TOS backup success: bucket=%s, key=%s, size=%d", bucket, key, len(data))
     except Exception as e:

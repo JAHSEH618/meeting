@@ -72,7 +72,13 @@ public class ProcessingTaskLeaseScanner {
             "lease-scanner",
             "lease-scan-" + lease.taskId(),
             () -> {
-                ProcessingTask task = taskRepository.findById(lease.tenantId(), lease.taskId()).orElse(null);
+                // Claim the row with FOR UPDATE so a concurrent callback (or a
+                // second scanner replica) cannot interleave: we either wait for
+                // its commit and then re-check the lease/status below, or we hold
+                // the lock while transitioning. Without this, a stale save()
+                // here could overwrite a just-committed heartbeat/completion and
+                // two replicas could both republish the same orphan.
+                ProcessingTask task = taskRepository.findByIdForUpdate(lease.tenantId(), lease.taskId()).orElse(null);
                 if (task == null) {
                     return new TransitionResult(false, false, false, false);
                 }

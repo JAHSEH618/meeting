@@ -21,7 +21,9 @@ public record AiWorkerInternalProperties(
     Integer embedTimeoutMs,
     Integer warmupTimeoutMs,
     Integer modelsTimeoutMs,
-    Integer connectTimeoutMs
+    Integer connectTimeoutMs,
+    Integer rerankBreakerFailureThreshold,
+    Integer rerankBreakerOpenMs
 ) {
     public AiWorkerInternalProperties {
         baseUrl = stripTrailingSlash(baseUrl);
@@ -42,6 +44,14 @@ public record AiWorkerInternalProperties(
         }
         if (connectTimeoutMs == null || connectTimeoutMs <= 0) {
             connectTimeoutMs = 1000;
+        }
+        // Rerank circuit breaker: null → default; explicit 0 disables the
+        // breaker (every call goes to ai-worker, pre-breaker behavior).
+        if (rerankBreakerFailureThreshold == null || rerankBreakerFailureThreshold < 0) {
+            rerankBreakerFailureThreshold = 5;
+        }
+        if (rerankBreakerOpenMs == null || rerankBreakerOpenMs <= 0) {
+            rerankBreakerOpenMs = 30000;
         }
     }
 

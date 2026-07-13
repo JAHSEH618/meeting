@@ -4,8 +4,13 @@ These endpoints are mostly thin proxies — meeting-api owns the business logic.
 Audio upload complete is intentionally just a passthrough: meeting-api creates
 the ProcessingTask and runs the one-shot worker + Java LLM phases.
 
-SSE for task progress is NOT proxied: the SPA connects directly to Java to
-keep the BFF stateless (todo C3.12).
+SSE for task progress IS proxied, but not from this module: see
+``_mount_processing_task_proxy`` in ``interfaces/api/main.py``. The SPA uses
+fetch-streaming (browser-native EventSource cannot carry the Authorization
+header), so in prod the stream flows SPA → FastAPI proxy → Java. In dev the
+Vite server proxies ``/api`` straight to Java (vite.config.ts), bypassing the
+FastAPI hop — keep that in mind when a streaming issue only reproduces in one
+environment.
 """
 
 from __future__ import annotations
@@ -144,11 +149,25 @@ def build_meetings_router(*, java_client: JavaPublicClient) -> APIRouter:
                 claims=claims, request_id=x_request_id, trace_id=x_trace_id,
             ),
         )
+        # 404 means "not produced yet" (legit empty state); any other non-200
+        # is an upstream failure and must NOT be disguised as an empty state —
+        # the operator console exists precisely to surface those. `degraded`
+        # lists the failed sub-resources so the UI can show a retryable
+        # warning instead of "暂无数据".
+        def _sub(response, name: str, degraded: list[str]):
+            if response.status_code == 200:
+                return _safe_data(response)
+            if response.status_code != 404:
+                degraded.append(name)
+            return None
+
+        degraded: list[str] = []
         return ok({
             "meeting": _safe_data(meeting),
-            "latestTask": _safe_data(task) if task.status_code == 200 else None,
-            "speakers": _safe_data(speakers) if speakers.status_code == 200 else None,
-            "minutes": _safe_data(minutes) if minutes.status_code == 200 else None,
+            "latestTask": _sub(task, "latestTask", degraded),
+            "speakers": _sub(speakers, "speakers", degraded),
+            "minutes": _sub(minutes, "minutes", degraded),
+            "degraded": degraded,
         }, x_request_id, x_trace_id)
 
     # ── documents on a meeting (passthrough) ────────────────────────────

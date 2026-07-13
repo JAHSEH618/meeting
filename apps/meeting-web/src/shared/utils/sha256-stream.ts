@@ -161,7 +161,7 @@ export async function sha256Hex(blob: Blob, chunkSize = 4 * 1024 * 1024): Promis
   return toHex(hasher.digest());
 }
 
-async function readBlobAsUint8Array(blob: Blob): Promise<Uint8Array> {
+export async function readBlobAsUint8Array(blob: Blob): Promise<Uint8Array> {
   if (typeof (blob as Blob & { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer === "function") {
     return new Uint8Array(await blob.arrayBuffer());
   }

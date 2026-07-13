@@ -1,5 +1,6 @@
 package com.meeting.api.app.rag;
 
+import com.meeting.api.app.common.TenantScopedTransaction;
 import com.meeting.api.app.observability.MeetingApiMetrics;
 import com.meeting.api.client.enums.ProcessingStep;
 import com.meeting.api.domain.task.MessagePublisher;
@@ -17,8 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -32,10 +31,14 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * for retries and stragglers).
  *
  * <p>The listener fires {@code AFTER_COMMIT} so the chunks are guaranteed
- * persisted before any task message is enqueued. {@code @Transactional} with
- * {@code REQUIRES_NEW} starts a fresh transaction (the source transaction is
- * already committed); failures here do not roll back the chunk persistence,
- * they only abandon the embed task — operators can re-run reindex.
+ * persisted before any task message is enqueued. By then the source
+ * transaction (and its tenant GUC) is gone, so the dispatch is wrapped in a
+ * fresh {@link TenantScopedTransaction} — a plain {@code REQUIRES_NEW}
+ * transaction would run without {@code current_tenant_id()} and the
+ * {@code processing_tasks} / outbox inserts would fail their RLS WITH CHECK
+ * (mirrors {@link MinutesGeneratedRagIndexer}). Failures here do not roll
+ * back the chunk persistence, they only abandon the embed task — operators
+ * can re-run reindex.
  */
 @Component
 public class EmbeddingTaskDispatcher {
@@ -56,6 +59,7 @@ public class EmbeddingTaskDispatcher {
     private final MessagePublisher messagePublisher;
     private final MeetingApiMetrics metrics;
     private final Clock clock;
+    private final TenantScopedTransaction tenantScopedTransaction;
     private final int maxChunksPerTask;
 
     @Autowired
@@ -63,15 +67,17 @@ public class EmbeddingTaskDispatcher {
         ProcessingTaskRepository taskRepository,
         MessagePublisher messagePublisher,
         MeetingApiMetrics metrics,
-        Clock clock
+        Clock clock,
+        TenantScopedTransaction tenantScopedTransaction
     ) {
-        this(taskRepository, messagePublisher, metrics, clock, MAX_CHUNKS_PER_TASK);
+        this(taskRepository, messagePublisher, metrics, clock, tenantScopedTransaction, MAX_CHUNKS_PER_TASK);
     }
     public EmbeddingTaskDispatcher(
         ProcessingTaskRepository taskRepository,
         MessagePublisher messagePublisher,
         MeetingApiMetrics metrics,
         Clock clock,
+        TenantScopedTransaction tenantScopedTransaction,
         int maxChunksPerTask
     ) {
         if (maxChunksPerTask < 1 || maxChunksPerTask > 64) {
@@ -82,11 +88,11 @@ public class EmbeddingTaskDispatcher {
         this.messagePublisher = messagePublisher;
         this.metrics = metrics;
         this.clock = clock;
+        this.tenantScopedTransaction = tenantScopedTransaction;
         this.maxChunksPerTask = maxChunksPerTask;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public DispatchResult onReindexRequested(KnowledgeChunkReindexRequestedEvent event) {
         if (!event.hasWork()) {
             log.debug("embed_dispatcher_skip_empty tenant={} meetingId={} documentId={}",
@@ -94,7 +100,10 @@ public class EmbeddingTaskDispatcher {
             return DispatchResult.empty();
         }
         try {
-            DispatchResult result = dispatch(event);
+            DispatchResult result = tenantScopedTransaction.execute(
+                event.tenantId(), null, null,
+                () -> dispatch(event)
+            );
             log.info(
                 "embed_dispatcher_dispatched tenant={} meetingId={} documentId={} tasks={} chunks={}",
                 event.tenantId(), event.meetingId(), event.documentId(),

@@ -107,11 +107,132 @@
   --text-sm: 15px;
   --text-xs: 13px;
 
+  /* 派生语义色 —— glass-design.css / app.css 共用 */
+  --text-on-accent: #ffffff;
+  --text-inverse: #ffffff;
+  --surface-inverse-hover: #1c1c1e;
+  --surface-inverse-active: #2c2c2e;
+  --surface-wash: rgba(255, 255, 255, 0.58);
+  --surface-veil: rgba(255, 255, 255, 0.52);
+  --surface-sunken-strong: rgba(0, 0, 0, 0.1);
+  --control-bg: rgba(255, 255, 255, 0.78);
+  --control-bg-hover: rgba(255, 255, 255, 0.9);
+  --control-bg-active: rgba(255, 255, 255, 0.95);
+  --glass-edge-soft: rgba(255, 255, 255, 0.86);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-edge-strong: rgba(255, 255, 255, 0.95);
+  --accent-wash: rgba(0, 102, 255, 0.05);
+  --accent-line: rgba(0, 102, 255, 0.2);
+  --accent-line-strong: rgba(0, 102, 255, 0.34);
+  --accent-tint-surface: rgba(237, 246, 255, 0.72);
+  --success-line: rgba(52, 199, 89, 0.2);
+  --warn-ring: rgba(255, 149, 0, 0.14);
+  --warn-flash: rgba(255, 149, 0, 0.22);
+  --danger-pulse: rgba(184, 56, 59, 0.6);
+  --danger-pulse-out: rgba(184, 56, 59, 0);
+  --scrim: rgba(18, 18, 24, 0.42);
+  --shimmer: rgba(255, 255, 255, 0.3);
+  --backdrop-accent-a: rgba(0, 102, 255, 0.1);
+  --backdrop-accent-b: rgba(0, 102, 255, 0.03);
+  --backdrop-purple: rgba(175, 82, 222, 0.055);
+  --backdrop-green: rgba(52, 199, 89, 0.045);
+  --backdrop-base-1: #fbfbfd;
+  --backdrop-base-2: #f3f6fb;
+  --backdrop-base-3: #edf1f7;
+
   color-scheme: light;
 }
 
 html {
   color-scheme: light;
+}
+
+/*
+ * 暗色主题 — index.html 的首绘脚本和 shared/theme/theme.ts 负责把解析后的
+ * 主题写到 <html data-theme="...">，这里只做令牌覆盖。仅覆盖随主题变化的
+ * 令牌；圆角/间距/字号等结构令牌保持共享。
+ */
+:root[data-theme="dark"] {
+  --bg: #0b0b0d;
+  --surface: #1b1b1f;
+  --surface-glass: rgba(27, 27, 31, 0.7);
+  --surface-raised: rgba(34, 34, 40, 0.82);
+  --surface-sunken: rgba(255, 255, 255, 0.05);
+
+  --text: #f5f5f7;
+  --text-light: #a3a3ab;
+  --text-lighter: #7c7c84;
+
+  --accent: #409cff;
+  --accent-hover: #66b0ff;
+  --accent-light: rgba(64, 156, 255, 0.16);
+
+  --primary-active: #8ac2ff;
+  --primary-ink: #a9d1ff;
+  --accent-active: #8ac2ff;
+  --accent-ink: #a9d1ff;
+
+  --ink-4: #48484f;
+
+  --line-1: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.08);
+  --line-3: rgba(255, 255, 255, 0.06);
+
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.16);
+  --success-ink: #6fe393;
+
+  --warn: #ff9f0a;
+  --warn-soft: rgba(255, 159, 10, 0.16);
+  --warn-ink: #ffc466;
+
+  --danger: #ff453a;
+  --danger-soft: rgba(255, 69, 58, 0.16);
+  --danger-ink: #ff8a80;
+
+  --glass-header: rgba(18, 18, 22, 0.75);
+  --glass-card: rgba(27, 27, 31, 0.7);
+  --glass-modal: rgba(22, 22, 26, 0.92);
+
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-4: 0 32px 80px rgba(0, 0, 0, 0.65);
+
+  /* 派生语义色 —— glass-design.css / app.css 共用 */
+  --text-on-accent: #ffffff;
+  --text-inverse: #0b0b0d;
+  --surface-inverse-hover: #e5e5ea;
+  --surface-inverse-active: #d1d1d6;
+  --surface-wash: rgba(40, 40, 46, 0.58);
+  --surface-veil: rgba(32, 32, 37, 0.52);
+  --surface-sunken-strong: rgba(255, 255, 255, 0.1);
+  --control-bg: rgba(34, 34, 40, 0.78);
+  --control-bg-hover: rgba(44, 44, 51, 0.9);
+  --control-bg-active: rgba(50, 50, 58, 0.95);
+  --glass-edge-soft: rgba(255, 255, 255, 0.06);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --glass-edge-strong: rgba(255, 255, 255, 0.1);
+  --accent-wash: rgba(64, 156, 255, 0.1);
+  --accent-line: rgba(64, 156, 255, 0.3);
+  --accent-line-strong: rgba(64, 156, 255, 0.45);
+  --accent-tint-surface: rgba(28, 42, 62, 0.72);
+  --success-line: rgba(48, 209, 88, 0.3);
+  --warn-ring: rgba(255, 159, 10, 0.2);
+  --warn-flash: rgba(255, 159, 10, 0.28);
+  --danger-pulse: rgba(255, 105, 97, 0.6);
+  --danger-pulse-out: rgba(255, 105, 97, 0);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shimmer: rgba(255, 255, 255, 0.3);
+  --backdrop-accent-a: rgba(64, 156, 255, 0.08);
+  --backdrop-accent-b: rgba(64, 156, 255, 0.03);
+  --backdrop-purple: rgba(191, 90, 242, 0.06);
+  --backdrop-green: rgba(48, 209, 88, 0.05);
+  --backdrop-base-1: #17171c;
+  --backdrop-base-2: #101014;
+  --backdrop-base-3: #0b0b0d;
+
+  color-scheme: dark;
 }
 
 body {

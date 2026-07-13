@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     # concurrency, so raising this never over-subscribes the GPU.
     rabbitmq_prefetch_count: int = 1
     callback_max_retries: int = 3
+    # Result-writeback callbacks (step transitions, transcript, embeddings,
+    # speaker candidates, complete, fail) carry work that is expensive to
+    # recompute, so instead of the attempt-count retry above they keep
+    # retrying transport failures with capped exponential backoff for up to
+    # this many seconds. Sized to ride out an ordinary meeting-api rolling
+    # restart (10-30s unavailable) while staying comfortably below the Java
+    # lease TTL (120s) so a genuinely dead API still falls back to
+    # lease-expiry requeue. Heartbeats are excluded: the next one supersedes.
+    callback_writeback_retry_budget_seconds: float = 90.0
+    callback_retry_max_backoff_seconds: float = 10.0
     artifact_store_root: str = ".artifacts"
     # ── Model deployment profile controls ───────────────────────────────
     # These settings are intentionally lightweight in Stage 1: they give
@@ -132,7 +142,12 @@ class Settings(BaseSettings):
     # fake) typically needs a different operating point. Wired into
     # AuthorizedScopeMatcher alongside speaker_top_k.
     speaker_min_confidence: float = 0.35
-    enable_audio_artifact_cache: bool = True
+    # Keep source audio downloaded by TosArtifactStore.local_path cached on
+    # disk across tasks. Default False: each finished task evicts its cached
+    # source audio in cleanup_pipeline — otherwise /tmp/ai-worker-tos grows by
+    # one full recording per task until the volume fills. Enable only for
+    # debugging/replay workflows on hosts with generous scratch space.
+    enable_audio_artifact_cache: bool = False
     model_cache_dir: str | None = None
     # ── Storage backend (TOS read-path) ───────────────────────────────────
     # storage_backend selects how ai-worker resolves ``tos://bucket/key`` URIs

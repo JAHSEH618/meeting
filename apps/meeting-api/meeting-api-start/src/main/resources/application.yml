@@ -19,6 +19,12 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
+    # Seed migrations embed prompt templates and JSON schemas via PostgreSQL
+    # dollar-quoting ($body$…$body$, $schema$…$schema$); a closing $schema$
+    # immediately followed by `{` forms `${`, which Flyway would otherwise
+    # parse as an unresolved placeholder and fail the migration. No migration
+    # relies on Flyway placeholders, so replacement is disabled globally.
+    placeholder-replacement: false
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
@@ -77,6 +83,12 @@ meeting:
       warmup-timeout-ms: 5000
       models-timeout-ms: 2000
       connect-timeout-ms: 1000
+      # Circuit breaker on the rerank call: after N consecutive
+      # unavailable/timeout outcomes, short-circuit to the RRF fallback for
+      # open-ms instead of paying the rerank timeout on every RAG query.
+      # threshold 0 disables the breaker.
+      rerank-breaker-failure-threshold: 5
+      rerank-breaker-open-ms: 30000
   storage:
     type: ${STORAGE_TYPE:oss}
     # Logical bucket names — shared by every backend. Override per env
@@ -113,10 +125,30 @@ meeting:
     heartbeat-interval-seconds: 15
     event-timeout-seconds: 300
   outbox:
-    poll-interval-ms: 5000
     batch-size: 100
     max-retries: 5
-    retry-backoff-ms: 1000
+  # Outbox 投递轮询（OutboxPublisherConfig）
+  outbox-publisher:
+    enabled: true
+    interval-ms: 2000
+    initial-delay-ms: 5000
+  # Outbox 积压 gauge 采样（OutboxMetricsSamplerConfig，供 Prometheus 告警规则使用）
+  outbox-metrics:
+    enabled: true
+    interval-ms: 30000
+    initial-delay-ms: 15000
+  # callback_nonces 过期清理（CallbackNonceCleanupConfig）
+  callback-nonce-cleanup:
+    enabled: true
+    interval-ms: 300000
+    initial-delay-ms: 120000
+  # WORKER_DAG_DONE 卡死任务恢复（WorkerDagDoneRecoveryScannerConfig）
+  worker-dag-recovery:
+    enabled: true
+    interval-ms: 60000
+    initial-delay-ms: 60000
+    batch-size: 100
+    stuck-after-ms: 120000
   llm:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
@@ -125,6 +157,10 @@ meeting:
       max-retries: 3
   export:
     download-ttl-hours: 24
+    consumer:
+      # 可重试渲染失败的重投上限；达到后置 FAILED 并 dead-letter
+      #（配合 export-queue 的 x-delivery-limit 兜底）
+      max-attempts: 5
     libreoffice:
       binary: ${LIBREOFFICE_BINARY:soffice}
       timeout-seconds: ${LIBREOFFICE_TIMEOUT_SECONDS:60}

@@ -34,6 +34,16 @@ groups:
           summary: "Oldest pending outbox event is older than 30s"
           description: "Phase 8 SPEC §9 demands p95 <= 5s. Investigate row-lock contention or Rabbit publisher errors."
 
+      - alert: OutboxEventsDeadLettered
+        expr: |
+          sum(increase(meeting_api_outbox_dlq_total[5m])) > 0
+        labels:
+          severity: critical
+          team: meeting-api
+        annotations:
+          summary: "Outbox event(s) moved to DLQ status"
+          description: "Retry budget exhausted or unroutable event type — these rows are dead until manually re-queued. Grep logs for outbox_event_dlq, inspect domain_events_outbox WHERE status='DLQ' (see runbook meeting-api-java.md)."
+
   - name: meeting-api.callback
     interval: 30s
     rules:
@@ -66,7 +76,7 @@ groups:
     rules:
       - alert: RagRerankDegradedRate
         expr: |
-          sum(rate(meeting_api_aiworker_calls_total{operation="rerank",outcome="unavailable"}[5m]))
+          sum(rate(meeting_api_aiworker_calls_total{operation="rerank",outcome=~"unavailable|circuit_open"}[5m]))
             /
           clamp_min(sum(rate(meeting_api_aiworker_calls_total{operation="rerank"}[5m])), 0.001)
             > 0.2
@@ -75,8 +85,8 @@ groups:
           severity: warning
           team: meeting-api
         annotations:
-          summary: "RAG rerank degraded >20% (ai-worker unavailable)"
-          description: "Rerank fall-back to RRF is hot — investigate ai-worker availability or HMAC config drift."
+          summary: "RAG rerank degraded >20% (ai-worker unavailable or breaker open)"
+          description: "Rerank fall-back to RRF is hot — once the circuit breaker opens, failures land in outcome=circuit_open, so both outcomes count here. Investigate ai-worker availability or HMAC config drift."
 
   - name: meeting-api.export
     interval: 60s

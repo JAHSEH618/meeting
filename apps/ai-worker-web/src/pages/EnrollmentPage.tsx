@@ -1,16 +1,16 @@
 import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { searchPersons } from "@/shared/api/endpoints";
 import {
-  commitEnrollment,
-  createEnrollmentSession,
-  previewEnrollment,
-  searchPersons,
-  uploadEnrollmentAudio,
-} from "@/shared/api/endpoints";
+  useCommitEnrollment,
+  useCreateEnrollmentSession,
+  usePreviewEnrollment,
+  useUploadEnrollmentAudio,
+} from "@/features/meetings/queries";
 import type { EnrollmentSessionDTO, PersonDTO } from "@/shared/api/types";
-import { ApiError } from "@/shared/api/client";
 import { useDebouncedSearch } from "@/shared/hooks/useDebouncedSearch";
 import { PersonCreateModal } from "@/shared/components/PersonCreateModal";
+import { formatError } from "@/shared/utils/format-error";
 
 const QUALITY_THRESHOLD = 0.5;
 const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
@@ -27,8 +27,13 @@ export function EnrollmentPage() {
   const [session, setSession] = useState<EnrollmentSessionDTO | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [personModalOpen, setPersonModalOpen] = useState(false);
+
+  const createSession = useCreateEnrollmentSession();
+  const uploadAudio = useUploadEnrollmentAudio();
+  const preview = usePreviewEnrollment();
+  const commit = useCommitEnrollment();
+  const busy = createSession.isPending || uploadAudio.isPending || preview.isPending || commit.isPending;
 
   const searchPersonsFetcher = useCallback(
     (q: string, signal: AbortSignal) => searchPersons(q, { signal }),
@@ -38,44 +43,32 @@ export function EnrollmentPage() {
   const persons = personSearch.results ?? [];
 
   const handleStart = async () => {
-    setBusy(true);
     setError(null);
     try {
-      const s = await createEnrollmentSession(personId);
-      setSession(s);
+      setSession(await createSession.mutateAsync(personId));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleUploadAndPreview = async () => {
     if (!session || !file || session.state === "COMMITTED") return;
-    setBusy(true);
     setError(null);
     try {
-      await uploadEnrollmentAudio(session.sessionId, file);
-      const previewed = await previewEnrollment(session.sessionId);
-      setSession(previewed);
+      await uploadAudio.mutateAsync({ sessionId: session.sessionId, file });
+      setSession(await preview.mutateAsync(session.sessionId));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   const handleCommit = async () => {
     if (!session) return;
-    setBusy(true);
     setError(null);
     try {
-      const committed = await commitEnrollment(session.sessionId, personId);
-      setSession(committed);
+      setSession(await commit.mutateAsync({ sessionId: session.sessionId, personId }));
     } catch (e) {
       setError(formatError(e));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -276,19 +269,6 @@ export function EnrollmentPage() {
   );
 }
 
-function formatError(e: unknown): string {
-  if (e instanceof ApiError) {
-    // Handle specific enrollment errors with user-friendly messages
-    if (e.error.code === "ENROLLMENT_SESSION_NOT_FOUND") {
-      return "声纹会话已失效，请重新开始";
-    }
-    if (e.error.code === "ENROLLMENT_PERSON_MISMATCH") {
-      return "声纹会话人员不匹配，请重新开始";
-    }
-    return `${e.error.code}: ${e.error.message}`;
-  }
-  return e instanceof Error ? e.message : String(e);
-}
 
 function getSafeReturnTo(returnTo: string | null): string | null {
   if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) return null;

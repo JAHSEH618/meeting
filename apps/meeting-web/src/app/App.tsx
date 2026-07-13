@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, NavLink, Outlet, Link } from "react-router-dom";
 import { AuthGuard } from "./AuthGuard";
 import { SkipLink } from "@shared/components/SkipLink";
+import { ThemeToggle } from "@shared/theme/ThemeToggle";
 import "./app.css";
 import { LoginPage } from "@features/auth/LoginPage";
 import { useAuth } from "@services/auth";
@@ -152,6 +153,8 @@ function Shell() {
             声纹档案
           </NavLink>
         </nav>
+
+        <ThemeToggle className="theme-toggle shell__theme-toggle" />
 
         {user && (
           <button

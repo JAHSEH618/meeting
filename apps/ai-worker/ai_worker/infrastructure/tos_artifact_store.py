@@ -142,10 +142,7 @@ class TosArtifactStore:
         ``.part`` sibling that gets cleaned up on failure.
         """
         bucket, key = _parse_tos_uri(uri)
-        # Hash the bucket+key so we don't accidentally expose tenant paths
-        # via filenames on shared scratch volumes.
-        cache_name = hashlib.sha256(f"{bucket}/{key}".encode("utf-8")).hexdigest()
-        target = self._cache_dir / bucket / cache_name
+        target = self._cache_target(bucket, key)
         if target.exists() and target.stat().st_size > 0:
             return target
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +156,7 @@ class TosArtifactStore:
         # URI don't trample each other and so a previous crashed worker's
         # .part stragglers don't get accidentally reused.
         fd, tmp_str = tempfile.mkstemp(
-            prefix=f"{cache_name}.",
+            prefix=f"{target.name}.",
             suffix=".part",
             dir=target.parent,
         )
@@ -185,6 +182,24 @@ class TosArtifactStore:
                 pass
             raise
         return target
+
+    def _cache_target(self, bucket: str, key: str) -> Path:
+        # Hash the bucket+key so we don't accidentally expose tenant paths
+        # via filenames on shared scratch volumes.
+        cache_name = hashlib.sha256(f"{bucket}/{key}".encode("utf-8")).hexdigest()
+        return self._cache_dir / bucket / cache_name
+
+    def evict_local_copy(self, uri: str) -> None:
+        """Remove the cached copy that ``local_path`` materialized for ``uri``.
+
+        Called from pipeline cleanup when ``enable_audio_artifact_cache`` is
+        off (the default) so per-task source audio downloads don't accumulate
+        under the tmp cache dir until the disk fills. Missing file → no-op.
+        Deliberately absent on :class:`LocalArtifactStore`, whose
+        ``local_path`` returns the real stored object rather than a copy.
+        """
+        bucket, key = _parse_tos_uri(uri)
+        self._cache_target(bucket, key).unlink(missing_ok=True)
 
 
 def _parse_tos_uri(uri: str) -> tuple[str, str]:

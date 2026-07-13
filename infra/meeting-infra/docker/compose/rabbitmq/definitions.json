@@ -52,7 +52,7 @@
     {"name": "embed-queue.dlq",    "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
     {"name": "llm-queue",          "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "llm-queue.dlq"}},
     {"name": "llm-queue.dlq",      "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}},
-    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "export-queue.dlq"}},
+    {"name": "export-queue",       "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "meeting.task.dlx", "x-dead-letter-routing-key": "export-queue.dlq", "x-delivery-limit": 6}},
     {"name": "export-queue.dlq",   "vhost": "/", "durable": true, "arguments": {"x-queue-type": "quorum"}}
   ],
   "bindings": [

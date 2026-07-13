@@ -233,7 +233,7 @@ describe("NewMeetingPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText(/FILE_MIME_NOT_ALLOWED: unsupported file type/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/不支持该文件类型/).length).toBeGreaterThan(0);
     });
   });
 

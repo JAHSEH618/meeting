@@ -12,6 +12,7 @@ from typing import Any
 import pika
 
 from ai_worker.common.config import settings
+from ai_worker.infrastructure.artifact_store import aclose_backup_store
 from ai_worker.infrastructure.worker_runtime import MvpWorkerRuntime
 
 logger = logging.getLogger(__name__)
@@ -195,6 +196,9 @@ class RabbitMqTaskConsumer:
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
         await self.runtime.stop()
+        # The in-flight TOS backups just drained above — now the shared backup
+        # client's connection pool can be released.
+        await aclose_backup_store()
 
     def _close_connection(self) -> None:
         if self._connection is not None and getattr(self._connection, "is_open", False):

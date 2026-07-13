@@ -51,10 +51,12 @@ import org.springframework.stereotype.Service;
  * <p>Failure mapping (matches plan 6.4.2.d):
  * <ul>
  *   <li>{@link ExportInputInvalidException} — non-retryable. Job is
- *       marked FAILED and the consumer acknowledges the message.</li>
- *   <li>{@link ExportRuntimeException} or any other unchecked exception
- *       — the consumer rethrows so the message is requeued (or
- *       eventually lands in the DLQ).</li>
+ *       marked FAILED and the consumer drops the message to the DLQ.</li>
+ *   <li>{@link ExportRuntimeException} — retryable. The consumer requeues
+ *       the message up to its configured attempt cap, then calls
+ *       {@link #failTerminally} and dead-letters the message.</li>
+ *   <li>Any other unchecked exception — the consumer calls
+ *       {@link #failTerminally} immediately and dead-letters the message.</li>
  * </ul>
  *
  * <p>This service is intentionally framework-light so it can be driven

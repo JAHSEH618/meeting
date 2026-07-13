@@ -4,10 +4,13 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import App from "@/App";
 import { createQueryClient } from "@/shared/queries/queryClient";
+import { initTheme } from "@/shared/theme/theme";
 import "@/styles.css";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("missing #root element");
+
+initTheme();
 
 /**
  * Phase J runtime config — fetched once at boot, before React mounts.

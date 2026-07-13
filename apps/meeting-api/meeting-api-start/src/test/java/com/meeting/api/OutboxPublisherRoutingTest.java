@@ -172,6 +172,67 @@ class OutboxPublisherRoutingTest {
     }
 
     @Test
+    void publishFailureThatExhaustsRetryBudgetTicksTheDlqCounter() {
+        FakeStore store = new FakeStore(List.of(
+            record("ProcessingTaskCreatedEvent", "evt_dead",
+                "{\"taskId\":\"task_x\",\"taskType\":\"TEXT_EMBEDDING\","
+                    + "\"tenantId\":\"tenant_01\",\"meetingId\":\"mtg_01\","
+                    + "\"attemptNo\":1,\"pipelineSteps\":[\"RAG_INDEXING\"],"
+                    + "\"expectedInputVersion\":{\"chunkStrategyVersion\":\"v1\"},"
+                    + "\"options\":{},\"traceId\":\"trace_x\"}")
+        ));
+        store.failuresExhaustRetryBudget = true;
+        RabbitMqPublisher broken = new RabbitMqPublisher(
+            new RabbitMqProperties("localhost", 5672, "guest", "guest", "/")) {
+            @Override
+            public void publish(String routingKey, String payloadJson, Map<String, Object> headers) {
+                throw new IllegalStateException("broker down");
+            }
+        };
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        OutboxPublisher publisher = new OutboxPublisher(
+            store, broken, new ObjectMapper(), new MeetingApiMetrics(registry), 100, 5
+        );
+
+        assertThat(publisher.publishPending("tenant_01")).isZero();
+        assertThat(store.failedIds).containsExactly("evt_dead");
+        assertThat(registry.counter("meeting.api.outbox.dlq",
+            "eventType", "ProcessingTaskCreatedEvent").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void retryableFailureDoesNotTickTheDlqCounter() {
+        FakeStore store = new FakeStore(List.of(
+            record("ProcessingTaskCreatedEvent", "evt_retry",
+                "{\"taskId\":\"task_x\",\"taskType\":\"TEXT_EMBEDDING\","
+                    + "\"tenantId\":\"tenant_01\",\"meetingId\":\"mtg_01\","
+                    + "\"attemptNo\":1,\"pipelineSteps\":[\"RAG_INDEXING\"],"
+                    + "\"expectedInputVersion\":{\"chunkStrategyVersion\":\"v1\"},"
+                    + "\"options\":{},\"traceId\":\"trace_x\"}")
+        ));
+        RabbitMqPublisher broken = new RabbitMqPublisher(
+            new RabbitMqProperties("localhost", 5672, "guest", "guest", "/")) {
+            @Override
+            public void publish(String routingKey, String payloadJson, Map<String, Object> headers) {
+                throw new IllegalStateException("broker down");
+            }
+        };
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        OutboxPublisher publisher = new OutboxPublisher(
+            store, broken, new ObjectMapper(), new MeetingApiMetrics(registry), 100, 5
+        );
+
+        assertThat(publisher.publishPending("tenant_01")).isZero();
+        assertThat(store.failedIds).containsExactly("evt_retry");
+        assertThat(registry.counter("meeting.api.outbox.dlq",
+            "eventType", "ProcessingTaskCreatedEvent").count()).isEqualTo(0.0);
+        // The per-retry failure counter still ticks.
+        assertThat(registry.counter("meeting.api.outbox.failed",
+            "eventType", "ProcessingTaskCreatedEvent", "errorCode", "OUTBOX_PUBLISH_FAILED").count())
+            .isEqualTo(1.0);
+    }
+
+    @Test
     void publishPendingRoutesAllowListedEvents() {
         FakeStore store = new FakeStore(List.of(
             record("ProcessingTaskCreatedEvent", "evt_proc",
@@ -239,6 +300,7 @@ class OutboxPublisherRoutingTest {
         final List<String> unroutableIds = new ArrayList<>();
         final Map<String, String> unroutableReasons = new HashMap<>();
         final Map<String, String> skippedReasons = new HashMap<>();
+        boolean failuresExhaustRetryBudget = false;
 
         FakeStore(List<OutboxEventRecord> rows) {
             super(null, new ObjectMapper());
@@ -256,8 +318,9 @@ class OutboxPublisherRoutingTest {
         }
 
         @Override
-        public void markFailed(String id, String errorCode, String errorMessage, int maxRetries) {
+        public boolean markFailed(String id, String errorCode, String errorMessage, int maxRetries) {
             failedIds.add(id);
+            return failuresExhaustRetryBudget;
         }
 
         @Override

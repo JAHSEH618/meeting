@@ -107,11 +107,110 @@
   --text-sm: 15px;
   --text-xs: 13px;
 
+  /* 主题化补充令牌（供 glass-design.css / styles.css 使用） */
+  --text-on-accent: #ffffff;
+  --text-inverse: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.4);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-edge-strong: rgba(255, 255, 255, 0.95);
+  --glass-inset: rgba(255, 255, 255, 0.95);
+  --glass-fallback: rgba(255, 255, 255, 0.95);
+  --surface-hover: rgba(255, 255, 255, 0.95);
+  --control-hover: rgba(0, 0, 0, 0.1);
+  --accent-faint: rgba(0, 102, 255, 0.06);
+  --accent-soft-hover: rgba(101, 162, 245, 0.2);
+  --thead-glass: rgba(255, 255, 255, 0.5);
+  --module-glass-fade: rgba(255, 255, 255, 0.64);
+  --bg-glow-1: rgba(0, 102, 255, 0.08);
+  --bg-glow-2: rgba(0, 102, 255, 0.06);
+  --bg-gradient-end: #f0f0f0;
+  --btn-primary-hover: #1c1c1e;
+  --btn-primary-active: #2c2c2e;
+  --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-danger: 0 4px 12px rgba(184, 56, 59, 0.3);
+
   color-scheme: light;
 }
 
 html {
   color-scheme: light;
+}
+
+/*
+ * 暗色主题 — index.html 的首绘脚本和 shared/theme/theme.ts 负责把解析后的
+ * 主题写到 <html data-theme="...">，这里只做令牌覆盖。仅覆盖随主题变化的
+ * 令牌；圆角/间距/字号等结构令牌保持共享。
+ */
+:root[data-theme="dark"] {
+  --bg: #0b0b0d;
+  --surface: #1b1b1f;
+  --surface-glass: rgba(27, 27, 31, 0.7);
+  --surface-raised: rgba(34, 34, 40, 0.82);
+  --surface-sunken: rgba(255, 255, 255, 0.05);
+
+  --text: #f5f5f7;
+  --text-light: #a3a3ab;
+  --text-lighter: #7c7c84;
+
+  --accent: #409cff;
+  --accent-hover: #66b0ff;
+  --accent-light: rgba(64, 156, 255, 0.16);
+
+  --primary-active: #8ac2ff;
+  --primary-ink: #a9d1ff;
+  --accent-active: #8ac2ff;
+  --accent-ink: #a9d1ff;
+
+  --ink-4: #48484f;
+
+  --line-1: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.08);
+  --line-3: rgba(255, 255, 255, 0.06);
+
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.16);
+  --success-ink: #6fe393;
+
+  --warn: #ff9f0a;
+  --warn-soft: rgba(255, 159, 10, 0.16);
+  --warn-ink: #ffc466;
+
+  --danger: #ff453a;
+  --danger-soft: rgba(255, 69, 58, 0.16);
+  --danger-ink: #ff8a80;
+
+  --glass-header: rgba(18, 18, 22, 0.75);
+  --glass-card: rgba(27, 27, 31, 0.7);
+  --glass-modal: rgba(22, 22, 26, 0.92);
+
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-4: 0 32px 80px rgba(0, 0, 0, 0.65);
+
+  /* 主题化补充令牌 — 暗色值 */
+  --text-on-accent: #ffffff;
+  --text-inverse: #0b0b0d;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --glass-edge-strong: rgba(255, 255, 255, 0.12);
+  --glass-inset: rgba(255, 255, 255, 0.06);
+  --glass-fallback: rgba(27, 27, 31, 0.97);
+  --surface-hover: rgba(44, 44, 52, 0.95);
+  --control-hover: rgba(255, 255, 255, 0.14);
+  --accent-faint: rgba(64, 156, 255, 0.1);
+  --accent-soft-hover: rgba(64, 156, 255, 0.3);
+  --thead-glass: rgba(255, 255, 255, 0.04);
+  --module-glass-fade: rgba(34, 34, 40, 0.6);
+  --bg-glow-1: rgba(64, 156, 255, 0.1);
+  --bg-glow-2: rgba(64, 156, 255, 0.07);
+  --bg-gradient-end: #131318;
+  --btn-primary-hover: #e4e4e9;
+  --btn-primary-active: #d5d5dc;
+  --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-danger: 0 4px 12px rgba(255, 69, 58, 0.35);
+
+  color-scheme: dark;
 }
 
 body {
