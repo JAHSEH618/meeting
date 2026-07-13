@@ -1,8 +1,12 @@
 # 本地会议智能系统 · Meeting Intelligence
 
-> **状态（2026-06-12）：v1.1.0 已发布（TOS 存储迁移 + Phase K 移除会议安全分级），生产就绪。**
-> 变更详情见 [`RELEASE-NOTES-v1.1.0.md`](RELEASE-NOTES-v1.1.0.md)；Phase J 验收 runbook 在
+> **状态（2026-07-13）：v1.1.0（TOS 存储迁移 + Phase K 移除会议安全分级）之上完成一轮可靠性 / 正确性 / 可观测性加固，生产就绪。**
+> v1.1.0 变更详情见 [`RELEASE-NOTES-v1.1.0.md`](RELEASE-NOTES-v1.1.0.md)；Phase J 验收 runbook 在
 > [`docs/runbooks/phase-j-acceptance.md`](docs/runbooks/phase-j-acceptance.md)。
+>
+> 本轮加固要点：Java↔Python 心跳续租与 GPU 槽位归属、RLS / 事务正确性、租约扫描并发（`FOR UPDATE
+> SKIP LOCKED`）、导出重投封顶 + DLQ、outbox / rerank 告警补齐、暗色模式 / React Query / SSE 治理。
+> 运维面（outbox DLQ、rerank 熔断、nonce 清理）见 [`docs/runbooks/meeting-api-java.md`](docs/runbooks/meeting-api-java.md)。
 >
 > 把会议录音处理成结构化资料：上传 → 转写 → 分人 → 声纹识别 → 纪要 → 知识库 → RAG 问答 → 导出。
 >
