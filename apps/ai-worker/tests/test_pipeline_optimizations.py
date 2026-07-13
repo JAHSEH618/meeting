@@ -488,6 +488,71 @@ async def test_preprocess_skips_transcode_for_conformant_wav(
     assert result.quality_report["normalized"] is False
 
 
+def _fake_ffmpeg(tmp_path: Path, script_body: str) -> Path:
+    """Write an executable stand-in for ffmpeg; ``$last`` is the output path."""
+    script = tmp_path / "fake-ffmpeg"
+    script.write_text(
+        "#!/bin/sh\n"
+        'for last in "$@"; do :; done\n'
+        f"{script_body}\n"
+    )
+    script.chmod(0o755)
+    return script
+
+
+@pytest.mark.asyncio
+async def test_transcode_success_publishes_target_atomically(tmp_path: Path) -> None:
+    from ai_worker.pipeline.audio.preprocess import transcode_to_wav16k
+
+    ffmpeg = _fake_ffmpeg(tmp_path, 'printf RIFF > "$last"\nexit 0')
+    source = tmp_path / "in.m4a"
+    source.write_bytes(b"fake")
+    target = tmp_path / "out" / "in.m4a.norm16k.wav"
+
+    await transcode_to_wav16k(source, target, ffmpeg_binary=str(ffmpeg))
+
+    assert target.read_bytes() == b"RIFF"
+    assert list(target.parent.glob("*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_transcode_failure_leaves_no_partial_output(tmp_path: Path) -> None:
+    # ffmpeg 非零退出时,写了一半的输出必须被清掉 — 否则残留的
+    # 半截 WAV 会被后续 ffprobe/ASR 当作合法输入。
+    from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, transcode_to_wav16k
+
+    ffmpeg = _fake_ffmpeg(tmp_path, 'printf junk > "$last"\nexit 1')
+    source = tmp_path / "in.m4a"
+    source.write_bytes(b"fake")
+    target = tmp_path / "out" / "in.m4a.norm16k.wav"
+
+    with pytest.raises(AudioPreprocessError, match="AUDIO_CORRUPTED|transcode") as excinfo:
+        await transcode_to_wav16k(source, target, ffmpeg_binary=str(ffmpeg))
+
+    assert excinfo.value.error_code == "AUDIO_CORRUPTED"
+    assert not target.exists()
+    assert list(target.parent.glob("*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_transcode_timeout_kills_ffmpeg_and_cleans_partial_output(tmp_path: Path) -> None:
+    from ai_worker.pipeline.audio.preprocess import AudioPreprocessError, transcode_to_wav16k
+
+    ffmpeg = _fake_ffmpeg(tmp_path, 'printf junk > "$last"\nsleep 30\nexit 0')
+    source = tmp_path / "in.m4a"
+    source.write_bytes(b"fake")
+    target = tmp_path / "out" / "in.m4a.norm16k.wav"
+
+    with pytest.raises(AudioPreprocessError) as excinfo:
+        await transcode_to_wav16k(
+            source, target, ffmpeg_binary=str(ffmpeg), timeout_seconds=0.2
+        )
+
+    assert excinfo.value.error_code == "AUDIO_CORRUPTED"
+    assert not target.exists()
+    assert list(target.parent.glob("*.part")) == []
+
+
 @pytest.mark.asyncio
 async def test_cleanup_pipeline_removes_normalized_file(tmp_path: Path) -> None:
     engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore())
@@ -506,6 +571,71 @@ async def test_cleanup_pipeline_removes_normalized_file(tmp_path: Path) -> None:
     await engine.cleanup_pipeline(context)
 
     assert not normalized.exists()
+
+
+class _CacheEvictingStore:
+    """Minimal store exposing evict_local_copy, as TosArtifactStore does."""
+
+    def __init__(self) -> None:
+        self.evicted: list[str] = []
+
+    def evict_local_copy(self, uri: str) -> None:
+        self.evicted.append(uri)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_pipeline_evicts_source_audio_cache_when_cache_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # enable_audio_artifact_cache=False(默认)时,cleanup 必须连同
+    # local_path 下载的源音频缓存副本一起回收,否则磁盘按每任务一份
+    # 完整录音的速度增长。
+    monkeypatch.setattr(settings, "enable_audio_artifact_cache", False)
+    store = _CacheEvictingStore()
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore(), artifact_store=store)
+    context = _PipelineContext(_task())
+    context.source_audio_path = tmp_path / "cached-source"
+
+    await engine.cleanup_pipeline(context)
+
+    assert store.evicted == [_task().audio_uri]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_pipeline_keeps_source_audio_cache_when_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "enable_audio_artifact_cache", True)
+    store = _CacheEvictingStore()
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore(), artifact_store=store)
+    context = _PipelineContext(_task())
+    context.source_audio_path = tmp_path / "cached-source"
+
+    await engine.cleanup_pipeline(context)
+
+    assert store.evicted == []
+
+
+@pytest.mark.asyncio
+async def test_cleanup_pipeline_never_deletes_local_store_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # LocalArtifactStore.local_path 返回真实存储对象而非缓存副本 —
+    # 没有 evict_local_copy,清理必须是 no-op,不能删除源文件。
+    from ai_worker.infrastructure.artifact_store import LocalArtifactStore
+
+    monkeypatch.setattr(settings, "enable_audio_artifact_cache", False)
+    monkeypatch.setattr(settings, "enable_tos_backup", False)
+    store = LocalArtifactStore(root=tmp_path)
+    ref = await store.upload("bucket", "audio.wav", b"pcm-bytes", "audio/wav")
+    source = store.local_path(ref.uri)
+    engine = LocalAudioPipelineEngine(InMemoryWorkflowStateStore(), artifact_store=store)
+    context = _PipelineContext(_task(audio_uri=ref.uri))
+    context.source_audio_path = source
+
+    await engine.cleanup_pipeline(context)
+
+    assert source.exists()
 
 
 # ── GPU interactive lane ─────────────────────────────────────────────────────

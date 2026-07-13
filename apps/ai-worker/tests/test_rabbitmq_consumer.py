@@ -131,6 +131,30 @@ def test_stop_drains_pending_background_tasks() -> None:
     assert channel.acked == ["delivery_01"]
 
 
+def test_stop_closes_shared_backup_store(monkeypatch) -> None:
+    # The lazily created shared TOS backup client must be released on the
+    # consumer shutdown path, after in-flight backup tasks have drained.
+    import ai_worker.infrastructure.mq.rabbitmq_consumer as consumer_module
+
+    closed = {"count": 0}
+
+    async def fake_aclose_backup_store() -> None:
+        closed["count"] += 1
+
+    monkeypatch.setattr(consumer_module, "aclose_backup_store", fake_aclose_backup_store)
+
+    runtime = AsyncMock()
+    consumer = RabbitMqTaskConsumer(runtime)
+    channel = _Channel()
+    consumer._on_message(channel, _Method(), None, json.dumps({"taskId": "t1"}).encode())
+    consumer.wait_idle()
+
+    consumer.stop()
+
+    assert closed["count"] == 1
+    runtime.stop.assert_awaited_once()
+
+
 def test_stop_closes_runtime_after_rabbitmq_connection() -> None:
     runtime = AsyncMock()
     consumer = RabbitMqTaskConsumer(runtime)

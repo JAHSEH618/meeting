@@ -142,7 +142,12 @@ class Settings(BaseSettings):
     # fake) typically needs a different operating point. Wired into
     # AuthorizedScopeMatcher alongside speaker_top_k.
     speaker_min_confidence: float = 0.35
-    enable_audio_artifact_cache: bool = True
+    # Keep source audio downloaded by TosArtifactStore.local_path cached on
+    # disk across tasks. Default False: each finished task evicts its cached
+    # source audio in cleanup_pipeline — otherwise /tmp/ai-worker-tos grows by
+    # one full recording per task until the volume fills. Enable only for
+    # debugging/replay workflows on hosts with generous scratch space.
+    enable_audio_artifact_cache: bool = False
     model_cache_dir: str | None = None
     # ── Storage backend (TOS read-path) ───────────────────────────────────
     # storage_backend selects how ai-worker resolves ``tos://bucket/key`` URIs

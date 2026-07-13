@@ -166,16 +166,31 @@ class LocalAudioPipelineEngine:
     async def cleanup_pipeline(self, context: "_PipelineContext") -> None:
         """Remove per-task decode products (runs on success AND failure paths
         so normalized WAVs can't accumulate on disk)."""
+        loop = asyncio.get_running_loop()
         preprocess = context.preprocess
         normalized = preprocess.normalized_audio_path if preprocess else None
-        if normalized is None:
+        if normalized is not None:
+            try:
+                await loop.run_in_executor(
+                    None, lambda: normalized.unlink(missing_ok=True)
+                )
+            except OSError:
+                logger.warning("normalized_audio_cleanup_failed path=%s", normalized, exc_info=True)
+        # 源音频缓存:enable_audio_artifact_cache 关闭(默认)时把 local_path
+        # 下载的 TOS 缓存副本一并删除,否则 /tmp/ai-worker-tos 会以每个任务
+        # 一份完整录音的速度增长直到磁盘写满。LocalArtifactStore 没有
+        # evict_local_copy(它的 local_path 返回真实存储文件,不能删),
+        # 所以本地/测试部署天然是安全 no-op。
+        if settings.enable_audio_artifact_cache or context.source_audio_path is None:
+            return
+        evict = getattr(self._artifact_store, "evict_local_copy", None)
+        audio_uri = context.task.audio_uri
+        if evict is None or not audio_uri:
             return
         try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, lambda: normalized.unlink(missing_ok=True)
-            )
+            await loop.run_in_executor(None, evict, audio_uri)
         except OSError:
-            logger.warning("normalized_audio_cleanup_failed path=%s", normalized, exc_info=True)
+            logger.warning("source_audio_cache_evict_failed uri=%s", audio_uri, exc_info=True)
 
     async def _run_audio_preprocess(self, context: "_PipelineContext") -> None:
         audio_uri = _required_audio_uri(context.task)
@@ -186,6 +201,9 @@ class LocalAudioPipelineEngine:
             audio_path = await asyncio.get_running_loop().run_in_executor(
                 None, self._artifact_store.local_path, audio_uri
             )
+            # 记录下载落盘的源音频路径,cleanup_pipeline 据此决定是否回收
+            # TOS 缓存副本(即使后续 preprocess 失败也要能清理)。
+            context.source_audio_path = audio_path
             context.preprocess = await self._preprocessor.preprocess(
                 audio_path,
                 audio_uri,
@@ -599,6 +617,9 @@ class _PipelineContext:
     def __init__(self, task: TaskMessage) -> None:
         self.task = task
         self.audio_path: Path | None = None
+        # local_path 下载(或直接返回)的源音频落盘路径;cleanup_pipeline
+        # 在 enable_audio_artifact_cache 关闭时据此回收 TOS 缓存副本。
+        self.source_audio_path: Path | None = None
         self.normalized_audio_uri: str | None = None
         self.preprocess: PreprocessResult | None = None
         self.asr_segments: list[AsrSegment] = []

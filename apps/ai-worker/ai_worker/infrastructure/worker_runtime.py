@@ -543,16 +543,22 @@ class MvpWorkerRuntime:
         progress_supplier: Callable[[], int] | None = None,
     ) -> None:
         # Heartbeats carry REAL step progress when the engine reports it
-        # (chunked ASR, per-speaker embedding); otherwise 0 — honest "still
-        # running", never the old fabricated constant 50.
+        # (chunked ASR, per-speaker embedding), clamped to 1..99. progress=0
+        # is NOT allowed here: RUNNING/0 reuses the initial RUNNING state-
+        # transition idempotency key ({task}:{step}:RUNNING:{attempt}:v1) on
+        # the Java side, so it is discarded as a replay and the lease is NOT
+        # renewed — a long no-progress step (DIARIZATION, TRANSCRIPT_MERGE,
+        # model cold load) would blow the lease TTL and get orphan-republished
+        # mid-inference. progress>=1 keeps every heartbeat on the stable
+        # latest-wins heartbeat key, which is what actually renews the lease.
         while True:
             await asyncio.sleep(self.heartbeat_interval_seconds)
-            progress = 0
+            progress = 1
             if progress_supplier is not None:
                 try:
-                    progress = max(0, min(99, int(progress_supplier())))
+                    progress = max(1, min(99, int(progress_supplier())))
                 except Exception:  # noqa: BLE001 — liveness signal must not die on a progress bug
-                    progress = 0
+                    progress = 1
             if await self._heartbeat(task, step_name, progress) is False:
                 self._log_heartbeat_rejected(task, step_name)
 
