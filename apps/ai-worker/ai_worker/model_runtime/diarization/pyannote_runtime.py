@@ -100,42 +100,43 @@ class PyannoteDiarizationRuntime:
     async def ensure_loaded(self) -> None:
         if self._status == "READY":
             return
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import run_gated_blocking
 
-        # Per-device semaphore wraps the load to keep cold-start VRAM
-        # allocation serialised with ASR / embedding on a single-GPU host.
-        async with get_device_semaphore(self._device):
-            async with self._load_lock:
-                if self._status == "READY":
-                    return
-                self._status = "LOADING"
-                try:
-                    # Bound the blocking load so a stalled pyannote/torch load
-                    # can't hang the step forever (see qwen3_asr_runtime).
-                    await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(
-                            None, self._load_pipeline_blocking
-                        ),
-                        timeout=settings.model_load_timeout_seconds,
-                    )
-                    self._status = "READY"
-                    self._last_error = None
-                except asyncio.TimeoutError as exc:
-                    self._status = "ERROR"
-                    self._last_error = (
-                        f"load timed out after {settings.model_load_timeout_seconds}s"
-                    )
-                    raise PyannoteDiarizationRuntimeError(
-                        "DIARIZATION_FAILED",
-                        f"pyannote load timed out after {settings.model_load_timeout_seconds}s",
-                    ) from exc
-                except Exception as exc:
-                    self._status = "ERROR"
-                    self._last_error = f"{type(exc).__name__}: {exc}"
-                    raise PyannoteDiarizationRuntimeError(
-                        "DIARIZATION_FAILED",
-                        f"failed to load pyannote pipeline: {exc}",
-                    ) from exc
+        # The blocking load runs under the per-device slot (via
+        # run_gated_blocking) to keep cold-start VRAM allocation serialised
+        # with ASR / embedding on a single-GPU host; on timeout the slot
+        # stays with the zombie load until its thread exits.
+        async with self._load_lock:
+            if self._status == "READY":
+                return
+            self._status = "LOADING"
+            try:
+                # Bound the blocking load so a stalled pyannote/torch load
+                # can't hang the step forever (see qwen3_asr_runtime).
+                await run_gated_blocking(
+                    self._device,
+                    self._load_pipeline_blocking,
+                    timeout=settings.model_load_timeout_seconds,
+                    description="pyannote load",
+                )
+                self._status = "READY"
+                self._last_error = None
+            except asyncio.TimeoutError as exc:
+                self._status = "ERROR"
+                self._last_error = (
+                    f"load timed out after {settings.model_load_timeout_seconds}s"
+                )
+                raise PyannoteDiarizationRuntimeError(
+                    "DIARIZATION_FAILED",
+                    f"pyannote load timed out after {settings.model_load_timeout_seconds}s",
+                ) from exc
+            except Exception as exc:
+                self._status = "ERROR"
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                raise PyannoteDiarizationRuntimeError(
+                    "DIARIZATION_FAILED",
+                    f"failed to load pyannote pipeline: {exc}",
+                ) from exc
 
     def _load_pipeline_blocking(self) -> None:
         if self._models_dir is None or not self._models_dir.exists():
@@ -174,7 +175,10 @@ class PyannoteDiarizationRuntime:
         instance defaults so the operator-supplied bounds actually reach
         pyannote instead of being silently ignored.
         """
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import (
+            get_device_semaphore,
+            run_gated_blocking,
+        )
 
         if metadata.duration_ms <= 0:
             raise PyannoteDiarizationRuntimeError(
@@ -182,35 +186,39 @@ class PyannoteDiarizationRuntime:
             )
         effective_min = min_speakers if min_speakers is not None else self._min_speakers
         effective_max = max_speakers if max_speakers is not None else self._max_speakers
-        async with get_device_semaphore(self._device):
-            if self._use_fake:
+        if self._use_fake:
+            async with get_device_semaphore(self._device):
                 return await self._fake.diarize(
                     audio_path, metadata, min_speakers=min_speakers, max_speakers=max_speakers
                 )
-            if self._status != "READY" or self._pipeline is None:
-                raise PyannoteDiarizationRuntimeError(
-                    "DIARIZATION_FAILED",
-                    "pyannote runtime is not loaded; call await ensure_loaded() first",
-                )
-            loop = asyncio.get_running_loop()
-            timeout_s = (
-                settings.diarization_inference_timeout_base_seconds
-                + max(1.0, metadata.duration_ms / 60_000.0)
-                * settings.diarization_inference_timeout_per_audio_minute_seconds
+        if self._status != "READY" or self._pipeline is None:
+            raise PyannoteDiarizationRuntimeError(
+                "DIARIZATION_FAILED",
+                "pyannote runtime is not loaded; call await ensure_loaded() first",
             )
-            try:
-                return await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None, self._diarize_blocking, audio_path, effective_min, effective_max
-                    ),
-                    timeout=timeout_s,
-                )
-            except asyncio.TimeoutError as exc:
-                raise PyannoteDiarizationRuntimeError(
-                    "DIARIZATION_FAILED",
-                    f"pyannote inference exceeded {timeout_s:.0f}s budget "
-                    f"for {metadata.duration_ms}ms audio",
-                ) from exc
+        timeout_s = (
+            settings.diarization_inference_timeout_base_seconds
+            + max(1.0, metadata.duration_ms / 60_000.0)
+            * settings.diarization_inference_timeout_per_audio_minute_seconds
+        )
+        try:
+            # On timeout the device slot stays with the zombie inference
+            # until its thread exits (see run_gated_blocking).
+            return await run_gated_blocking(
+                self._device,
+                self._diarize_blocking,
+                audio_path,
+                effective_min,
+                effective_max,
+                timeout=timeout_s,
+                description="pyannote inference",
+            )
+        except asyncio.TimeoutError as exc:
+            raise PyannoteDiarizationRuntimeError(
+                "DIARIZATION_FAILED",
+                f"pyannote inference exceeded {timeout_s:.0f}s budget "
+                f"for {metadata.duration_ms}ms audio",
+            ) from exc
 
     def _diarize_blocking(
         self,

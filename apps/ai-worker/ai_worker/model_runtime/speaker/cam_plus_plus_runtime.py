@@ -85,42 +85,42 @@ class CamPlusPlusRuntime:
         """Idempotently load the real model."""
         if self._status == "READY":
             return
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import run_gated_blocking
 
-        async with get_device_semaphore(self._device):
-            async with self._load_lock:
-                if self._status == "READY":
-                    return
-                self._status = "LOADING"
-                try:
-                    # Bounded like the ASR/pyannote loads: a stalled modelscope
-                    # import or weight read must become a terminal step failure,
-                    # not a forever-RUNNING task whose heartbeat keeps renewing
-                    # the Java lease.
-                    await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(
-                            None, self._load_model_blocking
-                        ),
-                        timeout=settings.model_load_timeout_seconds,
-                    )
-                    self._status = "READY"
-                    self._last_error = None
-                except asyncio.TimeoutError as exc:
-                    self._status = "ERROR"
-                    self._last_error = (
-                        f"load timed out after {settings.model_load_timeout_seconds}s"
-                    )
-                    raise CamPlusPlusRuntimeError(
-                        "SPEAKER_EMBEDDING_FAILED",
-                        f"cam++ load timed out after {settings.model_load_timeout_seconds}s",
-                    ) from exc
-                except Exception as exc:
-                    self._status = "ERROR"
-                    self._last_error = f"{type(exc).__name__}: {exc}"
-                    raise CamPlusPlusRuntimeError(
-                        "SPEAKER_EMBEDDING_FAILED",
-                        f"failed to load cam++: {exc}",
-                    ) from exc
+        async with self._load_lock:
+            if self._status == "READY":
+                return
+            self._status = "LOADING"
+            try:
+                # Bounded like the ASR/pyannote loads: a stalled modelscope
+                # import or weight read must become a terminal step failure,
+                # not a forever-RUNNING task whose heartbeat keeps renewing
+                # the Java lease. run_gated_blocking keeps the device slot
+                # with a timed-out load until its thread exits.
+                await run_gated_blocking(
+                    self._device,
+                    self._load_model_blocking,
+                    timeout=settings.model_load_timeout_seconds,
+                    description="cam++ load",
+                )
+                self._status = "READY"
+                self._last_error = None
+            except asyncio.TimeoutError as exc:
+                self._status = "ERROR"
+                self._last_error = (
+                    f"load timed out after {settings.model_load_timeout_seconds}s"
+                )
+                raise CamPlusPlusRuntimeError(
+                    "SPEAKER_EMBEDDING_FAILED",
+                    f"cam++ load timed out after {settings.model_load_timeout_seconds}s",
+                ) from exc
+            except Exception as exc:
+                self._status = "ERROR"
+                self._last_error = f"{type(exc).__name__}: {exc}"
+                raise CamPlusPlusRuntimeError(
+                    "SPEAKER_EMBEDDING_FAILED",
+                    f"failed to load cam++: {exc}",
+                ) from exc
 
     def _load_model_blocking(self) -> None:
         """Load CAM++ model synchronously."""
@@ -156,30 +156,29 @@ class CamPlusPlusRuntime:
             return await self._fake.embed(audio_path, metadata, speaker_turn)
 
         await self.ensure_loaded()
-        from ai_worker.model_runtime.concurrency import get_device_semaphore
+        from ai_worker.model_runtime.concurrency import run_gated_blocking
 
-        async with get_device_semaphore(self._device):
-            # A single-turn embedding is seconds of audio; if inference hangs
-            # (NFS stall, driver bug) convert it into a retryable step failure
-            # instead of pinning the task RUNNING forever.
-            try:
-                return await asyncio.wait_for(
-                    asyncio.get_running_loop().run_in_executor(
-                        None,
-                        self._embed_blocking,
-                        audio_path,
-                        metadata,
-                        speaker_turn,
-                    ),
-                    timeout=settings.speaker_embed_timeout_seconds,
-                )
-            except asyncio.TimeoutError as exc:
-                raise CamPlusPlusRuntimeError(
-                    "SPEAKER_EMBEDDING_FAILED",
-                    f"cam++ embedding exceeded {settings.speaker_embed_timeout_seconds:.0f}s "
-                    f"for turn {speaker_turn.speaker_label} "
-                    f"[{speaker_turn.start_ms}, {speaker_turn.end_ms}]ms",
-                ) from exc
+        # A single-turn embedding is seconds of audio; if inference hangs
+        # (NFS stall, driver bug) convert it into a retryable step failure
+        # instead of pinning the task RUNNING forever. On timeout the device
+        # slot stays with the zombie call until its thread exits.
+        try:
+            return await run_gated_blocking(
+                self._device,
+                self._embed_blocking,
+                audio_path,
+                metadata,
+                speaker_turn,
+                timeout=settings.speaker_embed_timeout_seconds,
+                description="cam++ embedding",
+            )
+        except asyncio.TimeoutError as exc:
+            raise CamPlusPlusRuntimeError(
+                "SPEAKER_EMBEDDING_FAILED",
+                f"cam++ embedding exceeded {settings.speaker_embed_timeout_seconds:.0f}s "
+                f"for turn {speaker_turn.speaker_label} "
+                f"[{speaker_turn.start_ms}, {speaker_turn.end_ms}]ms",
+            ) from exc
 
     def _embed_blocking(
         self,

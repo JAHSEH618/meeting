@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 from pathlib import Path
 
@@ -666,6 +667,70 @@ async def test_interactive_lane_disabled_shares_semaphore(monkeypatch: pytest.Mo
     assert concurrency.get_device_semaphore("cuda") is concurrency.get_device_semaphore(
         "cuda", lane=concurrency.INTERACTIVE_LANE
     )
+    concurrency.reset_for_tests()
+
+
+# ── run_gated_blocking：超时后槽位归僵尸线程 ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_gated_blocking_success_releases_slot() -> None:
+    from ai_worker.model_runtime import concurrency
+
+    concurrency.reset_for_tests()
+    result = await concurrency.run_gated_blocking("cuda", lambda: 42, timeout=5)
+    assert result == 42
+    assert not concurrency.get_device_semaphore("cuda").locked()
+    concurrency.reset_for_tests()
+
+
+@pytest.mark.asyncio
+async def test_run_gated_blocking_propagates_fn_error_and_releases_slot() -> None:
+    from ai_worker.model_runtime import concurrency
+
+    concurrency.reset_for_tests()
+
+    def boom() -> None:
+        raise ValueError("kaputt")
+
+    with pytest.raises(ValueError, match="kaputt"):
+        await concurrency.run_gated_blocking("cuda", boom, timeout=5)
+    assert not concurrency.get_device_semaphore("cuda").locked()
+    concurrency.reset_for_tests()
+
+
+@pytest.mark.asyncio
+async def test_run_gated_blocking_timeout_keeps_slot_until_thread_exits() -> None:
+    """超时后槽位不立即归还：下一个推理必须排队等僵尸线程真正结束，
+    而不是与它并发争抢 VRAM（CUDA OOM 的根源）。"""
+    import threading
+
+    from ai_worker.model_runtime import concurrency
+
+    concurrency.reset_for_tests()
+    started = threading.Event()
+    finish = threading.Event()
+
+    def stuck() -> None:
+        started.set()
+        finish.wait(timeout=10)
+
+    with pytest.raises(asyncio.TimeoutError):
+        await concurrency.run_gated_blocking(
+            "cuda", stuck, timeout=0.05, description="stuck inference"
+        )
+    assert started.wait(timeout=2)
+
+    sem = concurrency.get_device_semaphore("cuda")  # cuda 上限为 1
+    assert sem.locked(), "僵尸线程仍在运行时槽位必须保持占用"
+
+    waiter = asyncio.ensure_future(sem.acquire())
+    await asyncio.sleep(0.05)
+    assert not waiter.done(), "排队的推理不得在僵尸线程结束前拿到槽位"
+
+    finish.set()
+    await asyncio.wait_for(waiter, timeout=2)  # 线程结束 → done-callback 释放
+    sem.release()
     concurrency.reset_for_tests()
 
 
