@@ -201,8 +201,8 @@ sequenceDiagram
 
 | 配置键 | 用途 | 方向 |
 |---|---|---|
-| `meeting.callback.hmac-secret` ↔ `AI_WORKER_CALLBACK_HMAC_SECRET` | ai-worker → Java 内部回调 | 出站签名 / 入站验签 |
-| `meeting.ai-worker.hmac-secret` ↔ `AI_WORKER_INTERNAL_API_HMAC_SECRET` | Java → ai-worker rerank / workflow control | 出站签名 / 入站验签 |
+| `meeting.security.callback.hmac-secret` ↔ `AI_WORKER_CALLBACK_HMAC_SECRET` | ai-worker → Java 内部回调 | 出站签名 / 入站验签 |
+| `meeting.security.ai-worker.hmac-secret` ↔ `AI_WORKER_INTERNAL_API_HMAC_SECRET` | Java → ai-worker rerank / workflow control | 出站签名 / 入站验签 |
 
 > ⚠️ HMAC `signing_string` 的 `URL_PATH_WITH_QUERY` 必须包含 `/internal` 前缀；servlet 相对路径会破坏验签。
 
@@ -432,7 +432,12 @@ CI 用 `npm run codegen:check-temp` 兜底：如果它在临时目录生成的�
 | `DASHSCOPE_API_KEY` | LLM（经 llm-gateway 审计） |
 | `KMS_MASTER_KEY_ID`、`MEETING_KMS_MASTER_KEY_BASE64` | 声纹 embedding 信封加密主密钥（本地实现不设则重启即失能） |
 | `AI_WORKER_BASE_URL` | rerank 同步调用目标 |
-| `AI_WORKER_CALLBACK_HMAC_SECRET` / `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 两份 HMAC（绑定到 `meeting.callback.hmac-secret` / `meeting.ai-worker.hmac-secret`，方向见上方「双向 HMAC 密钥」表） |
+| `AI_WORKER_CALLBACK_HMAC_SECRET` / `AI_WORKER_INTERNAL_API_HMAC_SECRET` | 两份 HMAC（绑定到 `meeting.security.callback.hmac-secret` / `meeting.security.ai-worker.hmac-secret`，方向见上方「双向 HMAC 密钥」表） |
+| `meeting.security.ai-worker.rerank-breaker-failure-threshold` | rerank 熔断阈值（默认 5，置 0 关闭）：连续 N 次 unavailable/timeout 后熔断，RAG 直接走 RRF 降级排序，不再逐次等待 rerank 超时 |
+| `meeting.security.ai-worker.rerank-breaker-open-ms` | rerank 熔断打开时长（默认 30000ms），到期后放行一次探测请求 |
+| `meeting.outbox-publisher.interval-ms` | outbox 投递轮询间隔（默认 2000ms） |
+| `meeting.outbox-metrics.interval-ms` | outbox 积压 gauge 采样间隔（默认 30000ms，供 `OutboxBacklogHigh` / `OutboxPublishLag` 告警使用） |
+| `meeting.callback-nonce-cleanup.interval-ms` | `callback_nonces` 过期清理间隔（默认 300000ms） |
 
 **ai-worker（Python，前缀 `AI_WORKER_`）**
 

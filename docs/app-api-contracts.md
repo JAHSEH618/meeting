@@ -1,12 +1,14 @@
 # 应用间 API 契约约定
 
-本文基于 `docs/spec.md` 梳理，用于约定一期各应用之间的 API、消息、回调和 JSON 数据格式。后续落地时，`packages/meeting-contracts` 作为跨工程契约单一事实来源：
+本文用于约定一期各应用之间的 API、消息、回调和 JSON 数据格式。`packages/meeting-contracts` 作为跨工程契约单一事实来源：
 
 ```text
 packages/meeting-contracts/openapi/public-api.yaml
 packages/meeting-contracts/openapi/internal-callback-api.yaml
 packages/meeting-contracts/openapi/ai-worker-internal-api.yaml
+packages/meeting-contracts/openapi/export-job-message.yaml
 packages/meeting-contracts/schemas/rabbitmq/processing-task-message.schema.json
+packages/meeting-contracts/schemas/rabbitmq/export-job-message.schema.json
 packages/meeting-contracts/schemas/common/enums.yaml
 packages/meeting-contracts/schemas/common/error-codes.yaml
 ```
@@ -587,6 +589,7 @@ GET /api/processing-tasks/{taskId}/events
 | `TASK_COMPLETED` | `eventId`、`sequenceNo`、`taskId`、`status`、`phase=TERMINAL`、`completedSteps`、`artifactManifestId`、`emittedAt` | Java 完成 worker phase 后的 `SUMMARY` / `EXTRACTION` 与所有必做 step，并将 task 推进到 `SUCCEEDED` 或 `PARTIAL_SUCCEEDED` |
 | `TASK_FAILED` | `eventId`、`sequenceNo`、`taskId`、`status=FAILED`、`errorCode`、`retryable`、`emittedAt` | task 失败或重试耗尽 |
 | `TASK_CANCELLED` | `eventId`、`sequenceNo`、`taskId`、`status=CANCELLED`、`emittedAt` | 取消完成 |
+| `EXPORT_STATUS_CHANGED` | `eventId`、`sequence`、`exportId`、`meetingId`、`status`、`stale`、`revoked`、`errorCode`、`occurredAt` | 导出任务状态快照，走独立的导出 SSE 端点 `GET /api/exports/{exportId}/events`（见 4.12），不进任务 SSE 流 |
 
 `eventId` 编码为 `{taskId}:{sequenceNo}`，`sequenceNo` 使用 8 位左补零十进制字符串；同一 `taskId` 内不得复用。SSE 数据保留窗口默认 `30min`，超出窗口后必须先发送 `TASK_SNAPSHOT`。
 
@@ -949,6 +952,14 @@ POST /api/exports/{exportId}/revoke-link
 ```
 
 撤销后再次查询导出时不再返回可用 `downloadUrl`，`revoked=true`。
+
+导出状态 SSE：
+
+```http
+GET /api/exports/{exportId}/events
+```
+
+建连即推送一条 `EXPORT_STATUS_CHANGED` 当前状态快照（字段见 4.7 事件清单）后立即关闭流，客户端通过下一次状态检查重连；前端保留 3s 轮询作为无 `EventSource` 支持或瞬时网络故障时的兜底。后续接入领域事件监听后，服务端可保持连接持续推送，前端无需改动。
 
 ### 4.13 高频写操作补充样例
 
@@ -1909,18 +1920,17 @@ callback `Idempotency-Key` 精确定义：
 5. internal API 与 public API 必须使用独立路由前缀、独立鉴权 filter 和独立审计日志。
 6. 生产阶段升级为 mTLS + 短期 service JWT，HMAC 可作为兼容方案保留。
 
-安全等级阻断示例：
+数据边界阻断示例（LLM 请求携带禁止外发的载荷时）：
 
 ```json
 {
   "success": false,
   "data": null,
   "error": {
-    "code": "SECURITY_LEVEL_BLOCKED",
-    "message": "一期不支持该安全等级的自动 LLM 处理",
+    "code": "LLM_DATA_BOUNDARY_BLOCKED",
+    "message": "数据边界策略阻断",
     "retryable": false,
     "details": {
-      "securityLevel": "SECRET",
       "taskId": "task_001",
       "stepName": "SUMMARY"
     }
@@ -1934,6 +1944,8 @@ callback `Idempotency-Key` 精确定义：
 
 事实来源：完整错误码字典、retryable 默认值、用户提示、运维标签和 i18n key 以 `packages/meeting-contracts/schemas/common/error-codes.yaml` 为准。本节只给责任域分组，避免实现方在各自工程维护第二份错误码。
 
+前端不手工维护错误码 → 文案字典：`packages/meeting-contracts/scripts/generate-error-messages.py` 从 `error-codes.yaml` 的 `userMessage` / `retryable` / `i18nKey` 生成 `apps/meeting-web/src/shared/api/error-messages.gen.ts` 与 `apps/ai-worker-web/src/shared/api/error-messages.gen.ts`，两个前端直接消费该生成产物（随 `npm run codegen` 重生成，勿手改）。
+
 错误码必须稳定，不直接暴露底层异常类名。
 
 | 分类 | 示例错误码 | retryable |
@@ -1944,7 +1956,7 @@ callback `Idempotency-Key` 精确定义：
 | Storage | `OSS_OBJECT_NOT_FOUND`, `OSS_READ_FAILED`, `OSS_WRITE_FAILED` | true |
 | AI Pipeline | `ASR_MODEL_TIMEOUT`, `DIARIZATION_FAILED`, `SPEAKER_MATCH_FAILED` | true |
 | RAG | `RAG_INDEX_FAILED`, `VECTOR_SEARCH_FAILED`, `RERANK_UNAVAILABLE`, `RERANK_CONTRACT_ERROR` | depends |
-| LLM | `SECURITY_LEVEL_BLOCKED`, `LLM_SCHEMA_INVALID`, `LLM_PROVIDER_TIMEOUT` | depends |
+| LLM | `LLM_DATA_BOUNDARY_BLOCKED`, `LLM_SCHEMA_INVALID`, `LLM_PROVIDER_TIMEOUT` | depends |
 | Export | `EXPORT_RENDER_FAILED`, `EXPORT_LINK_REVOKED` | depends |
 
 统一错误结构：

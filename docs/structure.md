@@ -8,6 +8,7 @@ flowchart LR
 
     subgraph Client["前端层"]
         Web["meeting-web<br/>会议列表 / 上传 / 进度 / 转录修正 / 纪要 / RAG 问答"]
+        AdminWeb["ai-worker-web<br/>运维工作台 SPA（由 ai-worker 挂载于 /workstation/）"]
     end
 
     subgraph Java["业务层: meeting-api Spring Boot + COLA-V5 模块化单体"]
@@ -22,11 +23,12 @@ flowchart LR
         RAG["rag<br/>权限过滤 / 检索编排 / citation 组装 / 问答入口"]
         Document["document<br/>文档上传 / 解析 / 知识入库"]
         Export["export<br/>[一期] 异步导出 / 短链撤销 / 快照版本"]
+        JavaLLM["java-llm 阶段<br/>SUMMARY / EXTRACTION（TaskStepProgressService / JavaLlmPhaseOrchestrator）"]
     end
 
     subgraph Infra["数据与基础设施层"]
         DB[("PostgreSQL + pgvector<br/>业务数据 / 任务状态 / 审计 / MVP 向量检索")]
-        MQ["RabbitMQ / Redis Stream<br/>异步任务队列"]
+        MQ["RabbitMQ<br/>异步任务队列（唯一 broker）"]
         TOS["火山引擎 TOS<br/>原始音频 / 转码音频 / 中间 JSON / 导出文件"]
         Obs["Prometheus / Grafana / Logs / Trace<br/>可观测性与告警"]
     end
@@ -39,16 +41,16 @@ flowchart LR
         QSpeaker["gpu-speaker-queue<br/>Speaker Embedding"]
         QEmbed["embed-queue<br/>Text Embedding"]
         QRerank["rerank-queue<br/>[后续独立队列] Reranker"]
-        QLLM["llm-queue<br/>纪要 / 抽取 / 问答"]
+        QLLM["llm-queue<br/>[拓扑保留] 无 Python 消费者，SUMMARY / EXTRACTION 由 Java 进程内触发"]
         QExport["export-queue<br/>[一期] Markdown / DOCX / PDF"]
     end
 
     subgraph Python["计算层: ai-worker"]
         Worker["ai-worker 应用<br/>Clean Architecture"]
         FastAPI["FastAPI<br/>内部管理 / health / rerank / workflow control"]
-        WorkerRunner["Celery / Dramatiq Worker<br/>队列消费 / step 执行"]
-        Workflow["Prefect / Temporal Workflow<br/>DAG / retry / cancel / resume"]
-        Agent["LangGraph Agent<br/>总结 / RAG / 质量检查"]
+        AdminBFF["Admin BFF（ai_worker/admin/）<br/>/admin/* + /api/* 透传 · JWT aud=ai-worker-admin"]
+        WorkerRunner["RabbitMQ 消费者（pika）<br/>队列消费 / step 执行"]
+        Workflow["进程内 Pipeline DAG（ai_worker/pipeline/）<br/>retry / cancel / resume"]
         Runtime["model-runtime<br/>MVP 为 ai-worker 进程内 Python package"]
 
         Transcode["音频标准化<br/>保留 channel_map / 按需 mono"]
@@ -59,7 +61,6 @@ flowchart LR
         Diar["说话人分离"]
         Merge["ASR + Diarization 合并<br/>结构化转录"]
         SpeakerRec["声纹识别<br/>候选匹配"]
-        Summary["会议纪要生成<br/>决策 / 待办 / 风险 / 问题抽取"]
         Indexing["RAG 切块与入库<br/>embedding / rerank metadata"]
     end
 
@@ -72,7 +73,10 @@ flowchart LR
     end
 
     User --> Web
+    User --> AdminWeb
     Web --> BFF
+    AdminWeb --> AdminBFF
+    AdminBFF -- "/api/* 透传到公开 API" --> BFF
 
     BFF --> Auth
     BFF --> Meeting
@@ -114,15 +118,14 @@ flowchart LR
     QDiar --> WorkerRunner
     QSpeaker --> WorkerRunner
     QEmbed --> WorkerRunner
-    QLLM --> WorkerRunner
     QExport --> Export
     QAlign -. "后续独立消费" .-> WorkerRunner
     QRerank -. "后续独立消费" .-> WorkerRunner
 
     Worker --> FastAPI
+    Worker --> AdminBFF
     Worker --> WorkerRunner
     Worker --> Workflow
-    Worker --> Agent
     WorkerRunner --> Workflow
     FastAPI --> Workflow
     Worker --> TOS
@@ -139,10 +142,7 @@ flowchart LR
     Align --> Merge
     Diar --> Merge
     Merge --> SpeakerRec
-    SpeakerRec --> Summary
-    Agent -. "LLM / tool orchestration" .-> Summary
     Merge --> Indexing
-    Summary --> Indexing
 
     Worker -- "internal callback API<br/>HMAC / 幂等键 / trace_id" --> Task
     Worker -- "回写结构化结果" --> Meeting
@@ -151,7 +151,8 @@ flowchart LR
 
     LLMG --> ThirdLLM
     LLMG -. "预留" .-> LocalLLM
-    Summary -- "通过 llm-gateway 调用" --> LLMG
+    Task -- "WORKER_DAG_DONE 事件<br/>outbox · Java 进程内消费" --> JavaLLM
+    JavaLLM -- "通过 llm-gateway 调用" --> LLMG
     RAG -- "权限范围实时计算" --> DB
     RAG -- "候选召回" --> DB
     RAG -- "已授权候选 rerank<br/>internal HMAC" --> FastAPI
@@ -170,10 +171,10 @@ flowchart LR
     classDef compute fill:#f5f3ff,stroke:#7c3aed,color:#111827;
     classDef model fill:#fef2f2,stroke:#ef4444,color:#111827;
 
-    class Web frontend;
-    class BFF,Auth,Meeting,Task,Storage,LLMG,Audit,Speaker,RAG,Document,Export service;
+    class Web,AdminWeb frontend;
+    class BFF,Auth,Meeting,Task,Storage,LLMG,Audit,Speaker,RAG,Document,Export,JavaLLM service;
     class DB,MQ,TOS,Obs,QAudio,QAsr,QAlign,QDiar,QSpeaker,QEmbed,QRerank,QLLM,QExport infra;
-    class Worker,FastAPI,WorkerRunner,Workflow,Agent,Runtime,Transcode,Quality,VAD,ASR,Align,Diar,Merge,SpeakerRec,Summary,Indexing compute;
+    class Worker,FastAPI,AdminBFF,WorkerRunner,Workflow,Runtime,Transcode,Quality,VAD,ASR,Align,Diar,Merge,SpeakerRec,Indexing compute;
     class ThirdLLM,LocalLLM,AudioModels,RagModels,VectorDB model;
 ```
 
@@ -182,11 +183,12 @@ flowchart LR
 1. MVP 后端采用一个 Spring Boot + 阿里 COLA-V5 模块化单体，不提前拆成多个 Java 微服务；工程按 client / adapter / app / domain / infrastructure / start 分层，分层内按业务域隔离。
 2. `meeting-api` 是业务事实来源，`ai-worker` 只负责计算执行，不直接写业务库，也不自行判断用户权限。
 3. Java 和 Python 通过队列、TOS URI、结构化 JSON 和 internal callback API 交互。
-4. Python 侧采用 FastAPI + Clean Architecture + Celery / Dramatiq Worker + Prefect / Temporal Workflow + LangGraph Agent；`model-runtime` 在 MVP 是 `ai-worker` 内部包，只有当模型需要独立扩容、依赖隔离或显存隔离时才拆为 HTTP / gRPC 服务。
+4. Python 侧采用 FastAPI + Clean Architecture + 基于 pika 的 RabbitMQ 消费者 + 进程内 pipeline DAG（`apps/ai-worker/ai_worker/pipeline/`），RabbitMQ 是唯一 broker；`model-runtime` 在 MVP 是 `ai-worker` 内部包，只有当模型需要独立扩容、依赖隔离或显存隔离时才拆为 HTTP / gRPC 服务。
 5. RAG 权限必须由 Java 实时计算，向量库只做候选召回，不能作为权限事实来源。
 6. LLM 调用统一经过 `llm-gateway`，集中处理模型路由、数据边界策略、Prompt 版本、结构化输出、fallback 和审计；一期转写文本发送第三方 LLM 前不做脱敏。
-7. 生产实现建议通过 Prefect / Temporal 把串行 Pipeline 改成 DAG，并按 CPU、ASR、分人、声纹、embedding、LLM 拆 Celery / Dramatiq 队列做资源隔离；Forced Alignment 和 Rerank 一期在 `ai-worker` 进程内按需执行或 lazy-load。
-8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列；不创建 `gpu-align-queue` 和 `rerank-queue`。
+7. Pipeline 以进程内 DAG 形式在 `ai-worker` 内执行（`ai_worker/pipeline/`），并按 CPU、ASR、分人、声纹、embedding 拆 RabbitMQ 队列做资源隔离；Forced Alignment 和 Rerank 一期在 `ai-worker` 进程内按需执行或 lazy-load。
+8. 一期默认启用 DashScope、pgvector、audio-cpu / gpu-asr / gpu-diar / gpu-speaker / embed / llm / export 队列；不创建 `gpu-align-queue` 和 `rerank-queue`。`llm-queue` 仅在拓扑中保留、无 Python 消费者：`SUMMARY` / `EXTRACTION` 由 Java 进程内消费 `WORKER_DAG_DONE` 事件触发（`TaskStepProgressService` / `JavaLlmPhaseOrchestrator` 经 llm-gateway 调用），不经过 Python。
 9. 一期预留但默认不启用：LocalLLM 用于后续高敏或私有化场景，Qdrant / Milvus 用于后续外置向量库，`gpu-align-queue` 用于后续 Forced Alignment 独立扩容，`rerank-queue` 用于后续独立 Rerank 扩容。（会议安全分级与 LLM 阻断门已在 Phase K 移除，会议不分级。）
 10. 一期 `export-queue` 由 `meeting-api` Java 进程内的 `export` 模块消费，通过 LibreOffice headless 或等价组件生成 Markdown / DOCX / PDF；不进入 Python `WorkerRunner`。独立 export worker 仅作为后续资源隔离扩展。
 11. 数据流向约束：所有 PostgreSQL 业务写操作都源自 `meeting-api`；`ai-worker` 不持有业务库凭证，不直接写 `knowledge_chunks`、`transcript_segments` 或任何声纹表，只能通过 internal callback API 回写结构化结果或 artifact URI。
+12. 前端有两个 SPA：`meeting-web`（用户端，仅消费 meeting-api 公开 REST + SSE）和 `ai-worker-web`（运维工作台，由 ai-worker 挂载于 `/workstation/`）。后者采用双后端模式：`/admin/*` 走 ai-worker 的 Admin BFF（`apps/ai-worker/ai_worker/admin/`），`/api/*` 由其透传到 Java 公开 API，鉴权用 Java 签发、ai-worker 校验的 JWT（`aud=ai-worker-admin`）。
